@@ -182,6 +182,10 @@ class ResolveRequest(CellNumbers):
     outcome: Literal["printed", "not_printed"]
 
 
+def _drop_default(schema: dict[str, Any]) -> None:
+    schema.pop("default", None)
+
+
 class SheetCreate(_Body):
     type: Annotated[str, Field(max_length=64, pattern=KEY_PATTERN.pattern)]
     version: int | None = Field(
@@ -189,6 +193,9 @@ class SheetCreate(_Body):
     )
     id_placement: Literal["cell", "margin", "manual"] = Field(
         default="margin",
+        # Optional in the generated client (266-06): openapi-typescript makes a field with a
+        # default required, so the default is stated in the description instead of the schema.
+        json_schema_extra=_drop_default,
         description=(
             "Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; "
             "the margin ID is printed by the first job that prints onto it. `cell` needs a page "
@@ -214,6 +221,12 @@ class CellRead(BaseModel):
     purpose: str | None
     ref: str | None
     marked_by_hand: bool
+    is_id_cell: bool = Field(
+        description=(
+            "Whether the cell holds the sheet's ID label (the hub fills it). Set by the hub; "
+            "do not infer it from `source`."
+        )
+    )
     job_id: UUID | None
     updated_at: datetime
 

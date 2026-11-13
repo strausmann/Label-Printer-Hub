@@ -31,7 +31,7 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: { baseURL: MAIN.url, trace: "retain-on-failure" },
   projects: [
-    { name: "chromium", testIgnore: /scan\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", testIgnore: /(scan|readme-screenshots)\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     { name: "scan-qr", testMatch: /scan\.spec\.ts/, grep: /@qr/, use: camera(FAKE_CAMERA.qr) },
     { name: "scan-data-matrix", testMatch: /scan\.spec\.ts/, grep: /@data-matrix/, use: camera(FAKE_CAMERA.dataMatrix) },
     { name: "scan-sheet", testMatch: /scan\.spec\.ts/, grep: /@sheet/, use: camera(FAKE_CAMERA.sheet) },

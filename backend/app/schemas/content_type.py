@@ -33,4 +33,4 @@ class ContentType(StrEnum):
     """2 text lines (XL primary_id + L title); no QR."""
 
     QR_WITH_LISTING = "qr_with_listing"
-    """QR + N item lines (M font); overflow shows "+N more"."""
+    """QR + N item lines (M font); overflow shows "+N"."""

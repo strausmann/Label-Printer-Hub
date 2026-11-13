@@ -350,7 +350,7 @@ msgstr "ein neuer Bogen"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "A printer rarely prints exactly where the page says. Measure how far it is off on a real sheet, and the hub moves every print by the opposite."
-msgstr "Ein Drucker druckt selten genau dorthin, wo die Seite es vorgibt. Messen Sie auf einem echten Bogen, wie weit er daneben liegt, und der Hub verschiebt jeden Druck um das Gegenteil."
+msgstr "Ein Drucker druckt selten genau dorthin, wo die Seite es vorgibt. Miss auf einem echten Bogen, wie weit er daneben liegt, und der Hub verschiebt jeden Druck um das Gegenteil."
 
 #. placeholder {0}: MAX.code
 #: src/features/archive/TypeForm.tsx
@@ -372,6 +372,10 @@ msgstr "Einen Bogentyp mit dem Schlüssel {existingKey} gibt es schon. Füge die
 #: src/features/archive/errors.ts
 msgid "A sheet type with this key already exists."
 msgstr "Einen Bogentyp mit diesem Schlüssel gibt es schon."
+
+#: src/features/archive/errors.ts
+msgid "A text is too long."
+msgstr "Ein Text ist zu lang."
 
 #: src/features/settings/feedback.tsx
 msgid "A tray is set that the printer does not report. Read the printer again."
@@ -491,7 +495,7 @@ msgstr "Alle"
 
 #: src/features/calibration/errors.ts
 msgid "All readings lie on one line. Read crossings that are far apart, in both directions."
-msgstr "Alle Messwerte liegen auf einer Linie. Lesen Sie Kreuzungen ab, die weit auseinander liegen, in beide Richtungen."
+msgstr "Alle Messwerte liegen auf einer Linie. Lies Kreuzungen ab, die weit auseinander liegen, in beide Richtungen."
 
 #: src/features/layout/LayoutPicker.tsx
 msgid "Along"
@@ -581,7 +585,7 @@ msgstr "Anordnung"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
-msgstr "Bitten Sie einen Admin, es einzurichten."
+msgstr "Bitte einen Admin darum, es einzurichten."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Asked the printer to cancel."
@@ -682,6 +686,10 @@ msgstr "Kalibrierung"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Calibration for this printer will appear here."
 msgstr "Die Kalibrierung dieses Druckers erscheint hier."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibration is held until an admin settles the device swap."
+msgstr "Die Kalibrierung ist gesperrt, bis ein Admin den Gerätewechsel entschieden hat."
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/model.ts
@@ -1151,7 +1159,7 @@ msgstr "Gerätewechsel"
 msgid "Diameter (mm)"
 msgstr "Durchmesser (mm)"
 
-#: src/features/printers/PrinterCard.tsx
+#: src/features/printers/model.ts
 msgid "Different device"
 msgstr "Anderes Gerät"
 
@@ -1256,6 +1264,10 @@ msgstr "Einstellungen herunterladen"
 msgid "Drawing the label…"
 msgstr "Etikett wird gezeichnet …"
 
+#: src/features/jobs/jobErrorText.ts
+msgid "Drawing the page took too long."
+msgstr "Das Rendern der Seite hat zu lange gedauert."
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Drawing the sheet…"
 msgstr "Der Bogen wird gezeichnet …"
@@ -1323,7 +1335,7 @@ msgstr "Gib eine gültige Zahl ein."
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Enter at least three readings to fit."
-msgstr "Geben Sie mindestens drei Messwerte ein, um zu berechnen."
+msgstr "Gib mindestens drei Messwerte ein, um zu berechnen."
 
 #: src/features/settings/SettingField.tsx
 msgid "Enter it again"
@@ -1335,7 +1347,7 @@ msgstr "Gib die Adresse des Druckers ein."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
-msgstr "Tragen Sie ein, was der Drucker falsch macht; den Ausgleich in die Gegenrichtung übernimmt der Hub selbst."
+msgstr "Gib an, was der Drucker falsch macht; den Ausgleich in die Gegenrichtung übernimmt der Hub selbst."
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Every sheet is used up."
@@ -1525,6 +1537,10 @@ msgstr "Host"
 #: src/features/settings/sections.tsx
 msgid "How long finished jobs stay in the history."
 msgstr "Wie lange abgeschlossene Aufträge im Verlauf bleiben."
+
+#: src/features/printers/PageStatus.tsx
+msgid "How to turn on status discovery"
+msgstr "So schaltest du die Statuserkennung ein"
 
 #. placeholder {0}: test.data.status
 #: src/features/settings/Integrations.tsx
@@ -2007,6 +2023,10 @@ msgstr "Auf diesem Gerät wurde keine Kamera gefunden. Wähle stattdessen ein Fo
 msgid "No cell is in use."
 msgstr "Keine Zelle ist belegt."
 
+#: src/features/archive/TypeForm.tsx
+msgid "No change: the measurements are the same as in the current version."
+msgstr "Keine Änderung: Die Maße sind dieselben wie in der aktuellen Version."
+
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
 msgstr "Noch keine Client-Schlüssel. Lege unter <0>Zugang und Schlüssel</0> einen an, benannt nach dem Client (zum Beispiel „Kept“)."
@@ -2018,6 +2038,10 @@ msgstr "In diesem Foto wurde kein Code gefunden. Halte die Kamera näher heran u
 #: src/features/calibration/CalibrationPage.tsx
 msgid "No correction stored for this tray."
 msgstr "Für dieses Fach ist keine Korrektur gespeichert."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "No drawing slot became free in time; the page was not drawn. Try again later."
+msgstr "Es wurde nicht rechtzeitig ein Platz zum Rendern frei, die Seite wurde nicht gerendert. Versuch es später noch einmal."
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "No hardware identity — device swaps are not detected"
@@ -2288,7 +2312,7 @@ msgstr "auf {printerName}"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
-msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Geben Sie die Werte direkt ein."
+msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Gib die Werte direkt ein."
 
 #: src/features/sheets/errors.ts
 msgid "One of those cells is already in use. The sheet shows the current state."
@@ -2344,6 +2368,10 @@ msgstr "Einstellungen › Integrationen öffnen"
 #: src/shell/PrintToasts.tsx
 msgid "Open the job"
 msgstr "Auftrag öffnen"
+
+#: src/features/printers/PageStatus.tsx
+msgid "Open the printer settings"
+msgstr "Druckereinstellungen öffnen"
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Open the sheet"
@@ -2490,7 +2518,7 @@ msgstr "Kalibrierseite drucken"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
-msgstr "Drucken Sie sie auf einen echten Etikettenbogen (der Bogen ist danach verbraucht). Die Seite wird immer ohne Korrektur gedruckt, Sie messen also die eigene Abweichung des Druckers."
+msgstr "Drucke sie auf einen echten Etikettenbogen (der Bogen ist danach verbraucht). Die Seite wird immer ohne Korrektur gedruckt, du misst also die eigene Abweichung des Druckers."
 
 #: src/features/jobs/RunControls.tsx
 msgid "Print labels {from} to {total} again"
@@ -2522,7 +2550,7 @@ msgstr "Testseite drucken"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
-msgstr "Drucken Sie dieselbe Seite noch einmal, jetzt mit der Korrektur. Jede Kreuzung sollte dann innerhalb von 0,5 mm liegen. Wenn nicht, messen Sie erneut und passen Sie an."
+msgstr "Drucke dieselbe Seite noch einmal, jetzt mit der Korrektur. Jede Kreuzung sollte dann innerhalb von 0,5 mm liegen. Wenn nicht, miss erneut und passe an."
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Print with the new plan"
@@ -2579,6 +2607,14 @@ msgid "Printer is paused"
 msgstr "Der Drucker ist pausiert"
 
 #: src/features/printers/TestPrintButton.tsx
+msgid "Printer is stopped"
+msgstr "Drucker ist angehalten"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is stopped: {reasons}"
+msgstr "Drucker ist angehalten: {reasons}"
+
+#: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
 msgstr "Der Druckerstatus ist unbekannt"
 
@@ -2612,6 +2648,8 @@ msgid "Printing and marking cells need a print or admin key."
 msgstr "Zum Drucken und Markieren von Zellen braucht es einen Druck- oder Admin-Schlüssel."
 
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Printing needs a print or admin key."
 msgstr "Zum Drucken ist ein Druck- oder Admin-Schlüssel nötig."
@@ -2695,7 +2733,7 @@ msgstr "Drucker auslesen"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Read the deviation at three or more crossings that are far apart, in both directions. + across = the ink lies to the right, + down = the ink lies below."
-msgstr "Lesen Sie die Abweichung an drei oder mehr weit auseinander liegenden Kreuzungen ab, in beide Richtungen. + quer = die Farbe liegt rechts, + abwärts = die Farbe liegt darunter."
+msgstr "Lies die Abweichung an drei oder mehr weit auseinander liegenden Kreuzungen ab, in beide Richtungen. + quer = die Farbe liegt rechts, + abwärts = die Farbe liegt darunter."
 
 #: src/features/about/AboutPage.tsx
 msgctxt "action"
@@ -2845,6 +2883,10 @@ msgstr "Fortsetzen"
 msgid "Retry"
 msgstr "Wiederholen"
 
+#: src/features/jobs/JobDetail.tsx
+msgid "Retrying and cancelling need a print or admin key."
+msgstr "Wiederholen und Abbrechen brauchen einen Druck- oder Admin-Schlüssel."
+
 #: src/features/jobs/RetryError.tsx
 msgid "Retrying needs a print or admin key."
 msgstr "Zum erneuten Versuch braucht es einen Druck- oder Admin-Schlüssel."
@@ -2922,6 +2964,7 @@ msgstr "S1, S2 … nummerieren die Lücken zwischen den Spalten (durchgezogene L
 msgid "Same device"
 msgstr "Gleiches Gerät"
 
+#: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
 msgid "Save"
@@ -2929,7 +2972,7 @@ msgstr "Speichern"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Save a correction first."
-msgstr "Speichern Sie zuerst eine Korrektur."
+msgstr "Speichere zuerst eine Korrektur."
 
 #: src/features/archive/TypeForm.tsx
 msgid "Save details"
@@ -3363,6 +3406,10 @@ msgstr "Zustand"
 msgid "state unknown"
 msgstr "Zustand unbekannt"
 
+#: src/features/printers/PageStatus.tsx
+msgid "Status discovery is off for this printer. An admin can turn it on through the admin API."
+msgstr "Die Statuserkennung ist für diesen Drucker aus. Ein Admin kann sie über die Admin-API einschalten."
+
 #: src/features/printers/model.ts
 msgid "Status unknown"
 msgstr "Status unbekannt"
@@ -3454,6 +3501,7 @@ msgstr "Das Band ist leer"
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known"
 msgstr "Band unbekannt"
 
@@ -3595,6 +3643,10 @@ msgstr "Die Adresse oder die Zertifikatseinstellung ist nicht gültig."
 msgid "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
 msgstr "Die Adresse wird weitergeleitet, meist auf eine Anmeldeseite vor der App. Verwende eine Adresse, die die API der App direkt erreicht."
 
+#: src/features/settings/feedback.tsx
+msgid "The address saved for this printer is not valid. Enter the address again and save."
+msgstr "Die für diesen Drucker gespeicherte Adresse ist nicht gültig. Gib die Adresse erneut ein und speichere."
+
 #: src/features/sheets/print/errors.ts
 msgid "The app behind an item did not answer ({code}). Check Settings › Integrations."
 msgstr "Die App hinter einem Eintrag hat nicht geantwortet ({code}). Prüfe Einstellungen › Integrationen."
@@ -3732,6 +3784,18 @@ msgstr "Der horizontale Abstand"
 #: src/features/archive/errors.ts
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite."
+
+#: src/features/sheets/print/errors.ts
+msgid "The hub cannot draw a preview right now. Try again later."
+msgstr "Der Hub kann gerade keine Vorschau zeichnen. Versuch es später noch einmal."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."
+msgstr "Der Hub kann den Status dieses Druckers nicht lesen und weiß deshalb nicht, ob er bereit ist. Ein Admin kann seine Adresse in den Druckereinstellungen prüfen. Versuche es dann erneut."
+
+#: src/features/printers/PageStatus.tsx
+msgid "The hub cannot read this printer's status. An admin can check its address in the printer settings."
+msgstr "Der Hub kann den Status dieses Druckers nicht lesen. Ein Admin kann seine Adresse in den Druckereinstellungen prüfen."
 
 #: src/features/jobs/RetryError.tsx
 msgid "The hub could not be reached. Try again."
@@ -3892,10 +3956,12 @@ msgid "The left margin"
 msgstr "Der linke Rand"
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 msgstr "Der Link im QR-Code ist {length} Bytes lang, dieses Layout fasst aber höchstens {max} Bytes. Wähle eine andere Anordnung oder einen kürzeren Link."
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is too long for this layout."
 msgstr "Der Link im QR-Code ist für dieses Layout zu lang."
 
@@ -3988,6 +4054,10 @@ msgstr "Der Port muss zwischen 1 und 65535 liegen."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "Das Präfix ist fest, sobald es Bögen dieses Typs gibt."
 
+#: src/features/sheets/print/errors.ts
+msgid "The preview took too long. Try again later."
+msgstr "Die Vorschau hat zu lange gedauert. Versuch es später noch einmal."
+
 #: src/features/jobs/jobErrorText.ts
 msgid "The print failed (error code {code})."
 msgstr "Der Druck ist fehlgeschlagen (Fehlercode {code})."
@@ -4076,6 +4146,14 @@ msgstr "Der Drucker ist nicht erreichbar. Prüfe, ob er eingeschaltet und verbun
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "Der Drucker ist nicht bereit. Die Seiten kommen in die Druckwarteschlange und werden gedruckt, sobald er wieder bereit ist."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is paused. Resume it, then try again."
+msgstr "Der Drucker ist pausiert. Setze ihn fort und versuche es dann erneut."
+
+#: src/features/printers/PageStatus.tsx
+msgid "The printer is switched off in the hub. An admin can switch it on in the printer settings."
+msgstr "Der Drucker ist im Hub ausgeschaltet. Ein Admin kann ihn in den Druckereinstellungen einschalten."
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer is switched off in the hub. Switch it on in the printer settings."
@@ -4290,7 +4368,7 @@ msgstr "Design"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "There is no page printer yet. Add one under Settings › Printers."
-msgstr "Es gibt noch keinen Seitendrucker. Fügen Sie unter Einstellungen › Drucker einen hinzu."
+msgstr "Es gibt noch keinen Seitendrucker. Füge unter Einstellungen › Drucker einen hinzu."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "There is no sheet type with at least two columns and two rows."
@@ -4304,6 +4382,10 @@ msgstr "Es gibt noch nichts zu drucken."
 msgid "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
 msgstr "Diese berechneten Werte liegen außerhalb des erlaubten Bereichs: {outOfRangeList}. Sie werden nicht eingetragen. Mehr ist ein Fehler des Druckers, nichts, was man ausgleicht."
 
+#: src/features/lookup/PrinterPicker.tsx
+msgid "These labels ask for different directions (along and across). Print them in separate runs."
+msgstr "Diese Etiketten verlangen verschiedene Richtungen (längs und quer). Drucke sie in getrennten Durchgängen."
+
 #: src/features/sheets/print/errors.ts
 msgid "These labels need {pages} pages, and at most {max} pages can be previewed at once. Print fewer labels, or print in two rounds."
 msgstr "Diese Etiketten brauchen {pages} Seiten, und höchstens {max} Seiten lassen sich auf einmal als Vorschau berechnen. Drucke weniger Etiketten oder in zwei Runden."
@@ -4314,7 +4396,7 @@ msgstr "Diese Etiketten gingen an den Drucker, aber niemand hat das Ergebnis bes
 
 #: src/features/calibration/errors.ts
 msgid "These readings cannot be fitted. Check them and add crossings that are further apart."
-msgstr "Aus diesen Messwerten lässt sich nichts berechnen. Prüfen Sie sie und fügen Sie weiter auseinander liegende Kreuzungen hinzu."
+msgstr "Aus diesen Messwerten lässt sich nichts berechnen. Prüfe sie und füge weiter auseinander liegende Kreuzungen hinzu."
 
 #: src/features/scan/CameraScanner.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
@@ -4425,15 +4507,15 @@ msgstr "Dieser Bogen"
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "This sheet has no gap between its columns: the S lines sit on the cuts. Peel every other label (checkerboard) if a cut is hard to see."
-msgstr "Dieser Bogen hat keine Lücke zwischen den Spalten: Die S-Linien liegen auf den Schnitten. Ziehen Sie jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
+msgstr "Dieser Bogen hat keine Lücke zwischen den Spalten: Die S-Linien liegen auf den Schnitten. Ziehe jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "This sheet has no gap between its labels: the lines sit on the cuts. Peel every other label (checkerboard) if a cut is hard to see."
-msgstr "Dieser Bogen hat keine Lücke zwischen den Etiketten: Die Linien liegen auf den Schnitten. Ziehen Sie jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
+msgstr "Dieser Bogen hat keine Lücke zwischen den Etiketten: Die Linien liegen auf den Schnitten. Ziehe jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "This sheet has no gap between its rows: the Z lines sit on the cuts. Peel every other label (checkerboard) if a cut is hard to see."
-msgstr "Dieser Bogen hat keine Lücke zwischen den Zeilen: Die Z-Linien liegen auf den Schnitten. Ziehen Sie jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
+msgstr "Dieser Bogen hat keine Lücke zwischen den Zeilen: Die Z-Linien liegen auf den Schnitten. Ziehe jedes zweite Etikett ab (Schachbrett), wenn ein Schnitt schwer zu sehen ist."
 
 #: src/features/sheets/errors.ts
 msgid "This sheet is discarded."
@@ -4600,6 +4682,10 @@ msgstr "ungeprüft"
 msgid "Updating the preview…"
 msgstr "Die Vorschau wird aktualisiert …"
 
+#: src/shell/UpdatePrompt.tsx
+msgid "Updating…"
+msgstr "Wird aktualisiert…"
+
 #: src/features/settings/Integrations.tsx
 msgid "URL"
 msgstr "URL"
@@ -4670,6 +4756,14 @@ msgstr "Auftrag ansehen"
 msgid "Waiting at the printer"
 msgstr "Wartet beim Drucker"
 
+#: src/features/settings/Printers.tsx
+msgid "Waiting for the current job to finish…"
+msgstr "Warte, bis der laufende Auftrag fertig ist…"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Waiting for the printer's status check"
+msgstr "Wartet auf die Statusabfrage des Druckers"
+
 #: src/features/jobs/HeldRuns.tsx
 #: src/shell/PrintToasts.tsx
 msgid "Waiting for you"
@@ -4718,7 +4812,7 @@ msgstr "Was schiefgelaufen ist"
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Where gap line {s} and gap line {z} cross, read the small scales against the middle of the physical gap, in millimetres."
-msgstr "Wo sich die Lückenlinien {s} und {z} kreuzen, lesen Sie die kleinen Skalen gegen die Mitte der echten Lücke ab, in Millimetern."
+msgstr "Wo sich die Lückenlinien {s} und {z} kreuzen, lies die kleinen Skalen gegen die Mitte der echten Lücke ab, in Millimetern."
 
 #: src/features/archive/TypeDetail.tsx
 msgid "Where the numbers come from"
@@ -4799,7 +4893,7 @@ msgstr "Dein neuer Schlüssel"
 
 #: src/i18n/messages.ts
 msgid "Your session has expired. Sign in again."
-msgstr "Ihre Sitzung ist abgelaufen. Bitte erneut anmelden."
+msgstr "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Z1, Z2 … number the gaps between rows (dashed lines)."

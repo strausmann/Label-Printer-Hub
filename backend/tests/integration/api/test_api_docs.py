@@ -22,8 +22,9 @@ import pytest_asyncio
 from app.config import get_settings
 from httpx import ASGITransport, AsyncClient
 
+from tests.helpers.spa import INDEX_HTML
+
 BUNDLE_BODY = "/* fake scalar bundle for tests */ window.__scalar = true;"
-INDEX_HTML = "<!doctype html><html><body>hub-app-shell</body></html>"
 
 
 def _make_dist(root: Path, *, with_bundle: bool) -> Path:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import pathlib
 import tempfile
 import uuid
@@ -50,8 +51,6 @@ def _alembic_upgrade_to_head(db_path: pathlib.Path) -> None:
             f"sqlite+aiosqlite:///{db_path}",
         )
         (sandbox / "alembic.ini").write_text(ini_text)
-
-        import os
 
         env = os.environ.copy()
         existing = env.get("PYTHONPATH", "")

@@ -64,7 +64,8 @@ from tests.unit.sheets.test_print_service_preview import (
     run_preview,
 )
 
-pytestmark = pytest.mark.asyncio
+# asyncio_mode = "auto" (pyproject.toml) runs the async tests; a module mark would also
+# hit the sync ones.
 
 
 class FakeQueue:
@@ -1124,3 +1125,132 @@ def test_id_cell_fit_check_refuses_a_box_without_room_for_a_line_or_the_qr() -> 
     assert no_qr.value.detail == {"cell": "id", "missing_fields": ["qr_payload"]}
     check(600, allow_qr=False)  # text only: no symbol to fit
     check(2000, allow_qr=True)
+
+
+def test_id_cell_fits_45_7x21_2(monkeypatch: pytest.MonkeyPatch) -> None:
+    """266-10: on a 45.7 x 21.2 mm cell the ID label shows the code in full and the type label
+    as its title (shortened to fit if need be); "sheet ID" is no longer part of the title."""
+    from app.sheets import cell_render
+    from app.sheets.cell_render import DEFAULT_CELL_RENDERER, content_box
+
+    g = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle")
+    label = print_service.id_cell_label(
+        "L4736-0001",
+        print_service.id_cell_title("Avery Zweckform", ["L4736REV"], "k"),
+        "https://hub.example.invalid/sheet/L4736-0001",
+    )
+    assert label.title == "L4736REV Avery Zweckform"
+    shown: dict[str, str] = {}
+    real = cell_render._fit_line
+
+    def spy(text: str, *args: Any) -> tuple[str, int, bool]:
+        out = real(text, *args)
+        shown[text] = out[0]
+        return out
+
+    monkeypatch.setattr(cell_render, "_fit_line", spy)
+    box = content_box(g, 1)
+    for dpi in (300, 600):
+        shown.clear()
+        DEFAULT_CELL_RENDERER.render(
+            box_w_mm=box.w / 100,
+            box_h_mm=box.h / 100,
+            dpi=dpi,
+            content_type=ContentType.QR_TWO_LINES,
+            data=label,
+        )
+        assert shown["L4736-0001"] == "L4736-0001"  # the code line is never cut
+        title = shown[label.title]
+        # The product code is whole; it is the vendor that gives way when the cell is small.
+        assert "sheet ID" not in title and title.startswith("L4736REV")
+        assert title.endswith("…") and "Zweckform" not in title
+
+
+def test_id_cell_title_puts_the_product_code_first() -> None:
+    assert (
+        print_service.id_cell_title("Avery Zweckform", ["L4736REV", "L4736"], "k")
+        == "L4736REV Avery Zweckform"
+    )
+    # No vendor, or no code: the plain type label, as the list shows it.
+    assert print_service.id_cell_title(None, ["L4736REV"], "k") == "L4736REV"
+    assert print_service.id_cell_title("Avery", [], "my-key") == "my-key"
+
+
+def test_id_cell_title_keeps_the_code_whole_on_a_small_cell_and_everything_on_a_large_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.sheets import cell_render
+    from app.sheets.cell_render import DEFAULT_CELL_RENDERER
+
+    title = print_service.id_cell_title("Avery Zweckform", ["L4736REV"], "k")
+    label = print_service.id_cell_label(
+        "L4736-0001", title, "https://hub.example.invalid/sheet/L4736-0001"
+    )
+    shown: dict[str, str] = {}
+    real = cell_render._fit_line
+
+    def spy(text: str, *args: Any) -> tuple[str, int, bool]:
+        out = real(text, *args)
+        shown[text] = out[0]
+        return out
+
+    monkeypatch.setattr(cell_render, "_fit_line", spy)
+
+    def drawn(width_mm: float) -> str:
+        shown.clear()
+        DEFAULT_CELL_RENDERER.render(
+            box_w_mm=width_mm,
+            box_h_mm=21.2,
+            dpi=300,
+            content_type=ContentType.QR_TWO_LINES,
+            data=label,
+        )
+        return shown[title]
+
+    small = drawn(45.7)
+    assert small.startswith("L4736REV") and small != title and small.endswith("…")
+    assert "Zweckform" not in small
+    assert drawn(120.0) == title  # room enough: the full text, vendor included
+
+
+def test_retry_checks_the_id_cell_at_the_fresh_dpi_too() -> None:
+    """T11 M2 (266-11): a retried page with the sheet ID cell refuses, before anything is
+    reserved, when the printer's new resolution makes the ID cell's QR too fine; the items alone
+    (text only here) would pass."""
+    from app.sheets.errors import IdCellContentMismatchError
+    from app.sheets.sheet_page import SheetCellPayload
+
+    g = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle")
+    scan = "https://hub.example.invalid/s/" + "x" * 274  # fits at 600 dpi, not at 100
+    id_label = print_service.id_cell_label("L4736-0001", "L4736REV", scan)
+    item = LabelData(source_app="t", primary_id="A-1", title="Item 1")
+
+    def detail() -> SheetPageDetail:
+        return SheetPageDetail(
+            sheet_id=uuid4(),
+            sheet_code="L4736-0001",
+            type_key="l4736rev",
+            type_version_id=uuid4(),
+            geometry=asdict(g),
+            allow_qr=True,
+            cells=[
+                SheetCellPayload(
+                    cell=2,
+                    content_type=ContentType.TEXT_TWO_LINES,
+                    label_data=item.model_dump(mode="json"),
+                    mapped=False,
+                )
+            ],
+            id_cell=SheetCellPayload(
+                cell=1,
+                content_type=ContentType.QR_TWO_LINES,
+                label_data=id_label.model_dump(mode="json"),
+                mapped=False,
+            ),
+            job_summary={"sheet_code": "L4736-0001", "cell_count": 1},
+        )
+
+    print_service._check_retry_fits(detail(), 600)
+    with pytest.raises(IdCellContentMismatchError) as refused:
+        print_service._check_retry_fits(detail(), 100)
+    assert refused.value.detail == {"cell": "id", "missing_fields": ["qr_payload"]}

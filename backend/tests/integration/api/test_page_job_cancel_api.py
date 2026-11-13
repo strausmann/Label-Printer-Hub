@@ -312,3 +312,36 @@ async def test_job_responses_and_events_never_carry_the_printer_address(env: _En
     _assert_no_printer_address(json.dumps([e.data for e in env.events], default=str))
     # the reference tracking uses is still stored
     assert (await env.row(jid)).result["ipp_job_id"] == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_between_printing_and_mark_printing_is_202(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """265-07: the runner moved the job to PRINTING in memory and holds it, but its row still
+    says ``queued`` (``mark_printing`` has not returned). The cancel is a request at the
+    printer, so the answer is 202, not a 200 that reads like a finished cancel."""
+    store = env.runner._store
+    real = store.mark_printing
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    async def gated(job_id: UUID) -> bool:
+        entered.set()
+        await gate.wait()
+        return await real(job_id)
+
+    monkeypatch.setattr(store, "mark_printing", gated)
+    jid = await env.submit()
+    async with asyncio.timeout(TEST_TIMEOUT_S):
+        await entered.wait()
+    assert (await env.row(jid)).state == JobState.QUEUED.value
+    async with env.client() as c:
+        r = await c.post(f"/api/v1/jobs/{jid}/cancel")
+    gate.set()
+    assert r.status_code == 202, r.text
+    assert r.json()["state"] == JobState.PRINTING.value
+    await env.wait_state(jid, JobState.CANCELLED.value)
+    assert env.ops("Print-Job") == 0
+    await env.until(lambda: "ended" in env.handler.names(jid))
+    assert env.handler.ended(jid)["state"] == "cancelled"

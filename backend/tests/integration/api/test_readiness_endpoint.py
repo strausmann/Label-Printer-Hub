@@ -40,6 +40,7 @@ async def test_readiness_returns_200_when_ready(api_client_with_seed):
         "print_queue",
         "snmp_discovery",
         "sse_bus",
+        "render_slots",
     ):
         assert required in body["checks"], f"missing check: {required}"
     # Phase 1k.1a: template_seed removed from readiness checks

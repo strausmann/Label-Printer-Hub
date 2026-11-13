@@ -25,7 +25,6 @@ from ``app.services.layout_engine``), ``map_content_type`` and ``build_qr``.
 from __future__ import annotations
 
 import math
-from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Final, Protocol
@@ -194,14 +193,16 @@ def _qr_version_cached(payload: str) -> int | None:
         return None
 
 
-PREVIEW_QR_MASK: ContextVar[int | None] = ContextVar("preview_qr_mask", default=None)
-"""When set, ``build_qr`` uses this mask instead of searching the best of eight. The preview sets
-it (a picture does not need the best mask, and the search is most of the cost of a QR); a job
-never does, so what is printed keeps the best mask."""
+PREVIEW_QR_MASK: Final = 0
+"""The mask the preview passes to ``build_qr`` and ``build_qr_preview`` instead of searching the
+best of eight (a picture does not need the best mask, and the search is most of the cost of a
+QR). A job passes none, so what is printed keeps the best mask. 266-08: passed explicitly, no
+process-wide state."""
 
 
-def _qr_matrix(payload: str) -> list[list[bool]] | None:
-    """The module matrix of the symbol, quiet zone included; ``None`` if no QR holds it."""
+def _qr_matrix(payload: str, mask: int | None) -> list[list[bool]] | None:
+    """The module matrix of the symbol, quiet zone included; ``None`` if no QR holds it.
+    ``mask``: the mask pattern to use, ``None`` searches the best one."""
     version = qr_version(payload)
     if version is None:
         return None
@@ -209,7 +210,7 @@ def _qr_matrix(payload: str) -> list[list[bool]] | None:
         version=version,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         border=_QUIET_MODULES,
-        mask_pattern=PREVIEW_QR_MASK.get(),
+        mask_pattern=mask,
     )
     try:
         qr.add_data(payload)
@@ -227,14 +228,17 @@ def _matrix_image(matrix: list[list[bool]]) -> Image.Image:
     return Image.frombytes("L", (side, side), flat)
 
 
-def build_qr(payload: str, edge_px: int) -> Image.Image | None:
+def build_qr(payload: str, edge_px: int, *, mask: int | None = None) -> Image.Image | None:
     """QR in an ``edge_px`` square, mode ``"1"``; ``None`` if it cannot fit.
+
+    ``mask`` fixes the mask pattern (the preview's ``PREVIEW_QR_MASK``); ``None``, what a job
+    prints, searches the best of eight.
 
     Modules are a whole number of pixels (``edge_px // (n + 8)``, never resampled) and the four
     module quiet zone lies inside the square; the symbol is centred. A module below one pixel,
     or a payload larger than any QR symbol holds, returns ``None``.
     """
-    matrix = _qr_matrix(payload)
+    matrix = _qr_matrix(payload, mask)
     if matrix is None:
         return None
     side = len(matrix)  # modules plus the quiet zone on both sides
@@ -252,7 +256,13 @@ def build_qr(payload: str, edge_px: int) -> Image.Image | None:
 
 
 def build_qr_preview(
-    payload: str, box_w_mm: float, box_h_mm: float, job_dpi: int, preview_dpi: int
+    payload: str,
+    box_w_mm: float,
+    box_h_mm: float,
+    job_dpi: int,
+    preview_dpi: int,
+    *,
+    mask: int | None,
 ) -> Image.Image | None:
     """The QR as the job prints it, drawn at ``preview_dpi`` (the one function of the margin QR
     and the cell QRs, so the preview cannot drift from the job again).
@@ -260,9 +270,10 @@ def build_qr_preview(
     The job's symbol is whole-pixel modules at ``job_dpi`` inside the box's square; its size in
     mm follows by arithmetic from the version and the dpi. Here the module matrix is scaled
     (nearest neighbour) to that size at ``preview_dpi`` and centred in the preview's square, which
-    is ``qr_edge_px`` at ``preview_dpi``. ``None`` if the job cannot draw it at all.
+    is ``qr_edge_px`` at ``preview_dpi``. ``None`` if the job cannot draw it at all. ``mask`` as
+    in ``build_qr``.
     """
-    matrix = _qr_matrix(payload)
+    matrix = _qr_matrix(payload, mask)
     if matrix is None:
         return None
     side = len(matrix)
@@ -332,8 +343,10 @@ class CellRenderer(Protocol):
         dpi: int,
         content_type: ContentType,
         data: LabelData,
+        qr_mask: int | None = None,
     ) -> CellImage:
-        """Draw ``data`` as ``content_type`` into a 1-bit image of exactly the box at ``dpi``."""
+        """Draw ``data`` as ``content_type`` into a 1-bit image of exactly the box at ``dpi``;
+        ``qr_mask`` as ``build_qr``'s ``mask``."""
         ...
 
 
@@ -390,6 +403,7 @@ class RasterCellRenderer:
         dpi: int,
         content_type: ContentType,
         data: LabelData,
+        qr_mask: int | None = None,
     ) -> CellImage:
         check_required(content_type, data)
         if box_w_mm <= 0 or box_h_mm <= 0:  # defensive: the caller refuses these first
@@ -401,7 +415,7 @@ class RasterCellRenderer:
         text_x = 0
         if content_type.value.startswith("qr_"):
             edge = qr_edge_px(box_w_mm, box_h_mm, dpi)
-            qr = build_qr(data.qr_payload or "", edge)
+            qr = build_qr(data.qr_payload or "", edge, mask=qr_mask)
             if qr is None:
                 raise QrDoesNotFitError(content_type=str(content_type))
             canvas.paste(qr, (0, 0))
@@ -444,7 +458,7 @@ class RasterCellRenderer:
                     shown = [_clean(i.item) for i in data.items]
                 lines = [(primary, starts[0])] + [(t, item_px) for t in shown]
                 if omitted:
-                    lines.append((f"+{omitted} more", item_px))
+                    lines.append((f"+{omitted}", item_px))
                 return lines, omitted
 
     def _draw_text(

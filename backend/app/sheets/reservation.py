@@ -16,6 +16,7 @@ are the decision.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -54,14 +55,18 @@ from app.sheets.planner import (
     decide_margin_and_mark,
     plan,
 )
-from app.sheets.sheet_service import MarkedCell, NewSheetBatch, prepare_new_sheet
+from app.sheets.sheet_service import (
+    HUB_SOURCE,
+    ID_CELL_PURPOSE,
+    MarkedCell,
+    NewSheetBatch,
+    prepare_new_sheet,
+)
 from app.sheets.text import log_value
 from app.sheets.type_service import version_geometry, write_transaction
 
 logger = logging.getLogger(__name__)
 
-ID_CELL_PURPOSE = "Sheet ID"
-HUB_SOURCE = "hub"
 NEW_SHEET = "new"
 
 __all__ = [
@@ -381,7 +386,11 @@ async def _attempt(
     explicit = any(isinstance(p.cells, list) for p in placements)
     async with write_transaction(session):
         views, new_views = await _resolve_views(session, placements, required_type_key, actor)
-        pl = plan(views, len(items), hw_margins_hmm=hw_margins_hmm, margin=margin)
+        # 266-14: planning is CPU work (margin and feed-mark geometry); it runs in a thread while
+        # this transaction holds the write lock, so the event loop serves other requests meanwhile.
+        pl = await asyncio.to_thread(
+            plan, views, len(items), hw_margins_hmm=hw_margins_hmm, margin=margin
+        )
         fresh = expected_of(pl, new_views)
         if expected is not None and list(expected) != fresh:
             raise PlanChangedError(_plan_detail(fresh))  # write_transaction rolls it all back

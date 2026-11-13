@@ -198,6 +198,21 @@ class TestSubmitBatchJobCopies:
         assert master_ids[0] in kwargs["job_ids"], "master id must be one of the enqueued job_ids"
 
     @pytest.mark.asyncio
+    async def test_batch_cut_mode_is_stored_in_every_row(self, make_service) -> None:
+        """A recovery after a restart reads the cut mode from the rows: the batch-level
+        half_cut must be there, not the item default (False)."""
+        svc, queue, store, _backend = make_service(loaded_tape_mm=12)
+        queue.enqueue_batch = AsyncMock()
+        request = PrintRequest(
+            content_type=ContentType.QR_ONLY,
+            data=RawLabelData(qr_payload="https://example.com/x"),
+            options=PrintOptions(copies=2),
+        )
+        await svc.submit_batch_job([request], half_cut=True)
+        rows = [c.args[0] for c in store.save_queued.await_args_list]
+        assert [r.payload["options"]["half_cut"] for r in rows] == [True, True]
+
+    @pytest.mark.asyncio
     async def test_copies_1_yields_single_image(self, make_service) -> None:
         svc, queue, _store, _backend = make_service(loaded_tape_mm=12)
         queue.enqueue_batch = AsyncMock()

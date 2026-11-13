@@ -3,7 +3,10 @@
  * Types come from `schema.gen.ts`, generated from the backend's OpenAPI (`pnpm gen:api`).
  */
 
+import { noteServerVersion } from "../app/updates";
+
 export const CSRF_HEADER = "X-CSRF-Token";
+const VERSION_HEADER = "X-Hub-Version";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -177,6 +180,9 @@ export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> 
   } catch {
     throw new ApiError(0, "network_error", "Network error");
   }
+
+  // Every API response names the server version; a page built for another one offers the update (#288).
+  noteServerVersion(response.headers?.get(VERSION_HEADER));
 
   if (!response.ok) {
     const error = parseProblem(response.status, await readBody(response));

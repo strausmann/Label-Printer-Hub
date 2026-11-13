@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PRINTER_A, status } from "../test-api";
-import { describePrinter, tapeWidthOf } from "./model";
+import { describePrinter, staleAgeSeconds, tapeWidthOf } from "./model";
 
 describe("tapeWidthOf", () => {
   it("prefers the reported width, then reads the text", () => {
@@ -125,5 +125,29 @@ describe("describePrinter for a page printer", () => {
     const view = describePrinter(PRINTER_A, status(PRINTER_A.id, { printer_state: "stopped" }), false);
     expect(view.kind).toBe("ready");
     expect(view.reasons).toEqual([]);
+  });
+});
+
+describe("a held printer", () => {
+  const held = (over: Record<string, unknown> = {}) => status(PRINTER_A.id, { identity_mismatch: true, ...over });
+  it("reads Different device in every state it would otherwise read Ready, Printing or Problem", () => {
+    expect(describePrinter(PRINTER_A, held(), false)).toMatchObject({ kind: "different_device", badge: "warn" });
+    expect(describePrinter(PRINTER_A, held(), true).kind).toBe("different_device");
+    expect(describePrinter(PRINTER_A, held({ error_state: "cover open" }), false).kind).toBe("different_device");
+  });
+  it("paused and a status nobody refreshes still win", () => {
+    expect(describePrinter({ ...PRINTER_A, paused: true }, held(), false).kind).toBe("paused");
+    expect(describePrinter(PRINTER_A, held({ stale: true, online: null }), false).kind).toBe("stale");
+    expect(describePrinter(PRINTER_A, held({ polled: false, online: null }), false).kind).toBe("not_polled");
+  });
+});
+
+describe("staleAgeSeconds", () => {
+  it("names an age only for a status that is not a reading of the printer now", () => {
+    expect(staleAgeSeconds(status(PRINTER_A.id, { last_probe_age_s: 4 }))).toBeNull();
+    expect(staleAgeSeconds(status(PRINTER_A.id, { stale: true, last_probe_age_s: 400 }))).toBe(400);
+    expect(staleAgeSeconds(status(PRINTER_A.id, { polled: false, last_probe_age_s: 30 }))).toBe(30);
+    expect(staleAgeSeconds(status(PRINTER_A.id, { stale: true, last_probe_age_s: null }))).toBeNull();
+    expect(staleAgeSeconds(undefined)).toBeNull();
   });
 });

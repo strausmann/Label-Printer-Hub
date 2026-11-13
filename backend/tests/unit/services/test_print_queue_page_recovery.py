@@ -6,8 +6,8 @@ Waits are bounded."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
@@ -19,6 +19,7 @@ from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.ipp.codec import OPERATIONS, decode
+from app.services import page_jobs
 from app.services.job_lifecycle import JobState
 from app.services.job_store import JobStore, MemoryJobStore
 from app.services.job_store_sqlite import SQLiteJobStore
@@ -766,3 +767,78 @@ async def test_mark_failed_restart(store: JobStore) -> None:
     await store.mark_failed_restart(row.id, "again")  # terminal: unchanged
     assert (await _row(store, row.id)).error == "page_outcome_unknown"
     await store.mark_failed_restart(uuid4(), "x")  # unknown id: silent no-op
+
+
+# ---------------------------------------------------------------------------- recovery check
+
+
+@contextmanager
+def _check(fn: Any) -> Iterator[None]:
+    page_jobs.register_recovery_check("calibration_page", fn)
+    try:
+        yield
+    finally:
+        page_jobs.unregister_recovery_check("calibration_page", fn)
+
+
+async def _queued_row(store: JobStore, page_id: UUID) -> UUID:
+    row = DbJob(id=uuid4(), printer_id=page_id, template_key=None, payload=payload().model_dump())
+    await store.save_queued(row)
+    return row.id
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+async def test_recovery_asks_the_kind_before_it_requeues_a_row(
+    handler: RecordingHandler, allowed: bool
+) -> None:
+    """263-47: a ``queued`` row prints after a restart only if its kind agrees (a sheet page:
+    its cells are still reserved for it). Refused: the row ends ``failed`` (never started) and
+    the handler hears it; nothing reaches the printer."""
+    store = MemoryJobStore()
+    fake = FakeIppPrinter(job_script=[9])
+    page_id = uuid4()
+    jid = await _queued_row(store, page_id)
+    asked: list[UUID] = []
+
+    async def check(job_id: UUID, _p: Any) -> bool:
+        asked.append(job_id)
+        return allowed
+
+    with _check(check):
+        async with _running(_side(store, fake, page_id)) as side:
+            if allowed:
+                job = await side.queue.wait_for_job(str(jid), timeout_s=TEST_TIMEOUT_S)
+                assert job.state == JobState.COMPLETED
+            else:
+                await _wait_db(store, jid, DbJobState.FAILED.value)
+                row = await _row(store, jid)
+                assert (row.error or "").startswith("recovery_refused:")
+                assert (row.result or {}).get("started") is False
+                assert handler.ended(jid) == {
+                    "state": "failed",
+                    "started": False,
+                    "error_code": "recovery_refused",
+                }
+                assert not side.queue.has_job(jid)
+    assert asked == [jid]
+    assert [r.operation for r in fake.received].count("Print-Job") == (1 if allowed else 0)
+
+
+async def test_a_recovery_check_that_raises_leaves_the_row_unprinted_and_queued(
+    handler: RecordingHandler,
+) -> None:
+    store = MemoryJobStore()
+    fake = FakeIppPrinter(job_script=[9])
+    page_id = uuid4()
+    jid = await _queued_row(store, page_id)
+
+    async def check(_j: UUID, _p: Any) -> bool:
+        raise RuntimeError("database is locked")
+
+    with _check(check):
+        async with _running(_side(store, fake, page_id)) as side:
+            await asyncio.sleep(0.1)
+            assert not side.queue.has_job(jid)
+    assert (await _row(store, jid)).state == DbJobState.QUEUED.value  # the next start asks again
+    assert "Print-Job" not in [r.operation for r in fake.received]
+    assert handler.names(jid) == []

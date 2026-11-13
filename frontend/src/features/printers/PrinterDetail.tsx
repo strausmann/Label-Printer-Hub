@@ -1,7 +1,7 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useFeature, useSession } from "../../app/session";
@@ -13,8 +13,8 @@ import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, us
 import { IdentityMismatchBanner, SettledNotice, useIdentityKindLabel } from "./IdentityMismatchBanner";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
-import { describePrinter, isPagePrinter, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
-import { MarkerList, noAnswerYet, ReasonLine } from "./PageStatus";
+import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
+import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
@@ -38,7 +38,8 @@ export function PrinterPage() {
       </div>
     );
   }
-  return <PrinterDetail printer={printer.data} />;
+  // Keyed by the printer: a switch to another printer starts with a clean page (no leftover notices or open panels).
+  return <PrinterDetail key={printer.data.id} printer={printer.data} />;
 }
 
 function PrinterDetail({ printer }: { printer: Printer }) {
@@ -54,8 +55,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const connection: Record<string, unknown> = printer.connection;
   const unknown = statusIsUnknown(status.data);
   const unanswered = page && !unknown && noAnswerYet(status.data);
-  // A page printer that never answered has no reading to be "last updated".
-  const age = unanswered ? undefined : status.data?.last_probe_age_s;
+  // Same rule as the card: only a status that is not a reading of the printer now has an age worth naming.
+  const age = staleAgeSeconds(status.data);
   const ageWord = typeof age === "number" ? formatAge(age, i18n.locale) : "";
   const ahead = status.data?.jobs_ahead ?? 0;
   // Only a key that may write is asked; a status nobody refreshes says nothing about the roll.
@@ -63,9 +64,27 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const admin = session.scope === "admin";
   const identityKind = useIdentityKindLabel();
   const [settledNotice, setSettledNotice] = useState(false);
+  // A swap that comes back is a new question: the "settled already" note of the last one must not answer it.
+  const mismatch = status.data?.identity_mismatch === true;
+  const [wasMismatch, setWasMismatch] = useState(mismatch);
+  if (mismatch !== wasMismatch) {
+    setWasMismatch(mismatch);
+    if (mismatch) setSettledNotice(false);
+  }
   const canAskColour = (session.scope === "print" || session.scope === "admin") && !page && !unknown;
   const testPrint = useTestPrint(printer.id);
   const colourTrigger = useRef<HTMLButtonElement | null>(null);
+  // Answering the roll question removes the prompt, and the focus with it. Once the page has dropped the
+  // prompt, focus goes to the control that edits the colour, or to the material heading when there is none
+  // (a roll without a known width has no such control).
+  const materialHeading = useRef<HTMLHeadingElement | null>(null);
+  const refocusAfterPrompt = useRef(false);
+  const promptShown = canAskColour && status.data?.roll_prompt === true;
+  useEffect(() => {
+    if (promptShown || !refocusAfterPrompt.current) return;
+    refocusAfterPrompt.current = false;
+    (colourTrigger.current ?? materialHeading.current)?.focus();
+  }, [promptShown]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,6 +93,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <h1 className="text-title font-bold">{printer.name}</h1>
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
+          {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked />}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
           <ReasonLine reasons={view.reasons} />
           {page && ahead > 0 && (
@@ -88,10 +108,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
         </div>
       </header>
       <TestPrintFeedback mutation={testPrint} />
-      {status.data?.identity_mismatch === true && (
-        <IdentityMismatchBanner printer={printer} onSettled={() => setSettledNotice(true)} />
-      )}
-      {settledNotice && status.data?.identity_mismatch !== true && <SettledNotice />}
+      {mismatch && <IdentityMismatchBanner printer={printer} onSettled={() => setSettledNotice(true)} />}
+      {settledNotice && !mismatch && <SettledNotice />}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="flex min-w-0 flex-col gap-4">
@@ -116,25 +134,33 @@ function PrinterDetail({ printer }: { printer: Printer }) {
             </>
           ) : (
             <>
-            {canAskColour && <RollColourPrompt printer={printer} status={status.data} onDone={() => queueMicrotask(() => colourTrigger.current?.focus())} />}
-            <section aria-labelledby="material-h" className={PANEL}>
-              <h2 id="material-h" className={SECTION_HEADING}>{t`Material`}</h2>
-              <p className="mt-3">
-                {unknown ? (
-                  <span className="text-ink-2">{t`Tape not known`}</span>
-                ) : (
-                  <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} />
+              {canAskColour && (
+                <RollColourPrompt
+                  printer={printer}
+                  status={status.data}
+                  onDone={() => {
+                    refocusAfterPrompt.current = true;
+                  }}
+                />
+              )}
+              <section aria-labelledby="material-h" className={PANEL}>
+                <h2 id="material-h" ref={materialHeading} tabIndex={-1} className={SECTION_HEADING}>{t`Material`}</h2>
+                <p className="mt-3">
+                  {unknown ? (
+                    <span className="text-ink-2">{t`Tape not known`}</span>
+                  ) : (
+                    <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} offline={status.data?.online === false} />
+                  )}
+                </p>
+                {canAskColour && tapeWidthOf(status.data) !== null && (
+                  <div className="mt-3">
+                    <RollColourEdit printer={printer} status={status.data} triggerRef={colourTrigger} />
+                  </div>
                 )}
-              </p>
-              {canAskColour && tapeWidthOf(status.data) !== null && (
-                <div className="mt-3">
-                  <RollColourEdit printer={printer} status={status.data} triggerRef={colourTrigger} />
-                </div>
-              )}
-              {typeof age === "number" && (
-                <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
-              )}
-            </section>
+                {typeof age === "number" && (
+                  <p className="mt-2 text-small text-ink-2">{t`Last status ${ageWord}`}</p>
+                )}
+              </section>
             </>
           )}
           <QueueSection printer={printer} jobs={queue.data} loading={queue.isPending} failed={queue.isError} />
@@ -171,7 +197,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
             <section aria-labelledby="calibration-h" className={PANEL}>
               <h2 id="calibration-h" className={SECTION_HEADING}>{t`Calibration`}</h2>
               {page ? (
-                <PageCalibration printer={printer} trays={status.data?.trays} />
+                <PageCalibration printer={printer} trays={status.data?.trays} held={mismatch} />
               ) : (
                 <p className="mt-3 text-ink-2">{t`Calibration for this printer will appear here.`}</p>
               )}
@@ -215,44 +241,58 @@ function TraysSection({ trays, unanswered }: { trays: PrinterStatus["trays"]; un
 const rounded = (value: number) => Math.round(value * 100) / 100;
 
 /** One line per tray: calibrated or not, and the way to the calibration page (admin only). */
-function PageCalibration({ printer, trays }: { printer: Printer; trays: Tray[] | null | undefined }) {
+function PageCalibration({ printer, trays, held }: { printer: Printer; trays: Tray[] | null | undefined; held: boolean }) {
   const { t } = useLingui();
   const admin = useSession().scope === "admin";
   const calibration = useCalibration(printer.id);
   if (calibration.isPending) return <p role="status" className="mt-3 text-ink-2">{t`Loading…`}</p>;
   if (calibration.isError) return <p role="alert" className="mt-3 text-bad">{t`The calibration could not be loaded.`}</p>;
   if (calibration.data.length === 0) return <p className="mt-3 text-ink-2">{t`No tray to calibrate.`}</p>;
+  const heldId = `calibration-held-${printer.id}`;
   const label = (row: CalibrationRead) => trays?.find((tray) => tray.key === row.tray)?.label ?? row.tray;
   return (
-    <ul className="mt-3 flex flex-col gap-2">
-      {calibration.data.map((row) => {
-        const done = [row.offset_x_mm, row.offset_y_mm, row.scale_x, row.scale_y, row.rotation_deg].some((v) => v != null);
-        const name = label(row);
-        const dx = row.offset_x_mm == null ? null : rounded(row.offset_x_mm);
-        const dy = row.offset_y_mm == null ? null : rounded(row.offset_y_mm);
-        return (
-          <li key={row.tray} className="flex flex-wrap items-center justify-between gap-3 rounded-r2 bg-sunken px-3 py-2">
-            <span className="flex min-w-0 flex-col">
-              <span className="font-bold [overflow-wrap:anywhere]">{name}</span>
-              <span className="text-small text-ink-2">
-                {done ? t`Calibrated` : t`Not calibrated`}
-                {dx !== null && dy !== null && <> · {t`Offset ${dx} / ${dy} mm`}</>}
+    <>
+      {/* The calibration page is held for everyone while another device answers at the address; say why the buttons are off. */}
+      {held && (
+        <p id={heldId} className="mt-3 text-small text-ink-2">
+          {t`Calibration is held until an admin settles the device swap.`}
+        </p>
+      )}
+      <ul className="mt-3 flex flex-col gap-2">
+        {calibration.data.map((row) => {
+          const done = [row.offset_x_mm, row.offset_y_mm, row.scale_x, row.scale_y, row.rotation_deg].some((v) => v != null);
+          const name = label(row);
+          const dx = row.offset_x_mm == null ? null : rounded(row.offset_x_mm);
+          const dy = row.offset_y_mm == null ? null : rounded(row.offset_y_mm);
+          return (
+            <li key={row.tray} className="flex flex-wrap items-center justify-between gap-3 rounded-r2 bg-sunken px-3 py-2">
+              <span className="flex min-w-0 flex-col">
+                <span className="font-bold [overflow-wrap:anywhere]">{name}</span>
+                <span className="text-small text-ink-2">
+                  {done ? t`Calibrated` : t`Not calibrated`}
+                  {dx !== null && dy !== null && <> · {t`Offset ${dx} / ${dy} mm`}</>}
+                </span>
               </span>
-            </span>
-            {admin && (
-              <Link
-                to="/calibration"
-                search={{ printer: printer.id, tray: row.tray }}
-                aria-label={t`Calibrate ${name}`}
-                className="press inline-flex h-11 items-center justify-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink transition-colors duration-150 hover:bg-sunken focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link"
-              >
-                {t`Calibrate`}
-              </Link>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+              {admin && held && (
+                <Button isDisabled aria-label={t`Calibrate ${name}`} aria-describedby={heldId} className={SECONDARY_BUTTON}>
+                  {t`Calibrate`}
+                </Button>
+              )}
+              {admin && !held && (
+                <Link
+                  to="/calibration"
+                  search={{ printer: printer.id, tray: row.tray }}
+                  aria-label={t`Calibrate ${name}`}
+                  className="press inline-flex h-11 items-center justify-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink transition-colors duration-150 hover:bg-sunken focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link"
+                >
+                  {t`Calibrate`}
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 

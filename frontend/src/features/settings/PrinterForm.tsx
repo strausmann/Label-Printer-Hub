@@ -90,7 +90,8 @@ export function PrinterForm({
     setFormError(null);
     const connection = { ...(conn as object), host: host.trim(), port: portNumber } as PrinterCreate["connection"];
     const queue = { timeout_s: timeoutNumber };
-    const cut_defaults = { half_cut: halfCut };
+    // A QL printer always cuts fully: it has no half cut to default, so the form sends none (263-63).
+    const cut_defaults = isQl ? undefined : { half_cut: halfCut };
     // PUT replaces the whole map: the other widths stay as they are stored.
     const layout_defaults =
       isQl && layoutDraft

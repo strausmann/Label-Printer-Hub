@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.ownership import may_see
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.models.job import JobState
@@ -59,7 +60,8 @@ def _queue(http: Request) -> PrintQueue | None:
 
 
 async def _visible_batch(session: AsyncSession, batch_id: UUID, auth: AuthContext) -> PrintBatch:
-    """The batch, or 404 when it does not exist or belongs to a printer the caller may not use."""
+    """The batch, or 404 when it does not exist, belongs to a printer the caller may not use,
+    or (for a plain API key) another key or no key submitted it (#294)."""
     batch = await batches_repo.get(session, batch_id)
     # Per-printer ACL: a batch of a foreign printer is indistinguishable from a
     # missing one (404).  Empty allowed list = all printers.
@@ -69,6 +71,10 @@ async def _visible_batch(session: AsyncSession, batch_id: UUID, auth: AuthContex
         and auth.allowed_printer_ids
         and str(batch.printer_id) not in auth.allowed_printer_ids
     ):
+        batch = None
+    # Only the key that submitted the batch sees it; for any other plain key the batch does
+    # not exist (the same 404, no hint that it does).
+    if batch is not None and not may_see(auth, batch.created_by):
         batch = None
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found")
@@ -129,8 +135,10 @@ async def get_batch(
     summary="Tape batches that wait for an action",
     description=(
         "The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the "
-        "printers the caller may use; `printer_id` narrows it to one printer. Their actions are "
-        "`continue`, `reprint` and `discard` on the batch."
+        "printers the caller may use; `printer_id` narrows it to one printer. An API key without "
+        "`admin` scope, and a browser session signed in with one, sees only the runs that key "
+        "submitted; SSO users and admin keys see all. Their actions are `continue`, `reprint` "
+        "and `discard` on the batch, allowed to the same callers (another key gets 404)."
     ),
 )
 async def held_runs(
@@ -144,6 +152,8 @@ async def held_runs(
     for info in queue.held_runs(printer_id):
         if allowed and str(info.printer_id) not in allowed:
             continue
+        if not may_see(auth, info.api_key_id):
+            continue  # another key's run: not listed (security review: run ownership)
         run = _run_read(info)
         if run is not None:
             out.append(run)
@@ -156,7 +166,8 @@ _RUN_ERRORS: dict[int | str, dict[str, Any]] = {
     409: {
         "description": (
             "The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, "
-            "`run_not_held`)."
+            "`run_not_held`), or a run that waited 15 minutes and gave up its pictures cannot "
+            "draw them again from the stored labels (`run_pictures_lost`; discard it)."
         )
     },
 }
@@ -191,8 +202,15 @@ async def _run_batch(
 _HELD_NOTE = (
     " Held runs live in memory: a hub restart fails every label that waited for a "
     "confirmation (`tape_run_interrupted`), also a part that was continued but had not started, "
-    "and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At "
-    "most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`)."
+    "and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A "
+    "held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, "
+    "not against the printer's cap: over it a new batch of that key answers 429 "
+    "`too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At "
+    "most five runs per printer are held, at most two of one key: a further held run discards "
+    "that key's own oldest (`run_discarded_limit`), never another key's. While the five places "
+    "are taken, a batch of more than 50 labels from a key without a held run there gets 429 "
+    "`too-many-queued-runs`; smaller batches are always taken. All callers without a key "
+    "(SSO users) count as one key; a browser session signed in with a key counts as that key."
 )
 
 

@@ -117,11 +117,11 @@ from app.db.lifespan import (
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import install_log_buffer
+from app.page_render.pdf import register_pdf_font
 from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printers as printers_repo
 from app.schemas.readiness import ReadinessResponse
-from app.services.backend_router import PrinterYAMLConfig
 from app.services.cleanup_task import CleanupTask
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
@@ -129,10 +129,12 @@ from app.services.layout_engine import LayoutEngine
 from app.services.page_jobs import (
     register_outcome_handler,
     register_page_renderer,
+    register_recovery_check,
     unregister_outcome_handler,
+    unregister_recovery_check,
 )
 from app.services.print_queue import PrintQueue, load_manual_pauses
-from app.services.printer_runtime import PrinterRuntime, tape_config
+from app.services.printer_runtime import PrinterRuntime
 from app.services.printer_runtime import shutdown_wait_s as shutdown_wait_s  # re-export
 from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
@@ -140,8 +142,10 @@ from app.services.readiness import build_readiness_response
 from app.settings_store import SettingsStore
 from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
+from app.sheets.sweep import SheetReservationSweep
 from app.web.api_docs import mount_api_docs
 from app.web.spa import add_security_headers, mount_spa
+from app.web.version_header import add_version_header
 
 # Per ADR 0011 we pin the OpenAPI version explicitly rather than relying on
 # FastAPI's default, so a FastAPI upgrade can't drift the API contract version.
@@ -236,17 +240,6 @@ def _declare_sheet_error_envelope(schema: dict[str, Any]) -> None:
                     response["content"] = ref
 
 
-def _build_configs_from_db(
-    db_printers: list[Any],
-) -> list[PrinterYAMLConfig]:
-    """Runtime configs of the stored tape printers (page printers are skipped).
-
-    Phase 5 (#124): the DB is the only source of printer configuration. Missing or empty
-    connection JSON gets defaults (``printer_runtime.tape_config``).
-    """
-    return [tape_config(p) for p in db_printers if p.backend != "ipp"]
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Wire all application-level singletons into app.state.
@@ -262,15 +255,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     5. Register the sheet outcome handler, start the queue (manual pauses first), sweep
        orphan sheet reservations, start the cleanup task.
     6. ``PrinterRuntime.start()``: the status producers, each probing once at start.
+    7. The periodic sheet reservation sweep (``SheetReservationSweep``, 266-04).
 
     Shutdown sequence
     -----------------
-    ``PrinterRuntime.stop()`` stops the producers, then ``queue.stop()`` once (it drains
-    in-flight jobs up to the longest attached queue timeout, then cancels the rest), then
-    closes the page clients.
+    The reservation sweep stops first. ``PrinterRuntime.stop()`` stops the producers, then
+    ``queue.stop()`` once (it drains in-flight jobs up to the longest attached queue timeout,
+    then cancels the rest), then closes the page clients.
     """
     settings = get_settings()
     warn_if_insecure_cookies(settings)
+    # 266-14: the PDF font is registered before any planner or renderer thread can need it.
+    # A missing font is reported where it is used (the sheet print answers with it).
+    try:
+        register_pdf_font()
+    except Exception:
+        _log.exception("The PDF font could not be registered at startup")
 
     # --- DB startup: migrations first, then in-memory state, then DB writes ---
     await run_migrations()
@@ -321,16 +321,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 'async_session' ist die async_sessionmaker aus app.db.engine (R2-M5)
     job_store = SQLiteJobStore(async_session)
 
-    # Browser sessions: purge those expired for more than a day on every cleanup run.
-    cleanup_task = CleanupTask(
-        store=job_store,
-        retention_days=lambda: int(settings_store.get("jobs.retention_days")),
-        session_purge=lambda: purge_expired_sessions(async_session),
-    )
-    # Started after the orphan sweep below: its first eviction must not delete a job row the
-    # sweep still has to read (T5-1).
-    app.state.cleanup_task = cleanup_task
-
     # --- SSE EventBus ---
     event_bus = EventBus(queue_size=settings.sse_queue_size)
     app.state.event_bus = event_bus
@@ -354,6 +344,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     app.state.print_queue = queue
 
+    # Browser sessions: purge those expired for more than a day on every cleanup run.
+    cleanup_task = CleanupTask(
+        store=job_store,
+        retention_days=lambda: int(settings_store.get("jobs.retention_days")),
+        session_purge=lambda: purge_expired_sessions(async_session),
+        queue=queue,  # finished jobs also leave the queue's memory
+    )
+    # Started after the orphan sweep below: its first eviction must not delete a job row the
+    # sweep still has to read (T5-1).
+    app.state.cleanup_task = cleanup_task
+
     # #224: every printer is wired by the runtime, at startup and on an admin change. The
     # queue is not running yet, so an attach only registers the printer and builds its
     # backend, service and producer; nothing probes before ``runtime.start()`` below.
@@ -367,6 +368,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # handler is registered first (a registry without it would hand the call to a no-op).
     sheet_outcome = SheetCellsOutcome(async_session, event_bus)
     register_outcome_handler("sheet_page", sheet_outcome)
+    sheet_recovery = sheet_outcome.may_recover  # one bound method: unregister compares by identity
+    register_recovery_check("sheet_page", sheet_recovery)
     # Persisted manual pauses must be in place before any worker task exists.
     async with async_session() as _pause_session:
         _initially_paused = await load_manual_pauses(_pause_session)
@@ -378,16 +381,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await cleanup_task.start()
     if _initially_paused:
         _log.info("Restored %d manual printer pause(s) from the database", len(_initially_paused))
-    # Producers last: each probes once at start (no awaited probe at startup).
-    await runtime.start()
-
+    # 266-04: cells of jobs that end while the hub runs, but whose outcome call is lost.
+    reservation_sweep = SheetReservationSweep(async_session, queue, event_bus)
+    app.state.sheet_reservation_sweep = reservation_sweep
     try:
+        # Producers last: each probes once at start (no awaited probe at startup). Inside the
+        # ``try`` so a failing start still reaches ``runtime.stop()`` (265-04).
+        await runtime.start()
+        await reservation_sweep.start()
         yield
     finally:
-        # Producers, then the queue (once, longest attached timeout), then the page clients.
+        # The sweep first: it asks the queue, which the runtime stops. Then the producers, the
+        # queue (once, longest attached timeout), then the page clients.
+        await reservation_sweep.stop()
         await runtime.stop()
         await cleanup_task.stop()
         unregister_outcome_handler("sheet_page", sheet_outcome)
+        unregister_recovery_check("sheet_page", sheet_recovery)
         await engine.dispose()
         # Close shared HTTP clients held by integration plugins that support it.
         # Plugins that pre-date connection pooling may not have aclose(); skip them.
@@ -560,9 +570,20 @@ register_page_renderer("sheet_page", render_sheet_page)
 register_page_renderer("test_page", render_test_page)
 
 
+def _may_name_default_printer(auth: AuthContext | None, state: Any) -> bool:
+    """Whether the caller may learn the default printer's id (a restricted key may not)."""
+    pid = getattr(state, "printer_id", None)
+    if auth is None or pid is None or not auth.allowed_printer_ids:
+        return True
+    return str(pid) in auth.allowed_printer_ids
+
+
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     install_log_buffer()
+    # aiosqlite logs every statement and bound parameter at DEBUG; with the root logger at
+    # DEBUG that would put device serials and key hashes into the log buffer (263-50).
+    logging.getLogger("aiosqlite").setLevel(logging.INFO)
     app = FastAPI(
         lifespan=lifespan,
         title="Label Printer Hub API",
@@ -618,7 +639,9 @@ def create_app() -> _LifespanManager:
         description=(
             "Deep readiness check: database connectivity, alembic migration "
             "state, printer wiring, SNMP probe recency, "
-            "print-queue liveness, and SSE subscriber capacity. "
+            "print-queue liveness, SSE subscriber capacity, and stuck render slots "
+            "(`render_slots`: page renders past `PRINTER_HUB_RENDER_TIMEOUT_S` whose "
+            "thread still runs; fails when every slot is stuck, a hub restart frees them). "
             "Returns 200 with status in {ready, degraded} when all critical "
             "checks pass; 503 with status=not-ready when any critical check "
             "(database / alembic) fails."
@@ -636,6 +659,7 @@ def create_app() -> _LifespanManager:
             get_settings(),
             version=HUB_VERSION,
             revision=HUB_REVISION,
+            reveal_printer_id=_may_name_default_printer(_auth, app.state),
         )
         if body.status == "not-ready":
             response.status_code = 503
@@ -668,6 +692,7 @@ def create_app() -> _LifespanManager:
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.
     add_security_headers(app)
+    add_version_header(app, HUB_VERSION)
     mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
 

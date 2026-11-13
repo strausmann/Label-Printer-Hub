@@ -17,6 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "e2e:harness": "playwright test -c playwright.harness.config.ts",
+    "screenshots": "playwright test -c playwright.screenshots.config.ts && node scripts/check-screenshot-sizes.mjs",
     "gen:api": "python ../backend/scripts/export_openapi.py > openapi.json && openapi-typescript openapi.json -o src/api/schema.gen.ts",
     "i18n:extract": "lingui extract",
     "i18n:compile": "lingui compile --strict --typescript"
@@ -65,5 +66,11 @@
     "workbox-build": "7.4.1",
     "workbox-window": "7.4.1",
     "yaml": "2.9.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "minimatch@>=7 <11.0.1": "11.0.1",
+      "glob@11.1.0": "14.0.4"
+    }
   }
 }

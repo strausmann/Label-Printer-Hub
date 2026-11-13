@@ -83,12 +83,23 @@ export function PrinterPicker({
   );
 }
 
-/** The server's own wording when it gave one (offline, no tape, cover open …), else a plain fallback. */
+/**
+ * The words for a refused print. The codes with a meaning of their own come first (a QR code that does not fit, a batch
+ * with two directions); then the server's own wording when it gave one (offline, no tape, cover open …), else a plain fallback.
+ */
 export function usePrintErrorText(): (error: unknown) => string {
   const { t } = useLingui();
   return (error) => {
     if (error instanceof ApiError) {
       if (error.status === 0) return t`The server cannot be reached.`;
+      if (error.code === "qr_payload_too_long") {
+        const length = Number(error.errorDetail?.length);
+        const max = Number(error.errorDetail?.max_bytes);
+        return Number.isFinite(length) && Number.isFinite(max)
+          ? t`The link in the QR code is ${length} bytes long, but this layout holds at most ${max} bytes. Pick another arrangement or a shorter link.`
+          : t`The link in the QR code is too long for this layout.`;
+      }
+      if (error.code === "conflicting_orientation") return t`These labels ask for different directions (along and across). Print them in separate runs.`;
       if (error.detail && !/^HTTP \d+$/.test(error.detail)) return error.detail;
     }
     return t`The labels could not be sent.`;

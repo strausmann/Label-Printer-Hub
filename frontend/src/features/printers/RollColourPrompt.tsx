@@ -1,18 +1,19 @@
 import { useLingui } from "@lingui/react/macro";
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { Button } from "react-aria-components";
-import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { Button, Radio, RadioGroup } from "react-aria-components";
+import { PANEL, PRIMARY_BUTTON, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { isRollChanged, useRoll, useSetRollColour, type Printer, type PrinterStatus, type Roll, type RollColour } from "./api";
-import { TAPE_COLOURS, useColourNames } from "./model";
+import { isTapeColour, TAPE_COLOURS, useColourNames, type TapeColour } from "./model";
 import { ColourSwatch } from "./TapeSwatch";
 
 const FOCUS = "data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link";
-const CHOICE = `press inline-flex min-h-11 min-w-0 items-center gap-2 rounded-r2 border border-line-strong bg-surface px-3 text-small font-bold text-ink transition-colors duration-150 hover:bg-sunken aria-pressed:border-ink aria-pressed:bg-sunken data-[disabled]:opacity-60 ${FOCUS}`;
+const CHOICE = `press inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-r2 border border-line-strong bg-surface px-3 text-small font-bold text-ink transition-colors duration-150 hover:bg-sunken data-[selected]:border-ink data-[selected]:bg-sunken data-[disabled]:opacity-60 ${FOCUS}`;
 
 /**
- * The colour buttons of a roll. Choosing one is the answer (no separate confirm): the choice goes
- * out with the width and media text this question is about, so a question that went stale while
- * a new roll was inserted is refused (409) instead of colouring the wrong roll.
+ * The colour choices of a roll: one radio group and a separate Save. Picking a colour only marks it
+ * (a slip of the finger on a phone must not colour the roll), Save sends it. The answer goes out with
+ * the width and media text this question is about, so a question that went stale while a new roll was
+ * inserted is refused (409) instead of colouring the wrong roll.
  */
 function ColourChoices({
   printerId,
@@ -25,7 +26,7 @@ function ColourChoices({
   printerId: string;
   roll: Roll;
   current: RollColour | null;
-  /** The non-colour answer next to the colours: "Skip" for a new roll, "Remove colour" when editing. */
+  /** The non-colour answer next to Save: "Skip" for a new roll, "Remove colour" when editing. It answers at once. */
   secondary: { label: string; hint?: string };
   onDone: () => void;
   /** Edit mode moves focus to the current colour (or the first); the new-roll prompt never steals it. */
@@ -34,13 +35,25 @@ function ColourChoices({
   const { t } = useLingui();
   const names = useColourNames();
   const set = useSetRollColour(printerId);
+  const [picked, setPicked] = useState<TapeColour | null>(current);
   const [changedAgain, setChangedAgain] = useState(false);
+  // Counts failed saves: each one hands the focus back to the choices (see the effect below).
+  const [failures, setFailures] = useState(0);
   const group = useRef<HTMLDivElement | null>(null);
+  const focusChoice = useCallback(() => {
+    const radios = group.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [];
+    (Array.from(radios).find((r) => r.checked) ?? radios[0])?.focus();
+  }, []);
   useEffect(() => {
-    if (!focusOnMount) return;
-    const buttons = group.current?.querySelectorAll<HTMLButtonElement>("button") ?? [];
-    (Array.from(buttons).find((b) => b.getAttribute("aria-pressed") === "true") ?? buttons[0])?.focus();
-  }, [focusOnMount]);
+    if (focusOnMount) focusChoice();
+  }, [focusOnMount, focusChoice]);
+  // While the save was pending the buttons were disabled, and a focused Save dropped the focus to the
+  // page. Once the controls are back, a failure returns it to the choices, unless it went somewhere else.
+  useEffect(() => {
+    if (failures === 0 || set.isPending) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body || group.current?.parentElement?.contains(active)) focusChoice();
+  }, [failures, set.isPending, focusChoice]);
 
   const send = (colour: RollColour | null) => {
     setChangedAgain(false);
@@ -49,7 +62,13 @@ function ColourChoices({
       {
         onSuccess: onDone,
         // The status and roll are read again; the question that comes back is about the new roll.
-        onError: (error) => setChangedAgain(isRollChanged(error)),
+        onError: (error) => {
+          setFailures((n) => n + 1);
+          const again = isRollChanged(error);
+          setChangedAgain(again);
+          // The colour that was marked belonged to the old roll.
+          if (again) setPicked(null);
+        },
       },
     );
   };
@@ -59,19 +78,29 @@ function ColourChoices({
     <div className="flex flex-col gap-3">
       {changedAgain && <p role="alert" className="text-small font-bold">{t`The roll changed again while you were choosing. Pick the colour of the new roll.`}</p>}
       {failed && <p role="alert" className="text-small font-bold text-bad">{t`The colour could not be saved. Try again.`}</p>}
-      <div ref={group} role="group" aria-label={t`Tape colour`} className="grid grid-cols-2 gap-2 min-[480px]:grid-cols-4">
-        {TAPE_COLOURS.map((colour) => (
-          <Button
-            key={colour}
-                        className={CHOICE}
-            aria-pressed={current === colour}
-            isDisabled={set.isPending}
-            onPress={() => send(colour)}
-          >
-            <ColourSwatch colour={colour} />
-            <span className="[overflow-wrap:anywhere]">{names[colour]}</span>
-          </Button>
-        ))}
+      <div ref={group}>
+        <RadioGroup
+          aria-label={t`Tape colour`}
+          orientation="horizontal"
+          value={picked}
+          onChange={(value) => {
+            if (isTapeColour(value)) setPicked(value);
+          }}
+          isDisabled={set.isPending}
+          className="grid grid-cols-2 gap-2 min-[480px]:grid-cols-4"
+        >
+          {TAPE_COLOURS.map((colour) => (
+            <Radio key={colour} value={colour} className={CHOICE}>
+              <ColourSwatch colour={colour} />
+              <span className="[overflow-wrap:anywhere]">{names[colour]}</span>
+            </Radio>
+          ))}
+        </RadioGroup>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button className={PRIMARY_BUTTON} isDisabled={set.isPending || picked === null || picked === current} onPress={() => picked !== null && send(picked)}>
+          {t`Save`}
+        </Button>
         <Button className={`${SECONDARY_BUTTON} min-w-0 [overflow-wrap:anywhere]`} isDisabled={set.isPending} onPress={() => send(null)}>
           {secondary.label}
         </Button>
@@ -141,11 +170,28 @@ export function RollColourEdit({
   const [open, setOpen] = useState(false);
   const roll = useRoll(printer.id, open);
   const colour = status?.tape_colour ?? null;
-  const close = () => {
+  // Whether the keyboard focus sits inside the open panel (a panel that is removed fires no blur of its own).
+  const focusInside = useRef(false);
+  // Stable, so the Escape handler below subscribes once per opening and not on every render.
+  const close = useCallback(() => {
     setOpen(false);
+    focusInside.current = false;
     // The choices go away with the focus on them: hand it back to the control that opened them.
     queueMicrotask(() => triggerRef.current?.focus());
-  };
+  }, [triggerRef]);
+  // A new roll question replaces the panel: the colour it would edit belongs to the roll that was just taken out.
+  // The panel closes without a rebinding to the new roll.
+  const prompted = status?.roll_prompt === true;
+  const [wasPrompted, setWasPrompted] = useState(prompted);
+  if (prompted !== wasPrompted) {
+    setWasPrompted(prompted);
+    if (prompted) setOpen(false);
+  }
+  useEffect(() => {
+    if (!prompted || !focusInside.current) return;
+    focusInside.current = false;
+    triggerRef.current?.focus();
+  }, [prompted, triggerRef]);
   // Escape closes the choices for a keyboard-only operator.
   useEffect(() => {
     if (!open) return;
@@ -154,15 +200,29 @@ export function RollColourEdit({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  });
+  }, [open, close]);
   return (
     <div className="flex flex-col gap-3">
-      <Button ref={triggerRef} className={`${SECONDARY_BUTTON} self-start`} aria-expanded={open} onPress={() => (open ? close() : setOpen(true))}>
+      {/* While the new-roll question is open above, it is the one to answer: the trigger stays focusable
+          (focus comes back to it) but opens no second set of choices. */}
+      <Button
+        ref={triggerRef}
+        className={`${SECONDARY_BUTTON} self-start aria-disabled:opacity-60`}
+        aria-expanded={open}
+        aria-disabled={prompted || undefined}
+        onPress={() => (open ? close() : !prompted && setOpen(true))}
+      >
         {colour ? t`Change colour` : t`Set colour`}
       </Button>
       {open && !roll.data && <RollUnavailable roll={roll} />}
       {open && roll.data && (
-        <>
+        <div
+          className="flex flex-col gap-3"
+          onFocus={() => (focusInside.current = true)}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) focusInside.current = false;
+          }}
+        >
           <ColourChoices
             printerId={printer.id}
             roll={roll.data}
@@ -172,7 +232,7 @@ export function RollColourEdit({
             focusOnMount
           />
           <Button className={`${SECONDARY_BUTTON} self-start`} onPress={close}>{t`Cancel`}</Button>
-        </>
+        </div>
       )}
     </div>
   );

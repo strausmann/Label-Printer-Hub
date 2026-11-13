@@ -43,6 +43,13 @@ A bare ``BSD License`` classifier is deliberately *not* mapped: it covers BSD-2-
 BSD-3-Clause and others, and guessing would be a silent licence decision. Such a package needs
 an exception that names the licence its licence file really carries.
 
+An exception may pin the reviewed licence file with ``licence-text-sha256`` (see
+:func:`licence_text_sha256`). When the collected ``LicenseText`` hashes differently the exception
+does not apply and the record is ``UNKNOWN``: a licence file that changed since the review is
+not covered by it. A ``Proprietary`` classifier next to other classifiers also yields
+``UNKNOWN`` instead of ``<licence> OR Proprietary``. How to refresh a hash is written in
+``licence-policy.yml`` (``x-licence-text-sha256-refresh``).
+
 Measured on 2026-11-05 (spike S3a, the runtime venv of ``backend/pyproject.toml``):
 expressions, classifiers and metadata strings listed in the two maps below are exactly the
 ones seen; the packages that still resolve to ``UNKNOWN`` (``pysnmp``, ``qrcode``, ``Jinja2``,
@@ -56,6 +63,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -67,6 +75,8 @@ from pathlib import Path
 #: The project's own distribution, excluded from the check.
 OWN_PACKAGE = "label-printer-hub-backend"
 
+PROPRIETARY = "Proprietary"
+
 #: Classifier names (after ``License ::``) seen in the runtime environment, mapped to SPDX.
 CLASSIFIER_TO_SPDX: Mapping[str, str] = {
     "Apache Software License": "Apache-2.0",
@@ -74,7 +84,7 @@ CLASSIFIER_TO_SPDX: Mapping[str, str] = {
     "GNU Lesser General Public License v2 or later (LGPLv2+)": "LGPL-2.0-or-later",
     "MIT License": "MIT",
     "Mozilla Public License 2.0 (MPL 2.0)": "MPL-2.0",
-    "Other/Proprietary License": "Proprietary",
+    "Other/Proprietary License": PROPRIETARY,
 }
 
 #: Values of the free-text ``License`` metadata field seen in the runtime environment.
@@ -89,6 +99,8 @@ METADATA_TO_SPDX: Mapping[str, str] = {
 
 UNKNOWN = "UNKNOWN"
 
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
 _TOKEN = re.compile(r"\(|\)|[A-Za-z0-9][A-Za-z0-9.+:\-]*")
 
 
@@ -102,6 +114,8 @@ class LicenceException:
     #: The ``License-Expression`` string the package declared when the exception was reviewed
     #: (only for packages that declare something that is not usable as it stands).
     reviewed_expression: str | None = None
+    #: SHA-256 (lower-case hex, UTF-8) of the ``LicenseText`` that was reviewed.
+    licence_text_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,8 +158,13 @@ def load_policy(path: Path) -> Policy:
         reviewed = raw.get("reviewed_expression")
         if reviewed is not None and not (isinstance(reviewed, str) and reviewed.strip()):
             raise ValueError(f"{path}: reviewed_expression must be a non-empty string: {raw!r}")
+        digest = raw.get("licence-text-sha256")
+        if digest is not None and not (isinstance(digest, str) and _SHA256.fullmatch(digest)):
+            raise ValueError(
+                f"{path}: licence-text-sha256 must be 64 lower-case hex digits: {raw!r}"
+            )
         exceptions[normalise_purl(purl)] = LicenceException(
-            purl, licence, reason, reviewed.strip() if reviewed else None
+            purl, licence, reason, reviewed.strip() if reviewed else None, digest
         )
     return Policy(allowed=frozenset(licences), exceptions=exceptions)
 
@@ -243,6 +262,9 @@ def _classifier_expression(classifiers: str) -> tuple[str | None, bool]:
     unmapped = [part for part, item in zip(parts, mapped, strict=True) if item is None]
     if unmapped:
         return None, all(part == _AMBIGUOUS_CLASSIFIER for part in unmapped)
+    if len(mapped) > 1 and PROPRIETARY in mapped:
+        # ``X; Other/Proprietary License`` must not read as ``X OR Proprietary`` and pass.
+        return None, False
     return " OR ".join(item for item in mapped if item is not None), True
 
 
@@ -268,11 +290,33 @@ def _declared(entry: Mapping[str, str]) -> str:
     return "" if value == UNKNOWN else value
 
 
+def licence_text_sha256(entry: Mapping[str, str]) -> str:
+    """SHA-256 (hex) of the ``LicenseText`` exactly as pip-licenses reports it, UTF-8 encoded."""
+    return hashlib.sha256(entry.get("LicenseText", UNKNOWN).encode("utf-8")).hexdigest()
+
+
+def _text_changed(entry: Mapping[str, str], exception: LicenceException) -> bool:
+    """Whether the exception pins a licence text and the collected one differs."""
+    pinned = exception.licence_text_sha256
+    return pinned is not None and pinned != licence_text_sha256(entry)
+
+
+def _exception_matches(declared: str, exception: LicenceException) -> bool:
+    """Whether the declared expression is the one the exception was reviewed against (or none)."""
+    return not declared or declared == exception.reviewed_expression
+
+
 def _stale_exception(entry: Mapping[str, str], policy: Policy) -> str | None:
     """Why an exception does not apply to this record, or None when it does or there is none."""
     exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
     declared = _declared(entry)
-    if exception is None or not declared or declared == exception.reviewed_expression:
+    if exception is None:
+        return None
+    if _exception_matches(declared, exception):
+        if _text_changed(entry, exception):
+            return (
+                "exception reviewed against a different licence text, the licence file has changed"
+            )
         return None
     reviewed = exception.reviewed_expression or "no declared expression"
     return f"exception reviewed against {reviewed}, package now declares {declared}"
@@ -282,8 +326,9 @@ def classify(entry: Mapping[str, str], policy: Policy) -> tuple[str, bool]:
     """Return ``(licence expression, allowed)`` for one pip-licenses ``--from=all`` record."""
     exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
     declared = _declared(entry)
-    if exception is not None and (not declared or declared == exception.reviewed_expression):
-        expression = exception.licence
+    if exception is not None and _exception_matches(declared, exception):
+        # A changed licence file voids the exception, whatever the classifiers would say.
+        expression = UNKNOWN if _text_changed(entry, exception) else exception.licence
     elif _is_spdx_expression(declared):
         expression = declared
     elif declared and exception is not None:

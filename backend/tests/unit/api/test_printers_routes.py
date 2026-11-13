@@ -1,9 +1,8 @@
 """Unit tests for app.api.routes.printers — 7 endpoints (Phase 6a Task 1).
 
 Each test builds a minimal FastAPI app with the printers router mounted, an
-in-memory SQLite DB injected via ``get_session`` override, and (for the status
-probe) a monkeypatched ``_probe_status_sync`` so no real TCP connection is
-attempted.
+in-memory SQLite DB injected via ``get_session`` override. The status route reads the
+cache only, so no connection to a printer is attempted.
 
 Test mapping (one test per endpoint):
     1. GET  /api/v1/printers            → list_printers
@@ -216,7 +215,7 @@ async def test_get_printer_status_reads_cache_and_returns_online(session) -> Non
 
 @pytest.mark.asyncio
 async def test_get_printer_tape_returns_tape_spec_from_cache(session) -> None:
-    """get_printer_tape reads the cached status block and returns the TapeSpec."""
+    """get_printer_tape reads the cached status block and returns a ``TapeRead``."""
     printer = await _make_printer(session)
 
     # Insert a cached status block for a 12mm laminated tape
@@ -235,8 +234,12 @@ async def test_get_printer_tape_returns_tape_spec_from_cache(session) -> None:
     r = client.get(f"/api/v1/printers/{printer.id}/tape")
 
     assert r.status_code == 200
-    body = r.json()
-    assert body["width_mm"] == 12
+    assert r.json() == {
+        "width_mm": 12,
+        "label": "12mm",
+        "media_raw": '12mm(0.47")',
+        "colour": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +385,7 @@ async def test_get_printer_status_no_cache_returns_pending(session) -> None:
     # Deliberately omit any PrinterStatusCache row.
 
     app = _build_app(session)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({printer.id})
     client = TestClient(app, raise_server_exceptions=True)
     r = client.get(f"/api/v1/printers/{printer.id}/status")
 

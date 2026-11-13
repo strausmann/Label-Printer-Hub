@@ -446,9 +446,10 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
     import app.db.engine as engine_module
     from app.api.routes.sheet_print import get_lookup_service
 
+    # One key per request: a key previews one sheet at a time (266-07).
     keys = {
-        "preview": {"X-Label-Hub-Key": await _insert_key(["read"])},
-        "print": {"X-Label-Hub-Key": await _insert_key(["print"])},
+        "preview": [{"X-Label-Hub-Key": await _insert_key(["read"])} for _ in range(8)],
+        "print": [{"X-Label-Hub-Key": await _insert_key(["print"])}] * 8,
     }
     pid, _ = await _printer()
     code = await _sheet()
@@ -466,11 +467,12 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
     }
     url = _url(pid) if route == "preview" else f"/api/v1/print/{pid}/sheet"
     pool = engine_module.engine.pool
+    baseline = pool.checkedout()  # type: ignore[attr-defined]  # before the requests (266-15)
 
     try:
         tasks = [
-            asyncio.create_task(api_client_with_seed.post(url, json=body, headers=keys[route]))
-            for _ in range(8)
+            asyncio.create_task(api_client_with_seed.post(url, json=body, headers=headers))
+            for headers in keys[route]
         ]
         for _ in range(100):  # until every request is inside its lookups: 8 x 6 started
             if slow.started >= 48:
@@ -482,4 +484,233 @@ async def test_no_db_connection_is_held_while_the_lookups_run(
     finally:
         fastapi_app.dependency_overrides.pop(get_lookup_service, None)
 
-    assert held == 0
+    assert held <= baseline
+
+
+class _GatedLookup:
+    """An integration that answers once ``gate`` is set; ``entered`` is set by the first call."""
+
+    def __init__(self) -> None:
+        import asyncio
+
+        self.gate = asyncio.Event()
+        self.entered = asyncio.Event()
+
+    async def lookup(self, source_app: str, identifier: str) -> Any:
+        from app.schemas.label_data import LabelData
+
+        self.entered.set()
+        await self.gate.wait()
+        return LabelData(
+            source_app=source_app,
+            title=f"T {identifier}",
+            primary_id=f"P-{identifier}",
+            qr_payload=f"https://x.example.invalid/{identifier}",
+        )
+
+
+async def test_preview_cap_per_key(api_client_with_seed: httpx.AsyncClient) -> None:
+    """266-07: one preview per key at a time; the second answers 429 in the rate limit's shape.
+    Another key is not affected, and the key may preview again once the first one ended."""
+    import asyncio
+
+    from app.api.routes.sheet_print import get_lookup_service
+
+    mine = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    other = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")  # the lifespan starts on the first request
+    transport_app = api_client_with_seed._transport.app  # type: ignore[attr-defined]
+    fastapi_app = getattr(transport_app, "_app", transport_app)
+    gated = _GatedLookup()
+    fastapi_app.dependency_overrides[get_lookup_service] = lambda: gated
+    body = {
+        "items": [{"content_type": "qr_two_lines", "lookup": {"app": "grocy", "identifier": "1"}}],
+        "placements": [{"sheet": code}],
+    }
+    try:
+        first = asyncio.create_task(api_client_with_seed.post(_url(pid), json=body, headers=mine))
+        async with asyncio.timeout(5):
+            await gated.entered.wait()  # the first preview is inside its lookup
+
+        second = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
+        assert second.status_code == 429, second.text
+        detail = second.json()["detail"]
+        assert set(detail) == {"error_code", "error_message", "retry_after_seconds"}
+        assert detail["error_code"] == "too-many-previews"
+        assert second.headers["Retry-After"] == str(detail["retry_after_seconds"])
+
+        third = await api_client_with_seed.post(_url(pid), json=_body(code), headers=other)
+        assert third.status_code == 200, third.text
+
+        gated.gate.set()
+        assert (await first).status_code == 200
+    finally:
+        gated.gate.set()
+        fastapi_app.dependency_overrides.pop(get_lookup_service, None)
+
+    # Release path: the slot is free after a success and after a failure.
+    again = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
+    assert again.status_code == 200, again.text
+    bad = _body(code, 2)
+    bad["items"].append(
+        {"content_type": "qr_two_lines", "lookup": {"app": "no-such-app", "identifier": "7"}}
+    )
+    assert (await api_client_with_seed.post(_url(pid), json=bad, headers=mine)).status_code == 422
+    after = await api_client_with_seed.post(_url(pid), json=_body(code), headers=mine)
+    assert after.status_code == 200, after.text
+
+
+async def test_a_preview_past_the_render_limit_is_504_and_the_hub_shows_it_stuck(
+    api_client_with_seed: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#293: a hung page render answers 504 ``render-timeout`` in the route's error shape. The
+    key keeps its preview slot until the thread ends (429), another key previews meanwhile, and
+    readiness counts the stuck render until it ends."""
+    import asyncio
+    import threading
+
+    from app.services import render_slots
+    from app.sheets import print_service
+
+    headers = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    real_draw = print_service._draw_page
+    release = threading.Event()
+
+    def hung(*args: Any) -> Any:
+        release.wait(10.0)
+        return real_draw(*args)
+
+    monkeypatch.setattr(render_slots, "default_timeout_s", lambda: 0.05)
+    monkeypatch.setattr(print_service, "_draw_page", hung)
+    try:
+        resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+        assert resp.status_code == 504, resp.text
+        detail = resp.json()["detail"]
+        assert set(detail) == {"error_code", "error_message", "error_detail"}
+        assert detail["error_code"] == "render-timeout"
+        assert SENTINEL not in resp.text
+
+        ready = await api_client_with_seed.get("/readiness", headers=headers)
+        assert ready.status_code == 200, ready.text
+        check = ready.json()["checks"]["render_slots"]
+        assert check["metric"] == {"stuck": 1, "slots": render_slots.MAX_CONCURRENT_RENDERS}
+
+        monkeypatch.setattr(print_service, "_draw_page", real_draw)
+        monkeypatch.setattr(render_slots, "default_timeout_s", lambda: 30.0)
+        # The key's render still draws: its next preview is refused, another key's runs.
+        again = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+        assert again.status_code == 429, again.text
+        assert again.json()["detail"]["error_code"] == "too-many-previews"
+        other = {"X-Label-Hub-Key": await _insert_key(["read"])}
+        theirs = await api_client_with_seed.post(_url(pid), json=_body(code), headers=other)
+        assert theirs.status_code == 200, theirs.text
+    finally:
+        release.set()
+    async with asyncio.timeout(10):
+        while render_slots.stuck_renders():
+            await asyncio.sleep(0.01)
+    after = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+    assert after.status_code == 200, after.text
+
+
+async def test_a_real_preview_draws_with_a_single_render_slot(
+    api_client_with_seed: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deadlock guard (#293): the preview takes one render slot per page and none inside it;
+    with only one slot it still answers."""
+    import asyncio
+
+    from app.services import render_slots
+
+    headers = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")
+    slots = render_slots._current()
+    monkeypatch.setattr(slots, "gate", asyncio.Semaphore(1))
+    async with asyncio.timeout(20):
+        resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+    assert resp.status_code == 200, resp.text
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_a_preview_without_a_free_render_slot_is_503_at_once(
+    api_client_with_seed: httpx.AsyncClient,
+) -> None:
+    """F2 (#293): with every slot stuck the preview answers 503 ``render-unavailable`` in the
+    route's error shape at once, instead of hanging until the client gives up."""
+    import asyncio
+    import threading
+
+    from app.services import render_slots
+
+    headers = {"X-Label-Hub-Key": await _insert_key(["read"])}
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")
+    release = threading.Event()
+    try:
+        for _ in range(render_slots.MAX_CONCURRENT_RENDERS):
+            with pytest.raises(render_slots.RenderTimeoutError):
+                await render_slots.render_bounded(
+                    lambda: release.wait(10.0), label="t", owner=None, timeout_s=0.05
+                )
+        async with asyncio.timeout(5):
+            resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)
+        assert resp.status_code == 503, resp.text
+        detail = resp.json()["detail"]
+        assert set(detail) == {"error_code", "error_message", "error_detail"}
+        assert detail["error_code"] == "render-unavailable"
+    finally:
+        release.set()
+    async with asyncio.timeout(10):
+        while render_slots.stuck_renders():
+            await asyncio.sleep(0.01)
+
+
+async def test_a_key_with_a_stuck_page_job_render_gets_429_for_its_preview(
+    api_client_with_seed: httpx.AsyncClient,
+) -> None:
+    """F1 (#293): stuck renders count per key across previews and page jobs."""
+    import asyncio
+    import threading
+    from uuid import UUID
+
+    from app.services import render_slots
+
+    key = await _insert_key(["read"])
+    pid, _ = await _printer()
+    code = await _sheet()
+    await api_client_with_seed.get("/healthz")
+    async with _factory()() as s:
+        from app.models.api_key import ApiKey
+
+        key_id = (
+            await s.execute(select(ApiKey.id).where(ApiKey.key_prefix == key[:16]))
+        ).scalar_one()
+    release = threading.Event()
+    try:
+        with pytest.raises(render_slots.RenderTimeoutError):
+            await render_slots.render_bounded(
+                lambda: release.wait(10.0),
+                label="page job",
+                owner=render_slots.owner_of(UUID(str(key_id))),
+                timeout_s=0.05,
+            )
+        resp = await api_client_with_seed.post(
+            _url(pid), json=_body(code), headers={"X-Label-Hub-Key": key}
+        )
+        assert resp.status_code == 429, resp.text
+        assert resp.json()["detail"]["error_code"] == "too-many-previews"
+        other = {"X-Label-Hub-Key": await _insert_key(["read"])}
+        theirs = await api_client_with_seed.post(_url(pid), json=_body(code), headers=other)
+        assert theirs.status_code == 200, theirs.text
+    finally:
+        release.set()
+    async with asyncio.timeout(10):
+        while render_slots.stuck_renders():
+            await asyncio.sleep(0.01)

@@ -17,6 +17,7 @@ the backend source root.
 """
 
 import configparser
+import os
 import shutil
 import subprocess
 import sys
@@ -53,8 +54,6 @@ def test_no_pending_autogenerate_diff() -> None:
         # alembic env.py does `import app.models` to populate SQLModel.metadata.
         # Make the backend package importable from the sandbox by adding the
         # backend dir to PYTHONPATH for the subprocess.
-        import os
-
         env = os.environ.copy()
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = f"{BACKEND_DIR}{os.pathsep}{existing}" if existing else str(BACKEND_DIR)

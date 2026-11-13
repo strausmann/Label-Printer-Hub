@@ -318,3 +318,60 @@ async def test_tape_route_serves_a_fresh_tape(api) -> None:
     r = await client.get(f"/api/v1/printers/{pid}/tape")
     assert r.status_code == 200
     assert r.json()["width_mm"] == 12
+
+
+async def test_stale_status_has_no_last_error(api) -> None:
+    """A stale status says "unknown", so it must not carry the error of an old probe (263-26)."""
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(
+        factory,
+        pid,
+        age_s=10_000,
+        parsed={"online": False, "loaded_tape_mm": None, "last_error": "timed out"},
+    )
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = await _status(client, pid)
+    assert body["stale"] is True
+    assert body["last_error"] is None
+
+
+async def test_unpolled_is_not_stale(api) -> None:
+    """``stale`` means polled and older than the bound; an unpolled printer is not that (263-27)."""
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, age_s=5)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime(set())
+    body = await _status(client, pid)
+    assert body["polled"] is False
+    assert body["stale"] is False
+    assert body["note"] == "Not polled"
+
+
+async def test_unpolled_old_row_is_not_stale_either(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, age_s=10_000)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime(set())
+    body = await _status(client, pid)
+    assert (body["polled"], body["stale"], body["note"]) == (False, False, "Not polled")
+
+
+async def test_unpolled_without_row_says_not_polled(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime(set())
+    body = await _status(client, pid)
+    assert body["polled"] is False
+    assert body["stale"] is False
+    assert body["note"] == "Not polled"
+    assert body["online"] is None
+
+
+async def test_polled_without_row_still_waits_for_the_first_probe(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = await _status(client, pid)
+    assert body["polled"] is True
+    assert body["note"].startswith("No probe yet")

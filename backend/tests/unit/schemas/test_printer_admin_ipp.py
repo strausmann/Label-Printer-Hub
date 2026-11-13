@@ -255,30 +255,6 @@ def test_ipp_identity_salt_uses_effective_host_and_port() -> None:
     )
 
 
-def test_build_configs_from_db_skips_ipp_rows() -> None:
-    from types import SimpleNamespace
-
-    from app.main import _build_configs_from_db
-
-    rows = [
-        SimpleNamespace(
-            slug="laser",
-            name="Laser",
-            backend="ipp",
-            model="IPP printer",
-            connection={"uri": URI, "tls_verify": True},
-        ),
-        SimpleNamespace(
-            slug="workshop",
-            name="Workshop",
-            backend="ptouch",
-            model="PT-P750W",
-            connection={"host": "192.0.2.10", "port": 9100},
-        ),
-    ]
-    assert [c.slug for c in _build_configs_from_db(rows)] == ["workshop"]
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("exc", "code"),
@@ -343,7 +319,7 @@ async def test_probe_timeout_is_min_of_five_and_queue_timeout() -> None:
         seen.append(kwargs["query_timeout_s"])
         raise StopError
 
-    with patch.object(svc, "IppClient", side_effect=spy):
+    with patch.object(svc, "AdminProbeClient", side_effect=spy):
         for queue_timeout in (30, 3):
             with pytest.raises(StopError):
                 await svc.probe_ipp(IppConnection(uri=URI), queue_timeout_s=queue_timeout)

@@ -11,6 +11,8 @@ import pathlib
 
 import pytest
 import pytest_asyncio
+from app.sheets.locking import install_statement_counter
+from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
@@ -22,6 +24,12 @@ os.environ.setdefault(
     base64.urlsafe_b64encode(b"test-secret-key-0123456789abcdef").decode(),
 )
 os.environ.setdefault("PRINTER_HUB_PUBLIC_URL", "http://localhost:8000")
+
+# The test engine factory: every engine a test creates counts its statements, as the app's
+# engine does, so the sheet write lock's order check (264-01) runs in every test. Installed on
+# the ``Engine`` class because the tests create their engines in many places; a test of an
+# engine without the counter removes it for its own duration.
+install_statement_counter(Engine)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

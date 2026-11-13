@@ -19,6 +19,8 @@ export function PauseReason({ pause }: { pause: Printer["pause"] }) {
     tape_mismatch: t`Wrong tape loaded`,
     offline: t`Printer is offline`,
     printer_offline: t`Printer is offline`,
+    // The hub's own hold while a page printer's status check is not running (it retries).
+    "status-unavailable": t`Waiting for the printer's status check`,
   };
   // A page printer pauses with its own keyword (`toner-empty`); words for those, the code only as a last resort.
   const text = Object.hasOwn(known, pause.reason_code)

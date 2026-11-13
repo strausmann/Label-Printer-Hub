@@ -161,7 +161,8 @@ picked up on the fly.
 
 `sheet.updated` (channel `sheets`) is published after every committed change to a sheet's
 cells: a reservation, a release, the outcome of a page job (`used`, `unconfirmed` or freed), the
-startup sweep, a resolve of unconfirmed cells and a manual edit. Its `data` is
+startup sweep, the periodic reservation sweep (cells of jobs whose outcome call was lost), a
+resolve of unconfirmed cells and a manual edit. Its `data` is
 `{"code": str, "free": int, "total": int, "changed": [int], "state": str}`, where `changed`
 lists the cell numbers touched and `state` is the sheet's state. Sheets carry no printer
 restriction (OC-11), so every stream receives this channel regardless of

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, SIGNED_IN } from "../../test-utils";
 import { job, mockApi, PRINTER_A, respond } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -17,6 +17,31 @@ function routes(state: string, over: Record<string, unknown> = {}, extra: Record
     ...extra,
   };
 }
+
+describe("JobDetail for a read key", () => {
+  it("read key sees disabled retry", async () => {
+    mockApi(routes("failed"));
+    await renderApp({ path: `/jobs/${ID}`, session: { ...SIGNED_IN, scope: "read" } });
+    await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeDisabled();
+    expect(screen.getByText("Retrying and cancelling need a print or admin key.")).toBeVisible();
+  });
+
+  it("read key sees disabled cancel", async () => {
+    mockApi(routes("queued"));
+    await renderApp({ path: `/jobs/${ID}`, session: { ...SIGNED_IN, scope: "read" } });
+    await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("a print key keeps Retry enabled and shows no hint", async () => {
+    mockApi(routes("failed"));
+    await renderApp({ path: `/jobs/${ID}`, session: { ...SIGNED_IN, scope: "print" } });
+    await screen.findByRole("heading", { level: 1, name: "Cordless drill" });
+    expect(screen.getByRole("button", { name: "Retry" })).toBeEnabled();
+    expect(screen.queryByText(/need a print or admin key/)).toBeNull();
+  });
+});
 
 describe("JobDetail", () => {
   it("Retry only on failed", async () => {

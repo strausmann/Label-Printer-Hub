@@ -111,7 +111,7 @@ export interface paths {
         put?: never;
         /**
          * Resolve a flagged device swap
-         * @description Ends the device-swap flag of a printer (#231). ``same_device`` accepts the flagged device as the printer and keeps its calibration; ``replaced`` does the same and deletes every stored calibration of the printer, in one transaction. The held sheet and calibration jobs are released once the change is committed. 404 for an unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged. Admin only.
+         * @description Ends the device-swap flag of a printer (#231). ``same_device`` accepts the flagged device as the printer and keeps its calibration; ``replaced`` does the same and deletes every stored calibration of the printer, in one transaction. The held sheet and calibration jobs are released once the change is committed. 404 for an unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged and 409 ``identity-changed`` when the flagged device is no longer the one reviewed. Admin only.
          */
         post: operations["resolve_identity_api_v1_admin_printers__printer_id__identity_resolve_post"];
         delete?: never;
@@ -221,7 +221,7 @@ export interface paths {
         };
         /**
          * Tape batches that wait for an action
-         * @description The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the printers the caller may use; `printer_id` narrows it to one printer. Their actions are `continue`, `reprint` and `discard` on the batch.
+         * @description The tape runs (#277) that wait for a confirmation or stopped, oldest first, for the printers the caller may use; `printer_id` narrows it to one printer. An API key without `admin` scope, and a browser session signed in with one, sees only the runs that key submitted; SSO users and admin keys see all. Their actions are `continue`, `reprint` and `discard` on the batch, allowed to the same callers (another key gets 404).
          */
         get: operations["held_runs_api_v1_batches_runs_held_get"];
         put?: never;
@@ -269,7 +269,7 @@ export interface paths {
         put?: never;
         /**
          * Start the next sub-job of a tape batch
-         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277). Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         * @description A tape batch of more than 50 labels prints in sub-jobs; each further sub-job starts only after this call, for example after the user checked or changed the tape (#277). Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.
          */
         post: operations["continue_batch_api_v1_batches__batch_id__continue_post"];
         delete?: never;
@@ -289,7 +289,7 @@ export interface paths {
         put?: never;
         /**
          * Give up a held tape batch
-         * @description Discards a run that waits for a confirmation or stopped (#277): the labels of the waiting parts are cancelled (`run_discarded`), a stopped run's failed labels stay as they are, and the run is forgotten. A printing run answers 409 `run_not_held`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         * @description Discards a run that waits for a confirmation or stopped (#277): the labels of the waiting parts are cancelled (`run_discarded`), a stopped run's failed labels stay as they are, and the run is forgotten. A printing run answers 409 `run_not_held`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.
          */
         post: operations["discard_batch_api_v1_batches__batch_id__discard_post"];
         delete?: never;
@@ -309,7 +309,7 @@ export interface paths {
         put?: never;
         /**
          * Reprint a stopped tape batch from a label
-         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). At most five runs per printer are held; a sixth discards the oldest (`run_discarded_limit`).
+         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.
          */
         post: operations["reprint_batch_api_v1_batches__batch_id__reprint_post"];
         delete?: never;
@@ -327,7 +327,7 @@ export interface paths {
         };
         /**
          * Server-Sent Events stream for the web UI
-         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
+         * @description ``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. Without ``printer_id`` it carries every printer the caller may see plus the ``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel (``sheet.updated``). An API key without ``admin`` scope gets ``job.state_changed`` and ``run.state_changed`` (live and in the snapshot) only for the jobs and tape runs it submitted. Ends with ``auth.expired`` when the session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` connections are open.
          */
         get: operations["stream_events_api_v1_events_get"];
         put?: never;
@@ -364,7 +364,7 @@ export interface paths {
         };
         /**
          * List jobs
-         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).
+         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).  An API key without ``admin`` scope, and a browser session signed in with one, sees only the jobs that key submitted; SSO users and admin keys see every job of their printers.
          */
         get: operations["list_jobs_api_v1_jobs_get"];
         put?: never;
@@ -384,7 +384,7 @@ export interface paths {
         };
         /**
          * Get a single job
-         * @description Return the full job record for the given UUID.  Returns 404 if not found.
+         * @description Return the full job record for the given UUID.  Returns 404 if not found; for an API key without ``admin`` scope also for a job another key (or a browser, SSO user or webhook) submitted.  Cancel, retry, pause and resume answer the same 404.
          */
         get: operations["get_job_api_v1_jobs__job_id__get"];
         put?: never;
@@ -526,7 +526,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch.
+         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch. A printer holds at most `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. A run that waits for `/continue` or a reprint counts against its key only. Over a cap the batch answers 429 too-many-queued-runs.
          */
         post: operations["create_batch_api_v1_print__printer_key__batch_post"];
         delete?: never;
@@ -770,7 +770,7 @@ export interface paths {
         };
         /**
          * Get the active job queue for a printer
-         * @description Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.
+         * @description Returns all jobs in ``queued`` or ``printing`` state for this printer, ordered by creation time.  An API key without ``admin`` scope sees only the jobs it submitted.
          */
         get: operations["get_printer_queue_api_v1_printers__printer_id__queue_get"];
         put?: never;
@@ -792,7 +792,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel all queued jobs for a printer
-         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  Returns 204 even when there are no queued jobs.
+         * @description Bulk-cancels every job in ``queued`` state for this printer, including jobs that are waiting while the printer is paused; none of them is sent to the printer.  Jobs in ``printing`` state are intentionally **not** cancelled — a mid-print abort is unsafe over TCP/9100 because the raster data is already on the wire; a page job the IPP printer already holds is left to finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  An API key without ``admin`` scope cancels only the queued jobs it submitted; the jobs of other keys and of browser or SSO users stay queued.  Returns 204 even when there are no queued jobs.
          */
         post: operations["clear_printer_queue_api_v1_printers__printer_id__queue_clear_post"];
         delete?: never;
@@ -854,7 +854,7 @@ export interface paths {
         };
         /**
          * Return the latest cached printer status
-         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache`` — no synchronous SNMP probe is performed, so the response always returns in <10 ms. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Returns 404 when the printer is not registered.
+         * @description Returns the most recent status written by the background probe worker (SNMP for tape printers, IPP for page printers; page printers add ``kind``, ``printer_state``, reasons, markers, trays and ``jobs_ahead``). The response is served from ``printer_status_cache``. When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. Reads the hub's cache only; never contacts the printer. Returns 404 when the printer is not registered.
          */
         get: operations["get_printer_status_api_v1_printers__printer_id__status_get"];
         put?: never;
@@ -1268,7 +1268,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Discard a sheet; its code is never issued again */
+        /**
+         * Discard a sheet; its code is never issued again
+         * @description Needs the `admin` scope (a `print` key gets 403 `insufficient_scope`): a discard cannot be undone and the code is never issued again. Marking and resolving cells stay with `print`.
+         */
         post: operations["discard_sheet_api_v1_sheets__code__discard_post"];
         delete?: never;
         options?: never;
@@ -1306,8 +1309,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept a Grocy product event and enqueue a print job
-         * @description Receives a Grocy webhook event for a product stock change.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, and 422 when required payload fields are missing.  On success returns 202 with the new job's UUID; the print is dispatched asynchronously by the queue worker.
+         * Accept a Grocy product event and print its label
+         * @description Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
          */
         post: operations["grocy_webhook_api_v1_webhook_grocy_post"];
         delete?: never;
@@ -1326,8 +1329,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Accept a Spoolman spool event and enqueue a print job
-         * @description Receives a Spoolman webhook event for a spool update.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, and 422 when required payload fields are missing.  On success returns 202 with the new job's UUID; the print is dispatched asynchronously by the queue worker.
+         * Accept a Spoolman spool event and print its label
+         * @description Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
          */
         post: operations["spoolman_webhook_api_v1_webhook_spoolman_post"];
         delete?: never;
@@ -1365,7 +1368,7 @@ export interface paths {
         };
         /**
          * Readiness probe
-         * @description Deep readiness check: database connectivity, alembic migration state, printer wiring, SNMP probe recency, print-queue liveness, and SSE subscriber capacity. Returns 200 with status in {ready, degraded} when all critical checks pass; 503 with status=not-ready when any critical check (database / alembic) fails.
+         * @description Deep readiness check: database connectivity, alembic migration state, printer wiring, SNMP probe recency, print-queue liveness, SSE subscriber capacity, and stuck render slots (`render_slots`: page renders past `PRINTER_HUB_RENDER_TIMEOUT_S` whose thread still runs; fails when every slot is stuck, a hub restart frees them). Returns 200 with status in {ready, degraded} when all critical checks pass; 503 with status=not-ready when any critical check (database / alembic) fails.
          */
         get: operations["readiness_readiness_get"];
         put?: never;
@@ -1723,6 +1726,11 @@ export interface components {
         CellRead: {
             /** Cell */
             cell: number;
+            /**
+             * Is Id Cell
+             * @description Whether the cell holds the sheet's ID label (the hub fills it). Set by the hub; do not infer it from `source`.
+             */
+            is_id_cell: boolean;
             /** Job Id */
             job_id: string | null;
             /** Marked By Hand */
@@ -1761,6 +1769,20 @@ export interface components {
          * @enum {string}
          */
         ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing";
+        /**
+         * DetailError
+         * @description The error body the routes actually send: FastAPI's ``{"detail": "<text>"}``.
+         *
+         *     Routes raise ``HTTPException(status, detail="<text>")``; this is the model that describes
+         *     that body in OpenAPI. It is not :class:`ProblemDetail`, which no route sends.
+         */
+        DetailError: {
+            /**
+             * Detail
+             * @description Human-readable explanation of the error
+             */
+            detail: string;
+        };
         /**
          * ExpectedPageModel
          * @description What a preview promised for one page; the print refuses a different plan.
@@ -1876,7 +1898,7 @@ export interface components {
             product_id: string;
             /**
              * Quantity
-             * @description Optional stock quantity delta (surfaced in the printed label when present)
+             * @description Optional stock quantity delta. Accepted, not printed yet (see #284)
              */
             quantity?: number | null;
             /**
@@ -3174,10 +3196,9 @@ export interface components {
             /**
              * Id Placement
              * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves the first free cell for the ID label and queues an ID-only job (`job_id` in the response).
-             * @default margin
              * @enum {string}
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_placement?: "cell" | "margin" | "manual";
             /** Note */
             note?: string | null;
             /**
@@ -3638,7 +3659,7 @@ export interface components {
         SpoolmanWebhookPayload: {
             /**
              * Quantity
-             * @description Optional remaining filament in grams (surfaced in the printed label)
+             * @description Optional remaining filament in grams. Accepted, not printed yet (see #284)
              */
             quantity?: number | null;
             /**
@@ -3960,7 +3981,7 @@ export interface components {
             /**
              * Job Id
              * Format: uuid
-             * @description UUID of the new print job; poll GET /api/v1/jobs/{job_id} for status
+             * @description UUID of the new print job. Webhook jobs have no owner: an admin or SSO caller can follow it under GET /api/v1/jobs/{job_id}
              */
             job_id: string;
         };
@@ -4740,7 +4761,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`). */
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`), or a run that waited 15 minutes and gave up its pictures cannot draw them again from the stored labels (`run_pictures_lost`; discard it). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4846,7 +4867,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`). */
+            /** @description The run is in another state (`run_not_awaiting_confirmation`, `run_not_stopped`, `run_not_held`), or a run that waited 15 minutes and gave up its pictures cannot draw them again from the stored labels (`run_pictures_lost`; discard it). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5356,6 +5377,15 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
+            /** @description The key has a preview in progress already, or a render of the key is stuck past the time limit (`too-many-previews`): one per key at a time. The body has the rate limit's shape (`retry_after_seconds`). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
             /** @description An integration lookup failed (`integration_lookup_failed`). */
             502: {
                 headers: {
@@ -5365,8 +5395,17 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description An integration is not configured (`integration_not_configured`). */
+            /** @description An integration is not configured (`integration_not_configured`), or no render slot became free in time (`render-unavailable`): every slot is held by a stuck render, the callers without a key have a stuck render, or the wait for the caller's turn (one slot per key, one for all callers without a key) reached `PRINTER_HUB_RENDER_TIMEOUT_S`. */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). The drawing goes on: the key's next preview answers 429 `too-many-previews` until it has ended. */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5936,6 +5975,15 @@ export interface operations {
                     "application/json": components["schemas"]["PrinterStatus"];
                 };
             };
+            /** @description The printer is not registered. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetailError"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -5967,12 +6015,14 @@ export interface operations {
                     "application/json": components["schemas"]["TapeRead"];
                 };
             };
-            /** @description No tape to report: the printer is unknown, has no cached status (``no cached status for printer ...``), is not polled (``Not polled``), its status is stale (``Status older than N s``, as in the status note), or no tape is loaded (``no tape loaded in printer ...``). */
+            /** @description No tape to report: the printer is unknown, has no cached status (``no cached status for printer ...``), is not polled (``Not polled``), its status is stale (``Status older than N s``, as in the status note), it is offline (``printer offline``: the hub cannot see a tape through a printer it cannot reach), or no tape is loaded (``no tape loaded in printer ...``). The body is ``{"detail": "<text>"}``. */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["DetailError"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -7115,6 +7165,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description The key lacks the `admin` scope (`insufficient_scope`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
             /** @description Sheet not found. */

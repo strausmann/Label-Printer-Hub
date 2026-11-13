@@ -122,7 +122,7 @@ export function GlobalSearch() {
           id={listId}
           role="listbox"
           aria-label={t`Search results`}
-          className="z-30 max-h-[60dvh] max-lg:fixed max-lg:top-[4.25rem] max-lg:right-4 max-lg:left-4 lg:absolute lg:top-full lg:right-0 lg:left-0 lg:mt-1 overflow-y-auto rounded-r3 border border-line bg-surface p-1 shadow-lg"
+          className="z-30 max-h-[min(60dvh,calc(var(--vvh)-6rem))] max-lg:fixed max-lg:top-[calc(4.25rem+var(--vv-top))] max-lg:right-4 max-lg:left-4 lg:absolute lg:top-full lg:right-0 lg:left-0 lg:mt-1 overflow-y-auto rounded-r3 border border-line bg-surface p-1 shadow-lg"
         >
           {results.map((result, index) => {
             const heading = result.group !== results[index - 1]?.group ? result.group : null;

@@ -8,7 +8,10 @@ at the printer). The sequence:
    raises ``Deferred``; the job never left ``queued`` (there is no ``PRINTING -> QUEUED``
    edge) and the queue holds it and pauses the printer.
 2. ``mark_printing`` and ``result = {"phase": "uploading", "started": false}``.
-3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``.
+3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``,
+   a render past ``PRINTER_HUB_RENDER_TIMEOUT_S`` ends ``failed/render_timeout`` (#293), as
+   does a job whose key has a stuck render already; no render slot free in time ends
+   ``failed/render_unavailable``.
 4. Print-Job. The error contract is in ``app.printer_backends.ipp.errors``: nothing sent or a
    refusal ends ``failed`` with ``started=False`` (``ipp_unreachable``, ``ipp_busy``,
    ``ipp_rejected``); an exchange that broke after the document went out, or an unusable
@@ -63,6 +66,7 @@ from app.printer_backends.ipp.errors import (
     IppUnreachableError,
 )
 from app.printer_backends.ipp.job_attrs import is_own_job, print_job_attributes, wire_job_name
+from app.services import render_slots
 from app.services.job_lifecycle import (
     InvalidStateTransitionError,
     Job,
@@ -114,6 +118,8 @@ _UNUSABLE: tuple[type[IppError], ...] = (
 
 _MESSAGES = {
     "render_failed": "The page could not be drawn.",
+    "render_timeout": "The page took too long to draw.",
+    "render_unavailable": "No render slot became free in time; the page was not drawn.",
     "ipp_unreachable": "The printer could not be reached.",
     "ipp_busy": "The printer was busy and did not take the job.",
     "ipp_rejected": "The printer refused the document.",
@@ -164,8 +170,10 @@ class PageJobRunner:
         poll_interval_s: float = 2.0,
         max_backoff_s: float = 10.0,
         sleep: Sleep = asyncio.sleep,
+        render_timeout_s: float | None = None,
     ) -> None:
         self._store = store
+        self._render_timeout_s = render_timeout_s  # None: ``PRINTER_HUB_RENDER_TIMEOUT_S``
         self._notify = notify
         self._poll_interval_s = poll_interval_s
         self._max_backoff_s = max_backoff_s
@@ -309,7 +317,22 @@ class PageJobRunner:
         job, payload = page_job.job, page_job.payload
         job_id = UUID(job.id)
         try:
-            pdf = await asyncio.to_thread(render_page, payload)
+            pdf = await render_slots.render_bounded(
+                render_page,
+                payload,
+                label=f"page job {job_id} ({payload.kind})",
+                owner=render_slots.owner_of(page_job.api_key_id),
+                timeout_s=self._render_timeout_s,
+            )
+        except (render_slots.RenderTimeoutError, render_slots.OwnerRenderStuckError):
+            # #293: the thread draws on and keeps its slot (``render_slots``); the job is over.
+            # A key with a stuck render gets no further slot: its job ends the same way at once
+            # (jobs without a key: ``render_unavailable`` once their group is at its limit).
+            await self._fail(page_job, result, "render_timeout", started=False)
+            return
+        except render_slots.RenderUnavailableError:
+            await self._fail(page_job, result, "render_unavailable", started=False)
+            return
         except Exception as exc:
             _log.warning("Page job %s: rendering failed (%s)", job_id, type(exc).__name__)
             await self._fail(page_job, result, "render_failed", started=False)
@@ -369,6 +392,7 @@ class PageJobRunner:
         client = active.printer.client
         delay = self._poll_interval_s
         unusable = 0
+        unknown_state_logged = False
         while True:
             await self._sleep(delay)
             if active.cancel_pending() and active.identity_verified:
@@ -402,18 +426,11 @@ class PageJobRunner:
                 _log.warning("Page job %s: the printer's job %s is not ours", job_id, ipp_job_id)
                 await self._fail(page_job, result, "interrupted", started=result["started"])
                 return
-            if not _PENDING <= info.state <= _COMPLETED:
-                # RFC 8011 job-state is 3..9: anything else is not an answer about the job.
-                unusable += 1
-                _log.debug("Page job %s: job-state %s is out of range", job_id, info.state)
-                if unusable >= MAX_CONSECUTIVE_POLL_ERRORS:
-                    _log.warning(
-                        "Page job %s: %d unusable answers in a row; giving up", job_id, unusable
-                    )
-                    await self._fail(page_job, result, "interrupted", started=result["started"])
-                    return
-                delay = self._backoff(delay)
-                continue
+            if not _PENDING <= info.state <= _COMPLETED and not unknown_state_logged:
+                # RFC 8011 job-state is 3..9. Anything else is shown as waiting and never ends
+                # the job: the printer, not the hub, owns it. Logged once per job, no payload.
+                unknown_state_logged = True
+                _log.warning("job %s: unknown job-state %r", job_id, info.state)
             if not active.identity_verified:
                 active.identity_verified = True
                 if active.cancel_pending():

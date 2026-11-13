@@ -28,6 +28,8 @@ describe("useArchiveErrorText", () => {
     [api(403, "insufficient_scope", "something else"), "This key may not do this."],
     [api(403, "printer_not_allowed", "x"), "This key may not use this printer."],
     [api(422, "invalid_placements", "The placements are not valid.", { reason: "count_mismatch" }), "The split of this print no longer fits. Check the preview and try again."],
+    [api(422, "label_too_long", "Invalid value for vendor: too long.", { field: "vendor", reason: "too long" }), "The vendor is too long."],
+    [api(422, "label_too_long", "x"), "A text is too long."],
     [api(422, "some_new_code", "A sentence in English"), "The server did not accept this (some_new_code)."],
     [api(409, "type_in_use", "x", { reason: "has_sheets" }), "This type has sheets. Archive it instead."],
     [api(409, "type_in_use", "x", { reason: "seed_type" }), "Only your own types can be deleted. Archive this one instead."],

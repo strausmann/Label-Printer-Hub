@@ -185,7 +185,9 @@ export function ReadingsHelper({ printerId, tray, typeKey, version, cols, rows, 
         </p>
       )}
       {fitted && (
-        <div className="overflow-x-auto">
+        // A box that scrolls sideways has to be reachable with the keyboard, and it needs a name (267-08).
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a scrollable region must take focus (axe: scrollable-region-focusable)
+        <div role="region" aria-label={t`Result of the fit`} tabIndex={0} className="overflow-x-auto focus-visible:outline-3 focus-visible:outline-link">
           <table aria-label={t`Result of the fit`} className="w-full border-collapse text-left text-small">
             <thead>
               <tr className="text-ink-2">

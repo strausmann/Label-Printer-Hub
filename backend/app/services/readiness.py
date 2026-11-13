@@ -1,4 +1,4 @@
-"""Phase 7b Cluster 1e — readiness aggregator (7 checks).
+"""Phase 7b Cluster 1e — readiness aggregator (8 checks).
 
 Checks implemented:
   database         — SELECT 1 latency (critical)
@@ -8,6 +8,7 @@ Checks implemented:
   snmp_discovery   — PrinterStatusCache recency (non-critical)
   print_queue      — print_queue in app.state (non-critical)
   sse_bus          — subscriber capacity (non-critical)
+  render_slots     — renders stuck past their time limit (non-critical, #293)
 
 Phase 1k.1a Task 24: template_seed check removed (templates table dropped).
 F4 wires the FastAPI route + HTTP status mapping.
@@ -26,6 +27,7 @@ from app.config import Settings
 from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.schemas.readiness import CheckStatus, ReadinessResponse
+from app.services import render_slots
 
 _CRITICAL_CHECKS = ("database", "alembic")
 
@@ -69,13 +71,13 @@ def _runtime_printer_ids(app_state: Any) -> list[Any]:
     return ids
 
 
-def _check_printer_runtime(app_state: Any) -> CheckStatus:
+def _check_printer_runtime(app_state: Any, *, reveal_printer_id: bool = True) -> CheckStatus:
     ids = _runtime_printer_ids(app_state)
     if not ids:
         return CheckStatus(status="fail", detail="app.state.printer_id is None")
     metric: dict[str, Any] = {}
     pid = getattr(app_state, "printer_id", None)
-    if pid is not None:
+    if pid is not None and reveal_printer_id:
         metric["printer_id"] = str(pid)
     page_printers = len(ids) - (1 if pid is not None else 0)
     if page_printers:
@@ -83,7 +85,9 @@ def _check_printer_runtime(app_state: Any) -> CheckStatus:
     return CheckStatus(status="ok", metric=metric)
 
 
-async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> CheckStatus:
+async def _check_printer_db_sync(
+    session: AsyncSession, app_state: Any, *, reveal_printer_id: bool = True
+) -> CheckStatus:
     ids = _runtime_printer_ids(app_state)
     if not ids:
         return CheckStatus(status="skipped", detail="No runtime printer")
@@ -91,7 +95,11 @@ async def _check_printer_db_sync(session: AsyncSession, app_state: Any) -> Check
         if await session.get(Printer, pid) is None:
             return CheckStatus(
                 status="fail",
-                detail=f"app.state.printer_id={pid} has no matching DB row",
+                detail=(
+                    f"app.state.printer_id={pid} has no matching DB row"
+                    if reveal_printer_id
+                    else "A runtime printer has no matching DB row"
+                ),
             )
     return CheckStatus(status="ok")
 
@@ -162,6 +170,29 @@ def _check_sse_bus(app_state: Any, settings: Settings) -> CheckStatus:
     return CheckStatus(status="ok", metric=metric)
 
 
+def _check_render_slots() -> CheckStatus:
+    """#293: renders past ``PRINTER_HUB_RENDER_TIMEOUT_S`` whose thread still holds its slot.
+
+    A thread cannot be stopped; only a restart frees a slot whose render never ends. With
+    every slot stuck no sheet preview or page job can draw any more: ``fail`` (the hub is
+    ``degraded``, tape printing still works).
+    """
+    stuck = render_slots.stuck_renders()
+    slots = render_slots.MAX_CONCURRENT_RENDERS
+    metric: dict[str, Any] = {"stuck": stuck, "slots": slots}
+    if stuck >= slots:
+        return CheckStatus(
+            status="fail",
+            detail="every render slot is held by a stuck render; restart the hub",
+            metric=metric,
+        )
+    if stuck:
+        return CheckStatus(
+            status="ok", detail=f"{stuck} of {slots} render slots stuck", metric=metric
+        )
+    return CheckStatus(status="ok", metric=metric)
+
+
 def _aggregate(checks: dict[str, CheckStatus]) -> Literal["ready", "degraded", "not-ready"]:
     if any(checks[name].status == "fail" for name in _CRITICAL_CHECKS if name in checks):
         return "not-ready"
@@ -177,16 +208,24 @@ async def build_readiness_response(
     *,
     version: str,
     revision: str,
+    reveal_printer_id: bool = True,
 ) -> ReadinessResponse:
-    """Run all 8 readiness checks and aggregate the result."""
+    """Run all readiness checks and aggregate the result.
+
+    ``reveal_printer_id`` False leaves the default printer's id out of the answer: the caller
+    is a key restricted to other printers and may not learn it (the 403 hides it too).
+    """
     checks: dict[str, CheckStatus] = {
         "database": await _check_database(session),
         "alembic": await _check_alembic(settings),
-        "printer_runtime": _check_printer_runtime(app_state),
-        "printer_db_sync": await _check_printer_db_sync(session, app_state),
+        "printer_runtime": _check_printer_runtime(app_state, reveal_printer_id=reveal_printer_id),
+        "printer_db_sync": await _check_printer_db_sync(
+            session, app_state, reveal_printer_id=reveal_printer_id
+        ),
         "snmp_discovery": await _check_snmp_discovery(session, app_state),
         "print_queue": _check_print_queue(app_state),
         "sse_bus": _check_sse_bus(app_state, settings),
+        "render_slots": _check_render_slots(),
     }
     return ReadinessResponse(
         status=_aggregate(checks),

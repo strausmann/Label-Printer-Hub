@@ -26,8 +26,18 @@ If you're about to make a non-trivial change without having read those first, st
 | **Print queue mandatory** — never bypass it | [ADR 0005](docs/decisions/0005-print-queue-is-mandatory.md) |
 | **No private network artefacts** — IPs/hostnames/domains/tokens | [`docs/policies/privacy.md`](docs/policies/privacy.md) |
 | **Brother trademark fair use only** | [`docs/policies/trademarks.md`](docs/policies/trademarks.md) |
+| **README screenshots** — a new UI feature gets its screenshot in the same PR; an essential UI change updates the affected ones (`pnpm screenshots`) | [CONTRIBUTING.md](CONTRIBUTING.md#web-ui-screenshots) |
 | **Type hints + mypy --strict** in Python | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Use `httpx` not `requests`**, `pysnmp` v6+ asyncio API, `logging` not `print()` | — |
+
+## Branches, PR targets and merge style (mandatory)
+
+Version numbers are planned through milestones ([CONTRIBUTING.md — Milestones, branches and releases](CONTRIBUTING.md#milestones-branches-and-releases), [ADR 0025](docs/decisions/0025-milestone-branches-for-minor-and-major-releases.md)). The `release-impact` check and the release guard reject anything else.
+
+- **Features (`feat`) and breaking changes** branch from `milestone/x.y.0` (or `milestone/x.0.0`) and the PR targets that milestone branch. Never put a `feat`, `!` or `BREAKING CHANGE:` commit or PR title on `main` outside a milestone merge — that includes "small" features hidden in a fix PR.
+- **Fixes, docs, CI, chores** branch from `main` and target `main`. Only patch-level or non-releasing changes go to `main` directly.
+- **Milestone PRs** (`milestone/x.y.0` → `main`) and **sync PRs** (`main` → `milestone/x.y.0`) are merged with a **merge commit**. Never squash or rebase them. Everything else is squash-merged.
+- Releases happen from `main` only. Never tag, release or publish from a milestone branch; previews are `x.y.0-rc.N` images from the Preview image workflow.
 
 ## Things you should propose, not do silently
 
@@ -46,7 +56,7 @@ If you're about to make a non-trivial change without having read those first, st
 | User-facing tutorial / FAQ / integration recipe | [Wiki](https://github.com/strausmann/label-printer-hub/wiki) |
 | Sample compose file | [`examples/`](examples/) |
 | Brother spec extracts / research | [`docs/research/`](docs/research/) |
-| Ongoing bugfix or feature | Issue + branch + PR |
+| Ongoing bugfix or feature | Issue + branch + PR (fix → `main`, feature → `milestone/x.y.0`) |
 
 ## When you don't know
 

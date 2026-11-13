@@ -18,7 +18,7 @@ synchronous reads of the ``IppPrinterState`` the status producer keeps — never
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
@@ -176,6 +176,29 @@ def outcome_handler(kind: str) -> PageOutcomeHandler:
     return _HANDLERS.get(kind, _NOOP)
 
 
+RecoveryCheck = Callable[[UUID, PagePayload], Awaitable[bool]]
+"""``True``: a ``queued`` row of this kind may print after a restart. The kind's owner decides
+(a sheet page only while its cells are still reserved for it)."""
+
+_RECOVERY_CHECKS: dict[str, RecoveryCheck] = {}
+
+
+def register_recovery_check(kind: PageKind, check: RecoveryCheck) -> None:
+    _RECOVERY_CHECKS[kind] = check
+
+
+def unregister_recovery_check(kind: PageKind, check: RecoveryCheck) -> None:
+    """Remove ``check`` if it is still the one registered."""
+    if _RECOVERY_CHECKS.get(kind) is check:
+        del _RECOVERY_CHECKS[kind]
+
+
+async def may_recover(kind: str, job_id: UUID, payload: PagePayload) -> bool:
+    """Ask the kind's recovery check; a kind without one always may. Raises what it raises."""
+    check = _RECOVERY_CHECKS.get(kind)
+    return True if check is None else await check(job_id, payload)
+
+
 async def notify_ended(
     kind: str,
     job_id: UUID,
@@ -205,6 +228,8 @@ class PageJob:
     resume_result: dict[str, Any] | None = None
     """Restart recovery: the stored ``result`` of a job the printer already holds (it names
     the IPP job id). ``None`` for a job that still has to be sent."""
+    api_key_id: UUID | None = None
+    """The key that submitted the job; its stuck renders count against it (#293)."""
 
 
 class PagePrinter(Protocol):

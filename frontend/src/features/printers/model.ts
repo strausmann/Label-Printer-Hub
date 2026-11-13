@@ -2,7 +2,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { BadgeState } from "../../shell/StatusBadge";
 import type { Job, Printer, PrinterStatus } from "./api";
 
-export type PrinterKind = "paused" | "stale" | "not_polled" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
+export type PrinterKind = "paused" | "stale" | "not_polled" | "different_device" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
 
 export interface PrinterView {
   kind: PrinterKind;
@@ -49,14 +49,24 @@ export const unknownKind = (status: PrinterStatus | undefined): "not_polled" | "
 export const statusIsUnknown = (status: PrinterStatus | undefined): boolean => unknownKind(status) !== null;
 
 /**
+ * The age of the last reading, in seconds, for a status that is not a reading of the printer now
+ * (stale or unpolled); null for a fresh one and when the hub names no age. One rule for the card and
+ * the detail page: a fresh status needs no "Last status …" line, it would only be noise.
+ */
+export const staleAgeSeconds = (status: PrinterStatus | undefined): number | null =>
+  statusIsUnknown(status) && typeof status?.last_probe_age_s === "number" ? status.last_probe_age_s : null;
+
+/**
  * What the operator can act on wins: a paused printer says Paused even when it is also
- * offline. The reason for a pause comes from `printer.pause` (see PauseReason).
+ * offline, and a held printer (another device answered at its address) says so instead of Ready. The reason for a pause comes from `printer.pause` (see PauseReason).
  */
 export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean): PrinterView {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null, reasons: [] };
   // Before any `online` branch: a status nobody refreshes says nothing about the printer (#227).
   const unknown = unknownKind(status);
   if (unknown) return { kind: unknown, badge: "idle", detail: null, reasons: [] };
+  // The hub holds a printer that answered as another device until an admin decides: "Ready" would be wrong.
+  if (status?.identity_mismatch === true) return { kind: "different_device", badge: "warn", detail: null, reasons: [] };
   if (status?.online === false) {
     return { kind: "offline", badge: "bad", detail: status.last_error ?? status.error_state ?? null, reasons: [] };
   }
@@ -89,6 +99,7 @@ export function useKindLabel(): Record<PrinterKind, string> {
     paused: t`Paused`,
     stale: t`Status unknown`,
     not_polled: t`Not monitored`,
+    different_device: t`Different device`,
     offline: t`Offline`,
     error: t`Problem`,
     stopped: t`Stopped`,
@@ -127,6 +138,7 @@ export const isFailed = (job: Job) => job.state === "failed" || job.state === "f
 /** The colours an operator can give a roll; the printer reports none of them over the network. */
 export const TAPE_COLOURS = ["white", "yellow", "green", "blue", "red", "black", "clear"] as const;
 export type TapeColour = (typeof TAPE_COLOURS)[number];
+export const isTapeColour = (value: string): value is TapeColour => (TAPE_COLOURS as readonly string[]).includes(value);
 
 /**
  * The loaded width in mm: the reported number, else the leading `12mm` of the free text

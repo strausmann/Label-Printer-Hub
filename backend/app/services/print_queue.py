@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import logging
 import time
 import uuid
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -35,6 +36,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.config import MAX_HELD_RUNS_PER_KEY_PER_PRINTER as _MAX_HELD_RUNS_PER_KEY_PER_PRINTER
+from app.config import MAX_HELD_RUNS_PER_PRINTER as _MAX_HELD_RUNS_PER_PRINTER
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.models.printer_state import PrinterState
@@ -61,9 +64,11 @@ from app.services.layout_engine import LayoutEngine
 from app.services.page_job_runner import Deferred, PageJobRunner
 from app.services.page_jobs import (
     IDENTITY_HELD_KINDS,
+    IDENTITY_MISMATCH_CODE,
     PageJob,
     PagePayload,
     PagePrinter,
+    may_recover,
     notify_ended,
     outcome_handler,
 )
@@ -71,6 +76,12 @@ from app.sheets.errors import MediaKindMismatchError
 
 _ON_UNKNOWN_TIMEOUT_S = 5.0
 """A handler's ``on_unknown`` runs inside ``start()``; a hanging one must not block startup."""
+
+_PRINT_INTERRUPTED = "print_interrupted"
+"""A page job whose row was written, but whose save raised after the commit (266-09)."""
+
+_RECOVERY_REFUSED_CODE = "recovery_refused"
+_RECOVERY_REFUSED = "Not printed after the restart: its sheet cells are no longer reserved for it."
 
 MAX_LABELS_PER_TAPE_JOB = 50
 """#277: a tape batch is split into sub-jobs of at most this many labels; sub-job n+1 starts only
@@ -264,6 +275,9 @@ class TapeRun:
     # When the run started to wait (stopped or awaiting confirmation): the oldest held run of a
     # printer is discarded first (``MAX_HELD_RUNS_PER_PRINTER``).
     held_since: float | None = None
+    # The API key that submitted the run (``None``: no key, or not known). A held run is only
+    # ever discarded for the held limit by a newer held run of the same key.
+    api_key_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -285,6 +299,8 @@ class RunInfo:
     stop_kind: Literal["unknown", "refused"] | None
     reprint_from: int | None
     reprint_to: int | None
+    # The key that submitted the run (``None``: no key), for the owner check of the API.
+    api_key_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -306,9 +322,60 @@ class ReprintResult:
     all_confirmed_job_ids: list[UUID] = field(default_factory=list)
 
 
-MAX_HELD_RUNS_PER_PRINTER = 5
+MAX_HELD_RUNS_PER_PRINTER = _MAX_HELD_RUNS_PER_PRINTER
+MAX_HELD_RUNS_PER_KEY_PER_PRINTER = _MAX_HELD_RUNS_PER_KEY_PER_PRINTER
 """#277: at most this many runs of one printer wait (stopped, or for a confirmation); a sixth
 discards the oldest (its waiting labels are cancelled with ``run_discarded``)."""
+
+
+WAITING_RUN_PICTURES_TTL_S = 15 * 60
+"""263-76: a run that waits for ``/continue`` this long drops the PNGs of its waiting labels;
+the continue draws them again from the stored rows."""
+
+QUEUED_RUN_RETRY_AFTER_S = 30
+"""The ``Retry-After`` hint of a ``too-many-queued-runs`` answer (a run ends when it prints)."""
+
+
+class TooManyQueuedRunsError(Exception):
+    """263-76: the printer (``scope="printer"``) or the API key (``scope="key"``) already has
+    ``limit`` tape runs in the queue."""
+
+    def __init__(self, scope: Literal["printer", "key"], limit: int) -> None:
+        super().__init__(f"At most {limit} queued tape runs per {scope}.")
+        self.scope = scope
+        self.limit = limit
+
+
+@dataclass
+class _RunSlot:
+    """One place under the queued-run caps (263-76).
+
+    ``pending``: claimed for a batch that is still being prepared (lookups, render, rows).
+    Afterwards it follows ``run`` (a live tape run) or ``job_ids`` (a recovered batch): the slot
+    counts while the run is held, or while any of its labels is not terminal or its terminal
+    state could not be written (``_unpersisted``).
+    """
+
+    printer_id: UUID
+    api_key_id: UUID | None
+    pending: bool = False
+    run: TapeRun | None = None
+    job_ids: Sequence[str] = ()
+
+
+_TERMINAL_JOB_STATES = frozenset({JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED})
+_BATCH_OPTION_KEYS = ("auto_cut", "high_resolution", "half_cut", "orientation")
+
+
+def _recovered_run_id(payload: Mapping[str, Any]) -> UUID | None:
+    """The run a stored row belongs to (``tape_run.run_id``), or ``None`` (single label)."""
+    tape_run = payload.get("tape_run")
+    if not isinstance(tape_run, dict):
+        return None
+    try:
+        return UUID(str(tape_run["run_id"]))
+    except (KeyError, ValueError):
+        return None
 
 
 def _split(start: int, end: int) -> list[tuple[int, int]]:
@@ -383,10 +450,16 @@ class PrintQueue:
         # All resume events start "set" so a never-paused worker doesn't block.
         for ev in self._worker_resume_events.values():
             ev.set()
-        # TODO(phase5): _jobs grows unbounded over the service lifetime; evict
-        #               terminal jobs older than a configurable window once
-        #               persistence lands.
+        # Jobs this process tracks. A terminal job leaves it an hour after it finished
+        # (``forget_job``, driven by ``job_retention.evict_finished`` from the cleanup task);
+        # its row stays in the store, which is where the API reads it afterwards.
         self._jobs: dict[str, Job] = {}
+        # Ids of jobs that ended in memory while the store write of that end failed: their row
+        # may still be ``queued``, and the known id in ``_jobs`` is what keeps a later recovery
+        # from printing them. They are never forgotten: the set lives as long as this process
+        # (a restart recovers from the store, where such a row is then simply ``queued`` or
+        # ``printing``) and grows only by failed store writes, so it stays small.
+        self._unpersisted: set[str] = set()
         self._workers: dict[UUID, asyncio.Task[None]] = {}
         self._running: bool = False
         self._stopping: bool = False
@@ -406,6 +479,8 @@ class PrintQueue:
         # #277: tape runs that are printing, wait for a confirmation or stopped; a finished run
         # is forgotten.
         self._runs: dict[UUID, TapeRun] = {}
+        # 263-76: the places under the queued-run caps, by run id (or claim token while pending).
+        self._run_slots: dict[UUID, _RunSlot] = {}
 
     # --- identity hold (#231) -----------------------------------------------
 
@@ -434,13 +509,18 @@ class PrintQueue:
         """
         if self._running:
             return
+        ids = list(self._queues)
+        # No add can be running for a printer of this snapshot: an add of a known id is a no-op
+        # or raises, and an add of an unknown id registers itself in ``_adds`` and, while the
+        # queue is not running, returns without a real suspension (``pause_printer`` never
+        # awaits). If ``pause_printer`` ever does, this assert is the first thing to fail.
+        assert not (set(ids) & self._adds.keys()), "start() found a printer that is being added"
         # I-1: Race-Guard — sofort setzen bevor erster await, damit ein zweiter
         # gleichzeitiger start()-Aufruf am Guard oben scheitert.
         self._running = True
-        ids = list(self._queues)
         # Each printer of the snapshot counts as "being added" until its worker exists: a
         # remove that lands during the recovery below waits instead of purging under it.
-        starting = {pid: asyncio.Event() for pid in ids if pid not in self._adds}
+        starting = {pid: asyncio.Event() for pid in ids}
         self._adds.update(starting)
         try:
             for paused_id, since in (initially_paused or {}).items():
@@ -551,6 +631,9 @@ class PrintQueue:
         self._workers[printer_id] = asyncio.create_task(
             self._worker_for(printer_id), name=f"printer-worker-{printer_id}"
         )
+        # One turn of the loop: the worker runs up to its first wait before this add ends (and
+        # before a concurrent add of the same printer, which waits for ``_adds``, returns).
+        await asyncio.sleep(0)
         logger.info("Printer %s added to the running queue", printer_id)
 
     async def remove_printer(self, printer_id: UUID, timeout_s: float) -> None:
@@ -599,7 +682,7 @@ class PrintQueue:
 
     async def _end_removed_in_flight(self, printer_id: UUID) -> None:
         """End what the cancelled worker left PRINTING, as ``stop()`` and a restart do."""
-        interrupted = False
+        interrupted: list[Job] = []
         for job in list(self._jobs.values()):
             if job.printer_id != printer_id or job.state != JobState.PRINTING:
                 continue
@@ -610,9 +693,18 @@ class PrintQueue:
             job.error_msg = job.error_message
             with contextlib.suppress(InvalidStateTransitionError):
                 JobStateMachine.transition(job, JobState.FAILED)
-            interrupted = True
+            interrupted.append(job)
         if interrupted:
             await self._store.mark_interrupted(printer_id)
+            # The timeout can have cut the worker off before it took the row (``mark_printing``):
+            # the job is failed in memory, so its row must be terminal too. A row left ``queued``
+            # would be skipped by a later recovery (the id is known) and never end (263-11).
+            for job in interrupted:
+                row = await self._store.get(UUID(job.id))
+                if row is not None and row.state == DbJobState.QUEUED.value:
+                    await self._store.mark_failed_code(
+                        UUID(job.id), "interrupted", job.error_message or "interrupted", None
+                    )
 
     def _purge(self, printer_id: UUID) -> None:
         """Forget every per-printer entry; waiting jobs stay persisted as ``queued``."""
@@ -637,6 +729,9 @@ class PrintQueue:
         for run_id, run in list(self._runs.items()):
             if run.printer_id == printer_id:
                 del self._runs[run_id]
+        for key, slot in list(self._run_slots.items()):
+            if slot.printer_id == printer_id and not slot.pending:
+                del self._run_slots[key]
         self._printers.pop(printer_id, None)
         self._page_printers.pop(printer_id, None)
 
@@ -685,6 +780,12 @@ class PrintQueue:
         if printer_id in self._page_printers:  # D18: page jobs render at send time
             await self._recover_page_jobs(printer_id, pending_db_jobs)
             return
+        # Queue entries in the original order. The rows of one run (``tape_run.run_id``) share
+        # the entry of their first row and print as ONE batch (one pre-roll, 263-15/263-65);
+        # a row without a run stays a single job.
+        plan: list[Job | UUID] = []
+        runs: dict[UUID, list[Job]] = {}
+        recovered_keys: dict[UUID, UUID | None] = {}
         for db_job in pending_db_jobs:
             # S-1: StrEnum-Konsistenz — DbJobState.QUEUED.value statt String-Literal
             if db_job.state != DbJobState.QUEUED.value:
@@ -752,12 +853,59 @@ class PrintQueue:
                 options=db_job.payload.get("options", {}),
             )
             self._jobs[str(db_job.id)] = wrapper
-            await self._queues[printer_id].put(wrapper)
+            run_id = _recovered_run_id(db_job.payload)
+            if run_id is None:
+                plan.append(wrapper)
+            else:
+                if run_id not in runs:
+                    runs[run_id] = []
+                    plan.append(run_id)
+                    recovered_keys[run_id] = db_job.api_key_id
+                runs[run_id].append(wrapper)
             logger.info(
                 "Recovery: QUEUED-Job %s auf Drucker %s re-enqueued",
                 db_job.id,
                 printer_id,
             )
+        for run_id, members in runs.items():
+            # 263-76: a recovered run counts against its printer's cap until it is over.
+            self._run_slots[run_id] = _RunSlot(
+                printer_id=printer_id,
+                api_key_id=recovered_keys.get(run_id),
+                job_ids=[m.id for m in members],
+            )
+        for entry in plan:
+            if isinstance(entry, UUID):
+                await self._queues[printer_id].put(self._recovered_batch(printer_id, entry, runs))
+            else:
+                await self._queues[printer_id].put(entry)
+
+    def _recovered_batch(
+        self, printer_id: UUID, run_id: UUID, runs: Mapping[UUID, Sequence[Job]]
+    ) -> Job | BatchJob:
+        """The queue entry of a recovered run: a batch, or the plain job when it has one label.
+
+        Options are the four a batch print takes (as ``PrintService`` passes them), read from
+        the first row: the rows of a run share them. Not a continuable run: the labels that
+        waited for a confirmation failed in the loop above, so no sub-job follows.
+        """
+        members = runs[run_id]
+        if len(members) == 1:
+            return members[0]
+        first = members[0]
+        options = {
+            key: first.options[key]
+            for key in _BATCH_OPTION_KEYS
+            if first.options.get(key) is not None
+        }
+        return BatchJob(
+            batch_id=run_id,
+            printer_id=printer_id,
+            image_payloads=[m.image_payload or b"" for m in members],
+            job_ids=[UUID(m.id) for m in members],
+            tape_mm=first.tape_mm or 0,
+            options=options,
+        )
 
     async def _recover_page_jobs(self, printer_id: UUID, pending: list[DbJob]) -> None:
         """Restart recovery of one page printer's jobs.
@@ -777,9 +925,45 @@ class PrintQueue:
                 logger.warning("Recovery: page job %s has an invalid payload", db_job.id)
                 await self._store.mark_failed(db_job.id, "recovery_invalid_page_payload")
                 continue
+            if not await self._may_recover_page_job(db_job.id, payload):
+                continue
             job = self._new_page_job(db_job.id, printer_id, payload)
-            await self._queues[printer_id].put(PageJob(job=job, payload=payload))
+            await self._queues[printer_id].put(
+                PageJob(job=job, payload=payload, api_key_id=db_job.api_key_id)
+            )
             logger.info("Recovery: page job %s re-enqueued on %s", db_job.id, printer_id)
+
+    async def _may_recover_page_job(self, job_id: UUID, payload: PagePayload) -> bool:
+        """The kind's owner agrees that a ``queued`` row prints after a restart (263-47).
+
+        A sheet page prints only onto cells that are still reserved for it: cells freed while
+        its end could not be written may carry another print's labels by now. Refused: the row
+        ends ``failed`` (never started; the outcome handler frees what is left of it). A check
+        that raises leaves the row ``queued`` and unprinted; the next start asks again.
+        """
+        try:
+            allowed = await may_recover(payload.kind, job_id, payload)
+        except Exception as exc:
+            logger.error(
+                "Recovery: page job %s not re-enqueued, its check failed (%s)",
+                job_id,
+                type(exc).__name__,
+            )
+            return False
+        if allowed:
+            return True
+        logger.warning("Recovery: page job %s refused: %s", job_id, _RECOVERY_REFUSED)
+        await self._store.mark_failed_code(
+            job_id,
+            _RECOVERY_REFUSED_CODE,
+            _RECOVERY_REFUSED,
+            None,
+            result={"phase": "ended", "started": False},
+        )
+        await notify_ended(
+            payload.kind, job_id, state="failed", started=False, error_code=_RECOVERY_REFUSED_CODE
+        )
+        return False
 
     async def _recover_in_flight_page_jobs(self, printer_id: UUID) -> None:
         resumable: list[PageJob] = []
@@ -927,7 +1111,11 @@ class PrintQueue:
                 job.error_msg = job.error_message  # keep legacy field in sync (see line 466)
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
-                    await self._store.mark_failed(UUID(job.id), "shutdown")
+                    try:
+                        await self._store.mark_failed(UUID(job.id), "shutdown")
+                    except BaseException:
+                        self._unpersisted.add(job.id)
+                        raise
                 except InvalidStateTransitionError:
                     # Defensive: job already moved to a terminal state by the
                     # worker — just ensure _done_event is set.
@@ -1018,11 +1206,15 @@ class PrintQueue:
         tape_mm: int,
         options: dict[str, Any],
         run_id: UUID | None = None,
+        slot: UUID | None = None,
     ) -> UUID:
         """Submit N images as one tape run (#277): sub-jobs of at most 50, groups of 10.
 
         Only the first sub-job is queued; each further one waits for ``confirm_run``. *run_id*
-        names the run (the API's batch id); a new id is made when it is left out.
+        names the run (the API's batch id); a new id is made when it is left out. *slot* is the
+        claim of ``claim_run_slot`` (263-76): the run takes it over; without one the run still
+        counts against its printer's cap. The same image object (the copies of one item) is
+        encoded once, and its labels share that PNG.
 
         Args:
             printer_id: Target printer (must be registered in self._queues).
@@ -1068,11 +1260,19 @@ class PrintQueue:
             self._jobs[str(jid)] = job
             registered.append(job)
 
-        # Gemini-Review G1 (PR #106): Parallel PNG-Serialisierung
+        # Gemini-Review G1 (PR #106): Parallel PNG-Serialisierung; 263-76: once per distinct
+        # image, so the copies of an item share one PNG.
+        distinct: dict[int, int] = {}
+        unique: list[Image.Image] = []
+        for img in images:
+            if id(img) not in distinct:
+                distinct[id(img)] = len(unique)
+                unique.append(img)
         try:
-            payloads = await asyncio.gather(
-                *[asyncio.to_thread(_serialize_image_to_png, img) for img in images]
+            encoded = await asyncio.gather(
+                *[asyncio.to_thread(_serialize_image_to_png, img) for img in unique]
             )
+            payloads = [encoded[distinct[id(img)]] for img in images]
         except BaseException:
             for job in registered:
                 self._drop_unqueued(job)
@@ -1096,6 +1296,12 @@ class PrintQueue:
         if printer_id not in self._queues or self._removing(printer_id):
             raise KeyError(f"Unknown printer: {printer_id}")  # removed while serialising
         self._runs[batch_id] = run
+        # No await from here: the claim becomes the run's place under the caps (263-76).
+        claim = self._run_slots.pop(slot, None) if slot is not None else None
+        run.api_key_id = claim.api_key_id if claim is not None else None
+        self._run_slots[batch_id] = _RunSlot(
+            printer_id=printer_id, api_key_id=run.api_key_id, run=run
+        )
         self._queues[printer_id].put_nowait(self._sub_job(run))
         logger.info(
             "Batch %s queued on %s with %d items in %d sub-jobs",
@@ -1145,6 +1351,7 @@ class PrintQueue:
             stop_kind=run.stop_kind if run.state == "stopped" else None,
             reprint_from=None if reprint is None else reprint[0] + 1,
             reprint_to=None if reprint is None else reprint[1] + 1,
+            api_key_id=run.api_key_id,
         )
 
     def _notify_run_change(self, run: TapeRun, state: str) -> None:
@@ -1170,10 +1377,22 @@ class PrintQueue:
             RunStateError: ``run_not_awaiting_confirmation``.
         """
         run = self._live_run(run_id)
-        if run.state != "awaiting_confirmation":
-            raise RunStateError(
-                "run_not_awaiting_confirmation", "The run does not wait for a confirmation."
-            )
+        while True:
+            if run.state != "awaiting_confirmation":
+                raise RunStateError(
+                    "run_not_awaiting_confirmation", "The run does not wait for a confirmation."
+                )
+            start, end = run.sub_jobs[run.current]
+            missing = [k for k in run.job_ids[start:end] if k not in run.payloads]
+            if not missing:
+                break
+            # 263-76: the pictures were dropped while the run waited; draw them again. The run
+            # can change across the awaits: it is looked up and checked again afterwards.
+            drawn = await self._redraw(missing)
+            run = self._live_run(run_id)
+            for key, picture in drawn.items():
+                if key in run.job_ids:
+                    run.payloads.setdefault(key, picture)
         # No await from the check to the put: two confirmations cannot both start the sub-job.
         run.state = "printing"
         run.held_since = None
@@ -1232,6 +1451,8 @@ class PrintQueue:
                     "awaits_confirmation": len(new_ids) >= MAX_LABELS_PER_TAPE_JOB,
                     "reprint_of": old,
                 }
+                if old not in run.payloads:  # dropped while the run waited (263-76)
+                    run.payloads.update(await self._redraw([old]))
                 job = Job(
                     id=str(new_id),
                     printer_id=run.printer_id,
@@ -1251,6 +1472,10 @@ class PrintQueue:
                         source_ip=row.source_ip,
                     )
                 )
+                if job.state == JobState.CANCELLED:
+                    # Cancelled while its row was saved (263-75): the cancel found no row, the
+                    # save has just written ``queued``. Persist it, or a restart prints it.
+                    await self._store.mark_cancelled(new_id)
                 run.payloads[job.id] = run.payloads[old]
         except BaseException:
             # Nothing of the reprint stays behind: the new jobs leave memory and their rows are
@@ -1373,12 +1598,198 @@ class PrintQueue:
         held.sort(key=lambda r: r.held_since or 0.0)
         return [info for r in held if (info := self.run_info(r.run_id)) is not None]
 
-    async def _bound_held_runs(self, printer_id: UUID) -> None:
-        """Keep at most ``MAX_HELD_RUNS_PER_PRINTER`` waiting runs: the oldest goes (I3)."""
-        held = self.held_runs(printer_id)
-        for info in held[: max(0, len(held) - MAX_HELD_RUNS_PER_PRINTER)]:
+    async def _bound_held_runs(self, run: TapeRun) -> None:
+        """Keep at most ``MAX_HELD_RUNS_PER_PRINTER`` waiting runs per printer (I3), and at most
+        ``MAX_HELD_RUNS_PER_KEY_PER_PRINTER`` of one key.
+
+        *run* has just become held. Over the limit, the oldest held runs of *run*'s own key
+        (``None`` counts as one key of its own) are discarded, never the runs of another key
+        (security review 2: one key must not destroy another key's waiting work). With no
+        older run of its own to give up, the printer stays over the limit; ``claim_run_slot``
+        refuses a new batch of a key without a held run of its own while the printer is full,
+        so the excess is at most the runs that were printing when the printer filled up.
+        """
+        held = self.held_runs(run.printer_id)
+        own = [
+            info
+            for info in held
+            if info.run_id != run.run_id
+            and (other := self._runs.get(info.run_id)) is not None
+            and other.api_key_id == run.api_key_id
+        ]
+        # Security review 3: a key keeps at most MAX_HELD_RUNS_PER_KEY_PER_PRINTER held runs on
+        # a printer (its share of the five), so it cannot take every held place.
+        excess = max(
+            len(held) - MAX_HELD_RUNS_PER_PRINTER,
+            len(own) + 1 - MAX_HELD_RUNS_PER_KEY_PER_PRINTER,
+        )
+        if excess <= 0:
+            return
+        for info in own[:excess]:
             with contextlib.suppress(KeyError, RunStateError):
                 await self.discard_run(info.run_id, code="run_discarded_limit")
+        if len(own) < excess:
+            logger.warning(
+                "Printer %s holds %d runs (limit %d): no older run of the same key to discard",
+                run.printer_id,
+                len(held) - len(own[:excess]),
+                MAX_HELD_RUNS_PER_PRINTER,
+            )
+
+    # --- queued-run caps and waiting pictures (263-76) -----------------------
+
+    def claim_run_slot(
+        self,
+        printer_id: UUID,
+        api_key_id: UUID | None,
+        *,
+        per_printer: int,
+        per_key: int,
+        may_hold: bool = True,
+    ) -> UUID:
+        """Claim a place for one more tape run of *printer_id* and *api_key_id*.
+
+        Synchronous (no await): two concurrent claims cannot both take the last place. The
+        claim counts at once, while the batch is still looked up and drawn; ``enqueue_batch``
+        hands it to the run, ``release_run_slot`` gives it back when the submit failed. A run
+        counts until it is really over: while any of its labels is not terminal and while the
+        end of a label could not be written; a held run (stopped, or waiting for a
+        confirmation) counts against its key only (security review: one key must not lock the
+        printer). A key of ``None`` is limited by the printer's cap only.
+
+        *may_hold*: the batch has more than ``MAX_LABELS_PER_TAPE_JOB`` labels (copies included),
+        so it waits for a confirmation after its first sub-job. Only such a batch is refused for
+        the printer's full held places; a smaller one is always let through (a smaller run is
+        held only when it stops on an error). All callers without a key (browser sessions, SSO)
+        are ONE key here (``None``): they share the per-key held share and may give up each
+        other's oldest held run.
+
+        Raises:
+            TooManyQueuedRunsError: the printer or the key has no place left.
+        """
+        by_printer = 0
+        by_key = 0
+        for key, slot in list(self._run_slots.items()):
+            weight = self._slot_weight(slot)
+            if weight is None:
+                del self._run_slots[key]
+                continue
+            on_printer, on_key = weight
+            by_printer += on_printer and slot.printer_id == printer_id
+            by_key += on_key and api_key_id is not None and slot.api_key_id == api_key_id
+        if by_printer >= per_printer:
+            raise TooManyQueuedRunsError("printer", per_printer)
+        # Security review 2: a full set of held runs is only made room in by discarding the
+        # submitting key's own oldest one. A key without one there would have to push out
+        # another key's run: refused instead.
+        held_here = [
+            r
+            for r in self._runs.values()
+            if r.printer_id == printer_id and r.state in ("awaiting_confirmation", "stopped")
+        ]
+        if (
+            may_hold
+            and len(held_here) >= MAX_HELD_RUNS_PER_PRINTER
+            and not any(r.api_key_id == api_key_id for r in held_here)
+        ):
+            raise TooManyQueuedRunsError("printer", per_printer)
+        if api_key_id is not None and by_key >= per_key:
+            raise TooManyQueuedRunsError("key", per_key)
+        token = uuid4()
+        self._run_slots[token] = _RunSlot(
+            printer_id=printer_id, api_key_id=api_key_id, pending=True
+        )
+        return token
+
+    def release_run_slot(self, token: UUID) -> None:
+        """Give back a claim that no run took over (idempotent; a taken claim is left alone)."""
+        slot = self._run_slots.get(token)
+        if slot is not None and slot.pending:
+            del self._run_slots[token]
+
+    def _slot_weight(self, slot: _RunSlot) -> tuple[bool, bool] | None:
+        """Which caps *slot* counts against: ``(printer, key)``; ``None`` when it is over.
+
+        A held run (stopped, waiting for a confirmation, being reprinted) counts against its
+        key only: it does not use the printer, and one key holding runs must not lock the
+        printer for every other key. ``MAX_HELD_RUNS_PER_PRINTER`` bounds the held runs of a
+        printer instead (the oldest is discarded).
+        """
+        if slot.pending:
+            return True, True
+        run = slot.run
+        if run is not None and self._runs.get(run.run_id) is run and run.state != "printing":
+            return False, True
+        for key in run.job_ids if run is not None else slot.job_ids:
+            if key in self._unpersisted:
+                return True, True
+            job = self._jobs.get(key)
+            if job is not None and job.state not in _TERMINAL_JOB_STATES:
+                return True, True
+        return None
+
+    def drop_waiting_pictures(
+        self, *, now: float | None = None, max_age_s: float = WAITING_RUN_PICTURES_TTL_S
+    ) -> int:
+        """Forget the PNGs of the labels of runs that wait for ``/continue`` for *max_age_s*.
+
+        Called from the cleanup task's tick. ``confirm_run`` (and ``reprint_from``) draw a
+        dropped picture again from the label's stored row, as a recovery does. Returns how many
+        labels lost their picture.
+        """
+        now = time.monotonic() if now is None else now
+        dropped = 0
+        for run in self._runs.values():
+            if (
+                run.state != "awaiting_confirmation"
+                or run.held_since is None
+                or now - run.held_since < max_age_s
+            ):
+                continue
+            for key in run.job_ids[run.sub_jobs[run.current][0] :]:
+                picture = run.payloads.pop(key, None)
+                if picture is None:
+                    continue
+                dropped += 1
+                job = self._jobs.get(key)
+                if job is not None and job.image_payload is picture:
+                    job.image_payload = None
+        if dropped:
+            logger.info("Dropped the pictures of %d labels of waiting runs", dropped)
+        return dropped
+
+    async def _redraw(self, keys: Sequence[str]) -> dict[str, bytes]:
+        """Draw the labels *keys* again from their stored rows; copies share one PNG.
+
+        Raises:
+            RunStateError: ``run_pictures_lost`` (a row is gone or cannot be drawn).
+        """
+        drawn: dict[str, bytes] = {}
+        by_item: dict[str, bytes] = {}
+        for key in keys:
+            row = await self._store.get(UUID(key))
+            payload = dict(row.payload) if row is not None else {}
+            if row is None or _REQUIRED_RERENDER_KEYS - payload.keys():
+                raise RunStateError(
+                    "run_pictures_lost",
+                    "The waiting labels cannot be drawn again; discard the run and print it again.",
+                )
+            item = str(payload.get("copy_master_id") or key)
+            if item not in by_item:
+                try:
+                    image = await asyncio.to_thread(self._rerender_from_db_payload, payload)
+                    by_item[item] = await asyncio.to_thread(_serialize_image_to_png, image)
+                except Exception as exc:
+                    logger.warning(
+                        "Run label %s cannot be drawn again (%s)", key, type(exc).__name__
+                    )
+                    raise RunStateError(
+                        "run_pictures_lost",
+                        "The waiting labels cannot be drawn again; discard the run and print it "
+                        "again.",
+                    ) from None
+            drawn[key] = by_item[item]
+        return drawn
 
     def _require_tape(self, printer_id: UUID) -> None:
         """D18: tape submission paths refuse page printers; a printer being removed is unknown."""
@@ -1432,7 +1843,13 @@ class PrintQueue:
         job = self._new_page_job(row.id, printer_id, payload)
         try:
             await self._store.save_queued(row)
+        except Exception:
+            await self._end_unsaved_page_job(job, payload)
+            raise
         except BaseException:
+            # A cancellation (shutdown, a dropped request): no database await here, it would be
+            # cancelled again. A committed row stays ``queued``; the caller counts the page as
+            # queued (T7-1) and keeps its cells, so the next start prints it onto its own cells.
             self._drop_unqueued(job)
             raise
         if job.state != JobState.QUEUED:
@@ -1443,9 +1860,69 @@ class PrintQueue:
             if job.state == JobState.CANCELLED:
                 await self._store.mark_cancelled(row.id)
             return row.id
-        await self._queues[printer_id].put(PageJob(job=job, payload=payload))
+        await self._queues[printer_id].put(PageJob(job=job, payload=payload, api_key_id=api_key_id))
         logger.info("Page job %s queued on %s", row.id, printer_id)
         return row.id
+
+    async def _end_unsaved_page_job(self, job: Job, payload: PagePayload) -> None:
+        """``save_queued`` raised, possibly after its commit (266-09).
+
+        A committed ``queued`` row would print at the next start while the caller reports the
+        page as not queued and its cells stay reserved. So: no row, the job just leaves memory
+        (the caller frees the cells). A row: it ends ``failed`` with ``print_interrupted``, the
+        outcome handler frees the cells (never started), the job leaves memory. When the row
+        cannot be read or ended, the job stays known, ended and unpersisted: nothing in this
+        process prints or evicts it, and its cells stay reserved, because a restart may still
+        print the ``queued`` row (the startup sweep settles them then).
+        """
+        job_id = UUID(job.id)
+        try:
+            row = await self._store.get(job_id)
+            if row is not None and job.state == JobState.CANCELLED:
+                # Cancelled while the row was saved: the cancel found no row, and it has told
+                # the outcome handler already. Persist the cancel; nothing else to end.
+                await self._store.mark_cancelled(job_id)
+                row = None
+            elif row is not None:
+                await self._store.mark_failed_code(
+                    job_id,
+                    _PRINT_INTERRUPTED,
+                    "The job could not be queued.",
+                    None,
+                    result={"phase": "ended", "started": False},
+                )
+        except Exception as end_exc:
+            # By type only, and without ``exc_info``: the chain holds the save error, and a
+            # database error quotes its parameters, i.e. the page payload (266-13).
+            logger.error(
+                "Page job %s: could not end the job whose save failed (%s)",
+                job.id,
+                type(end_exc).__name__,
+            )
+            self._unpersisted.add(job.id)
+            if job.state != JobState.QUEUED:
+                return  # cancelled meanwhile: that cancel sent its own event and outcome
+            job.error_code = _PRINT_INTERRUPTED
+            job.error_msg = job.error_message = "The job could not be queued."
+            JobStateMachine.transition(job, JobState.FAILED)
+            self._notify_page_change(job, JobState.QUEUED, JobState.FAILED)
+            return
+        # Not atomic against a cancel: the job stays QUEUED across the awaits above, so a cancel
+        # in between persists ``cancelled`` and sends ``on_ended(cancelled)``; this may then
+        # write ``failed`` (which write lands last decides the row) and send a second
+        # ``on_ended`` (harmless: the first freed the cells). Accepted. What must not happen is
+        # that a job such a cancel left unpersisted (its write failed) falls out of memory.
+        if job.id in self._unpersisted:
+            return
+        self._drop_unqueued(job)
+        if row is not None:
+            await notify_ended(
+                payload.kind,
+                job_id,
+                state="failed",
+                started=False,
+                error_code=_PRINT_INTERRUPTED,
+            )
 
     def is_page_job(self, job_id: str | UUID) -> bool:
         """True if the queue tracks *job_id* as a page job."""
@@ -1466,6 +1943,30 @@ class PrintQueue:
         return job
 
     # --- per-job control ---------------------------------------------------
+
+    def finished_jobs(self) -> list[tuple[UUID, datetime]]:
+        """Terminal jobs the queue still tracks, with the time they finished."""
+        return [
+            (UUID(job.id), job.finished_at or job.submitted_at)
+            for job in self._jobs.values()
+            if job.state in _TERMINAL_JOB_STATES and job.id not in self._unpersisted
+        ]
+
+    def forget_job(self, job_id: UUID) -> bool:
+        """Drop a terminal job (and its image) from memory; its row in the store stays.
+
+        ``False`` for an unknown job, one that is not terminal, one whose terminal state could not
+        be written to the store (its known id keeps a recovery from printing it), and one that
+        belongs to a tape run the queue still holds (a stopped run reprints from its labels).
+        """
+        key = str(job_id)
+        job = self._jobs.get(key)
+        if job is None or job.state not in _TERMINAL_JOB_STATES or key in self._unpersisted:
+            return False
+        if any(key in run.job_ids for run in self._runs.values()):
+            return False
+        del self._jobs[key]
+        return True
 
     def has_job(self, job_id: str | UUID) -> bool:
         """True if the queue tracks *job_id* in memory (any state)."""
@@ -1509,48 +2010,15 @@ class PrintQueue:
         )
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
-        await self._store.mark_cancelled(UUID(job.id))
+        try:
+            await self._store.mark_cancelled(UUID(job.id))
+        except BaseException:
+            self._unpersisted.add(job.id)
+            raise
         if job.kind is not None:
             await notify_ended(
                 job.kind, UUID(job.id), state="cancelled", started=False, error_code="cancelled"
             )
-        return True
-
-    async def pause_job(self, job_id: str) -> bool:
-        """Pause a queued job — worker skips it when it pops the queue."""
-        job = self._jobs[job_id]
-        if job.state != JobState.QUEUED:
-            return False
-        JobStateMachine.transition(job, JobState.PAUSED)
-        self._notify_state_change(
-            job,
-            JobState.QUEUED,
-            JobState.PAUSED,
-            queue_depth=self._queue_depth(job.printer_id),
-        )
-        return True
-
-    async def resume_job(self, job_id: str) -> bool:
-        """Re-enqueue a paused job at the tail of the queue (FIFO preserved).
-
-        Note: the job's original reference remains in the asyncio.Queue from
-        when it was first submitted. After resume, a new reference is appended
-        at the tail. The worker filters by state on pop, so the stale reference
-        drains cleanly (state != QUEUED on the second pop). asyncio.Queue.qsize()
-        will be +1 high until that drain happens — use list_queue() for accurate
-        active-job counts.
-        """
-        job = self._jobs[job_id]
-        if job.state != JobState.PAUSED:
-            return False
-        JobStateMachine.transition(job, JobState.QUEUED)
-        await self._queues[job.printer_id].put(job)
-        self._notify_state_change(
-            job,
-            JobState.PAUSED,
-            JobState.QUEUED,
-            queue_depth=self._queue_depth(job.printer_id),
-        )
         return True
 
     async def retry_job(self, job_id: str) -> str | None:
@@ -1702,6 +2170,7 @@ class PrintQueue:
                 await self._store.mark_cancelled(UUID(job.id))
             except Exception as exc:
                 logger.exception("clear_queue: persisting cancellation of %s failed", job.id)
+                self._unpersisted.add(job.id)
                 first_error = first_error or exc
         for job in cleared:
             if job.kind is not None:  # queued and held page jobs; tracked ones are PRINTING
@@ -1849,6 +2318,8 @@ class PrintQueue:
                 return
             if self._removing(printer_id):
                 # #224: taken, not started: the job (or batch) stays ``queued`` in the store.
+                # (A single job is also guarded below; the batch dispatch right after this needs
+                # this check, so it stays for single jobs too.)
                 return
 
             # Phase 1k.2: BatchJob vs Job — dispatch per isinstance
@@ -1866,7 +2337,7 @@ class PrintQueue:
             while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
                 if self._stopping or self._removing(printer_id):
                     return
-                await self._worker_resume_events[printer_id].wait()
+                await self._wait_for_resume(printer_id)
             if self._removing(printer_id):
                 return  # resumed and removed at once
 
@@ -1907,12 +2378,18 @@ class PrintQueue:
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
-                await self._store.mark_done(UUID(job.id))  # Phase 2: DB-State persistieren
+                # The event goes out before the write, as in ``_complete_group``: a removal
+                # timeout that cuts in during the write must not swallow it.
                 self._notify_state_change(
                     job,
                     _from,
                     JobState.COMPLETED,
                     queue_depth=self._queue_depth(printer_id),
+                )
+                # Phase 2: DB-State persistieren. The label printed: a removal timeout must not
+                # cut the write short (the row would be reported ``failed_restart``).
+                await self._persist_through_cancel(
+                    functools.partial(self._store.mark_done, UUID(job.id))
                 )
                 logger.info("Job %s completed on %s", job.id, printer_id)
             except asyncio.CancelledError:
@@ -2004,7 +2481,7 @@ class PrintQueue:
             while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
                 if self._stopping or self._removing(printer_id):
                     return
-                await self._worker_resume_events[printer_id].wait()
+                await self._wait_for_resume(printer_id)
             if self._stopping or self._removing(printer_id):
                 return
             if item.job.state != JobState.QUEUED:
@@ -2018,6 +2495,7 @@ class PrintQueue:
                     raise
                 except Exception:
                     logger.exception("Page job %s: could not end on an identity hold", item.job.id)
+                    self._end_held_in_memory(item)
                 continue
             try:
                 await self._page_runner.run(printer, item)
@@ -2033,6 +2511,30 @@ class PrintQueue:
             except Exception:
                 await self._page_backstop(item, printer_id)
 
+    def _end_held_in_memory(self, item: PageJob) -> None:
+        """A held job whose end could not be written still ends in memory (263-47).
+
+        Without this it would stay ``queued`` in memory, out of the queue: its waiters would
+        hang. It ends ``failed`` in memory with the identity code and the event goes out. Its
+        row could not be written, so it is kept unpersisted: never evicted, and a re-add in this
+        process does not take it up again. Its cells stay reserved for the ``queued`` row: a
+        restart re-queues it, and the hold, loaded again from the database, ends it through the
+        normal path (which frees them), or it prints onto its own cells.
+        """
+        job = item.job
+        if job.state != JobState.QUEUED:
+            return  # it did end (the raise came after the in-memory end), or was cancelled
+        job.error_code = IDENTITY_MISMATCH_CODE
+        job.error_msg = job.error_message = (
+            "The device behind this printer changed; the job was not printed."
+        )
+        JobStateMachine.transition(job, JobState.FAILED)
+        self._unpersisted.add(job.id)
+        self._notify_page_change(job, JobState.QUEUED, JobState.FAILED)
+        # No ``on_ended``: the cells stay reserved. The row still says ``queued`` and a restart
+        # takes it up again; freed cells could be reserved by another print meanwhile, and the
+        # page would print over those labels (C4). The cells belong to the row until it ends.
+
     async def _page_backstop(self, item: PageJob, printer_id: UUID) -> None:
         """The runner ends every job itself; this is the backstop for a bug in it."""
         logger.exception("Page job %s: runner failed on %s", item.job.id, printer_id)
@@ -2043,8 +2545,10 @@ class PrintQueue:
                 await self._store.mark_failed_code(UUID(item.job.id), "interrupted", message, None)
             except Exception:
                 # The database is failing too; the row stays ``printing`` and the next
-                # start settles it. The worker must not die of it.
+                # start settles it. The worker must not die of it. Its end is not written, so
+                # it is never evicted (like a tape job whose terminal write failed).
                 logger.exception("Page job %s: backstop could not persist the end", item.job.id)
+                self._unpersisted.add(item.job.id)
             # 2. the terminal state in memory (this releases the waiters), 3. the same event a
             # normal failure emits, 4. the outcome handler: the page may have printed.
             item.job.error_code = "interrupted"
@@ -2206,8 +2710,25 @@ class PrintQueue:
             if self._stopping or self._removing(printer_id):
                 return False
             waited = True
-            await self._worker_resume_events[printer_id].wait()
+            await self._wait_for_resume(printer_id)
         return not (waited and self._removing(printer_id))
+
+    async def _wait_for_resume(self, printer_id: UUID) -> None:
+        """One wait of a pause loop.
+
+        The resume event can be set while the printer is still paused (a removal or a stop wakes
+        the worker; the caller's loop then leaves). Any other wake-up with the state still paused
+        clears the event, or the loop would turn without ever yielding.
+        """
+        event = self._worker_resume_events[printer_id]
+        await event.wait()
+        if (
+            self._worker_resume_events.get(printer_id) is event
+            and self._worker_states.get(printer_id) == PrinterWorkerState.PAUSED
+            and not self._stopping
+            and not self._removing(printer_id)
+        ):
+            event.clear()
 
     async def _take_group(
         self, printer_id: UUID, batch: BatchJob, group: range
@@ -2252,16 +2773,13 @@ class PrintQueue:
         return active_jobs, payloads
 
     async def _complete_group(self, printer_id: UUID, batch: BatchJob, active: list[Job]) -> None:
+        # Every printed label is completed in memory first (no await), then the rows are written
+        # as one step that a removal timeout cannot cut short: the rest of the group printed
+        # too and must not be reported ``failed_restart`` (263-64).
+        completed: list[Job] = []
         for job in active:
             try:
                 JobStateMachine.transition(job, JobState.COMPLETED)
-                self._notify_state_change(
-                    job,
-                    JobState.PRINTING,
-                    JobState.COMPLETED,
-                    queue_depth=self._queue_depth(printer_id),
-                )
-                await self._store.mark_done(UUID(job.id))
             except InvalidStateTransitionError:
                 logger.warning(
                     "Batch %s: success-transition of %s failed (state=%s)",
@@ -2269,6 +2787,34 @@ class PrintQueue:
                     job.id,
                     job.state,
                 )
+                continue
+            self._notify_state_change(
+                job,
+                JobState.PRINTING,
+                JobState.COMPLETED,
+                queue_depth=self._queue_depth(printer_id),
+            )
+            completed.append(job)
+        await self._persist_through_cancel(lambda: self._mark_done_all(completed))
+
+    async def _mark_done_all(self, pending: list[Job]) -> None:
+        """Write the rows of *pending* done; a label leaves the list once its row is written."""
+        while pending:
+            await self._store.mark_done(UUID(pending[0].id))
+            pending.pop(0)
+
+    async def _persist_through_cancel(self, write: Callable[[], Awaitable[None]]) -> None:
+        """Run a store write that records a print that happened; if the worker is cancelled
+        meanwhile (the removal timeout), write again to the end and re-raise the cancel.
+
+        *write* must be safe to repeat (``mark_done`` is: a row that is not ``printing`` is left).
+        """
+        try:
+            await write()
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await asyncio.shield(write())
+            raise
 
     async def _stop_run(
         self,
@@ -2363,7 +2909,7 @@ class PrintQueue:
             exc_info=exc,
         )
         if run is not None and run.state == "stopped":
-            await self._bound_held_runs(run.printer_id)
+            await self._bound_held_runs(run)
 
     async def _advance_run(self, run: TapeRun | None) -> None:
         """After a sub-job: wait for the confirmation of the next one, or forget a finished run."""
@@ -2382,7 +2928,7 @@ class PrintQueue:
                 # No job event follows this state: the jobs page learns of the waiting run here.
                 self._notify_run_change(run, "awaiting_confirmation")
                 logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
-                await self._bound_held_runs(run.printer_id)
+                await self._bound_held_runs(run)
                 return
             nxt += 1
         del self._runs[run.run_id]

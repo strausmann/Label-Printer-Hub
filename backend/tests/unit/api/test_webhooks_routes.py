@@ -15,8 +15,10 @@ Test mapping (Grocy):
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncIterator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
+from uuid import UUID, uuid4
 
 import app.models  # noqa: F401 — registers all SQLModel tables with metadata
 import pytest
@@ -25,7 +27,10 @@ from app.api.routes.webhooks import router
 from app.db.engine import _apply_pragmas
 from app.db.session import get_session
 from app.models.printer import Printer
-from app.schemas.label_data import LabelData
+from app.printer_backends.exceptions import NoTapeLoadedError, PrinterOfflineError
+from app.schemas.content_type import ContentType
+from app.schemas.print_request import PrintLookupRequest, PrintOptions, PrintRequest
+from app.services.lookup_service import LookupFailedError, UnknownAppError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import event
@@ -90,7 +95,33 @@ async def _seed_printer(session: AsyncSession) -> Printer:
 # ---------------------------------------------------------------------------
 
 
-def _build_app(session_override: AsyncSession, key: str = _VALID_KEY) -> FastAPI:
+_SENTINEL = object()
+
+
+def _service() -> AsyncMock:
+    """A stand-in ``PrintService`` whose ``submit_print_job`` accepts."""
+    service = AsyncMock()
+    service.submit_print_job.return_value = uuid4()
+    return service
+
+
+class _StubRuntime:
+    def __init__(self, service: object) -> None:
+        self._service = service
+
+    def print_service_for(self, _printer_id: UUID) -> object:
+        return self._service
+
+
+_BODIES = {
+    "spoolman": {"spool_id": "42", "type": "updated"},
+    "grocy": {"product_id": "17", "type": "consumed"},
+}
+
+
+def _build_app(
+    session_override: AsyncSession, key: str = _VALID_KEY, service: object = _SENTINEL
+) -> FastAPI:
     """Return a FastAPI app with webhooks router, DB, and settings overridden."""
     test_app = FastAPI()
     test_app.include_router(router)
@@ -103,29 +134,9 @@ def _build_app(session_override: AsyncSession, key: str = _VALID_KEY) -> FastAPI
             return key
 
     test_app.state.settings_store = _StubStore()
+    test_app.state.printer_runtime = _StubRuntime(_service() if service is _SENTINEL else service)
     test_app.dependency_overrides[get_session] = _override_session
     return test_app
-
-
-# ---------------------------------------------------------------------------
-# Shared LabelData fixture for mocking AppLookupService
-# ---------------------------------------------------------------------------
-
-_SPOOLMAN_LABEL = LabelData(
-    title="Prusament PLA Galaxy Black",
-    primary_id="#42",
-    qr_payload="http://spoolman.local/spool/show/42",
-    source_app="spoolman",
-    secondary=("850g remaining",),
-)
-
-_GROCY_LABEL = LabelData(
-    title="Olive Oil Extra Virgin",
-    primary_id="17",
-    qr_payload="http://grocy.local/product/17",
-    source_app="grocy",
-    secondary=(),
-)
 
 
 # ===========================================================================
@@ -162,16 +173,12 @@ async def test_spoolman_webhook_valid_payload_returns_202_with_job_id(session) -
     """POST /api/v1/webhook/spoolman with a valid key and payload returns 202 with the job id."""
     await _seed_printer(session)
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_SPOOLMAN_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=True)
-        r = client.post(
-            "/api/v1/webhook/spoolman",
-            json={"spool_id": "42", "type": "updated", "quantity": 850.0},
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=True)
+    r = client.post(
+        "/api/v1/webhook/spoolman",
+        json={"spool_id": "42", "type": "updated", "quantity": 850.0},
+        headers={"X-API-Key": _VALID_KEY},
+    )
 
     assert r.status_code == 202
     body = r.json()
@@ -228,16 +235,12 @@ async def test_grocy_webhook_valid_payload_returns_202_with_job_id(session) -> N
     """POST /api/v1/webhook/grocy with valid key + payload returns 202 WebhookAcceptedResponse."""
     await _seed_printer(session)
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_GROCY_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=True)
-        r = client.post(
-            "/api/v1/webhook/grocy",
-            json={"product_id": "17", "type": "stock_added", "quantity": 3.0},
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=True)
+    r = client.post(
+        "/api/v1/webhook/grocy",
+        json={"product_id": "17", "type": "stock_added", "quantity": 3.0},
+        headers={"X-API-Key": _VALID_KEY},
+    )
 
     assert r.status_code == 202
     body = r.json()
@@ -272,16 +275,12 @@ async def test_spoolman_webhook_no_enabled_printers_returns_503(session) -> None
     enabled rows (lines 77-83 of webhooks.py).
     """
     # Do NOT seed any printer — table is empty.
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_SPOOLMAN_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=False)
-        r = client.post(
-            "/api/v1/webhook/spoolman",
-            json={"spool_id": "42", "type": "updated"},
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=False)
+    r = client.post(
+        "/api/v1/webhook/spoolman",
+        json={"spool_id": "42", "type": "updated"},
+        headers={"X-API-Key": _VALID_KEY},
+    )
     assert r.status_code == 503
     assert "No enabled printers" in r.json()["detail"]
 
@@ -293,16 +292,12 @@ async def test_grocy_webhook_no_enabled_printers_returns_503(session) -> None:
     Exercises _resolve_default_printer_id (lines 77-83) via the grocy handler.
     """
     # Do NOT seed any printer — table is empty.
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_GROCY_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=False)
-        r = client.post(
-            "/api/v1/webhook/grocy",
-            json={"product_id": "7", "type": "consumed"},
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=False)
+    r = client.post(
+        "/api/v1/webhook/grocy",
+        json={"product_id": "7", "type": "consumed"},
+        headers={"X-API-Key": _VALID_KEY},
+    )
     assert r.status_code == 503
     assert "No enabled printers" in r.json()["detail"]
 
@@ -324,21 +319,17 @@ async def test_spoolman_webhook_disabled_printer_returns_503(session) -> None:
     session.add(printer)
     await session.commit()
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_SPOOLMAN_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=False)
-        r = client.post(
-            "/api/v1/webhook/spoolman",
-            json={"spool_id": "99", "type": "updated"},
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=False)
+    r = client.post(
+        "/api/v1/webhook/spoolman",
+        json={"spool_id": "99", "type": "updated"},
+        headers={"X-API-Key": _VALID_KEY},
+    )
     assert r.status_code == 503
 
 
 # ===========================================================================
-# quantity=None branch — exercises lines 107-116 / 147-156 without quantity
+# Optional quantity
 # ===========================================================================
 
 
@@ -351,16 +342,12 @@ async def test_spoolman_webhook_without_quantity_returns_202(session) -> None:
     """
     await _seed_printer(session)
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_SPOOLMAN_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=True)
-        r = client.post(
-            "/api/v1/webhook/spoolman",
-            json={"spool_id": "42", "type": "updated"},  # no quantity field
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=True)
+    r = client.post(
+        "/api/v1/webhook/spoolman",
+        json={"spool_id": "42", "type": "updated"},  # no quantity field
+        headers={"X-API-Key": _VALID_KEY},
+    )
 
     assert r.status_code == 202
     body = r.json()
@@ -376,16 +363,12 @@ async def test_grocy_webhook_without_quantity_returns_202(session) -> None:
     """
     await _seed_printer(session)
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_GROCY_LABEL),
-    ):
-        client = TestClient(_build_app(session), raise_server_exceptions=True)
-        r = client.post(
-            "/api/v1/webhook/grocy",
-            json={"product_id": "17", "type": "stock_added"},  # no quantity field
-            headers={"X-API-Key": _VALID_KEY},
-        )
+    client = TestClient(_build_app(session), raise_server_exceptions=True)
+    r = client.post(
+        "/api/v1/webhook/grocy",
+        json={"product_id": "17", "type": "stock_added"},  # no quantity field
+        headers={"X-API-Key": _VALID_KEY},
+    )
 
     assert r.status_code == 202
     body = r.json()
@@ -454,120 +437,109 @@ async def test_resolve_default_printer_id_returns_first_enabled_printer(session)
     assert result == str(printer.id)
 
 
-@pytest.mark.asyncio
-async def test_spoolman_webhook_direct_with_quantity(session) -> None:
-    """spoolman_webhook called directly creates a queued job with quantity.
-
-    Directly exercises lines 100-123 in the pytest async loop, including
-    the ``if payload.quantity is not None:`` True branch (line 115).
-    """
-    from app.api.routes.webhooks import spoolman_webhook
-    from app.schemas.webhook import SpoolmanWebhookPayload
-
-    printer = await _seed_printer(session)
-
-    payload = SpoolmanWebhookPayload(spool_id="42", type="updated", quantity=850.0)
-
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_SPOOLMAN_LABEL),
-    ):
-        result = await spoolman_webhook(payload=payload, session=session)
-
-    assert result.job_id is not None
-
-    # Verify the job was persisted
-    from app.repositories import jobs as jobs_repo
-
-    job = await jobs_repo.get(session, result.job_id)
-    assert job is not None
-    assert job.printer_id == printer.id
-    assert "quantity" in job.payload
+def _submitted(service: AsyncMock) -> PrintRequest:
+    service.submit_print_job.assert_awaited_once()
+    return service.submit_print_job.await_args.args[0]
 
 
 @pytest.mark.asyncio
-async def test_spoolman_webhook_direct_without_quantity(session) -> None:
-    """spoolman_webhook called directly without quantity omits quantity from payload.
-
-    Exercises the ``if payload.quantity is not None:`` False branch (line 115).
-    """
-    from app.api.routes.webhooks import spoolman_webhook
-    from app.schemas.webhook import SpoolmanWebhookPayload
-
+@pytest.mark.parametrize(
+    ("route", "body", "app_name", "identifier"),
+    [
+        ("spoolman", {"spool_id": "42", "type": "updated", "quantity": 850.0}, "spoolman", "42"),
+        ("grocy", {"product_id": "17", "type": "consumed", "quantity": 3.0}, "grocy", "17"),
+    ],
+)
+async def test_webhook_submits_a_two_line_qr_label_for_one_copy(
+    session, route: str, body: dict, app_name: str, identifier: str
+) -> None:
+    """The handler hands a lookup request to the print service; ``quantity`` changes nothing."""
     await _seed_printer(session)
+    service = _service()
 
-    payload = SpoolmanWebhookPayload(spool_id="42", type="updated")  # no quantity
+    r = TestClient(_build_app(session, service=service)).post(
+        f"/api/v1/webhook/{route}", json=body, headers={"X-API-Key": _VALID_KEY}
+    )
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_SPOOLMAN_LABEL),
-    ):
-        result = await spoolman_webhook(payload=payload, session=session)
-
-    assert result.job_id is not None
-
-    from app.repositories import jobs as jobs_repo
-
-    job = await jobs_repo.get(session, result.job_id)
-    assert job is not None
-    assert "quantity" not in job.payload
-
-
-@pytest.mark.asyncio
-async def test_grocy_webhook_direct_with_quantity(session) -> None:
-    """grocy_webhook called directly creates a queued job with quantity.
-
-    Directly exercises lines 140-163 including the quantity True branch (line 155).
-    """
-    from app.api.routes.webhooks import grocy_webhook
-    from app.schemas.webhook import GrocyWebhookPayload
-
-    printer = await _seed_printer(session)
-
-    payload = GrocyWebhookPayload(product_id="17", type="consumed", quantity=3.0)
-
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_GROCY_LABEL),
-    ):
-        result = await grocy_webhook(payload=payload, session=session)
-
-    assert result.job_id is not None
-
-    from app.repositories import jobs as jobs_repo
-
-    job = await jobs_repo.get(session, result.job_id)
-    assert job is not None
-    assert job.printer_id == printer.id
-    assert "quantity" in job.payload
+    assert r.status_code == 202, r.text
+    request = _submitted(service)
+    assert request.content_type == ContentType.QR_TWO_LINES
+    assert request.lookup == PrintLookupRequest(app=app_name, identifier=identifier)
+    assert request.options == PrintOptions()
+    assert request.options.copies == 1
+    assert r.json()["job_id"] == str(service.submit_print_job.return_value)
+    # no owner key is invented; the audit trail records the peer address only (263-79)
+    assert service.submit_print_job.await_args.kwargs == {"source_ip": "testclient"}
 
 
 @pytest.mark.asyncio
-async def test_grocy_webhook_direct_without_quantity(session) -> None:
-    """grocy_webhook called directly without quantity omits it from the payload.
-
-    Exercises the ``if payload.quantity is not None:`` False branch (line 155).
-    """
-    from app.api.routes.webhooks import grocy_webhook
-    from app.schemas.webhook import GrocyWebhookPayload
-
+@pytest.mark.parametrize("route", ["spoolman", "grocy"])
+async def test_webhook_without_a_wired_service_is_503(session, route: str) -> None:
     await _seed_printer(session)
+    r = TestClient(_build_app(session, service=None), raise_server_exceptions=False).post(
+        f"/api/v1/webhook/{route}", json=_BODIES[route], headers={"X-API-Key": _VALID_KEY}
+    )
+    assert r.status_code == 503
+    assert "not attached" in r.json()["detail"]
 
-    payload = GrocyWebhookPayload(product_id="17", type="consumed")  # no quantity
 
-    with patch(
-        "app.api.routes.webhooks._lookup_service.lookup",
-        new=AsyncMock(return_value=_GROCY_LABEL),
-    ):
-        result = await grocy_webhook(payload=payload, session=session)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["spoolman", "grocy"])
+@pytest.mark.parametrize(
+    ("exc", "http_status", "code"),
+    [
+        (NoTapeLoadedError(), 409, "no_tape_loaded"),
+        (PrinterOfflineError("x"), 503, "printer_offline"),
+        (UnknownAppError("secret-upstream-detail"), 422, "integration_unknown_app"),
+        (LookupFailedError("https://example.invalid/leak"), 502, "integration_lookup_failed"),
+    ],
+)
+async def test_webhook_answers_print_errors_like_the_print_route(
+    session, route: str, exc: Exception, http_status: int, code: str
+) -> None:
+    await _seed_printer(session)
+    service = _service()
+    service.submit_print_job.side_effect = exc
 
-    assert result.job_id is not None
+    r = TestClient(_build_app(session, service=service)).post(
+        f"/api/v1/webhook/{route}", json=_BODIES[route], headers={"X-API-Key": _VALID_KEY}
+    )
 
-    from app.repositories import jobs as jobs_repo
+    assert r.status_code == http_status, r.text
+    assert r.json()["error_code"] == code
+    assert "example.invalid" not in r.text and "secret-upstream" not in r.text
 
-    job = await jobs_repo.get(session, result.job_id)
-    assert job is not None
-    assert "quantity" not in job.payload
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route", ["spoolman", "grocy"])
+async def test_webhook_rate_limit_is_per_key_and_shared(session, route: str, monkeypatch) -> None:
+    from app.config import get_settings
+    from app.services.rate_limiter import _rate_limiter
+
+    monkeypatch.setenv("PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE", "1")
+    get_settings.cache_clear()
+    _rate_limiter.clear()
+    try:
+        await _seed_printer(session)
+        client = TestClient(_build_app(session, service=_service()))
+        ok = client.post(
+            f"/api/v1/webhook/{route}", json=_BODIES[route], headers={"X-API-Key": _VALID_KEY}
+        )
+        other = "grocy" if route == "spoolman" else "spoolman"
+        over = client.post(
+            f"/api/v1/webhook/{other}", json=_BODIES[other], headers={"X-API-Key": _VALID_KEY}
+        )
+        assert (ok.status_code, over.status_code) == (202, 429)
+        assert "Retry-After" in over.headers
+        # the bucket is named by a hash: neither the key nor its hash is on the wire
+        assert _VALID_KEY not in over.text
+        digest = hashlib.sha256(_VALID_KEY.encode()).hexdigest()[:16]
+        assert digest not in over.text
+        assert all(_VALID_KEY not in str(k) for k in _rate_limiter._buckets)
+        assert any(digest in str(k) for k in _rate_limiter._buckets)  # the digest is the name
+    finally:
+        _rate_limiter.clear()
+        get_settings.cache_clear()
 
 
 @pytest.mark.asyncio

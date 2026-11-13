@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import { ApiError } from "../../api/client";
-import { invalidGeometry, prefixTaken, typeInUse } from "../../api/errorDetail";
+import { invalidGeometry, labelTooLong, prefixTaken, typeInUse } from "../../api/errorDetail";
 
 /** The server's names for the fields it complains about, as words. */
 function useFieldWords(): (field: string) => string {
@@ -101,6 +101,9 @@ export function useArchiveErrorText(): (error: unknown, fallback?: string) => st
     if (error instanceof ApiError) {
       const geometry = invalidGeometry(error);
       if (geometry) return geometrySentence(geometry.field, geometry.reason);
+      const tooLong = labelTooLong(error);
+      if (tooLong) return geometrySentence(tooLong.field, "too long");
+      if (error.code === "label_too_long") return t`A text is too long.`;
       const prefix = prefixTaken(error);
       if (prefix) {
         return prefix.reason === "sheets_exist"

@@ -130,3 +130,60 @@ async def test_submit_returns_uuid_not_string(
     svc, _store, _printer_id = print_service
     job_id = await svc.submit_print_job(sample_request)
     assert isinstance(job_id, UUID), f"Erwartet UUID, erhalten: {type(job_id)}"
+
+
+@pytest.mark.asyncio
+async def test_submit_records_the_submitting_key_and_address(print_service, sample_request):
+    """#294: a tape job belongs to the key that submitted it; the row says which one."""
+    svc, sqlite_store, _printer_id = print_service
+    key_id = uuid4()
+
+    job_id = await svc.submit_print_job(sample_request, api_key_id=key_id, source_ip="192.0.2.7")
+
+    persisted = await sqlite_store.get(job_id)
+    assert persisted is not None
+    assert persisted.api_key_id == key_id
+    assert persisted.source_ip == "192.0.2.7"
+
+
+@pytest.mark.asyncio
+async def test_submit_without_a_key_stores_no_owner(print_service, sample_request):
+    svc, sqlite_store, _printer_id = print_service
+    job_id = await svc.submit_print_job(sample_request)
+    persisted = await sqlite_store.get(job_id)
+    assert persisted is not None and persisted.api_key_id is None
+
+
+@pytest.mark.asyncio
+async def test_test_label_records_the_submitting_key(print_service):
+    svc, sqlite_store, _printer_id = print_service
+    key_id = uuid4()
+
+    job_id = await svc.submit_test_label(
+        lambda _mm: RawLabelData(title="T", primary_id="1", qr_payload="https://e.invalid/t"),
+        api_key_id=key_id,
+        source_ip="192.0.2.8",
+    )
+
+    persisted = await sqlite_store.get(job_id)
+    assert persisted is not None
+    assert (persisted.api_key_id, persisted.source_ip) == (key_id, "192.0.2.8")
+
+
+@pytest.mark.asyncio
+async def test_batch_records_the_submitting_key_on_every_row(print_service, sample_request):
+    svc, sqlite_store, _printer_id = print_service
+    key_id = uuid4()
+
+    job_ids = await svc.submit_batch_job(
+        [sample_request, sample_request],
+        half_cut=False,
+        api_key_id=key_id,
+        source_ip="192.0.2.9",
+    )
+
+    assert len(job_ids) == 2
+    for job_id in job_ids:
+        persisted = await sqlite_store.get(job_id)
+        assert persisted is not None
+        assert (persisted.api_key_id, persisted.source_ip) == (key_id, "192.0.2.9")

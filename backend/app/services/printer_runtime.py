@@ -19,7 +19,13 @@ Ordering rules:
   pause control for a printer the queue no longer knows (``resume_printer`` raises
   ``KeyError`` then);
 - producers run only after ``start()``; until then ``attach`` builds them without starting,
-  so startup never waits for a probe (both producers probe first, then sleep).
+  so startup never waits for a probe (both producers probe first, then sleep);
+- a page printer without a running status producer (it could not be built or started) is
+  attached degraded: the queue holds it paused with the reason ``status-unavailable`` (nothing
+  could ever start its jobs or lift a hardware pause), and the runtime retries the producer
+  start with the probe backoff. A successful start lifts that pause only, never a user's;
+- a failure after a printer joined the queue takes it out again, so a failed attach leaves no
+  worker behind.
 
 Logs name the printer slug and the error class, never a URI or host.
 """
@@ -31,7 +37,7 @@ import contextlib
 import hashlib
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -61,7 +67,12 @@ from app.services.hardware_identity import IdentityOutcome, record_identity
 from app.services.lookup_service import AppLookupService
 from app.services.page_jobs import IppPagePrinter
 from app.services.print_service import PrintService
-from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
+from app.services.producers.ipp_status_producer import (
+    MAX_BACKOFF_DOUBLINGS,
+    MAX_BACKOFF_S,
+    IppPrinterState,
+    IppStatusProducer,
+)
 from app.services.producers.status_probe_producer import StatusProbeProducer
 from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.producers.tape_description import TapeDescription
@@ -80,6 +91,8 @@ _log = logging.getLogger(__name__)
 # At most this many IPP printers are probed at the same moment.
 _IPP_PROBE_CONCURRENCY = 4
 _DEFAULT_SHUTDOWN_WAIT_S = 30
+# The pause reason of a page printer whose status producer is not running (265-06).
+STATUS_UNAVAILABLE = "status-unavailable"
 
 
 def shutdown_wait_s(tape_timeouts_s: Sequence[int], page_timeouts_s: Sequence[int]) -> float:
@@ -155,18 +168,16 @@ def wiring_key(printer: Printer, *, tray_keys: Sequence[str] = ()) -> tuple[obje
     construction; a tape printer uses it only for the detach and shutdown waits, and
     ``reconcile`` takes a changed value over without a re-wire.
     *tray_keys* are the page printer's tray keys (the trays live in their own table).
+    The SNMP settings of a tape printer (discovery switch, community) are part of the
+    connection JSON (element 3), so a change of either changes the key.
     """
     is_ipp = printer.backend == "ipp"
     conn = dict(printer.connection or {})
-    snmp = conn.get("snmp") or {}
     return (
         bool(printer.enabled),
         printer.backend,
         json.dumps(conn, sort_keys=True, default=str),
         printer.model,
-        None
-        if is_ipp
-        else (bool(snmp.get("discover", False)), str(snmp.get("community", "public"))),
         tuple(sorted(tray_keys)) if is_ipp else (),
         int(printer.queue_timeout_s) if is_ipp else None,
     )
@@ -199,6 +210,8 @@ class _Wiring:
     # page
     page_client: IppClient | None = None
     state: IppPrinterState | None = None
+    # Builds a fresh status producer (with its own client); set for page printers only.
+    make_producer: Callable[[], Awaitable[IppStatusProducer]] | None = None
 
 
 class PrinterRuntime:
@@ -209,6 +222,10 @@ class PrinterRuntime:
     and the optional ``ipp_transport_factory`` (tests). Writes ``backend_router``,
     ``slug_to_printer_id``, ``ipp_printer_states`` and the back-compat fields
     ``print_service`` / ``printer_id`` (the first wired tape printer by ``created_at``).
+
+    ``roll_tracker`` is the one tracker of this runtime, handed to every tape producer (it
+    takes ``event_bus`` from ``app.state`` at construction); ``reconciles`` holds the running
+    reconcile tasks of the admin routes (strong references, per app).
     """
 
     def __init__(
@@ -222,6 +239,10 @@ class PrinterRuntime:
         self._settings = settings
         self._session_factory = session_factory
         self._locks: dict[UUID, asyncio.Lock] = {}
+        self._lock_users: dict[UUID, int] = {}
+        self._retries: dict[UUID, asyncio.Task[None]] = {}
+        self.reconciles: set[asyncio.Task[None]] = set()
+        self.roll_tracker = RollTracker(getattr(app.state, "event_bus", None), session_factory)
         self._wired: dict[UUID, _Wiring] = {}
         self._ipp_limiter = asyncio.Semaphore(_IPP_PROBE_CONCURRENCY)
         self._tape_registry = TapeRegistry()
@@ -249,7 +270,7 @@ class PrinterRuntime:
         """
         if self._closed:
             return
-        async with self._lock(printer.id):
+        async with self._serialized(printer.id):
             if self._is_closed():  # stop() may have run while this waited for the lock
                 return
             await self._attach_locked(printer, fatal=fatal)
@@ -263,7 +284,7 @@ class PrinterRuntime:
         """
         if self._closed:
             return
-        async with self._lock(printer_id):
+        async with self._serialized(printer_id):
             if self._is_closed():  # stop() may have run while this waited for the lock
                 return
             await self._detach_locked(printer_id)
@@ -283,7 +304,7 @@ class PrinterRuntime:
         """
         if self._closed:
             return
-        async with self._lock(printer_id):
+        async with self._serialized(printer_id):
             if self._is_closed():  # stop() may have run while this waited for the lock
                 return
             try:
@@ -309,7 +330,10 @@ class PrinterRuntime:
         wiring = self._wired.get(printer_id)
         if row is not None and row.enabled and wiring is not None:
             trays = await self._tray_keys(printer_id) if row.backend == "ipp" else []
-            if _key_digest(wiring_key(row, tray_keys=trays)) == wiring.key_digest:
+            same_key = _key_digest(wiring_key(row, tray_keys=trays)) == wiring.key_digest
+            # 263-23: an equal key is no reason to keep a printer that should be polled but
+            # has no producer (its start failed); re-wiring gives it a fresh one.
+            if same_key and not self._producer_missing(row, wiring):
                 # Not in the key for tape printers (only the shutdown and detach waits read
                 # it), so take it over here or those waits would use the old value.
                 wiring.queue_timeout_s = int(row.queue_timeout_s)
@@ -320,6 +344,16 @@ class PrinterRuntime:
         await self._detach_locked(printer_id)
         if row is not None and row.enabled:
             await self._attach_locked(row, fatal=False)
+
+    @staticmethod
+    def _producer_missing(row: Printer, wiring: _Wiring) -> bool:
+        """True iff *row* is polled by design but *wiring* has no producer."""
+        if wiring.producer is not None:
+            return False
+        if row.backend == "ipp":
+            return True
+        cfg = tape_config(row)
+        return bool(cfg.host and cfg.snmp.discover)
 
     async def start(self) -> None:
         """Start the producers of every attached printer; later attaches start theirs at once."""
@@ -333,7 +367,8 @@ class PrinterRuntime:
         """Stop producers, stop the queue once (longest attached timeout), close page clients.
 
         Later ``attach``/``reconcile`` calls are no-ops. A running attach or detach finishes
-        first. Printers are not removed one by one.
+        first. Printers are not removed one by one. The page clients are closed even when the
+        queue stop raises (the error still propagates).
         """
         if self._closed:
             return
@@ -341,17 +376,21 @@ class PrinterRuntime:
         for lock in list(self._locks.values()):
             async with lock:
                 pass
+        for printer_id in list(self._retries):
+            await self._cancel_retry(printer_id)
         wirings = list(self._wired.values())
-        for wiring in wirings:
-            await self._stop_producer(wiring)
-        await self._queue().stop(
-            timeout_s=shutdown_wait_s(
-                [w.queue_timeout_s for w in wirings if w.kind == "tape"],
-                [w.queue_timeout_s for w in wirings if w.kind == "page"],
+        try:
+            for wiring in wirings:
+                await self._stop_producer(wiring)
+            await self._queue().stop(
+                timeout_s=shutdown_wait_s(
+                    [w.queue_timeout_s for w in wirings if w.kind == "tape"],
+                    [w.queue_timeout_s for w in wirings if w.kind == "page"],
+                )
             )
-        )
-        for wiring in wirings:
-            await self._close_page_client(wiring)
+        finally:  # 263-16: a failing queue stop must not leave the page clients open
+            for wiring in wirings:
+                await self._close_page_client(wiring)
 
     def describe_tape_for(self, printer_id: UUID, width_mm: int) -> TapeDescription:
         """The attached model driver's tape label; the generic ``"{N}mm"`` otherwise."""
@@ -391,9 +430,19 @@ class PrinterRuntime:
         if wiring is None:
             return
         self._wired[printer.id] = wiring
-        self._refresh_backcompat()
-        if self._started:
-            await self._start_producer(wiring)
+        try:
+            self._refresh_backcompat()
+            if wiring.make_producer is not None and wiring.producer is None:
+                # Built-failed page producer: held before any worker can run a job (263-77's
+                # guard below covers a failure here too).
+                await self._pause_status_unavailable(wiring)
+            if self._started:
+                await self._start_producer(wiring)
+        except BaseException:
+            # 263-77: the printer already joined the queue; a later failure takes it out again.
+            with contextlib.suppress(Exception):
+                await self._detach_locked(printer.id)
+            raise
 
     async def _attach_tape(
         self, printer: Printer, paused_since: datetime | None, *, fatal: bool
@@ -424,6 +473,7 @@ class PrinterRuntime:
                 queue=queue,
                 lookup_service=AppLookupService(),
                 printer_id=printer.id,
+                printer_slug=cfg.slug,
                 backend=cast(Any, backend),
                 store=self._app.state.job_store,
                 layout_defaults=parse_layout_defaults(printer.layout_defaults),
@@ -472,7 +522,7 @@ class PrinterRuntime:
                 interval_s=self._settings.sse_probe_interval_s,
                 community=cfg.snmp.community,
                 tape_change_producer=tape_producer,
-                roll_tracker=RollTracker(self._app.state.event_bus),
+                roll_tracker=self.roll_tracker,
                 identity_sink=self._identity_sink,
             )
         except Exception as exc:
@@ -489,6 +539,8 @@ class PrinterRuntime:
         tls_verify = bool(conn.get("tls_verify", True))
         queue_timeout = float(printer.queue_timeout_s)
         factory = getattr(self._app.state, "ipp_transport_factory", None)
+        # 263-77: read before anything is built or added; a failure here leaves nothing behind.
+        tray_keys = await self._tray_keys(printer.id)
         try:
             page_client = IppClient(
                 uri,
@@ -504,27 +556,39 @@ class PrinterRuntime:
             )
             return None
         state = IppPrinterState()
+        probe_timeout = min(5.0, queue_timeout)
+
+        async def make_producer() -> IppStatusProducer:
+            client = IppClient(
+                uri,
+                tls_verify=tls_verify,
+                query_timeout_s=probe_timeout,
+                upload_timeout_s=probe_timeout,
+                transport=factory(uri) if factory else None,
+            )
+            try:
+                return IppStatusProducer(
+                    bus=self._app.state.event_bus,
+                    printer_id=printer.id,
+                    client=client,
+                    session_factory=self._sessions(),
+                    state=state,
+                    pause_control=self._queue(),
+                    interval_s=self._settings.sse_probe_interval_s,
+                    limiter=self._ipp_limiter,
+                    log_name=printer.slug,
+                    identity_sink=self._identity_sink,
+                )
+            except BaseException:
+                # L2: the producer owns the client only once it exists; a retry loop must not
+                # leak one client per failed build.
+                with contextlib.suppress(Exception):
+                    await client.aclose()
+                raise
+
         producer: IppStatusProducer | None
         try:
-            probe_timeout = min(5.0, queue_timeout)
-            producer = IppStatusProducer(
-                bus=self._app.state.event_bus,
-                printer_id=printer.id,
-                client=IppClient(
-                    uri,
-                    tls_verify=tls_verify,
-                    query_timeout_s=probe_timeout,
-                    upload_timeout_s=probe_timeout,
-                    transport=factory(uri) if factory else None,
-                ),
-                session_factory=self._sessions(),
-                state=state,
-                pause_control=self._queue(),
-                interval_s=self._settings.sse_probe_interval_s,
-                limiter=self._ipp_limiter,
-                log_name=printer.slug,
-                identity_sink=self._identity_sink,
-            )
+            producer = await make_producer()
         except Exception as exc:
             _log.warning(
                 "Degraded: IPP status producer for slug=%s not built (%s)",
@@ -553,12 +617,11 @@ class PrinterRuntime:
             kind="page",
             created_at=_aware(printer.created_at),
             queue_timeout_s=int(printer.queue_timeout_s),
-            key_digest=_key_digest(
-                wiring_key(printer, tray_keys=await self._tray_keys(printer.id))
-            ),
+            key_digest=_key_digest(wiring_key(printer, tray_keys=tray_keys)),
             producer=producer,
             page_client=page_client,
             state=state,
+            make_producer=make_producer,
         )
 
     # ------------------------------------------------------------------ detach
@@ -568,12 +631,14 @@ class PrinterRuntime:
         if wiring is None:
             return
         try:
+            await self._cancel_retry(printer_id)
             # The producer first: once stopped it cannot reach the queue's pause control
             # for a printer the queue has forgotten (ruling b).
             await self._stop_producer(wiring)
             await self._queue().remove_printer(printer_id, timeout_s=wiring.queue_timeout_s)
         finally:
             if wiring.kind == "tape":
+                self.roll_tracker.forget(printer_id)
                 self._router.unregister(wiring.slug)
                 if self._slug_to_id.get(wiring.slug) == printer_id:
                     del self._slug_to_id[wiring.slug]
@@ -587,21 +652,50 @@ class PrinterRuntime:
     def _is_closed(self) -> bool:
         return self._closed
 
-    def _lock(self, printer_id: UUID) -> asyncio.Lock:
+    @contextlib.asynccontextmanager
+    async def _serialized(self, printer_id: UUID) -> AsyncIterator[None]:
+        """Hold the per-printer lock; the entry is dropped when the last user leaves (263-17).
+
+        Counted by users, not by ``Lock.locked()``: a released lock with a waiter reads
+        unlocked until the waiter runs, and dropping it then would let a newcomer take a second
+        lock for the same printer.
+        """
         lock = self._locks.get(printer_id)
         if lock is None:
             lock = self._locks[printer_id] = asyncio.Lock()
-        return lock
+        self._lock_users[printer_id] = self._lock_users.get(printer_id, 0) + 1
+        try:
+            async with lock:
+                yield
+        finally:
+            users = self._lock_users[printer_id] - 1
+            if users:
+                self._lock_users[printer_id] = users
+            else:
+                del self._lock_users[printer_id]
+                self._locks.pop(printer_id, None)
 
     async def _identity_sink(self, printer_id: UUID, observed: ObservedIdentity) -> IdentityOutcome:
-        """The sink both status producers call after a successful probe (#231)."""
-        return await record_identity(
+        """The sink both status producers call after a successful probe (#231).
+
+        A ``seen`` reading while the queue still holds the printer means the hold outlived its
+        mismatch: a clear whose re-read failed keeps the hold (fail closed), and no later probe
+        would announce a clear again. Re-sync it from the database then (263-48); the re-read
+        only runs while a hold is set, and releases it only when verified.
+        """
+        outcome = await record_identity(
             printer_id,
             observed,
             datetime.now(UTC),
             session_factory=self._sessions(),
             on_mismatch=self._mismatch_changed,
         )
+        if outcome in ("seen", "kind_upgraded") and self._queue().is_identity_held(printer_id):
+            try:
+                await self._mismatch_changed(printer_id, None)
+            except Exception as exc:  # as ``record_identity``'s own hook call: never raises
+                _log.warning("identity hold re-sync failed (%s)", type(exc).__name__)
+        return outcome
 
     async def _mismatch_changed(self, printer_id: UUID, since: datetime | None) -> None:
         """A mismatch started or ended: hold or release, and tell the SSE readers.
@@ -686,17 +780,121 @@ class PrinterRuntime:
             return [str(k) for k in result.scalars()]
 
     async def _start_producer(self, wiring: _Wiring) -> None:
-        if wiring.producer is None:
-            return
+        producer = wiring.producer
+        if producer is not None:
+            try:
+                await producer.start()
+                return
+            except Exception as exc:
+                _log.warning(
+                    "Degraded: status producer for slug=%s not started (%s)",
+                    wiring.slug,
+                    type(exc).__name__,
+                )
+                wiring.producer = None
+                if wiring.make_producer is not None:  # a page printer: hold it first (L1)
+                    await self._pause_status_unavailable(wiring)
+                await self._stop_producer_quietly(producer, wiring.slug)
+        if wiring.make_producer is not None:  # a page printer: held until a producer runs
+            await self._pause_status_unavailable(wiring)
+            self._ensure_retry(wiring)
+
+    async def _pause_status_unavailable(self, wiring: _Wiring) -> None:
+        """Hold a page printer whose status producer is not running (265-06).
+
+        The existing pause with a reason; a user's pause stays what it is. When the producer
+        could not be built, no await lies between ``add_page_printer`` returning and this call,
+        so no worker runs a job first. When its start failed, the pause is the first thing after
+        the failed call (``start`` only creates the probe task), before the broken producer is
+        stopped; an await inside the failing call itself is the only gap.
+        """
         try:
-            await wiring.producer.start()
+            await self._queue().pause_printer(
+                wiring.printer_id, reason=STATUS_UNAVAILABLE, source="printer_error"
+            )
         except Exception as exc:
             _log.warning(
-                "Degraded: status producer for slug=%s not started (%s)",
+                "Printer slug=%s not paused as status-unavailable (%s)",
                 wiring.slug,
                 type(exc).__name__,
             )
-            wiring.producer = None
+
+    async def _lift_status_pause(self, wiring: _Wiring) -> None:
+        """Resume the printer if, and only if, the pause is our ``status-unavailable`` one."""
+        queue = self._queue()
+        info = queue.pause_info(wiring.printer_id)
+        if info is None or info.source != "printer_error" or info.reason_code != STATUS_UNAVAILABLE:
+            return
+        try:
+            await queue.resume_printer(wiring.printer_id)
+        except Exception as exc:
+            _log.warning(
+                "Printer slug=%s status pause not lifted (%s)", wiring.slug, type(exc).__name__
+            )
+
+    def _retry_delay(self, failures: int) -> float:
+        """The probe backoff: the interval, doubled per failed retry up to ``MAX_BACKOFF_S``."""
+        interval = self._settings.sse_probe_interval_s
+        doublings = min(failures, MAX_BACKOFF_DOUBLINGS)
+        return float(min(MAX_BACKOFF_S, max(interval, interval * (2**doublings))))
+
+    def _ensure_retry(self, wiring: _Wiring) -> None:
+        existing = self._retries.get(wiring.printer_id)
+        if existing is not None and not existing.done():
+            return
+        task = asyncio.create_task(
+            self._retry_producer(wiring), name=f"producer-retry-{wiring.printer_id}"
+        )
+        self._retries[wiring.printer_id] = task
+
+        def _forget(done: asyncio.Task[None]) -> None:
+            if self._retries.get(wiring.printer_id) is done:
+                del self._retries[wiring.printer_id]
+
+        task.add_done_callback(_forget)
+
+    async def _cancel_retry(self, printer_id: UUID) -> None:
+        task = self._retries.pop(printer_id, None)
+        if task is None or task is asyncio.current_task():
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    async def _retry_producer(self, wiring: _Wiring) -> None:
+        """Start the status producer of a degraded page printer, with the probe backoff.
+
+        Runs under the printer lock, so it never overlaps an attach, detach or reconcile; it
+        gives up when its wiring is no longer the attached one.
+        """
+        failures = 0
+        while True:
+            await asyncio.sleep(self._retry_delay(failures))
+            async with self._serialized(wiring.printer_id):
+                if (
+                    self._closed
+                    or self._wired.get(wiring.printer_id) is not wiring
+                    or wiring.producer is not None
+                    or wiring.make_producer is None
+                ):
+                    return
+                producer: IppStatusProducer | None = None
+                try:
+                    producer = await wiring.make_producer()
+                    await producer.start()
+                except Exception as exc:
+                    failures += 1
+                    (_log.warning if failures == 1 else _log.debug)(
+                        "Status producer for slug=%s still not running (%s)",
+                        wiring.slug,
+                        type(exc).__name__,
+                    )
+                    if producer is not None:
+                        await self._stop_producer_quietly(producer, wiring.slug)
+                    continue
+                wiring.producer = producer
+                await self._lift_status_pause(wiring)
+                _log.info("Status producer for slug=%s is running again", wiring.slug)
+                return
 
     async def _stop_producer(self, wiring: _Wiring) -> None:
         producer, wiring.producer = wiring.producer, None

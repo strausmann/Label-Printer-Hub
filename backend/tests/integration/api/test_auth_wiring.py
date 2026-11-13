@@ -21,6 +21,7 @@ import app.models  # noqa: F401
 import bcrypt
 import pytest
 from app.models.api_key import ApiKey
+from sqlalchemy import select
 
 
 async def _make_print_key(factory):
@@ -160,12 +161,13 @@ async def _seed_printer(factory):
         return printer
 
 
-async def _seed_failed_job(factory, printer_id):
+async def _seed_failed_job(factory, printer_id, api_key_id=None):
     from app.models.job import Job, JobState
 
     async with factory() as s:
         job = Job(
             printer_id=printer_id,
+            api_key_id=api_key_id,
             template_key="audit-seed-template",
             state=JobState.FAILED.value,
             # Renderable like a job created by POST /api/v1/print: retry re-renders it.
@@ -249,8 +251,13 @@ async def test_retry_job_with_print_key_returns_201(api_client_with_seed):
 
     factory = _engine_module.async_session
     printer = await _seed_printer(factory)
-    job = await _seed_failed_job(factory, printer.id)
     print_key = await _make_print_key(factory)
+    async with factory() as s:
+        key_row = (
+            await s.execute(select(ApiKey).where(ApiKey.key_prefix == print_key[:16]))
+        ).scalar_one()
+    # #294: a plain key retries only its own job.
+    job = await _seed_failed_job(factory, printer.id, api_key_id=key_row.id)
 
     resp = await api_client_with_seed.post(
         f"/api/v1/jobs/{job.id}/retry",

@@ -35,6 +35,9 @@ RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
+# The bundle knows the version it was built for; the hub reports its own and a mismatch reloads (#288).
+ARG VERSION=0.0.0-dev
+ENV HUB_VERSION="${VERSION}"
 RUN pnpm build && mkdir /dist && cp -r dist/. /dist/
 
 # -----------------------------------------------------------------------------
@@ -148,7 +151,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000 \
     # uvicorn FORWARDED_ALLOW_IPS default — safe restriction to localhost only.
     # Deployments behind a reverse proxy must override this with the proxy's
-    # IP or CIDR via the FORWARDED_ALLOW_IPS env var.
+    # single address via the FORWARDED_ALLOW_IPS env var; no subnet.
     FORWARDED_ALLOW_IPS=127.0.0.1
 
 # Minimal runtime deps:

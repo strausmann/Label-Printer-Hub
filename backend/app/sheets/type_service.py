@@ -29,6 +29,7 @@ from app.sheets.errors import (
     SheetTypeInUseError,
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
+    TextTooLongError,
     TypeExistsError,
 )
 from app.sheets.geometry import (
@@ -170,7 +171,7 @@ def clean_text(field: str, value: str, max_len: int) -> str:
     try:
         return sanitise_text(value, max_len=max_len, multiline=field in MULTILINE_FIELDS)
     except ValueError:
-        raise InvalidFieldError(field, "too long") from None
+        raise TextTooLongError(field) from None
 
 
 def _clean_optional(field: str, value: str | None) -> str | None:
@@ -183,7 +184,7 @@ def _clean_url(value: str | None) -> str | None:
     if value is None:
         return None
     if len(value) > SOURCE_URL_MAX:
-        raise InvalidFieldError("source_url", "too long")
+        raise TextTooLongError("source_url")
     try:
         return check_http_url(value)
     except ValueError as exc:

@@ -7,7 +7,11 @@ with the database (one query per table) and acts only where the database is unto
 - an existing type gets a new version only if every version of it came from the seeder
   (``created_by == "system:seed"``), no sheet uses it and the seed geometry differs from the current
   version, so a local edit is never overwritten;
-- a seed whose prefix belongs to another type is skipped and logged.
+- a seed whose prefix belongs to another type is skipped and logged;
+- a seed whose version number is lower than the type's current version is an older seed (a
+  downgraded hub) and is ignored, so it never adds a version that reverts the geometry (264-11);
+- each entry runs in its own savepoint: one that fails is logged and skipped, the others are
+  stored (264-10).
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from app.models.sheet import Sheet, SheetType, SheetTypeVersion
 from app.sheets import type_service as ts
 from app.sheets.exchange import ExportDoc, geometry_from_doc
 from app.sheets.geometry import geometry_hash
+from app.sheets.text import log_value
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +99,13 @@ async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> S
     async with session_factory() as session, ts.write_transaction(session):
         known = await _load_known(session)
         for doc in docs:
-            await _seed_one(session, doc, known, report)
+            try:
+                async with session.begin_nested():
+                    await _seed_one(session, doc, known, report)
+            except Exception:
+                key = log_value(doc.type.key)
+                logger.exception("seed type %s skipped: it could not be stored", key)
+                report.skipped[doc.type.key] = "error"
         await session.commit()
     logger.info(
         "sheet seed revision %d: %d inserted, %d versions added, %d skipped",
@@ -153,6 +164,14 @@ async def _seed_one(
         return
     current = known.current.get(existing.id)
     if current is None or current.geometry_hash == geometry_hash(geometry):
+        return
+    if doc.version.version < current.version:
+        logger.info(
+            "seed type %s left alone: the seed has version %d, the database %d",
+            key,
+            doc.version.version,
+            current.version,
+        )
         return
     if (
         existing.id in known.foreign_versions

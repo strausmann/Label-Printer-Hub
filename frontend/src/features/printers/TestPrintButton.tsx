@@ -7,11 +7,13 @@ import { useSession } from "../../app/session";
 import { SelectField } from "../settings/controls";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../ui";
 import type { Printer, PrinterStatus, useTestPrint } from "./api";
-import { isPagePrinter, unknownKind } from "./model";
+import { isPagePrinter, printerStopReasons, unknownKind } from "./model";
+import { useReasonWord } from "./reasons";
 
 /** Why the button cannot be pressed, or null. Tape printers are not refused on status: the server's preflight decides. */
 function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): string | null {
   const { t } = useLingui();
+  const word = useReasonWord();
   if (!printer.enabled) return t`Printer is disabled`;
   if (printer.paused) return t`Printer is paused`;
   if (!isPagePrinter(printer, status)) return null;
@@ -19,6 +21,11 @@ function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): 
   // No reading yet (still loading) is the same as none: pressing now would print blind.
   if (status === undefined || unknownKind(status) === "not_polled") return t`Printer status unknown`;
   if (status?.stale === true || status?.online === false) return t`Printer is not reachable`;
+  // A stopped printer (cover open, toner empty …) takes the job and holds it: name the reason instead.
+  if (status?.printer_state === "stopped") {
+    const reasons = printerStopReasons(status).map(word).join(" · ");
+    return reasons ? t`Printer is stopped: ${reasons}` : t`Printer is stopped`;
+  }
   return null;
 }
 
@@ -38,6 +45,10 @@ function useErrorText(error: unknown): string {
         return t`The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray.`;
       case "printer-disabled":
         return t`The printer is switched off in the hub. Switch it on in the printer settings.`;
+      case "printer-paused":
+        return t`The printer is paused. Resume it, then try again.`;
+      case "printer-status-unknown":
+        return t`The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again.`;
     }
     if (!/^HTTP \d+$/.test(error.detail)) return error.detail;
   }
@@ -68,7 +79,7 @@ export function TestPrintButton({ printer, status, mutation }: { printer: Printe
           <Button className={SECONDARY_BUTTON} isDisabled={reason !== null || mutation.isPending} aria-describedby={reason ? reasonId : undefined}>
             {t`Test print`}
           </Button>
-          <Popover placement="bottom end" className="w-[min(20rem,calc(100vw-2rem))] rounded-r2 border border-line-strong bg-surface p-3 shadow-lg origin-(--trigger-anchor-point) data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+          <Popover placement="bottom end" className="w-[min(20rem,calc(100vw-2rem))] rounded-r2 border border-line-strong bg-surface p-3 shadow-lg origin-(--trigger-anchor-point) data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
             <Dialog aria-label={t`Test print`} className="flex flex-col gap-3 outline-none">
               <TrayChoice trays={status?.trays} pending={mutation.isPending} onPrint={send} />
             </Dialog>

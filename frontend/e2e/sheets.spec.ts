@@ -26,6 +26,9 @@ async function choose(scope: Locator, select: RegExp, option: RegExp) {
 async function chooseType(scope: Locator, field: RegExp, option: RegExp) {
   const box = scope.getByRole("combobox", { name: field });
   await box.click();
+  // Select the shown label explicitly once the list is up, so the first character is typed over it (263-85).
+  await expect(scope.page().getByRole("listbox")).toBeVisible();
+  await scope.page().keyboard.press("ControlOrMeta+A");
   await scope.page().keyboard.type(option.source);
   await scope.page().getByRole("option", { name: option }).click();
 }
@@ -285,7 +288,9 @@ test.describe.serial("sheets", () => {
         await shot("list");
 
         await page.getByRole("button", { name: de ? "Neuer Bogen" : "New sheet" }).click();
-        const dialog = page.getByRole("dialog");
+        // By name: a Select list closed while it still fades in stays in the DOM until its animation ends,
+        // and it is a dialog too (React Aria popover).
+        const dialog = page.getByRole("dialog", { name: de ? "Bogen hinzufügen" : "Add a sheet" });
         await expect(dialog).toBeVisible();
         await chooseType(dialog, de ? /Bogentyp/ : /Sheet type/, new RegExp(TYPE_48));
         for (const n of [1, 2, 3, 4]) await dialog.getByRole("gridcell", { name: new RegExp(`^(Cell|Zelle) ${n},`) }).click();

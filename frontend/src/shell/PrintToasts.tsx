@@ -1,7 +1,7 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useJob, useRetryJob } from "../features/jobs/api";
 import { RunControls } from "../features/jobs/RunControls";
 import { useJobErrorText } from "../features/jobs/jobErrorText";
@@ -123,25 +123,33 @@ function RunActions({ entry, batchId }: { entry: WatchedPrint; batchId: string }
   );
 }
 
-function Card({ entry }: { entry: WatchedPrint }) {
+/**
+ * A finished print leaves by itself after a few seconds, whether its card is on screen or still waiting
+ * behind the cap: one of these is mounted for every entry, so the clock starts when the entry is first
+ * rendered as finished, not when it finally gets a card. Hovering or focusing the card holds it.
+ */
+function AutoDismiss({ id, ended, held }: { id: string; ended: boolean; held: boolean }) {
+  useEffect(() => {
+    if (!ended || held) return;
+    const timer = setTimeout(() => dismissWatch(id), AUTO_DISMISS_MS);
+    return () => clearTimeout(timer);
+  }, [id, ended, held]);
+  return null;
+}
+
+function Card({ entry, onHold }: { entry: WatchedPrint; onHold: (id: string, held: boolean) => void }) {
   const { t } = useLingui();
   const kindTitle = useKindTitle();
   const stateWords = useStateWords();
   const progressWords = useProgressWords();
   const printers = usePrinters();
   const printerName = printers.data?.find((p) => p.id === entry.printerId)?.name ?? null;
-  const [held, setHeld] = useState(false);
   const card = useRef<HTMLLIElement>(null);
+  const setHeld = (held: boolean) => onHold(entry.id, held);
+  // A card that goes away (dismissed, or pushed behind the cap) no longer holds anything.
+  useEffect(() => () => onHold(entry.id, false), [entry.id, onHold]);
   const drag = useRef<{ x: number; at: number; id: number } | null>(null);
   const live = entry.live[entry.jobIds.find((id) => entry.live[id]?.phase === entry.phase) ?? entry.jobIds[0]!];
-  const ended = entry.phase === "done" || entry.phase === "cancelled";
-
-  // Auto-dismiss: a finished print goes after a few seconds; hovering or focusing it holds it.
-  useEffect(() => {
-    if (!ended || held) return;
-    const timer = setTimeout(() => dismissWatch(entry.id), AUTO_DISMISS_MS);
-    return () => clearTimeout(timer);
-  }, [ended, held, entry.id]);
 
   const dismiss = () => dismissWatch(entry.id);
   const onPointerDown = (event: ReactPointerEvent<HTMLLIElement>) => {
@@ -242,6 +250,16 @@ function Card({ entry }: { entry: WatchedPrint }) {
 export function PrintToasts() {
   const { t } = useLingui();
   const entries = useWatchedPrints();
+  const [held, setHeld] = useState<ReadonlySet<string>>(new Set());
+  const hold = useCallback((id: string, on: boolean) => {
+    setHeld((was) => {
+      if (was.has(id) === on) return was;
+      const next = new Set(was);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
   // Failures first (they need someone), then the rest, each oldest first; only the first MAX_VISIBLE show.
   const ordered = [...entries.filter((e) => e.phase === "failed"), ...entries.filter((e) => e.phase !== "failed")];
   const shown = ordered.slice(0, MAX_VISIBLE);
@@ -256,21 +274,24 @@ export function PrintToasts() {
       aria-label={t`Print status`}
       className="pointer-events-none fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex max-h-[calc(100dvh-14rem)] flex-col gap-2 overflow-y-auto overscroll-contain lg:inset-x-auto lg:right-6 lg:bottom-6 lg:max-h-[calc(100dvh-3rem)] lg:w-96"
     >
+      {ordered.map((entry) => (
+        <AutoDismiss key={entry.id} id={entry.id} ended={entry.phase === "done" || entry.phase === "cancelled"} held={held.has(entry.id)} />
+      ))}
       <ul aria-live="assertive" aria-relevant="additions text" className="m-0 flex list-none flex-col gap-2 p-0">
         {failed.map((entry) => (
-          <Card key={entry.id} entry={entry} />
+          <Card key={entry.id} entry={entry} onHold={hold} />
         ))}
       </ul>
       {claimed.length > 0 && (
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
           {claimed.map((entry) => (
-            <Card key={entry.id} entry={entry} />
+            <Card key={entry.id} entry={entry} onHold={hold} />
           ))}
         </ul>
       )}
       <ul aria-live="polite" aria-relevant="additions text" className="m-0 flex list-none flex-col gap-2 p-0">
         {rest.map((entry) => (
-          <Card key={entry.id} entry={entry} />
+          <Card key={entry.id} entry={entry} onHold={hold} />
         ))}
         {hidden > 0 && (
           <li className="pointer-events-auto rounded-r3 border border-line-strong bg-surface px-3 py-2 text-small font-bold text-ink-2 shadow-lg">

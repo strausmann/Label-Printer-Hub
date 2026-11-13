@@ -57,7 +57,6 @@ from app.printer_backends.ipp.attributes import ProbeSummary
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
-from app.schemas.problem import ProblemDetail
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
     IPP_BACKEND,
@@ -229,10 +228,6 @@ def _row_to_read(printer: Printer) -> PrinterRead:
     )
 
 
-_RECONCILES: set[asyncio.Task[None]] = set()
-"""Strong references to running reconciles, so a shielded one outlives a cancelled request."""
-
-
 async def _apply_live(request: Request, printer_id: UUID) -> None:
     """Wire the saved row into the running hub (#224); the response still reports the row.
 
@@ -245,8 +240,10 @@ async def _apply_live(request: Request, printer_id: UUID) -> None:
     if runtime is None:  # an app without the lifespan (unit tests of the routes)
         return
     task = asyncio.ensure_future(runtime.reconcile(printer_id))
-    _RECONCILES.add(task)
-    task.add_done_callback(_RECONCILES.discard)
+    # Strong references on the runtime of this app, so a shielded reconcile outlives a
+    # cancelled request.
+    runtime.reconciles.add(task)
+    task.add_done_callback(runtime.reconciles.discard)
     await asyncio.shield(task)
 
 
@@ -554,7 +551,8 @@ async def enable_printer(
         "device as the printer and keeps its calibration; ``replaced`` does the same and "
         "deletes every stored calibration of the printer, in one transaction. The held "
         "sheet and calibration jobs are released once the change is committed. 404 for an "
-        "unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged. Admin only."
+        "unknown printer, 409 ``no-identity-mismatch`` when no swap is flagged and 409 "
+        "``identity-changed`` when the flagged device is no longer the one reviewed. Admin only."
     ),
 )
 async def resolve_identity(
@@ -574,14 +572,15 @@ async def resolve_identity(
             expected_observed_kind=body.expected_observed_kind,
         )
     except IdentityChangedError as exc:
-        problem = ProblemDetail(
-            type="identity-changed",
-            title="The flagged device changed since it was reviewed",
-            status=status.HTTP_409_CONFLICT,
-            detail=f"Printer {printer_id}: review the flagged device again before resolving",
-        )
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=problem.model_dump(exclude_none=True)
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "identity-changed",
+                "error_message": (
+                    f"Printer {printer_id}: the flagged device changed since it was reviewed. "
+                    "Review it again before resolving."
+                ),
+            },
         ) from exc
     except PrinterNotFoundError as exc:
         raise HTTPException(

@@ -34,6 +34,8 @@ Before suggesting code, skim [`docs/learnings/code-review-patterns.md`](../docs/
 
 7. **No mid-print cancel.** Brother spec forbids commands during print. Pause/cancel only from `queued` or `paused` states.
 
+8. **Branches and PR targets.** Features (`feat`, `!`, `BREAKING CHANGE:`) branch from and target `milestone/x.y.0`; fixes, docs and CI branch from and target `main`. Never suggest a `feat` commit or PR title for `main` outside a milestone merge. Merge milestone PRs (`milestone/x.y.0` → `main`) and sync PRs (`main` → `milestone/x.y.0`) with a merge commit, never squash. Releases come from `main` only. Details: [CONTRIBUTING.md — Milestones, branches and releases](../CONTRIBUTING.md#milestones-branches-and-releases).
+
 ## Trademark and privacy
 
 - **Brother, P-touch, PT-Series, QL-Series** are trademarks of **Brother Industries, Ltd.** This project is **not affiliated** with them.

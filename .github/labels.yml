@@ -201,6 +201,10 @@
   color: "0e8a16"
   description: "Mention in release notes"
 
+- name: "release:waived-by-maintainer"
+  color: "b60205"
+  description: "Maintainer accepts that this issue stays open in a release"
+
 # ============================================================================
 # Hardware
 # ============================================================================

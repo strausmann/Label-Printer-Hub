@@ -26,15 +26,19 @@ export function TapeSwatch({
   widthMm,
   colour,
   probed = true,
+  offline = false,
 }: {
   widthMm: number | null | undefined;
   colour: TapeColour | null | undefined;
   probed?: boolean;
+  /** The printer did not answer its last probe: the hub cannot see a tape, so none is claimed or denied. */
+  offline?: boolean;
 }) {
   const { t } = useLingui();
   const names = useColourNames();
   const width = widthMm ?? null;
   // Before the first probe "no tape" would be a guess; say that nothing is known yet.
+  if (width === null && !colour && offline) return <span className="text-ink-2">{t`Tape not known`}</span>;
   if (width === null && !colour) return <span className="text-ink-2">{probed ? t`No tape loaded` : t`Tape not known yet`}</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">

@@ -39,6 +39,10 @@ from app.services.ql_layout import resolve_layout
 _log = logging.getLogger(__name__)
 
 
+MAX_BATCH_LOOKUPS = 8
+"""263-78: integration lookups of one batch that run at once."""
+
+
 class PrintService:
     """Orchestrate preflight → render → persist → queue.submit."""
 
@@ -89,8 +93,16 @@ class PrintService:
             self._layout_defaults.get(tape_mm),
         )
 
-    async def submit_print_job(self, request: PrintRequest) -> UUID:
+    async def submit_print_job(
+        self,
+        request: PrintRequest,
+        *,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
+    ) -> UUID:
         """Submit a print job: preflight → render → persist → queue.
+
+        ``api_key_id`` / ``source_ip`` are stored on the job: the key owns it (#294).
 
         Raises:
             PrinterDisabledError (409): Drucker ist deaktiviert (enabled=False).
@@ -107,9 +119,17 @@ class PrintService:
             content_type=request.content_type,
             options=request.options,
             template_key=None,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
 
-    async def submit_test_label(self, build: Callable[[int], RawLabelData]) -> UUID:
+    async def submit_test_label(
+        self,
+        build: Callable[[int], RawLabelData],
+        *,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
+    ) -> UUID:
         """Submit the test label (#228): the same path as ``submit_print_job``.
 
         One preflight decides the tape; ``build`` gets its width and returns the label data.
@@ -135,6 +155,8 @@ class PrintService:
             content_type=ContentType.QR_THREE_LINES,
             options=PrintOptions(),
             template_key="test_label",
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
 
     async def _submit_label(
@@ -144,6 +166,8 @@ class PrintService:
         content_type: ContentType,
         options: PrintOptions,
         template_key: str | None,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
     ) -> UUID:
         """enabled check → one preflight → label data → render → persist → queue."""
         if not self._printer_enabled:
@@ -184,8 +208,8 @@ class PrintService:
                 "tape_mm": tape_mm,
                 "options": options.model_dump(mode="json"),
             },
-            api_key_id=None,
-            source_ip=None,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
         )
         await self._store.save_queued(job)
         await self._queue.submit_with_id(
@@ -233,12 +257,19 @@ class PrintService:
         half_cut: bool,
         run_id: UUID | None = None,
         label_ids: list[UUID] | None = None,
+        slot: UUID | None = None,
+        api_key_id: UUID | None = None,
+        source_ip: str | None = None,
     ) -> list[UUID]:
         """Render N items and submit them to the queue as one tape run (#277).
+
+        *slot* is the queued-run claim the run takes over (263-76, ``dispatch_batch``). At most
+        ``MAX_BATCH_LOOKUPS`` integration lookups of the batch run at once (263-78).
 
         The queue splits the run into sub-jobs of ``MAX_LABELS_PER_TAPE_JOB`` and sends groups
         of ``TAPE_GROUP_SIZE``. *run_id* names the run (the batch id of the API). *label_ids*,
         when given, receives the job id of every label (copies included) in print order.
+        Every row records *api_key_id* and *source_ip*: the key owns the run's jobs (#294).
         Preflight wird 1x am Anfang für alle Items geprüft.
 
         NOTE: Diese Methode verwendet noch direkte LayoutEngine-Render-Aufrufe
@@ -265,6 +296,9 @@ class PrintService:
             req.options.model_copy(
                 update={
                     "orientation": orientation,
+                    # The batch-level cut mode goes into every stored row, so a recovery after a
+                    # restart prints the run with the same cut as the live batch.
+                    "half_cut": half_cut,
                     "layout_preset": self._resolve_layout(
                         tape_mm,
                         req.options.model_copy(update={"orientation": orientation}),
@@ -275,10 +309,13 @@ class PrintService:
         ]
 
         # 2. Resolve LabelData ONCE per item, then render via LayoutEngine
+        lookups = asyncio.Semaphore(MAX_BATCH_LOOKUPS)
+
         async def _prepare_one(
             req: PrintRequest, opts: PrintOptions
         ) -> tuple[Image.Image, dict[str, Any]]:
-            label_data = await self._resolve_label_data(req)
+            async with lookups:
+                label_data = await self._resolve_label_data(req)
             image = await asyncio.to_thread(
                 functools.partial(
                     self._engine.render,
@@ -338,8 +375,8 @@ class PrintService:
                             "awaits_confirmation": len(all_job_ids) >= MAX_LABELS_PER_TAPE_JOB,
                         },
                     },
-                    api_key_id=None,
-                    source_ip=None,
+                    api_key_id=api_key_id,
+                    source_ip=source_ip,
                 )
                 await self._store.save_queued(db_job)
                 images.append(img)
@@ -359,6 +396,7 @@ class PrintService:
                 "orientation": str(orientation),
             },
             run_id=run_id,
+            slot=slot,
         )
         if label_ids is not None:
             label_ids.extend(all_job_ids)

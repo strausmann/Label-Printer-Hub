@@ -1,5 +1,6 @@
 import { useQueryClient, type QueryClient, type QueryFilters } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { noteServerVersion } from "../app/updates";
 import { heldRunsKey } from "../features/jobs/api";
 import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
 import { recordJobEvent, resyncWatchedJobs } from "../features/jobs/printWatch";
@@ -125,16 +126,16 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       break;
     }
     case "printer.status":
+      // The prefix covers the printer's own queries too.
       run(["printers"]);
-      if (printerId) run(["printers", printerId]);
       break;
     case "printer.tape_changed":
       if (printerId) run(["printers", printerId]);
       break;
     case "printer.identity_mismatch":
-      // The cards read the status flag, the detail page the printer (admin: both identities) and its status.
+      // The cards read the status flag, the detail page the printer (admin: both identities) and its status;
+      // the ["printers"] prefix reaches all of them, so the printer's own key needs no second call.
       run(["printers"]);
-      if (printerId) run(["printers", printerId]);
       break;
     case "printer.roll_changed":
       // The roll (and with it the prompt and the colour) is part of the status; both queries are refetched.
@@ -237,6 +238,15 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
         timer = setTimeout(open, delay);
         delay = Math.min(delay * 2, BACKOFF_MAX_MS);
       };
+      // EventSource cannot read response headers: the server greets with its version (#288).
+      es.addEventListener("hello", (frame) => {
+        try {
+          const hello: unknown = JSON.parse(String((frame as MessageEvent).data));
+          if (isRecord(hello) && typeof hello.version === "string") noteServerVersion(hello.version);
+        } catch {
+          // A greeting we cannot read says nothing about the version.
+        }
+      });
       for (const type of EVENT_TYPES) {
         es.addEventListener(type, (frame) => {
           if (type === "auth.expired") {

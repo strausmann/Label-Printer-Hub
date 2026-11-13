@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.printer_runtime import get_printer_runtime
-from app.api.routes.printers import _pause_view
+from app.api.routes.pause_view import pause_view
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
 from app.config import get_settings
@@ -134,7 +134,7 @@ async def test_print(
     if not printer.enabled:
         raise _refuse(409, "printer-disabled", "The printer is disabled")
     state = await printer_state_repo.get(session, printer_id)
-    paused, _ = _pause_view(request, printer_id, state.paused if state is not None else False)
+    paused, _ = pause_view(request, printer_id, state.paused if state is not None else False)
     if paused:
         raise _refuse(409, "printer-paused", "The printer is paused", "Resume it first")
 
@@ -178,7 +178,9 @@ async def test_print(
         raise _unavailable(printer_id)
     try:
         job_id = await service.submit_test_label(
-            lambda width_mm: tape_test_label(printer, width_mm, now, version, url)
+            lambda width_mm: tape_test_label(printer, width_mm, now, version, url),
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
         )
     except PrinterDisabledError:
         raise _refuse(409, "printer-disabled", "The printer is disabled") from None

@@ -2,19 +2,19 @@
 
 Spoolman and Grocy both push event payloads when their data changes.  The hub
 receives those events, resolves the label data via the appropriate integration
-plugin, and enqueues a print job — returning a ``WebhookAcceptedResponse`` with
-the new job's UUID so callers can poll for completion via ``GET /api/v1/jobs/{id}``.
+plugin, and prints the label through the print queue — returning a ``WebhookAcceptedResponse`` with
+the new job's UUID. Webhook jobs have no owner, so the id identifies the job for an admin
+or SSO caller (``GET /api/v1/jobs/{id}``); the webhook key cannot read it.
 
 Payload designs follow each upstream's documented webhook format:
 
 - **Spoolman** — https://github.com/Donkie/Spoolman — events include a
   ``spool_id`` (the numeric spool identifier) and an event ``type`` string.
-  ``quantity`` (filament remaining in grams) is an optional extra that the hub
-  may surface in the label.
+  ``quantity`` (filament remaining in grams) is accepted but not printed yet (#284).
 
 - **Grocy** — https://grocy.info/api — webhook events include a
   ``product_id`` and an event ``type``.  ``quantity`` is the stock-level delta
-  (optional; surfaced in the label when present).
+  (optional; accepted but not printed yet, #284).
 
 Both payloads use ``model_config = ConfigDict(strict=True, extra="ignore")``
 so unknown upstream fields are silently dropped (forward-compatible) while
@@ -44,7 +44,7 @@ class SpoolmanWebhookPayload(BaseModel):
     quantity: float | None = Field(
         default=None,
         allow_inf_nan=False,
-        description="Optional remaining filament in grams (surfaced in the printed label)",
+        description="Optional remaining filament in grams. Accepted, not printed yet (see #284)",
     )
 
 
@@ -62,7 +62,7 @@ class GrocyWebhookPayload(BaseModel):
     quantity: float | None = Field(
         default=None,
         allow_inf_nan=False,
-        description="Optional stock quantity delta (surfaced in the printed label when present)",
+        description="Optional stock quantity delta. Accepted, not printed yet (see #284)",
     )
 
 
@@ -70,5 +70,8 @@ class WebhookAcceptedResponse(BaseModel):
     """202 Accepted response body for both webhook endpoints."""
 
     job_id: UUID = Field(
-        description="UUID of the new print job; poll GET /api/v1/jobs/{job_id} for status",
+        description=(
+            "UUID of the new print job. Webhook jobs have no owner: an admin or SSO caller "
+            "can follow it under GET /api/v1/jobs/{job_id}"
+        ),
     )

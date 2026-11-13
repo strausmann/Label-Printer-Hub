@@ -22,3 +22,13 @@ export const FAKE_CAMERA = {
   /** The sheet ID cell of the first seeded L4736REV sheet, as the scanner reads it. */
   sheetText: "sheet:L4736-0001",
 };
+
+/** The throw-away hub the README screenshots are taken from (`playwright.screenshots.config.ts`). */
+export const SHOTS = {
+  port: 8795,
+  url: "http://localhost:8795",
+  keyFile: resolve(import.meta.dirname, ".tmp", "shots.key"),
+};
+
+/** The instant every seeded job and sheet is stamped with (`E2E_FIXTURE_TIME` of `backend/tests/e2e_app.py`). */
+export const FIXTURE_TIME = "2026-11-01T08:00:00Z";
