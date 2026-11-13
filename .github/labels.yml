@@ -48,7 +48,7 @@
 
 - name: "area:frontend"
   color: "0e8a16"
-  description: "Frontend (Go + Tailwind + HTMX + PWA)"
+  description: "Web UI code (React, TypeScript, Vite, PWA)"
 
 - name: "area:printer-models"
   color: "5319e7"
@@ -68,7 +68,7 @@
 
 - name: "area:ui"
   color: "c5def5"
-  description: "User interface, HTMX components"
+  description: "User interface: layout, components, wording"
 
 - name: "area:pwa"
   color: "f0a3ff"
@@ -174,10 +174,6 @@
   color: "3572A5"
   description: "Python dependencies"
 
-- name: "go"
-  color: "00ADD8"
-  description: "Go dependencies"
-
 - name: "javascript"
   color: "f1e05a"
   description: "JavaScript/Node dependencies"
@@ -219,3 +215,19 @@
 - name: "hardware:other"
   color: "8a2be2"
   description: "Other printer model (non-Brother or unsupported family)"
+
+- name: "area:sheets"
+  color: "0e8a16"
+  description: "Label sheets, sheet types, calibration"
+
+- name: "hardware:ipp"
+  color: "5319e7"
+  description: "Page printers over IPP"
+
+- name: "type:feedback"
+  color: "c5def5"
+  description: "Confirmation or report from a user (e.g. sheet dimensions)"
+
+- name: "printer-report"
+  color: "c5def5"
+  description: "Printer compatibility report from a user"
