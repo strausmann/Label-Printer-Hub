@@ -301,17 +301,22 @@ def _text_changed(entry: Mapping[str, str], exception: LicenceException) -> bool
     return pinned is not None and pinned != licence_text_sha256(entry)
 
 
+def _exception_matches(declared: str, exception: LicenceException) -> bool:
+    """Whether the declared expression is the one the exception was reviewed against (or none)."""
+    return not declared or declared == exception.reviewed_expression
+
+
 def _stale_exception(entry: Mapping[str, str], policy: Policy) -> str | None:
     """Why an exception does not apply to this record, or None when it does or there is none."""
     exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
     declared = _declared(entry)
     if exception is None:
         return None
-    if (not declared or declared == exception.reviewed_expression) and _text_changed(
-        entry, exception
-    ):
-        return "exception reviewed against a different licence text, the licence file has changed"
-    if not declared or declared == exception.reviewed_expression:
+    if _exception_matches(declared, exception):
+        if _text_changed(entry, exception):
+            return (
+                "exception reviewed against a different licence text, the licence file has changed"
+            )
         return None
     reviewed = exception.reviewed_expression or "no declared expression"
     return f"exception reviewed against {reviewed}, package now declares {declared}"
@@ -321,7 +326,7 @@ def classify(entry: Mapping[str, str], policy: Policy) -> tuple[str, bool]:
     """Return ``(licence expression, allowed)`` for one pip-licenses ``--from=all`` record."""
     exception = policy.exceptions.get(normalise_purl(f"pkg:pypi/{entry['Name']}"))
     declared = _declared(entry)
-    if exception is not None and (not declared or declared == exception.reviewed_expression):
+    if exception is not None and _exception_matches(declared, exception):
         # A changed licence file voids the exception, whatever the classifiers would say.
         expression = UNKNOWN if _text_changed(entry, exception) else exception.licence
     elif _is_spdx_expression(declared):
