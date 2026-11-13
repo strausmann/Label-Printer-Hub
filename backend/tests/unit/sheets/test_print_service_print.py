@@ -1211,3 +1211,46 @@ def test_id_cell_title_keeps_the_code_whole_on_a_small_cell_and_everything_on_a_
     assert small.startswith("L4736REV") and small != title and small.endswith("…")
     assert "Zweckform" not in small
     assert drawn(120.0) == title  # room enough: the full text, vendor included
+
+
+def test_retry_checks_the_id_cell_at_the_fresh_dpi_too() -> None:
+    """T11 M2 (266-11): a retried page with the sheet ID cell refuses, before anything is
+    reserved, when the printer's new resolution makes the ID cell's QR too fine; the items alone
+    (text only here) would pass."""
+    from app.sheets.errors import IdCellContentMismatchError
+    from app.sheets.sheet_page import SheetCellPayload
+
+    g = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4820, 2120, 2130, 985, None, "rectangle")
+    scan = "https://hub.example.invalid/s/" + "x" * 274  # fits at 600 dpi, not at 100
+    id_label = print_service.id_cell_label("L4736-0001", "L4736REV", scan)
+    item = LabelData(source_app="t", primary_id="A-1", title="Item 1")
+
+    def detail() -> SheetPageDetail:
+        return SheetPageDetail(
+            sheet_id=uuid4(),
+            sheet_code="L4736-0001",
+            type_key="l4736rev",
+            type_version_id=uuid4(),
+            geometry=asdict(g),
+            allow_qr=True,
+            cells=[
+                SheetCellPayload(
+                    cell=2,
+                    content_type=ContentType.TEXT_TWO_LINES,
+                    label_data=item.model_dump(mode="json"),
+                    mapped=False,
+                )
+            ],
+            id_cell=SheetCellPayload(
+                cell=1,
+                content_type=ContentType.QR_TWO_LINES,
+                label_data=id_label.model_dump(mode="json"),
+                mapped=False,
+            ),
+            job_summary={"sheet_code": "L4736-0001", "cell_count": 1},
+        )
+
+    print_service._check_retry_fits(detail(), 600)
+    with pytest.raises(IdCellContentMismatchError) as refused:
+        print_service._check_retry_fits(detail(), 100)
+    assert refused.value.detail == {"cell": "id", "missing_fields": ["qr_payload"]}

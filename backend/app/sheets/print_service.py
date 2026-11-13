@@ -1737,9 +1737,21 @@ def _check_retry_fits(detail: SheetPageDetail, render_dpi: int) -> None:
     The printer's resolution may have changed since the first attempt: a QR that fit at the old
     dpi can be too fine for the new one. Refused here as a 422 naming the item, instead of the
     runner failing with ``render_failed`` after the cells were reserved again. The content type
-    is the stored, already mapped one; the ID cell is the hub's own label and not checked.
+    is the stored, already mapped one. The ID cell (the hub's own label) gets the checks of
+    ``check_id_cell_fits`` on its stored label: its short-URL QR can become too fine the same way.
     """
     geometry = Geometry(**detail.geometry)
+    if detail.id_cell is not None:
+        id_label = LabelData(**detail.id_cell.label_data)
+        box = content_box(geometry, detail.id_cell.cell)
+        if not box_fits_a_line(box):
+            raise IdCellContentMismatchError(("label_size",))
+        if (
+            detail.id_cell.content_type.value.startswith("qr_")
+            and id_label.qr_payload
+            and not _qr_fits_at(id_label.qr_payload, box.w / 100, box.h / 100, render_dpi)
+        ):
+            raise IdCellContentMismatchError(("qr_payload",))
     for index, cell in enumerate(detail.cells):
         item = ResolvedItem(
             label=LabelData(**cell.label_data),
