@@ -54,6 +54,7 @@ The start page. **Printing now** shows the running jobs, **Needs attention** lis
     <img src="docs/screenshots/overview-light.png" alt="The overview: what is printing, what needs attention, the material in the printers and every printer at a glance.">
   </picture>
 </p>
+
 ### Printers
 
 All printers with their state and the loaded material. Admins add, change and disable printers under Settings > Printers.
@@ -64,6 +65,7 @@ All printers with their state and the loaded material. Admins add, change and di
     <img src="docs/screenshots/printers-light.png" alt="The printers, each with its status and the tape or paper it holds.">
   </picture>
 </p>
+
 ### Printer details
 
 One printer: its state, the loaded tape (after a roll change the hub asks for the tape colour, since the printer does not report it), the connection, the calibration and the queue. **Test print** prints a sample label, **Pause** holds the queue.
@@ -74,6 +76,7 @@ One printer: its state, the loaded tape (after a roll change the hub asks for th
     <img src="docs/screenshots/printer-detail-light.png" alt="One printer: status, tape roll, connection and queue.">
   </picture>
 </p>
+
 ### Jobs
 
 Every print job, filtered by state (queued, printing, done, failed, cancelled). A failed job shows why it failed and can be retried.
@@ -84,6 +87,7 @@ Every print job, filtered by state (queued, printing, done, failed, cancelled). 
     <img src="docs/screenshots/jobs-light.png" alt="The jobs, filtered by state, with the reason of a failed one.">
   </picture>
 </p>
+
 ### Printing one item
 
 An item from an integration (here Snipe-IT): a preview of the label, the printer, the layout and the number of copies. **Print now** prints at once, **Add to cart** collects it for later.
@@ -94,6 +98,7 @@ An item from an integration (here Snipe-IT): a preview of the label, the printer
     <img src="docs/screenshots/print-dialog-light.png" alt="Printing one item: preview, printer, layout and copies.">
   </picture>
 </p>
+
 ### Cart and printing onto a sheet
 
 The cart collects labels from several items and prints them together: on a tape printer one after the other, on a page printer onto a sheet. For a sheet you choose the sheet type, the tray and the sheet; scan the code on a partly used sheet and the hub prints only onto its free cells.
@@ -104,6 +109,7 @@ The cart collects labels from several items and prints them together: on a tape 
     <img src="docs/screenshots/cart-sheet-light.png" alt="The cart printed onto a partly used sheet of labels.">
   </picture>
 </p>
+
 ### Sheets
 
 The sheets in use, each with its code, its type and how many cells are used. Used-up and discarded sheets are hidden unless you ask for them. **New sheet** registers a fresh sheet.
@@ -114,6 +120,7 @@ The sheets in use, each with its code, its type and how many cells are used. Use
     <img src="docs/screenshots/sheets-light.png" alt="The label sheets in use, with how many cells are used and free.">
   </picture>
 </p>
+
 ### Sheet archive
 
 The catalogue of sheet types: search by product code, filter by page size, vendor and label size. Each type keeps its measurements as versions. **New type** enters the measurements of a sheet that is not listed, **Import type** loads one exported from another hub.
@@ -124,6 +131,7 @@ The catalogue of sheet types: search by product code, filter by page size, vendo
     <img src="docs/screenshots/sheet-archive-light.png" alt="The archive of sheet types with their measurements and versions.">
   </picture>
 </p>
+
 ### Calibration
 
 Page printers rarely print exactly where the page says. Choose printer and tray, print the calibration page onto a real sheet, read the offsets from its scales and enter them; the hub then moves every print on that tray by the opposite amount.
@@ -134,6 +142,7 @@ Page printers rarely print exactly where the page says. Choose printer and tray,
     <img src="docs/screenshots/calibration-light.png" alt="Calibration: measure how far a page printer is off and the hub corrects every print.">
   </picture>
 </p>
+
 ### On a phone
 
 The same pages adapt to a phone held next to the printer.
