@@ -86,6 +86,10 @@ class CleanupTask:
                 logger.warning(
                     "CleanupTask: eviction loop did not end in %ss, cancelled", timeout_s
                 )
+            except Exception as exc:
+                # Its own errors are caught per tick; an end with an exception must still
+                # leave the daily loop stopped and the rest of the lifespan's shutdown running.
+                logger.error("CleanupTask: eviction loop had ended with %s", type(exc).__name__)
             self._evict_task = None
         if self._task is not None:
             try:
@@ -96,6 +100,8 @@ class CleanupTask:
                     "CleanupTask hat sich nicht in %ss beendet, Task gecancelled",
                     timeout_s,
                 )
+            except Exception as exc:
+                logger.error("CleanupTask: daily loop had ended with %s", type(exc).__name__)
             self._task = None
 
     async def _loop(self) -> None:

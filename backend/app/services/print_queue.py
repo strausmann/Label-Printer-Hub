@@ -456,7 +456,9 @@ class PrintQueue:
         self._jobs: dict[str, Job] = {}
         # Ids of jobs that ended in memory while the store write of that end failed: their row
         # may still be ``queued``, and the known id in ``_jobs`` is what keeps a later recovery
-        # from printing them. They are never forgotten.
+        # from printing them. They are never forgotten: the set lives as long as this process
+        # (a restart recovers from the store, where such a row is then simply ``queued`` or
+        # ``printing``) and grows only by failed store writes, so it stays small.
         self._unpersisted: set[str] = set()
         self._workers: dict[UUID, asyncio.Task[None]] = {}
         self._running: bool = False

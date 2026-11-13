@@ -107,3 +107,29 @@ async def test_finished_jobs_leave_memory_on_the_short_tick_not_the_daily_cycle(
         await task.stop(timeout_s=1.0)
     assert all(t is not None and t.done() for t in loops)
     assert task._evict_task is None and task._task is None
+
+
+@pytest.mark.asyncio
+async def test_stop_ends_the_daily_loop_even_when_the_eviction_loop_died() -> None:
+    """A non-timeout end of the eviction task (it raised) must not leave the daily loop
+    running or make the lifespan's ``finally`` stop early: stop() logs it and goes on."""
+    import asyncio
+
+    from app.services.print_queue import PrintQueue
+
+    store = AsyncMock()
+    store.evict_terminal_older_than.return_value = 0
+    task = CleanupTask(
+        store=store, retention_days=30, interval=timedelta(seconds=99), queue=PrintQueue([])
+    )
+
+    async def broken() -> None:
+        raise RuntimeError("evict loop broke")
+
+    task._evict_loop = broken  # type: ignore[method-assign]
+    await task.start()
+    daily = task._task
+    await asyncio.sleep(0)  # the broken loop has ended with its exception
+    await task.stop(timeout_s=1.0)  # must not raise
+    assert daily is not None and daily.done()
+    assert task._task is None and task._evict_task is None
