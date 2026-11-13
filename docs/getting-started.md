@@ -27,7 +27,7 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/info
 ```
 
-Both calls answer with `200`. To try the hub without any printer or reverse proxy, `docker compose -f dev/docker-compose.smoke.yml up --build` builds it from the local tree.
+Both calls answer with `200`. To try the hub without any printer or reverse proxy, `docker compose -f ../dev/docker-compose.smoke.yml up --build` (from `examples/`) builds it from the local tree.
 
 ### Sign in
 
@@ -45,12 +45,14 @@ Printers are not configured in `.env`. Open **Settings > Printers** and add one:
 
 | Field | Meaning |
 |---|---|
-| Name and slug | what people see, and a short lower-case id (`office-pt`) |
-| Backend | `ptouch` for a PT-Series tape printer, `brother_ql` for a QL-Series printer, `ipp` for a page printer (sheets of labels) |
-| Host and port | the printer's address and TCP port `9100`, for example `192.0.2.20` (an IPP printer takes a URI instead) |
-| Status discovery | read the model and the loaded tape from the printer over SNMP; turn it on for Brother printers, otherwise the hub has no current status |
+| Name | what people see |
+| Slug | a short lower-case name for addresses and the API (3 to 64 letters, digits and dashes); it cannot be changed later |
+| Driver | *P-touch (PT)* for a PT-Series tape printer, *Brother QL* for a QL-Series printer, *Page printer (IPP)* for a printer of sheets of labels (it takes the printer's address and is read once before saving) |
+| Model | tape printers only, required; the form offers the model of the chosen driver |
+| Host and Port | the printer's address and TCP port `9100`, for example `192.0.2.20` |
+| Queue timeout (seconds) | how long the queue waits for the printer, 1 to 600 |
 
-The printer appears on the overview with its status and the tape it holds. The hub reads the status over SNMP; if the printer shows as offline, check that the hub's container can reach the printer's address and that SNMP is enabled on the printer.
+The printer appears on the overview with the tape it holds. If it shows as offline, check that the hub's container can reach the printer's address on the port.
 
 A tape printer cannot report the tape colour over the network. When the roll changes, the hub asks you once which colour is loaded.
 

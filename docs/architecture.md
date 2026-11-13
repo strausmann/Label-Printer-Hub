@@ -188,6 +188,6 @@ For Pangolin specifically, the **Two-Resources pattern** is used:
 | How to deploy the hub | [`getting-started.md`](getting-started.md) |
 | How to add a printer model or a lookup plugin | [`plugin-development.md`](plugin-development.md) |
 | API reference | `/docs` on a running hub |
-| Brother protocol details | [`research/`](research/) (TBD — to be migrated from maintainer's mono-repo) |
+| Research notes (printer protocols, IPP interoperability) | [`research/`](research/) |
 | Privacy and trademark policy | [`policies/`](policies/) |
 | Sample deployments | [`../examples/`](../examples/) |

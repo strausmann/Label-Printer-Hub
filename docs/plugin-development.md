@@ -47,6 +47,8 @@ pt-series = "app.printer_models.pt"
 my-family = "app.printer_models.my_family"
 ```
 
+`pyproject.toml` registers only `pt-series` today. `ql.py` registers its driver when it is imported (other hub code imports it), but it has no entry point of its own, so a new family copied from either file needs its own entry point as shown.
+
 The value may name a module (the hub scans it for driver classes) or a driver class. Reinstall the package (`uv sync`) so the entry point is picked up. A third-party package declares the same group in its own `pyproject.toml`; a plugin that fails to load is logged and skipped, it does not stop the hub.
 
 `backend/app/printer_models/registry.py` is where the hub resolves a discovered printer to a driver: `ModelRegistry.find_by_pjl`, `find_by_snmp_oid_value` and `find_by_model_id`.
