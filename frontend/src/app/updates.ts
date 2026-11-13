@@ -29,6 +29,8 @@ let waitingWorker = false;
 // The hub runs another version than this bundle.
 let versionMismatch = false;
 let refreshing = false;
+// The page was told to reload: the button stays busy (and takes no press) until the page goes.
+let reloading = false;
 // The Reload button was pressed and the page is still getting the new version (the button shows "Updating…").
 let updating = false;
 let updateSW: ((reloadPage?: boolean) => Promise<void>) | null = null;
@@ -127,49 +129,83 @@ function controllerChanges(ms: number): Promise<boolean> {
  * Telling the waiting worker to skip waiting is not enough on its own: Chromium activates it only once
  * the old worker has no work left, and a request the page sends at that moment (a status poll, a refetch
  * on focus) restarts the old worker and can hold the new one back for minutes. So the button waits for
- * the takeover (`controllerchange`), bounded; when it does not come, it removes the old registration and
- * reloads, so the hub answers the page with the new version and the new bundle registers its worker.
+ * the takeover (`controllerchange`), bounded, and then reloads itself (vite-plugin-pwa reloads on the
+ * takeover only when a worker controlled the page at registration, which is not so on a first visit or
+ * after the fallback below). When the takeover does not come, or no worker turns up in time although
+ * the hub answered the check, it removes the old registration and reloads, so the hub answers the page
+ * with the new version and the new bundle registers its worker. A failed check (hub unreachable) keeps
+ * the registration: the old shell from the precache is better than no page at all.
+ *
+ * The page reloads once per press, and from then on the button stays busy until the page goes.
  */
 export async function applyUpdate(): Promise<void> {
+  // `refreshing` stays set once the page reloads, so it reloads once per page.
   if (refreshing) return;
   refreshing = true;
   updating = true;
   emit();
   try {
+    let hubAnswered = false;
     if (!waitingWorker && registration) {
       // The check itself is bounded too: a network that swallows the request must not keep the button busy.
       // Called inside a promise: an update() that throws at once (an invalid state of the
       // registration) is a failed check like any other, not a reason to skip the reload below.
       const reg = registration;
-      await withinBudget(Promise.resolve().then(() => reg.update()), deps.workerWaitMs);
+      hubAnswered = await withinBudget(Promise.resolve().then(() => reg.update()), deps.workerWaitMs);
       await workerWaits(deps.workerWaitMs);
     }
     if (waitingWorker && updateSW) {
       // Listen before the worker is told, so a fast takeover is not missed.
       const takenOver = deps.controllerChanges(deps.workerWaitMs);
       await updateSW(true);
-      // The takeover reloads the page (vite-plugin-pwa listens for it).
-      if (await takenOver) return;
-      const reg = registration;
-      if (reg?.unregister) await withinBudget(Promise.resolve().then(() => reg.unregister?.()), deps.workerWaitMs);
-      deps.reload();
-    } else deps.reload();
+      if (await takenOver) {
+        startReload();
+        return;
+      }
+      await removeRegistration();
+      startReload();
+    } else {
+      // No worker in time: a plain reload would be answered by the old worker from its precache.
+      if (hubAnswered) await removeRegistration();
+      startReload();
+    }
   } catch {
     // The worker could not take over: the banner stays and the button can be pressed again.
   } finally {
-    refreshing = false;
-    updating = false;
-    emit();
+    if (!reloading) {
+      refreshing = false;
+      updating = false;
+      emit();
+    }
   }
 }
 
-/** Waits for `work` for at most `ms`; its failure (offline, file gone) or a timeout is not an error here. */
-async function withinBudget(work: Promise<unknown>, ms: number): Promise<void> {
+/**
+ * Reloads the page and keeps the button busy until it goes. A takeover after the budget cannot reload a
+ * second time: `controllerChanges` has settled and removed its listener by then.
+ */
+function startReload(): void {
+  reloading = true;
+  deps.reload();
+}
+
+/** Removes the service worker registration, bounded; a failure is not an error here (the reload follows). */
+async function removeRegistration(): Promise<void> {
+  const reg = registration;
+  if (reg?.unregister) await withinBudget(Promise.resolve().then(() => reg.unregister?.()), deps.workerWaitMs);
+}
+
+/**
+ * Waits for `work` for at most `ms`; its failure (offline, file gone) or a timeout is not an error here.
+ * Resolves true when `work` settled successfully within the time.
+ */
+async function withinBudget(work: Promise<unknown>, ms: number): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await Promise.race([work, new Promise<void>((resolve) => (timer = setTimeout(resolve, ms)))]);
+    return await Promise.race([work.then(() => true), new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), ms)))]);
   } catch {
     // The bounded wait for a worker that follows decides.
+    return false;
   } finally {
     clearTimeout(timer);
   }
@@ -234,6 +270,7 @@ export function resetUpdatesForTest(): void {
   waitingWorker = false;
   versionMismatch = false;
   refreshing = false;
+  reloading = false;
   updating = false;
   updateSW = null;
   registration = null;

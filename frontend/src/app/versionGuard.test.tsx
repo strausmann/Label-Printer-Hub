@@ -124,28 +124,31 @@ describe("version mismatch shows the banner and does nothing else", () => {
 describe("the Reload button ends on the new bundle", () => {
   beforeEach(() => vi.useFakeTimers());
 
-  it("applies a worker that already waits (no plain reload, no update call)", async () => {
+  it("applies a worker that already waits and reloads once on its takeover (no update call, no unregister)", async () => {
     const { updateSW, registration, needRefresh } = setupWorker(null);
     needRefresh();
     await applyUpdate();
     expect(updateSW).toHaveBeenCalledWith(true);
     expect(registration.update).not.toHaveBeenCalled();
-    expect(reload).not.toHaveBeenCalled();
+    expect(registration.unregister).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("without a waiting worker: updates, waits for the install, applies it, and does not reload", async () => {
+  it("without a waiting worker: updates, waits for the install, applies it, and reloads on its takeover", async () => {
     const { updateSW, registration } = setupWorker(1_000);
     const done = applyUpdate();
     await vi.advanceTimersByTimeAsync(0);
     expect(registration.update).toHaveBeenCalledTimes(1);
     expect(updateSW).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1_000);
     await done;
     expect(updateSW).toHaveBeenCalledWith(true);
-    expect(reload).not.toHaveBeenCalled();
+    expect(registration.unregister).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("waits for the told worker to take over and leaves the reload to that takeover", async () => {
+  it("waits for the told worker to take over, then reloads the page itself", async () => {
     const { updateSW, registration, needRefresh } = setupWorker(null);
     needRefresh();
     await applyUpdate();
@@ -153,7 +156,30 @@ describe("the Reload button ends on the new bundle", () => {
     // Listening starts before the worker is told, so a fast takeover is not missed.
     expect(controllerChanges.mock.invocationCallOrder[0]).toBeLessThan(updateSW.mock.invocationCallOrder[0] ?? 0);
     expect(registration.unregister).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a page registered without a controller (first visit, or after the fallback): the takeover comes and the page reloads once", async () => {
+    // vite-plugin-pwa reloads on the takeover only when a worker controlled the page at registration (isUpdate);
+    // here its updateSW only tells the worker and nothing else reloads.
+    const updateSW = vi.fn(async (reloadPage?: boolean): Promise<void> => void reloadPage);
+    let needRefresh!: () => void;
+    const registration = { update: vi.fn(async () => {}), unregister: vi.fn(async () => true) };
+    startUpdates((o) => {
+      needRefresh = o.onNeedRefresh;
+      o.onRegisteredSW?.("/sw.js", registration);
+      return updateSW;
+    });
+    let takeOver!: (changed: boolean) => void;
+    controllerChanges.mockImplementation(() => new Promise((resolve) => (takeOver = resolve)));
+    needRefresh();
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(100);
     expect(reload).not.toHaveBeenCalled();
+    takeOver(true);
+    await done;
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(registration.unregister).not.toHaveBeenCalled();
   });
 
   it("a worker that does not take over in time (the old one kept busy): removes the old registration, then reloads", async () => {
@@ -217,9 +243,13 @@ describe("the Reload button ends on the new bundle", () => {
       container.dispatchEvent(new Event("controllerchange"));
       await done;
       expect(taking.registration.unregister).not.toHaveBeenCalled();
-      expect(reload).not.toHaveBeenCalled();
+      expect(reload).toHaveBeenCalledTimes(1);
       expect(removed).toHaveBeenCalledWith("controllerchange", expect.any(Function));
 
+      // The next page: a fresh module state.
+      resetUpdatesForTest();
+      reload.mockClear();
+      setVersionCheckForTest({ buildVersion: BUILT_FOR, reload });
       const stuck = setupWorker(null);
       stuck.needRefresh();
       const second = applyUpdate();
@@ -246,28 +276,93 @@ describe("the Reload button ends on the new bundle", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("reloads only after the bounded wait found no new worker", async () => {
-    const { updateSW } = setupWorker(null);
+  it("the hub answered but no new worker came in time (slow install): removes the registration, then reloads", async () => {
+    // A plain reload here would be answered by the old worker with the old shell from its precache.
+    const { updateSW, registration } = setupWorker(null);
     const done = applyUpdate();
     await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS - 1);
     expect(reload).not.toHaveBeenCalled();
+    expect(registration.unregister).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     await done;
+    expect(registration.unregister).toHaveBeenCalledTimes(1);
     expect(reload).toHaveBeenCalledTimes(1);
+    expect(registration.unregister.mock.invocationCallOrder[0]).toBeLessThan(reload.mock.invocationCallOrder[0] ?? 0);
     expect(updateSW).not.toHaveBeenCalled();
   });
 
-  it("reloads after the wait when the update check fails", async () => {
-    setupWorker(null, { updateFails: true });
+  it("the same with an unregister that never answers: the reload follows within its own budget", async () => {
+    const { registration } = setupWorker(null, { unregister: () => new Promise<never>(() => {}) });
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+    expect(registration.unregister).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+    await done;
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("a failed check (hub unreachable) keeps the registration and reloads on the old shell", async () => {
+    const { registration } = setupWorker(null, { updateFails: true });
     const done = applyUpdate();
     await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
     await done;
+    expect(registration.unregister).not.toHaveBeenCalled();
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("reloads at once without a service worker (dev server, unsupported browser)", async () => {
     await applyUpdate();
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("reloads once: a takeover after the budget, and presses after the reload, do not reload again", async () => {
+    const container = new EventTarget();
+    Object.defineProperty(navigator, "serviceWorker", { value: container, configurable: true });
+    try {
+      resetUpdatesForTest();
+      setVersionCheckForTest({ buildVersion: BUILT_FOR, reload });
+      const { updateSW, registration, needRefresh } = setupWorker(null);
+      needRefresh();
+      const done = applyUpdate();
+      await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+      await done;
+      expect(reload).toHaveBeenCalledTimes(1);
+      // The takeover comes late, while the page is already going.
+      container.dispatchEvent(new Event("controllerchange"));
+      await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS * 2);
+      expect(reload).toHaveBeenCalledTimes(1);
+      // A press after the reload decision is ignored: nothing is told, removed or reloaded again.
+      await applyUpdate();
+      await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS * 2);
+      expect(updateSW).toHaveBeenCalledTimes(1);
+      expect(registration.unregister).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+    }
+  });
+
+  it("does not take a second press between the reload decision and the navigation", async () => {
+    const { result } = renderHook(() => useUpdating());
+    const { updateSW, registration, needRefresh } = setupWorker(null, { unregister: () => new Promise<never>(() => {}) });
+    controllerChanges.mockImplementation(async () => false);
+    needRefresh();
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(0);
+    // Removing the registration: a press now is ignored.
+    void applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+    await done;
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(result.current).toBe(true);
+    // And after the reload, until the page goes.
+    await applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS * 3);
+    expect(updateSW).toHaveBeenCalledTimes(1);
+    expect(registration.unregister).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(result.current).toBe(true);
   });
 
   it("ignores a second click while the first is under way", async () => {
@@ -284,9 +379,10 @@ describe("the Reload button ends on the new bundle", () => {
     needRefresh();
     updateSW.mockRejectedValueOnce(new Error("no controller"));
     await applyUpdate();
+    expect(reload).not.toHaveBeenCalled();
     await applyUpdate();
     expect(updateSW).toHaveBeenCalledTimes(2);
-    expect(reload).not.toHaveBeenCalled();
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("an update() that never answers is given up on within the budget, then the plain reload", async () => {
@@ -302,14 +398,9 @@ describe("the Reload button ends on the new bundle", () => {
     await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
     await done;
     expect(reload).toHaveBeenCalledTimes(1);
-    // And the button is free again afterwards.
-    const again = applyUpdate();
-    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS * 2);
-    await again;
-    expect(reload).toHaveBeenCalledTimes(2);
   });
 
-  it("is pending while it works and not before or after, on success and on failure", async () => {
+  it("is pending while it works and stays so once the page reloads; not before, and not after a failure", async () => {
     const { result } = renderHook(() => useUpdating());
     const { needRefresh } = setupWorker(1_000);
     expect(result.current).toBe(false);
@@ -318,7 +409,9 @@ describe("the Reload button ends on the new bundle", () => {
     expect(result.current).toBe(true);
     await vi.advanceTimersByTimeAsync(1_000);
     await done;
-    expect(result.current).toBe(false);
+    expect(reload).toHaveBeenCalledTimes(1);
+    // The page is going: the button stays busy until the navigation replaces it.
+    expect(result.current).toBe(true);
 
     // Failure: the worker cannot take over.
     resetUpdatesForTest();
@@ -351,8 +444,10 @@ describe("the Reload button ends on the new bundle", () => {
     expect(document.activeElement).toBe(busy);
     // The label change alone is not read out; the status region next to it says it.
     expect(screen.getByRole("status")).toHaveTextContent("Updating…");
-    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Reload" })).not.toHaveAttribute("aria-disabled", "true"));
-    expect(screen.getByRole("status")).not.toHaveTextContent("Updating…");
+    // Once the page reloads, the button stays busy until the navigation replaces the page.
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "Updating…" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
   });
 
   it("a press while it works does nothing", async () => {
@@ -364,8 +459,8 @@ describe("the Reload button ends on the new bundle", () => {
     const button = screen.getByRole("button", { name: "Reload" });
     await act(async () => button.click());
     await act(async () => button.click());
-    await vi.waitFor(() => expect(updateSW).toHaveBeenCalledTimes(1));
-    expect(reload).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(updateSW).toHaveBeenCalledTimes(1);
   });
 
   it("an update() that throws at once still ends in the plain reload", async () => {
@@ -390,9 +485,9 @@ describe("the Reload button ends on the new bundle", () => {
     await renderApp({ path: "/" });
     await act(async () => noteServerVersion(SERVER));
     await act(async () => screen.getByRole("button", { name: "Reload" }).click());
-    await vi.waitFor(() => expect(updateSW).toHaveBeenCalledWith(true));
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(updateSW).toHaveBeenCalledWith(true);
     expect(registration.update).toHaveBeenCalled();
-    expect(reload).not.toHaveBeenCalled();
   });
 });
 
