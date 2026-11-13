@@ -935,3 +935,24 @@ def test_render_preview_png_needs_the_render_dpi() -> None:
     param = inspect.signature(render_preview_png).parameters["render_dpi"]
     assert param.default is inspect.Parameter.empty
     assert param.kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_the_preview_font_is_read_from_disk_once_per_size(monkeypatch: pytest.MonkeyPatch) -> None:
+    """T11 M4: the margin ID and the feed mark no longer load the font file on every preview."""
+    from app.sheets import sheet_page
+    from PIL import ImageFont
+
+    real = ImageFont.truetype
+    loads: list[float] = []
+
+    def counting(path: str, size: float) -> ImageFont.FreeTypeFont:
+        loads.append(size)
+        return real(path, size)
+
+    sheet_page._preview_font.cache_clear()
+    monkeypatch.setattr(sheet_page.ImageFont, "truetype", counting)
+    first = sheet_page._preview_font(12.5)
+    assert sheet_page._preview_font(12.5) is first
+    sheet_page._preview_font(20.0)
+    assert loads == [12.5, 20.0]
+    sheet_page._preview_font.cache_clear()
