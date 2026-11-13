@@ -37,12 +37,23 @@ function ColourChoices({
   const set = useSetRollColour(printerId);
   const [picked, setPicked] = useState<TapeColour | null>(current);
   const [changedAgain, setChangedAgain] = useState(false);
+  // Counts failed saves: each one hands the focus back to the choices (see the effect below).
+  const [failures, setFailures] = useState(0);
   const group = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!focusOnMount) return;
+  const focusChoice = useCallback(() => {
     const radios = group.current?.querySelectorAll<HTMLInputElement>('input[type="radio"]') ?? [];
     (Array.from(radios).find((r) => r.checked) ?? radios[0])?.focus();
-  }, [focusOnMount]);
+  }, []);
+  useEffect(() => {
+    if (focusOnMount) focusChoice();
+  }, [focusOnMount, focusChoice]);
+  // While the save was pending the buttons were disabled, and a focused Save dropped the focus to the
+  // page. Once the controls are back, a failure returns it to the choices, unless it went somewhere else.
+  useEffect(() => {
+    if (failures === 0 || set.isPending) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body || group.current?.parentElement?.contains(active)) focusChoice();
+  }, [failures, set.isPending, focusChoice]);
 
   const send = (colour: RollColour | null) => {
     setChangedAgain(false);
@@ -52,6 +63,7 @@ function ColourChoices({
         onSuccess: onDone,
         // The status and roll are read again; the question that comes back is about the new roll.
         onError: (error) => {
+          setFailures((n) => n + 1);
           const again = isRollChanged(error);
           setChangedAgain(again);
           // The colour that was marked belonged to the old roll.
@@ -191,7 +203,15 @@ export function RollColourEdit({
   }, [open, close]);
   return (
     <div className="flex flex-col gap-3">
-      <Button ref={triggerRef} className={`${SECONDARY_BUTTON} self-start`} aria-expanded={open} onPress={() => (open ? close() : setOpen(true))}>
+      {/* While the new-roll question is open above, it is the one to answer: the trigger stays focusable
+          (focus comes back to it) but opens no second set of choices. */}
+      <Button
+        ref={triggerRef}
+        className={`${SECONDARY_BUTTON} self-start aria-disabled:opacity-60`}
+        aria-expanded={open}
+        aria-disabled={prompted || undefined}
+        onPress={() => (open ? close() : !prompted && setOpen(true))}
+      >
         {colour ? t`Change colour` : t`Set colour`}
       </Button>
       {open && !roll.data && <RollUnavailable roll={roll} />}

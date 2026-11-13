@@ -47,7 +47,6 @@ export const useAdminPrinters = () =>
     queryFn: () => apiFetch<AdminPrinter[]>("/api/v1/admin/printers?include_disabled=true"),
   });
 
-/** Create, update or switch a printer; the shell's printer lists refresh too. */
 /** Keys of the printer writes, so a list row can ask which printers have a change in flight (see `usePrintersInFlight`). */
 const PRINTER_UPDATE_KEY = ["admin-printers", "update"] as const;
 const PRINTER_TOGGLE_KEY = ["admin-printers", "toggle"] as const;
@@ -64,6 +63,7 @@ export function usePrintersInFlight(): ReadonlySet<string> {
   return new Set(slugs.filter((slug): slug is string => typeof slug === "string"));
 }
 
+/** Create, update or switch a printer; the shell's printer lists refresh too. */
 export function usePrinterAdmin() {
   const client = useQueryClient();
   const done = () => {

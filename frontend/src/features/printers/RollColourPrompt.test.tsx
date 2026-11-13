@@ -265,4 +265,24 @@ describe("RollColourPrompt (#229)", () => {
     expect(await screen.findByText("The colour could not be saved. Try again.")).toBeVisible();
     expect(screen.getByRole("radio", { name: "Red" })).toBeChecked();
   });
+
+  it("a failed save does not leave the focus on the page: it returns to the choices", async () => {
+    // While the save is pending the buttons are disabled, and the focused Save drops the focus to the page.
+    mockApi(detail({}, ROLL, { [`PUT ${rollPath}`]: () => respond(500, { detail: "boom" }) }));
+    await renderApp({ path: `/printers/${PRINTER_A.id}` });
+    await userEvent.click(await screen.findByRole("radio", { name: "Red" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("The colour could not be saved. Try again.");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Red" })));
+  });
+
+  it("while the new-roll question shows, the edit control opens no second set of choices", async () => {
+    mockApi(detail());
+    await renderApp({ path: `/printers/${PRINTER_A.id}` });
+    await screen.findByRole("radiogroup", { name: "Tape colour" });
+    const trigger = await screen.findByRole("button", { name: "Set colour" });
+    expect(trigger).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(trigger);
+    expect(screen.getAllByRole("radiogroup", { name: "Tape colour" })).toHaveLength(1);
+  });
 });
