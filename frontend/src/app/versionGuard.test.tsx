@@ -21,10 +21,13 @@ const SERVER = "1.6.0";
 const BANNER = "New version available";
 
 let reload: Mock<() => void>;
+// Whether the told worker takes over the page (`controllerchange`); by default it does at once.
+let controllerChanges: Mock<(ms: number) => Promise<boolean>>;
 
 beforeEach(() => {
   reload = vi.fn<() => void>();
-  setVersionCheckForTest({ buildVersion: BUILT_FOR, reload });
+  controllerChanges = vi.fn<(ms: number) => Promise<boolean>>(async () => true);
+  setVersionCheckForTest({ buildVersion: BUILT_FOR, reload, controllerChanges });
 });
 
 afterEach(() => {
@@ -34,7 +37,7 @@ afterEach(() => {
 });
 
 /** A service worker registration whose `update()` installs a new worker after `installAfterMs` (never when null). */
-function setupWorker(installAfterMs: number | null, options: { updateFails?: boolean } = {}) {
+function setupWorker(installAfterMs: number | null, options: { updateFails?: boolean; unregister?: () => Promise<boolean> } = {}) {
   const updateSW = vi.fn(async (reloadPage?: boolean): Promise<void> => void reloadPage);
   let needRefresh!: () => void;
   const registration = {
@@ -42,6 +45,7 @@ function setupWorker(installAfterMs: number | null, options: { updateFails?: boo
       if (options.updateFails) throw new Error("offline");
       if (installAfterMs !== null) setTimeout(() => needRefresh(), installAfterMs);
     }),
+    unregister: vi.fn(options.unregister ?? (async () => true)),
   };
   startUpdates((o) => {
     needRefresh = o.onNeedRefresh;
@@ -139,6 +143,107 @@ describe("the Reload button ends on the new bundle", () => {
     await done;
     expect(updateSW).toHaveBeenCalledWith(true);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("waits for the told worker to take over and leaves the reload to that takeover", async () => {
+    const { updateSW, registration, needRefresh } = setupWorker(null);
+    needRefresh();
+    await applyUpdate();
+    expect(controllerChanges).toHaveBeenCalledWith(WORKER_WAIT_MS);
+    // Listening starts before the worker is told, so a fast takeover is not missed.
+    expect(controllerChanges.mock.invocationCallOrder[0]).toBeLessThan(updateSW.mock.invocationCallOrder[0] ?? 0);
+    expect(registration.unregister).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("a worker that does not take over in time (the old one kept busy): removes the old registration, then reloads", async () => {
+    // Chromium holds the new worker back while the old one has work, e.g. a request of the page.
+    controllerChanges.mockImplementation((ms) => new Promise((resolve) => setTimeout(() => resolve(false), ms)));
+    const { updateSW, registration, needRefresh } = setupWorker(null);
+    needRefresh();
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS - 1);
+    expect(updateSW).toHaveBeenCalledWith(true);
+    expect(registration.unregister).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await done;
+    expect(registration.unregister).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(registration.unregister.mock.invocationCallOrder[0]).toBeLessThan(reload.mock.invocationCallOrder[0] ?? 0);
+  });
+
+  it("the same after an update the button asked for itself", async () => {
+    controllerChanges.mockImplementation((ms) => new Promise((resolve) => setTimeout(() => resolve(false), ms)));
+    const { updateSW, registration } = setupWorker(200);
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(200 + WORKER_WAIT_MS);
+    await done;
+    expect(updateSW).toHaveBeenCalledWith(true);
+    expect(registration.unregister).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unregister that fails or never answers still ends in the reload, within the budget", async () => {
+    controllerChanges.mockImplementation(async () => false);
+    const failing = setupWorker(null, { unregister: async () => Promise.reject(new Error("gone")) });
+    failing.needRefresh();
+    await applyUpdate();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    resetUpdatesForTest();
+    setVersionCheckForTest({ buildVersion: BUILT_FOR, reload, controllerChanges });
+    const hanging = setupWorker(null, { unregister: () => new Promise<never>(() => {}) });
+    hanging.needRefresh();
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS - 1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await done;
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+
+  it("with the browser's own signal: a controllerchange ends the wait, without one it gives up after the budget", async () => {
+    const container = new EventTarget();
+    Object.defineProperty(navigator, "serviceWorker", { value: container, configurable: true });
+    const removed = vi.spyOn(container, "removeEventListener");
+    try {
+      resetUpdatesForTest();
+      setVersionCheckForTest({ buildVersion: BUILT_FOR, reload });
+      const taking = setupWorker(null);
+      taking.needRefresh();
+      const done = applyUpdate();
+      await vi.advanceTimersByTimeAsync(100);
+      container.dispatchEvent(new Event("controllerchange"));
+      await done;
+      expect(taking.registration.unregister).not.toHaveBeenCalled();
+      expect(reload).not.toHaveBeenCalled();
+      expect(removed).toHaveBeenCalledWith("controllerchange", expect.any(Function));
+
+      const stuck = setupWorker(null);
+      stuck.needRefresh();
+      const second = applyUpdate();
+      await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+      await second;
+      expect(stuck.registration.unregister).toHaveBeenCalledTimes(1);
+      expect(reload).toHaveBeenCalledTimes(1);
+      // A late takeover after giving up changes nothing.
+      container.dispatchEvent(new Event("controllerchange"));
+      expect(reload).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (navigator as unknown as Record<string, unknown>).serviceWorker;
+    }
+  });
+
+  it("without a service worker container there is no takeover to wait for: removes the registration and reloads", async () => {
+    expect("serviceWorker" in navigator).toBe(false);
+    resetUpdatesForTest();
+    setVersionCheckForTest({ buildVersion: BUILT_FOR, reload });
+    const { registration, needRefresh } = setupWorker(null);
+    needRefresh();
+    await applyUpdate();
+    expect(registration.unregister).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("reloads only after the bounded wait found no new worker", async () => {

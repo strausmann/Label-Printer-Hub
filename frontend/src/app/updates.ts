@@ -7,6 +7,7 @@ export const BUILD_VERSION: string = typeof __HUB_BUILD_VERSION__ === "string" ?
 /** The part of a service worker registration we use. */
 export interface SwRegistration {
   update: () => Promise<unknown>;
+  unregister?: () => Promise<boolean>;
 }
 
 /** What `registerSW` from vite-plugin-pwa looks like to us (so tests can stand in for it). */
@@ -17,7 +18,10 @@ export type RegisterSW = (options: {
 
 /** How often an open tab asks for a new service worker (it also asks whenever the window gets focus). */
 export const UPDATE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
-/** How long the Reload button waits for a new service worker to install before it falls back to a plain reload. */
+/**
+ * How long the Reload button waits for a new service worker to install before it falls back to a plain reload,
+ * and how long it waits for a told worker to take over the page before it removes the old one.
+ */
 export const WORKER_WAIT_MS = 5_000;
 
 // A new service worker waits for the person (see pwa.config.ts); true while one does.
@@ -98,11 +102,33 @@ function workerWaits(ms: number): Promise<boolean> {
   });
 }
 
+/** Resolves true when another service worker takes control of this page, false after `ms`. */
+function controllerChanges(ms: number): Promise<boolean> {
+  const container = typeof navigator === "undefined" ? undefined : navigator.serviceWorker;
+  if (!container) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const finish = (changed: boolean) => {
+      clearTimeout(timer);
+      container.removeEventListener("controllerchange", onChange);
+      resolve(changed);
+    };
+    const onChange = () => finish(true);
+    const timer = setTimeout(() => finish(false), ms);
+    container.addEventListener("controllerchange", onChange);
+  });
+}
+
 /**
  * The banner's button. Applies a waiting worker (it takes over and the page reloads on the new
  * files); without one it asks the browser for one and waits, bounded and on the outcome (a worker
  * that starts waiting), before it applies it. Only when none comes does it reload, because a plain
  * reload alone is answered from the old precache.
+ *
+ * Telling the waiting worker to skip waiting is not enough on its own: Chromium activates it only once
+ * the old worker has no work left, and a request the page sends at that moment (a status poll, a refetch
+ * on focus) restarts the old worker and can hold the new one back for minutes. So the button waits for
+ * the takeover (`controllerchange`), bounded; when it does not come, it removes the old registration and
+ * reloads, so the hub answers the page with the new version and the new bundle registers its worker.
  */
 export async function applyUpdate(): Promise<void> {
   if (refreshing) return;
@@ -118,8 +144,16 @@ export async function applyUpdate(): Promise<void> {
       await withinBudget(Promise.resolve().then(() => reg.update()), deps.workerWaitMs);
       await workerWaits(deps.workerWaitMs);
     }
-    if (waitingWorker && updateSW) await updateSW(true);
-    else deps.reload();
+    if (waitingWorker && updateSW) {
+      // Listen before the worker is told, so a fast takeover is not missed.
+      const takenOver = deps.controllerChanges(deps.workerWaitMs);
+      await updateSW(true);
+      // The takeover reloads the page (vite-plugin-pwa listens for it).
+      if (await takenOver) return;
+      const reg = registration;
+      if (reg?.unregister) await withinBudget(Promise.resolve().then(() => reg.unregister?.()), deps.workerWaitMs);
+      deps.reload();
+    } else deps.reload();
   } catch {
     // The worker could not take over: the banner stays and the button can be pressed again.
   } finally {
@@ -146,6 +180,7 @@ const deps = {
   buildVersion: BUILD_VERSION,
   workerWaitMs: WORKER_WAIT_MS,
   reload: () => window.location.reload(),
+  controllerChanges,
 };
 
 /**
@@ -208,10 +243,17 @@ export function resetUpdatesForTest(): void {
   deps.workerWaitMs = WORKER_WAIT_MS;
   deps.buildVersion = BUILD_VERSION;
   deps.reload = () => window.location.reload();
+  deps.controllerChanges = controllerChanges;
   emit();
 }
 
-export function setVersionCheckForTest(overrides: { buildVersion?: string; reload?: () => void; workerWaitMs?: number }): void {
+export function setVersionCheckForTest(overrides: {
+  buildVersion?: string;
+  reload?: () => void;
+  workerWaitMs?: number;
+  controllerChanges?: (ms: number) => Promise<boolean>;
+}): void {
+  if (overrides.controllerChanges) deps.controllerChanges = overrides.controllerChanges;
   if (overrides.workerWaitMs !== undefined) deps.workerWaitMs = overrides.workerWaitMs;
   if (overrides.buildVersion !== undefined) deps.buildVersion = overrides.buildVersion;
   if (overrides.reload) deps.reload = overrides.reload;
