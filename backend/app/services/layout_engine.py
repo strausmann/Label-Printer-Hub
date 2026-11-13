@@ -379,7 +379,7 @@ class LayoutEngine:
         geometry: TapeGeometry,
         data: LabelData,
     ) -> Image.Image:
-        """QR left + N item lines (font_m). Overflow shows '+N more'."""
+        """QR left + N item lines (font_m). Overflow shows "+N", with no word."""
         qr_img = self._build_qr_image(
             payload=data.qr_payload or "",
             size_px=geometry.qr_max_px,
@@ -394,7 +394,7 @@ class LayoutEngine:
         overflow_text: str | None
         if len(items) > max_lines:
             visible_count = max_lines - 1
-            overflow_text = f"+{len(items) - visible_count} more"
+            overflow_text = f"+{len(items) - visible_count}"
             visible = items[:visible_count]
         else:
             visible = items

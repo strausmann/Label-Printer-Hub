@@ -116,12 +116,16 @@ async def test_probe_failure_marks_offline(_printer_id, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — failure after success preserves prior parsed data
+# Test 3 — failure after success drops the tape, keeps the rest (263-31)
 # ---------------------------------------------------------------------------
 
 
-async def test_probe_failure_preserves_prior_parsed_data(_printer_id, monkeypatch):
-    """After a prior success, a failing probe keeps loaded_tape_mm but flips online=False."""
+async def test_probe_failure_clears_the_tape_but_keeps_the_rest(_printer_id, monkeypatch):
+    """After a prior success, a failing probe flips online=False and forgets the tape.
+
+    The hub cannot see a tape through a printer it cannot reach, so it does not report the
+    last one it saw. Everything else of the last reading stays.
+    """
     from app.printer_backends.snmp_helper import PreflightStatus
 
     # First call: success
@@ -149,7 +153,7 @@ async def test_probe_failure_preserves_prior_parsed_data(_printer_id, monkeypatc
         _fail_query,
     )
 
-    await producer._probe_once()  # failure — should flip online=False, keep tape data
+    await producer._probe_once()  # failure — online=False, tape forgotten
 
     import app.db.engine as _eng
     from app.models.printer_status_cache import PrinterStatusCache
@@ -161,8 +165,9 @@ async def test_probe_failure_preserves_prior_parsed_data(_printer_id, monkeypatc
     assert row.parsed is not None
     assert row.parsed["online"] is False
     assert "last_error" in row.parsed
-    # Prior tape data must be preserved
-    assert row.parsed.get("loaded_tape_mm") == 24
+    assert row.parsed["loaded_tape_mm"] is None
+    assert row.parsed["media_raw"] is None
+    assert row.parsed["hr_printer_status"] == "idle"
 
 
 async def test_producer_writes_media_raw(_printer_id, monkeypatch):

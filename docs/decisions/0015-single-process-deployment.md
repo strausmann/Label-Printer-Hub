@@ -36,7 +36,7 @@ One image, `label-printer-hub-backend`, is published. The Go frontend, its image
 
 ## Consequences
 
-- Breaking release: the frontend image disappears and deployments change from two containers to one; migration notes cover compose changes and new required variables (`PRINTER_HUB_SECRET_KEY`, `PRINTER_HUB_PUBLIC_URL`).
+- Breaking release: the frontend image disappears and deployments change from two containers to one, with the required variables `PRINTER_HUB_SECRET_KEY` and `PRINTER_HUB_PUBLIC_URL`.
 - API clients that talked to the backend directly are unaffected; clients that used the frontend's `/api/*` proxy switch to the backend address.
 - The image tag scheme of ADR 0007 now applies to a single image.
 - CSRF protection and SSO header handling live in the backend only (ADR 0019).

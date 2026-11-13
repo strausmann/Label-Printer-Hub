@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umbenennung, kein Neubau: Deine Daten, deine API-Schlüssel und deine API-Clients ziehen mit um. Die Gründe und die vollständige Kompatibilitätstabelle stehen in der [Entscheidung zur Umbenennung](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0025-rename-to-labelyard.md).
+Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umbenennung, kein Neubau: Deine Daten, deine API-Schlüssel und deine API-Clients ziehen mit um. Die Gründe und die vollständige Kompatibilitätstabelle stehen in der [Entscheidung zur Umbenennung](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0026-rename-to-labelyard.md).
 
 ## Was sich ändert
 

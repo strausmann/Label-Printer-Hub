@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,10 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 VECTORS = json.loads((REPO_ROOT / "docs" / "licence-test-vectors.json").read_text("utf-8"))
 ALLOWED = frozenset({"MIT", "MIT-0", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC0-1.0"})
 ALLOWED |= frozenset({"PSF-2.0", "LGPL-2.1-or-later"})
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _policy(reviewed: dict[str, str] | None = None, /, **exceptions: tuple[str, str]) -> Policy:
@@ -48,6 +54,7 @@ def _record(
     expression: str = "UNKNOWN",
     metadata: str = "UNKNOWN",
     classifier: str = "UNKNOWN",
+    text: str = "text",
 ) -> dict[str, str]:
     return {
         "Name": name,
@@ -55,8 +62,15 @@ def _record(
         "License-Expression": expression,
         "License-Metadata": metadata,
         "License-Classifier": classifier,
-        "LicenseText": "text",
+        "LicenseText": text,
     }
+
+
+def _pinned(policy: Policy, name: str, text: str) -> Policy:
+    """``policy`` with the exception for ``name`` pinned to the hash of ``text``."""
+    key = normalise_purl(f"pkg:pypi/{name}")
+    pinned = replace(policy.exceptions[key], licence_text_sha256=_sha256(text))
+    return Policy(allowed=policy.allowed, exceptions={**policy.exceptions, key: pinned})
 
 
 @pytest.mark.parametrize("vector", VECTORS, ids=lambda v: v["expression"] or "<empty>")
@@ -312,3 +326,67 @@ def test_main_exit_codes_and_output(
     }
     monkeypatch.setattr(licence_report, "_collect", lambda _: [_record("ok", expression="MIT")])
     assert licence_report.main(["--python", "x", "--policy", str(policy_file)]) == 0
+
+
+def test_exception_with_changed_licence_text_fails() -> None:
+    # The pinned hash is of the text that was reviewed; a changed licence file voids the
+    # exception even when the classifiers alone would be accepted (ptouch maps to LGPL).
+    classifier = "GNU Lesser General Public License v2 or later (LGPLv2+)"
+    policy = _pinned(
+        _policy(ptouch=("LGPL-2.1-or-later", "shipped text is LGPL 2.1")), "ptouch", "reviewed text"
+    )
+    changed = _record("ptouch", classifier=classifier, text="a different licence text")
+    assert classify(changed, policy) == ("UNKNOWN", False)
+    assert check([changed], policy) == [
+        "ptouch (UNKNOWN): exception reviewed against a different licence text, "
+        "the licence file has changed"
+    ]
+    unchanged = _record("ptouch", classifier=classifier, text="reviewed text")
+    assert classify(unchanged, policy) == ("LGPL-2.1-or-later", True)
+
+
+def test_exception_without_hash_still_applies() -> None:
+    policy = _policy(pysnmp=("BSD-2-Clause", "metadata UNKNOWN"))
+    entry = _record("pysnmp", text="any text at all")
+    assert classify(entry, policy) == ("BSD-2-Clause", True)
+
+
+def test_proprietary_in_join_is_unknown() -> None:
+    entry = _record("newpkg", classifier="MIT License; Other/Proprietary License")
+    assert classify(entry, _policy()) == ("UNKNOWN", False)
+    # Without a mapped Proprietary the join stays an OR of the mapped licences.
+    entry = _record("other", classifier="Apache Software License; MIT License")
+    assert classify(entry, _policy()) == ("Apache-2.0 OR MIT", True)
+
+
+def test_proprietary_join_is_not_settled_by_metadata() -> None:
+    entry = _record("newpkg", metadata="MIT", classifier="MIT License; Other/Proprietary License")
+    assert classify(entry, _policy()) == ("UNKNOWN", False)
+
+
+def test_load_policy_reads_licence_text_sha256(tmp_path: Path) -> None:
+    digest = _sha256("x")
+    path = tmp_path / "policy.yml"
+    doc: dict[str, Any] = {
+        "allow-licenses": ["MIT"],
+        "x-licence-exceptions": [
+            {"purl": "pkg:pypi/a", "licence": "MIT", "reason": "r", "licence-text-sha256": digest}
+        ],
+    }
+    path.write_text(json.dumps(doc), encoding="utf-8")
+    assert load_policy(path).exceptions["pkg:pypi/a"].licence_text_sha256 == digest
+    for bad in (" ", "abc", "Z" * 64, 5):
+        doc["x-licence-exceptions"][0]["licence-text-sha256"] = bad
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        with pytest.raises(ValueError):
+            load_policy(path)
+
+
+def test_shipped_policy_pins_the_python_exceptions() -> None:
+    policy = load_policy(REPO_ROOT / "licence-policy.yml")
+    pypi = {p: e for p, e in policy.exceptions.items() if p.startswith("pkg:pypi/")}
+    assert {
+        "pkg:pypi/" + n for n in ("pysnmp", "qrcode", "jinja2", "pyusb", "ptouch", "reportlab")
+    } <= set(pypi)
+    unpinned = sorted(p for p, e in pypi.items() if not e.licence_text_sha256)
+    assert unpinned == [], f"pypi exceptions without licence-text-sha256: {unpinned}"

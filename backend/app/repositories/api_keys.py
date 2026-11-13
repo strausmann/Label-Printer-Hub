@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -69,13 +70,25 @@ async def revoke(session: AsyncSession, key_id: UUID) -> ApiKey | None:
     return key
 
 
+def _canonical_ip(ip: str) -> str:
+    """One spelling per address (IPv6 compressed, lower case); anything else as it is."""
+    try:
+        return str(ipaddress.ip_address(ip))
+    except ValueError:
+        return ip
+
+
 async def update_last_used(session: AsyncSession, key_id: UUID, *, ip: str) -> ApiKey | None:
-    """Update ``last_used_at`` and ``last_used_ip`` for a key."""
+    """Update ``last_used_at`` and ``last_used_ip`` for a key.
+
+    The address is stored in canonical form: the sign-in path and keyed requests hand it over in
+    different spellings, and the same client must show up as one address (T13 F6).
+    """
     key = await session.get(ApiKey, key_id)
     if key is None:
         return None
     key.last_used_at = datetime.now(UTC)
-    key.last_used_ip = ip
+    key.last_used_ip = _canonical_ip(ip)
     session.add(key)
     await session.commit()
     await session.refresh(key)

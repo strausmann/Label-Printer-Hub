@@ -110,6 +110,16 @@ class InvalidFieldError(InvalidGeometryError):
         self.args = (self.message,)
 
 
+class TextTooLongError(InvalidFieldError):
+    """A text field is longer than its limit after cleaning (264-12): its own code, not
+    ``invalid_geometry``; status and detail stay as before."""
+
+    error_code = "label_too_long"
+
+    def __init__(self, field: str) -> None:
+        super().__init__(field, "too long")
+
+
 class SheetNotFoundError(SheetApiError):
     status = 404
     error_code = "sheet_not_found"
@@ -275,6 +285,20 @@ class IppPdfUnsupportedError(SheetApiError):
     status = 409
     error_code = "ipp_pdf_unsupported"
     message = "The printer does not accept PDF documents."
+
+
+class StoredConnectionInvalidError(SheetApiError):
+    """A saved IPP connection no longer validates (e.g. a hand-edited or old row)."""
+
+    status = 409
+    error_code = "stored_connection_invalid"
+    message = "The stored connection of this printer is invalid."
+
+    def __init__(self, printer_id: UUID) -> None:
+        super().__init__(
+            f"The stored connection of printer {printer_id} is invalid; "
+            "send a new connection to replace it."
+        )
 
 
 class IppRejectedError(SheetApiError):

@@ -17,11 +17,13 @@ import httpx
 import pytest
 from app.calibration import service as calibration_service
 from app.calibration.model import CalibrationIn
+from app.models.api_key import ApiKey
 from app.models.job import Job
 from app.models.printer import Printer
 from app.models.printer_tray import PrinterTray
 from app.services.page_jobs import PagePayload
 from app.sheets import print_service
+from app.sheets import sheet_service as ss
 from sqlalchemy import func, select
 
 from tests.integration.api.test_sheet_print_api import (
@@ -59,6 +61,14 @@ async def _until_job(job_id: str, state: str) -> Job:
             if row.state == state:
                 return row
             await asyncio.sleep(0.02)
+
+
+async def _key_id(rig: Rig) -> UUID:
+    """The id of the rig's print key: rows stored by hand belong to it (#294)."""
+    prefix = rig.key["X-Label-Hub-Key"][:16]
+    async with _factory()() as s:
+        key = (await s.execute(select(ApiKey).where(ApiKey.key_prefix == prefix))).scalar_one()
+    return key.id
 
 
 async def _job_count() -> int:
@@ -360,6 +370,32 @@ async def test_retry_on_a_disabled_printer_is_refused_and_reserves_nothing() -> 
         assert await _cells() == [] and await _job_count() == jobs
 
 
+async def test_retry_refuses_item_that_no_longer_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """266-11: the retry checks every item at the fresh render dpi. A QR that fit at 600 dpi
+    but not at the printer's new 100 dpi is a 422 naming the item, before anything is
+    reserved, not a ``render_failed`` job later."""
+    from app.sheets.printer_facts import PrinterFacts
+
+    async with running() as rig:
+        code = await _sheet()
+        body = _body(code, 2)
+        body["items"][1]["data"]["qr_payload"] = "https://r.example.invalid/" + "x" * 274
+        first_id, _ = await _fail_cleanly(rig, body)  # printable at the 600 dpi of the first job
+        jobs = await _job_count()
+
+        async def low_dpi(_session: Any, _printer_id: UUID) -> PrinterFacts:
+            return PrinterFacts(resolutions_dpi=[100], margins_hmm=None, render_dpi=100)
+
+        monkeypatch.setattr(print_service, "load_printer_facts", low_dpi)
+        refused = await _retry(rig, first_id)
+
+        assert refused.status_code == 422, refused.text
+        err = _err(refused)
+        assert err["error_code"] == "content_type_data_mismatch"
+        assert err["error_detail"] == {"item_index": 1, "missing_fields": ["qr_payload"]}
+        assert await _cells() == [] and await _job_count() == jobs
+
+
 async def test_retry_with_a_removed_tray_is_tray_unknown() -> None:
     async with running() as rig:
         code = await _sheet()
@@ -383,8 +419,8 @@ async def test_retry_of_a_discarded_sheet_is_refused() -> None:
     async with running() as rig:
         code = await _sheet()
         first_id, _ = await _fail_cleanly(rig, _body(code, 2))
-        gone = await rig.client.post(f"/api/v1/sheets/{code}/discard", headers=rig.key)
-        assert gone.status_code == 200, gone.text
+        async with _factory()() as s:  # discard needs admin (#264); the rig key prints
+            await ss.discard_sheet(s, code, actor="t")
 
         refused = await _retry(rig, first_id)
 
@@ -432,6 +468,7 @@ async def test_retry_of_a_sheet_page_without_a_usable_payload_is_422() -> None:
                 printer_id=rig.printer_id,
                 payload={"kind": "sheet_page", "detail": {}},
                 state="failed",
+                api_key_id=await _key_id(rig),
             )
             s.add(row)
             await s.commit()
@@ -531,7 +568,12 @@ async def test_retry_of_a_calibration_page_on_a_disabled_printer_is_refused() ->
             detail={},
         ).model_dump(mode="json")
         async with _factory()() as s:
-            row = Job(printer_id=rig.printer_id, payload=stored, state="failed")
+            row = Job(
+                printer_id=rig.printer_id,
+                payload=stored,
+                state="failed",
+                api_key_id=await _key_id(rig),
+            )
             s.add(row)
             printer = await s.get(Printer, rig.printer_id)
             assert printer is not None
@@ -578,14 +620,18 @@ async def test_a_cell_payload_with_unknown_keys_still_loads() -> None:
     assert cell.cell == 1  # a rollback must not strand a stored job
 
 
-async def _until_pool_idle(timeout_s: float = 2.0) -> bool:
-    """Whether the engine's pool is seen with no connection checked out within ``timeout_s``."""
+async def _until_pool_back_to(baseline: int, timeout_s: float = 2.0) -> bool:
+    """Whether the pool is seen with at most *baseline* connections out within ``timeout_s``.
+
+    *baseline* is what the pool handed out when the test started (266-15): the test is about the
+    requests it makes, not about connections other fixtures may hold.
+    """
     import app.db.engine as engine_module
 
     pool = engine_module.engine.pool
     async with asyncio.timeout(timeout_s + 1):
         for _ in range(int(timeout_s / 0.02)):
-            if pool.checkedout() == 0:  # type: ignore[attr-defined]
+            if pool.checkedout() <= baseline:  # type: ignore[attr-defined]
                 return True
             await asyncio.sleep(0.02)
     return False
@@ -608,7 +654,10 @@ async def test_a_retry_holds_no_connection_while_the_service_works(
         await asyncio.sleep(2.5)
         raise PrinterUnavailableError()
 
+    import app.db.engine as engine_module
+
     async with running() as rig:
+        baseline = engine_module.engine.pool.checkedout()  # type: ignore[attr-defined]
         code = await _sheet(used=4)
         first_id, _ = await _fail_cleanly(rig, _body(code, 3))
         monkeypatch.setattr(print_service, "retry_sheet_page", slow)
@@ -617,7 +666,7 @@ async def test_a_retry_holds_no_connection_while_the_service_works(
         async with asyncio.timeout(10):
             while started < 8:
                 await asyncio.sleep(0.02)
-        idle = await _until_pool_idle()
+        idle = await _until_pool_back_to(baseline)
         await asyncio.gather(*tasks)
 
     assert idle
@@ -644,6 +693,7 @@ async def test_no_connection_is_held_while_the_retry_is_submitted(
             other = await rig.client.get("/api/v1/sheets", headers=rig.reader)
         responses = await asyncio.gather(*tasks)
 
-    assert probe.checked_out == 0
+    assert probe.checked_out is not None
+    assert probe.checked_out <= probe.baseline
     assert other.status_code == 200, other.text
     assert {r.status_code for r in responses} == {409}

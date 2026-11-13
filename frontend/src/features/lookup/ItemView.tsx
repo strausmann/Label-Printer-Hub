@@ -3,8 +3,10 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
+import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON, FIELD } from "../../shell/SignIn";
 import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/api";
+import { HINT } from "../settings/controls";
 import { PANEL } from "../ui";
 import {
   DEFAULT_CONTENT_TYPE,
@@ -108,6 +110,8 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const appNames = useAppName();
   const contentLabel = useContentTypeLabel();
   const errorText = usePrintErrorText();
+  // A read key may look and fill the cart but not print: say so before the press, not with a 403 after it.
+  const readOnly = useSession().scope === "read";
   const cart = useCart();
   const printers = usePrinters();
   const { usable, selected, choose } = usePrinterChoice(printers.data);
@@ -203,7 +207,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
             {!pagePrinter && (
               <Button
                 className={PRIMARY_BUTTON}
-                isDisabled={!selected || print.isPending}
+                isDisabled={!selected || print.isPending || readOnly}
                 onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem, layout: layout.options })}
               >
                 {t`Print now`}
@@ -216,6 +220,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
               {t`Add to cart`}
             </Button>
           </div>
+          {readOnly && !pagePrinter && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
           {print.isError && (
             <p role="alert" className="text-bad">{errorText(print.error)}</p>
           )}

@@ -10,6 +10,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
+from app.sheets.locking import install_statement_counter
 
 # Single source of truth: Settings.database_url (env var LABELYARD_DATABASE_URL).
 # The previous code read the old LABEL_HUB_DATABASE_URL env var which was a
@@ -55,6 +56,8 @@ engine = create_async_engine(
 
 # Register the pragma hook on the underlying SQLAlchemy engine.
 event.listen(engine.sync_engine, "connect", _apply_pragmas)
+# The sheet write lock refuses to run after another statement of its transaction (264-01).
+install_statement_counter(engine.sync_engine)
 
 async_session = async_sessionmaker(
     bind=engine,

@@ -97,6 +97,15 @@ def _register_font(path: Path) -> str:
     return name
 
 
+def register_pdf_font() -> str:
+    """Register the PDF font now; the hub calls it at startup (266-14).
+
+    reportlab's font registry is a process-wide dict. Registered up front, the planner and the
+    renderers that run in threads only read it and never register the font concurrently.
+    """
+    return _register_font(resolve_font_path())
+
+
 def text_width_mm(s: str, size_pt: float) -> float:
     """Width of ``s`` in the embedded font at ``size_pt``: what ``VectorPen.text`` really draws."""
     width: float = pdfmetrics.stringWidth(s, _register_font(resolve_font_path()), size_pt)

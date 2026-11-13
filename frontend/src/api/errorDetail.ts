@@ -110,6 +110,12 @@ export function invalidGeometry(error: unknown): { field: string; reason: string
   return d && typeof d.field === "string" && typeof d.reason === "string" ? { field: d.field, reason: d.reason } : null;
 }
 
+/** `422 label_too_long`: a text is longer than its limit. Same detail as `invalid_geometry`, its own code. */
+export function labelTooLong(error: unknown): { field: string } | null {
+  const d = detailOf(error, "label_too_long");
+  return d && typeof d.field === "string" ? { field: d.field } : null;
+}
+
 /** `502 ipp_rejected`: the printer answered with an IPP status; its name, for example `server-error-busy`. */
 export function ippRejected(error: unknown): { ippStatus: string } | null {
   const d = detailOf(error, "ipp_rejected");

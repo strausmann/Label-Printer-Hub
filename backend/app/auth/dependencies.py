@@ -25,7 +25,7 @@ from __future__ import annotations
 import base64
 import hmac
 import logging
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Hashable
 from typing import Any, Literal, cast
 from uuid import UUID
 
@@ -158,11 +158,11 @@ def _is_pangolin_bypass(request: Request) -> bool:
         return False
 
 
-def _enforce_key_rate_limit(key_id: UUID, limit_per_minute: int, key_name: str) -> None:
+def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: str) -> None:
     """Consume one token of the key's per-minute bucket; 429 with Retry-After when empty.
 
     Shared by the API key header and by browser sessions derived from a key, so a
-    session cannot be used to get around the key's limit.
+    session cannot be used to get around the key's limit, and by the webhook key.
     """
     allowed, retry_after = _rate_limiter.check_and_consume_with_retry_after(
         key_id, limit_per_minute=limit_per_minute
@@ -286,7 +286,7 @@ async def _validate_api_key(
         )
 
     # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
-    _enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
+    enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
 
     # Read before the update: a rollback expires the row's attributes.
     key_id = key_row.id
@@ -347,7 +347,7 @@ def _session_context(
             },
         )
     if row.api_key_id is not None and valid.rate_limit_per_minute is not None:
-        _enforce_key_rate_limit(
+        enforce_key_rate_limit(
             row.api_key_id, valid.rate_limit_per_minute, valid.key_name or str(row.api_key_id)
         )
     return AuthContext(
@@ -468,7 +468,9 @@ def require_scope(
     return _check_own_session if own_session else _check
 
 
-def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:
+def check_printer_access(
+    auth_context: AuthContext, printer_id: UUID, *, default_printer: bool = False
+) -> None:
     """Verify the AuthContext allows access to the given printer.
 
     API keys and browser sessions carry ``allowed_printer_ids`` (a session uses
@@ -476,13 +478,17 @@ def check_printer_access(auth_context: AuthContext, printer_id: UUID) -> None:
     contexts have an empty list and are therefore unrestricted.
 
     Raises:
-        HTTPException 403 if the restricted list excludes printer_id.
+        HTTPException 403 if the restricted list excludes printer_id. With ``default_printer``
+        (the routes that act on the default printer without naming it) the answer does not
+        carry the printer id: the caller never named it and may not learn it (263-80).
     """
     if auth_context.allowed_printer_ids and str(printer_id) not in auth_context.allowed_printer_ids:
+        message = (
+            "No access to the default printer"
+            if default_printer
+            else f"These credentials are not authorised for printer {printer_id}."
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error_code": "printer_not_allowed",
-                "error_message": f"These credentials are not authorised for printer {printer_id}.",
-            },
+            detail={"error_code": "printer_not_allowed", "error_message": message},
         )

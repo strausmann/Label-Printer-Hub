@@ -29,15 +29,22 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 
 from app.api.dependencies.printer_runtime import get_printer_runtime
+from app.api.routes.pause_view import pause_view
 from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.ownership import may_see, owner_only
 from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
 from app.models.printer_identity import PrinterIdentity
+from app.models.printer_tray import PrinterTray
+from app.printer_backends.ipp.attributes import IppStatusRecord
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printer_roll as roll_repo
@@ -47,38 +54,22 @@ from app.repositories import printers as printers_repo
 from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer import (
     MarkerRead,
-    PauseRead,
     PrinterRead,
     PrinterStatus,
     ReasonRead,
     TapeRead,
     TrayStatusRead,
 )
+from app.schemas.problem import DetailError
 from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.printer_runtime import PrinterRuntime
-from app.services.status_block import PrinterError, StatusBlockParser
+from app.services.status_block import PrinterError
 from app.services.status_freshness import backoff_of, is_stale, stale_after_s
 from app.services.tape_status import read_tape_status
 
 _log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
-
-
-def _pause_view(
-    request: Request, printer_id: UUID, db_paused: bool
-) -> tuple[bool, PauseRead | None]:
-    """Combine the DB flag with the queue worker state (automatic pauses)."""
-    queue = getattr(request.app.state, "print_queue", None)
-    if queue is None:
-        return db_paused, None
-    info = queue.pause_info(printer_id)
-    pause = (
-        PauseRead(source=info.source, reason_code=info.reason_code, since=info.since)
-        if info is not None
-        else None
-    )
-    return db_paused or queue.is_paused(printer_id), pause
 
 
 def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object]:
@@ -218,7 +209,7 @@ async def list_printers(
     result: list[PrinterRead] = []
     for p in printers:
         state = await printer_state_repo.get(session, p.id)
-        paused, pause = _pause_view(request, p.id, state.paused if state is not None else False)
+        paused, pause = pause_view(request, p.id, state.paused if state is not None else False)
         result.append(
             PrinterRead(
                 id=p.id,
@@ -265,7 +256,7 @@ async def get_printer(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     state = await printer_state_repo.get(session, printer_id)
-    paused, pause = _pause_view(request, printer_id, state.paused if state is not None else False)
+    paused, pause = pause_view(request, printer_id, state.paused if state is not None else False)
     return PrinterRead(
         id=printer.id,
         name=printer.name,
@@ -285,41 +276,6 @@ async def get_printer(
 # ---------------------------------------------------------------------------
 # GET /api/v1/printers/{id}/status
 # ---------------------------------------------------------------------------
-
-
-def _probe_status_sync(host: str, port: int = 9100) -> dict[str, Any]:
-    """Synchronous ESC i S probe — runs in a thread via asyncio.to_thread.
-
-    Opens a blocking TCP socket, sends ESC i S, reads the 32-byte reply
-    and parses it.  Returns a dict with the parsed fields needed for
-    PrinterStatus and the cache write-back.
-
-    Raises:
-        OSError: if the TCP connection fails (printer offline / unreachable).
-        StatusQueryFailedError: if the reply is malformed.
-    """
-    import socket
-
-    from app.services.status_block import STATUS_BLOCK_SIZE
-
-    esc_i_s = b"\x1b\x69\x53"
-    sock = socket.create_connection((host, port), timeout=5.0)
-    try:
-        sock.sendall(esc_i_s)
-        raw = b""
-        while len(raw) < STATUS_BLOCK_SIZE:
-            chunk = sock.recv(STATUS_BLOCK_SIZE - len(raw))
-            if not chunk:
-                break
-            raw += chunk
-    finally:
-        sock.close()
-
-    block = StatusBlockParser.parse(raw)
-    return {
-        "raw": raw,
-        "block": block,
-    }
 
 
 def _tape_label(block: Any) -> str | None:
@@ -350,13 +306,6 @@ async def _page_status(
     age_s: int,
 ) -> PrinterStatus:
     """Status of an IPP page printer from the cache row written by ``IppStatusProducer``."""
-    from pydantic import ValidationError
-    from sqlalchemy import select
-    from sqlmodel import col
-
-    from app.models.printer_tray import PrinterTray
-    from app.printer_backends.ipp.attributes import IppStatusRecord
-
     last_error = parsed.get("last_error")
     try:
         record = IppStatusRecord.model_validate(parsed)
@@ -380,6 +329,10 @@ async def _page_status(
         .scalars()
         .all()
     )
+    # The printer's own order (``media-source-supported``); a configured tray it does not list
+    # (``auto``) follows, in key order (the sort is stable and the rows are already by key).
+    position = {t.key: i for i, t in enumerate(record.trays)}
+    rows = sorted(rows, key=lambda t: position.get(t.tray_key, len(position)))
     media = {t.key: t.media for t in record.trays}
     return PrinterStatus(
         printer_id=printer_id,
@@ -416,11 +369,12 @@ async def _page_status(
         "Returns the most recent status written by the background probe worker "
         "(SNMP for tape printers, IPP for page printers; page printers add ``kind``, "
         "``printer_state``, reasons, markers, trays and ``jobs_ahead``). "
-        "The response is served from ``printer_status_cache`` — no synchronous SNMP "
-        "probe is performed, so the response always returns in <10 ms. "
+        "The response is served from ``printer_status_cache``. "
         "When no probe has completed yet ``online`` is ``null`` and ``note`` explains why. "
+        "Reads the hub's cache only; never contacts the printer. "
         "Returns 404 when the printer is not registered."
     ),
+    responses={404: {"model": DetailError, "description": "The printer is not registered."}},
 )
 async def get_printer_status(
     printer_id: UUID,
@@ -428,7 +382,7 @@ async def get_printer_status(
     _auth: ReadAuthDep,
     runtime: RuntimeDep = None,
 ) -> PrinterStatus:
-    """Return the latest cached status for a printer; no sync SNMP probe."""
+    """Return the latest cached status for a printer; the cache only, no probe."""
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
@@ -450,7 +404,9 @@ async def _cached_status(
             printer_id=printer_id,
             online=None,
             captured_at=None,
-            note="No probe yet — wait up to 30s for first probe cycle",
+            note=(
+                "No probe yet — wait up to 30s for first probe cycle" if polled else "Not polled"
+            ),
             polled=polled,
         )
 
@@ -463,23 +419,24 @@ async def _cached_status(
 
     interval_s = get_settings().sse_probe_interval_s
     backoff_s = backoff_of(parsed)
-    stale = is_stale(row.updated_at, now, interval_s, backoff_s)
+    stale = polled and is_stale(row.updated_at, now, interval_s, backoff_s)
     if not polled or stale:
         # The cached values describe a printer nobody has looked at for a while (or at all):
-        # returning them next to "no tape" is the bug this guards against.
+        # returning them next to "no tape" is the bug this guards against. ``last_error`` is one
+        # of those values: it belongs to an old probe, so it is not repeated here.
         return PrinterStatus(
             printer_id=printer_id,
             online=None,
             captured_at=row.captured_at,
             last_probe_age_s=age_s,
-            last_error=parsed.get("last_error"),
+            last_error=None,
             note=(
                 "Not polled"
                 if not polled
                 else f"Status older than {int(stale_after_s(interval_s, backoff_s))} s"
             ),
             kind="page" if parsed.get("kind") == "page" else None,
-            stale=True,
+            stale=stale,
             polled=polled,
         )
 
@@ -487,7 +444,9 @@ async def _cached_status(
         return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
 
     tape = read_tape_status(parsed)
-    loaded_tape_mm = tape.get("loaded_tape_mm")
+    # The hub cannot see a tape through a printer it cannot reach (rows written before the
+    # producer cleared it may still hold the last one).
+    loaded_tape_mm = None if tape.get("online") is False else tape.get("loaded_tape_mm")
     tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None
 
     error_flags = tape.get("error_flags") or []
@@ -525,12 +484,15 @@ async def _cached_status(
     response_model=TapeRead,
     responses={
         404: {
+            "model": DetailError,
             "description": (
                 "No tape to report: the printer is unknown, has no cached status "
                 "(``no cached status for printer ...``), is not polled (``Not polled``), "
-                "its status is stale (``Status older than N s``, as in the status note), or "
-                "no tape is loaded (``no tape loaded in printer ...``)."
-            )
+                "its status is stale (``Status older than N s``, as in the status note), "
+                "it is offline (``printer offline``: the hub cannot see a tape through a "
+                "printer it cannot reach), or no tape is loaded "
+                '(``no tape loaded in printer ...``). The body is ``{"detail": "<text>"}``.'
+            ),
         }
     },
     description=(
@@ -546,7 +508,7 @@ async def get_printer_tape(
     _auth: ReadAuthDep,
     runtime: RuntimeDep = None,
 ) -> TapeRead:
-    """Return the tape loaded in a polled tape printer."""
+    """Return the tape loaded in a polled, reachable tape printer."""
     await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
@@ -569,6 +531,8 @@ async def get_printer_tape(
             detail=f"Status older than {int(stale_after_s(interval_s, backoff_s))} s",
         )
     tape = read_tape_status(parsed)
+    if tape.get("online") is False:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="printer offline")
     width_mm = tape.get("loaded_tape_mm")
     if not width_mm:
         raise HTTPException(
@@ -593,7 +557,8 @@ async def get_printer_tape(
     summary="Get the active job queue for a printer",
     description=(
         "Returns all jobs in ``queued`` or ``printing`` state for this "
-        "printer, ordered by creation time."
+        "printer, ordered by creation time.  An API key without ``admin`` scope sees "
+        "only the jobs it submitted."
     ),
 )
 async def get_printer_queue(
@@ -607,7 +572,10 @@ async def get_printer_queue(
         check_printer_access(_auth, printer_id)
 
     active_jobs = await jobs_repo.list_active(session)
-    printer_jobs = [j for j in active_jobs if j.printer_id == printer_id]
+    # #294: a plain API key sees its own jobs only.
+    printer_jobs = [
+        j for j in active_jobs if j.printer_id == printer_id and may_see(_auth, j.api_key_id)
+    ]
 
     return [
         {
@@ -696,6 +664,29 @@ async def resume_printer(
 # ---------------------------------------------------------------------------
 
 
+async def _clear_own_queued_jobs(
+    session: AsyncSession, queue: Any, printer_id: UUID, auth: AuthContext
+) -> None:
+    """Cancel the QUEUED jobs of ``auth``'s key on ``printer_id``; leave every other job."""
+    active_jobs = await jobs_repo.list_active(session)
+    for job in active_jobs:
+        if (
+            job.printer_id != printer_id
+            or job.state != JobState.QUEUED.value
+            or not may_see(auth, job.api_key_id)
+        ):
+            continue
+        if queue is not None and queue.has_job(job.id):
+            # The in-memory state decides, as for a single cancel: a job the worker already
+            # took (or a page job at the printer) is left alone, like the full clear does.
+            with contextlib.suppress(KeyError):  # evicted meanwhile: nothing left to cancel
+                live = await queue.get(job.id)
+                if live.state.value == JobState.QUEUED.value:
+                    await queue.cancel(str(job.id))
+            continue
+        await jobs_repo.mark_cancelled(session, job.id)
+
+
 @router.post(
     "/{printer_id}/queue/clear",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -708,6 +699,8 @@ async def resume_printer(
         "a mid-print abort is unsafe over TCP/9100 because the raster data is "
         "already on the wire; a page job the IPP printer already holds is left to "
         "finish as well (cancel it with ``POST /api/v1/jobs/{id}/cancel``).  "
+        "An API key without ``admin`` scope cancels only the queued jobs it submitted; "
+        "the jobs of other keys and of browser or SSO users stay queued.  "
         "Returns 204 even when there are no queued jobs."
     ),
 )
@@ -722,9 +715,14 @@ async def clear_printer_queue(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
 
+    queue = getattr(request.app.state, "print_queue", None)
+    if owner_only(_auth):
+        # #294: a plain API key clears only its own queued jobs, never another key's.
+        await _clear_own_queued_jobs(session, queue, printer_id, _auth)
+        return
+
     # The queue worker gates on its in-memory job state, so cancel there first
     # (this also persists the cancellation); a DB-only update would still print.
-    queue = getattr(request.app.state, "print_queue", None)
     if queue is not None:
         # KeyError: printer not known to the queue (e.g. added after start)
         with contextlib.suppress(KeyError):

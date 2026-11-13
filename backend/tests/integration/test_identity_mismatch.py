@@ -12,7 +12,9 @@ Identity values never appear in an event; the stored identity is never overwritt
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -26,9 +28,19 @@ from app.models.printer_identity import PrinterIdentity
 from app.printer_backends.snmp_helper import ObservedIdentity
 from app.repositories import printer_identity as identity_repo
 from app.services.hardware_identity import record_identity
+from app.services.job_lifecycle import JobState
+from app.services.print_queue import PrintQueue
 from sqlalchemy import select
 
-from tests.integration.api.test_sheet_print_api import Rig, _printer, running
+from tests.integration.api.test_sheet_print_api import (
+    TIMEOUT_S,
+    Rig,
+    _body,
+    _cells,
+    _printer,
+    _sheet,
+    running,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -401,7 +413,40 @@ async def test_a_lost_hold_is_restored_by_the_next_different_probe() -> None:
 
         assert queue.is_identity_held(rig.printer_id)
         await sink(rig.printer_id, _serial(SERIAL_B))  # held again: no event storm
-        assert len(_drain(events, "printer.identity_mismatch")) <= 1
+        assert len(_drain(events, "printer.identity_mismatch")) == 1
+
+
+async def test_seen_probe_lifts_a_stale_hold(monkeypatch: pytest.MonkeyPatch) -> None:
+    """263-48: the clear of a mismatch reached the database, but the hook could not verify it
+    (the re-read failed), so the queue kept its hold (fail closed). The next probe that sees the
+    stored device again finds no mismatch to clear and used to stay silent: the hold stuck until
+    a restart. A ``seen`` probe re-syncs a hold the database no longer backs, with one event."""
+    async with running() as rig:
+        runtime = rig.app.state.printer_runtime
+        queue = rig.app.state.print_queue
+        events = rig.app.state.event_bus.subscribe(f"printer:{rig.printer_id}:state", "t-stale")
+        sink = runtime._identity_sink
+        await sink(rig.printer_id, _serial(SERIAL_A))
+        await sink(rig.printer_id, _serial(SERIAL_B))
+        assert queue.is_identity_held(rig.printer_id)
+        assert len(_drain(events, "printer.identity_mismatch")) == 1
+
+        async def broken(_pid: UUID) -> datetime | None:
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(runtime, "_read_mismatch_since", broken)
+        assert await sink(rig.printer_id, _serial(SERIAL_A)) == "seen"  # cleared in the DB
+        assert (await _row(rig.printer_id)).mismatch_since is None
+        assert queue.is_identity_held(rig.printer_id)  # unverified: the hold stays
+        monkeypatch.undo()
+
+        assert await sink(rig.printer_id, _serial(SERIAL_A)) == "seen"
+
+        assert not queue.is_identity_held(rig.printer_id)
+        [event] = _drain(events, "printer.identity_mismatch")
+        assert event.data == {"mismatch": False}
+        await sink(rig.printer_id, _serial(SERIAL_A))  # unheld now: no further event
+        assert _drain(events, "printer.identity_mismatch") == []
 
 
 async def _seed_mismatch() -> None:
@@ -454,3 +499,41 @@ async def test_the_flag_is_on_every_status_branch() -> None:
         assert status["identity_mismatch"] is True
         assert status["online"] is None  # the branch without a probe
         assert (await _status(rig))["identity_mismatch"] is False
+
+
+# ---------------------------------------------------------------------------- held jobs
+
+
+async def test_mismatch_failure_does_not_strand_held_job(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """263-47: ending a held job raises (its failure write fails). The job still ends in
+    memory (its waiters are released, nothing prints it) and the failure is logged; it is
+    never evicted, because its row could not be written. Its cells stay reserved: the row still
+    says ``queued``, and freed cells could be reserved by another print that the restarted job
+    would then print over."""
+    async with running() as rig:
+        queue: PrintQueue = rig.app.state.print_queue
+        code = await _sheet()
+        await queue.pause_printer(rig.printer_id, reason="test", source="user")
+        resp = await rig.print(_body(code, 3))
+        assert resp.status_code == 202, resp.text
+        (page,) = resp.json()["pages"]
+        assert len(await _cells()) == 3
+        queue.set_identity_hold(rig.printer_id, True)
+
+        async def broken(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(queue._page_runner._store, "mark_failed_code", broken)
+        caplog.set_level(logging.ERROR, logger="app.services.print_queue")
+        await queue.resume_printer(rig.printer_id)
+
+        job = await queue.wait_for_job(page["job_id"], timeout_s=TIMEOUT_S)
+        assert job.state == JobState.FAILED
+        assert job.error_code == "printer-identity-mismatch"
+        await asyncio.sleep(0.1)  # an outcome call would have settled the cells by now
+        assert {c.state for c in await _cells()} == {"reserved"} and len(await _cells()) == 3
+        assert queue.forget_job(UUID(page["job_id"])) is False  # unpersisted: kept
+        assert sum(1 for r in rig.fake.received if r.operation == "Print-Job") == 0
+        assert any(page["job_id"] in r.getMessage() for r in caplog.records)

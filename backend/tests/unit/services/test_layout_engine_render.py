@@ -282,3 +282,31 @@ class TestRenderQRWithListing:
             ),
         )
         assert img.height == 70
+
+    def test_overflow_marker_is_language_neutral(self) -> None:
+        import re
+        from unittest.mock import patch
+
+        from app.schemas.content_type import ContentType
+        from app.schemas.label_data import LabelData
+        from app.schemas.label_data_item import LabelDataItem
+        from app.services.layout_engine import LayoutEngine
+
+        eng = LayoutEngine()
+        measured: list[str] = []
+        original = eng._measure_text
+
+        def spy(text: str, font: object) -> tuple[int, int]:
+            measured.append(text)
+            return original(text, font)  # type: ignore[arg-type]
+
+        many = tuple(LabelDataItem(item=f"Item {i}") for i in range(10))
+        with patch.object(eng, "_measure_text", spy):
+            eng.render(
+                tape_mm=12,
+                content_type=ContentType.QR_WITH_LISTING,
+                data=LabelData(source_app="hangar", primary_id="X", qr_payload="x", items=many),
+            )
+        markers = [m for m in measured if m.startswith("+")]
+        assert markers
+        assert all(re.fullmatch(r"\+[0-9]+", m) for m in markers), markers

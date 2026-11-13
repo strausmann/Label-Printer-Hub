@@ -62,6 +62,39 @@ describe("print notifications", () => {
     expect(screen.queryByText("Done")).toBeNull();
   });
 
+  it("a finished print behind the cap leaves on its own clock, not when it finally gets a card", () => {
+    // Three failures fill the stack, so the finished print only shows in the summary line.
+    const failures = ["1", "2", "3"].map((n) => `aaaaaaaa-0000-4000-8000-00000000020${n}`);
+    failures.forEach((id) => {
+      watch("test", [id]);
+      event(id, "failed", { error_code: "ipp_busy" });
+    });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    watch("item", [C]);
+    event(C, "done");
+    expect(within(region()).getByText("1 more print notification")).toBeVisible();
+    // The clock runs while the card is hidden: after the delay the entry is gone, nobody had to dismiss a failure first.
+    act(() => void vi.advanceTimersByTime(AUTO_DISMISS_MS + 100));
+    expect(within(region()).queryByText("1 more print notification")).toBeNull();
+    // The failures stay until they are closed.
+    expect(within(region()).getAllByRole("listitem").filter((li) => li.getAttribute("data-phase") === "failed")).toHaveLength(3);
+  });
+
+  it("hovering a visible finished card still holds it, and the delay starts again on release", () => {
+    watch("item", [C]);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    event(C, "done");
+    const card = within(region()).getByText("Done").closest("li")!;
+    fireEvent.pointerEnter(card);
+    act(() => void vi.advanceTimersByTime(AUTO_DISMISS_MS * 3));
+    expect(within(region()).getByText("Done")).toBeVisible();
+    fireEvent.pointerLeave(card);
+    act(() => void vi.advanceTimersByTime(AUTO_DISMISS_MS - 100));
+    expect(within(region()).getByText("Done")).toBeVisible();
+    act(() => void vi.advanceTimersByTime(200));
+    expect(screen.queryByText("Done")).toBeNull();
+  });
+
   it("keeps a failed print with the hub's error and a Retry that follows the new job", async () => {
     watch("test", [A]);
     event(A, "failed", { error_code: "printer_offline" });

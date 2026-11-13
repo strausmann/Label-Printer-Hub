@@ -196,30 +196,6 @@ def test_readme_has_no_removed_printer_variables() -> None:
     assert "LABELYARD_SECRET_KEY" in text and "LABELYARD_PUBLIC_URL" in text
 
 
-# The two-container migration note is dated history and keeps the names of its time. The
-# fragments are split so this file names no old identifier (scripts/brand_guard.py).
-_OLD_PREFIX = "PRINTER_HU" + "B_"
-_OLD_COMMAND = "printer-" + "hub admin create-key"
-_OLD_IMAGE = "label-printer-" + "hub-backend"
-
-
-def test_migration_note_covers_the_breaking_changes() -> None:
-    text = (REPO / "docs" / "migration" / "v-next-single-container.md").read_text()
-    for needle in (
-        _OLD_PREFIX + "SECRET_KEY",
-        _OLD_PREFIX + "PUBLIC_URL",
-        _OLD_PREFIX + "SSO_TRUST_TOKEN",
-        _OLD_PREFIX + "TRUST_LEGACY_PANGOLIN_USER",
-        _OLD_PREFIX + "TRUST_PANGOLIN_BASIC_BYPASS",
-        _OLD_PREFIX + "PANGOLIN_BYPASS_SCOPE_DOWNGRADE",
-        _OLD_COMMAND,
-        "/api/v1/events",
-        _OLD_IMAGE,
-        "PRINTERS_CONFIG",
-    ):
-        assert needle in text, f"migration note does not mention {needle}"
-
-
 def test_architecture_docs_describe_the_single_process() -> None:
     arch = (REPO / "docs" / "architecture.md").read_text()
     assert "Go web server" not in arch and "oapi-codegen" not in arch
@@ -260,7 +236,6 @@ def test_every_section_6_page_has_an_e2e_spec(page: str) -> None:
 
 def test_create_key_instructions_carry_the_required_flags_and_no_log_claim() -> None:
     files = [*COMPOSE_FILES, EXAMPLES / "README.md", REPO / "README.md"]
-    files.append(REPO / "docs" / "migration" / "v-next-single-container.md")
     for path in files:
         for line in path.read_text().splitlines():
             if "admin create-key" in line and "docker" in line:

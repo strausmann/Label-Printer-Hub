@@ -36,6 +36,7 @@ from app.sheets.errors import (
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
+    TextTooLongError,
 )
 from app.sheets.events import publish_sheet_updated
 from app.sheets.text import log_value, sanitise_text
@@ -46,6 +47,8 @@ logger = logging.getLogger(__name__)
 PURPOSE_MAX = 120
 NOTE_MAX = 500
 DEFAULT_HAND_PURPOSE = "marked by hand"
+HUB_SOURCE = "hub"  # the source of the cell the hub fills itself: the sheet ID label
+ID_CELL_PURPOSE = "Sheet ID"
 _ID_PLACEMENTS = ("margin", "manual")  # "cell" is created by create_sheet_with_id_label
 _STATE_FILTERS = ("active", "full", "discarded", "all")
 
@@ -104,11 +107,21 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def is_id_cell(cell: SheetCell) -> bool:
+    """Whether the cell holds the sheet's ID label (267-06).
+
+    The reservation writes that cell with the hub's own source and the fixed ID purpose and no
+    reference; an item never carries the hub source (the print schema refuses it). A later
+    hub-sourced cell of another kind is therefore not mistaken for the ID label.
+    """
+    return cell.source == HUB_SOURCE and cell.purpose == ID_CELL_PURPOSE and cell.ref is None
+
+
 def _clean(field: str, value: str, max_len: int, *, multiline: bool = False) -> str:
     try:
         return sanitise_text(value, max_len=max_len, multiline=multiline)
     except ValueError:
-        raise InvalidFieldError(field, "too long") from None
+        raise TextTooLongError(field) from None
 
 
 def _clean_marks(cells: list[MarkedCell]) -> dict[int, str]:
@@ -554,8 +567,10 @@ async def list_sheets(
         rows = [r for r in rows if needle in r.sheet.code.lower()]
     want = free_at_least or 0
 
-    def order(row: SheetListRow) -> tuple[int, int, str]:
-        return (0 if row.free >= want else 1, -row.free, row.sheet.code)
+    def order(row: SheetListRow) -> tuple[int, int, int, str]:
+        # (length, code): a five-digit code comes after the four-digit ones (264-05).
+        code = row.sheet.code
+        return (0 if row.free >= want else 1, -row.free, len(code), code)
 
     return sorted(rows, key=order)
 

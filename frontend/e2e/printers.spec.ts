@@ -112,6 +112,12 @@ test.describe("page printer status", () => {
     // The card is rendered before its status arrives: wait for a word that comes with the status.
     await expect(tape.getByText(/Tape not known( yet)?|\d+ mm|No tape loaded/).first()).toBeVisible({ timeout: 15_000 });
     await expect(tape.getByText(/toner|supplies/i)).toHaveCount(0);
+
+    // The one polled tape printer (backend/tests/e2e_app.py: a fake SNMP status writer reports a
+    // 12 mm tape) shows the tape the hub read from it, so the card is checked against a real value.
+    const polled = page.getByRole("link", { name: /Bench PT-P750W/ });
+    await expect(polled.getByText("12 mm", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(polled.getByText(/toner|supplies/i)).toHaveCount(0);
   });
 
   test("an unbreakable tape printer name wraps inside its card at 360 px", async ({ signedInPage: page }) => {
@@ -244,13 +250,17 @@ test.describe("roll colour", () => {
       await page.emulateMedia({ colorScheme: scheme });
       Object.assign(roll, { colour: null, prompt_pending: true });
       await page.goto(`/printers/${id}`);
-      const group = page.getByRole("group", { name: "Tape colour" });
+      const group = page.getByRole("radiogroup", { name: "Tape colour" });
       await expect(group).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       await shot(page, `task-11-prompt-${width}-${scheme}.png`);
 
-      // Keyboard only: Tab reaches a colour, Enter answers.
-      await group.getByRole("button", { name: "Blue" }).focus();
+      // Keyboard only: focus reaches a colour, Space marks it, Tab reaches Save, Enter answers.
+      await group.getByRole("radio", { name: "Blue" }).focus();
+      await page.keyboard.press("Space");
+      await expect(group.getByRole("radio", { name: "Blue" })).toBeChecked();
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("button", { name: "Save" })).toBeFocused();
       await page.keyboard.press("Enter");
       await expect(group).toHaveCount(0);
       await expect(page.getByText("Blue", { exact: true })).toBeVisible();
@@ -261,14 +271,13 @@ test.describe("roll colour", () => {
       Object.assign(roll, { colour: null, prompt_pending: true });
       await page.reload();
       await page.getByRole("button", { name: "Skip" }).click();
-      await expect(page.getByRole("group", { name: "Tape colour" })).toHaveCount(0);
+      await expect(page.getByRole("radiogroup", { name: "Tape colour" })).toHaveCount(0);
       await expect(page.getByText("12 mm")).toBeVisible();
       await expect(page.getByText(/colour not reported/i)).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Set colour" })).toBeVisible();
       await shot(page, `task-11-nocolour-${width}-${scheme}.png`);
     }
   });
-
 });
 
 test.describe("test print", () => {
@@ -508,5 +517,34 @@ test.describe("device swap", () => {
       }
     }
     await page.emulateMedia({ colorScheme: "light" });
+  });
+});
+
+// The settings list while a disable waits for the printer's current job (263-21, 263-25): the screenshots show the waiting row.
+test.describe("printer settings, waiting state", () => {
+  test.use({ serviceWorkers: "block" });
+
+  test("screenshots: the waiting row says why its buttons are off and the other rows keep theirs", async ({ signedInPage: page }) => {
+    test.skip(!SHOTS, "screenshots are an artifact, taken only with E2E_SHOTS_DIR");
+    // The hub is not touched: the disable is held in the browser, as it would be while a job is printing.
+    await page.route("**/api/v1/admin/printers/*/disable", () => new Promise(() => undefined));
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const [width, height] of [
+        [1280, 800],
+        [390, 844],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        await page.goto("/settings/printers");
+        const rows = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: /^Disable / }) });
+        await expect(rows.first()).toBeVisible();
+        await rows.first().getByRole("button", { name: /^Disable / }).click();
+        await expect(rows.first().getByText("Waiting for the current job to finish…")).toBeVisible();
+        await expect(rows.first().getByRole("button", { name: /^Disable / })).toBeDisabled();
+        if ((await rows.count()) > 1) await expect(rows.nth(1).getByRole("button", { name: /^Disable / })).toBeEnabled();
+        expect(await noSideScroll(page)).toBe(true);
+        await shot(page, `task-15-waiting-${width}-${scheme}.png`);
+      }
+    }
   });
 });

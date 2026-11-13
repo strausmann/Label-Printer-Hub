@@ -113,3 +113,43 @@ async def test_print_key_for_b_cannot_resume_default_printer_a(hub: dict[str, An
     assert allowed.status_code == 200, allowed.text
     state = await c.get(f"/api/v1/printers/{a_id}", headers=key_a)
     assert state.json()["paused"] is False
+
+
+async def test_default_printer_403_hides_id(hub: dict[str, Any]) -> None:
+    """263-80: the default printer is not named to a key that may not use it."""
+    c, a_id, b_id = hub["client"], hub["a"], hub["b"]
+    key_b = _k(await _insert_key(["print"], [str(b_id)]))
+
+    refused = [
+        await c.post("/api/v1/print", json=_BODY, headers=key_b),
+        await c.post("/api/v1/printer/resume", headers=key_b),
+    ]
+
+    for resp in refused:
+        assert resp.status_code == 403, resp.text
+        assert str(a_id) not in resp.text, "the default printer's id must not be revealed"
+        assert resp.json()["detail"] == {
+            "error_code": "printer_not_allowed",
+            "error_message": "No access to the default printer",
+        }
+
+
+async def test_readiness_names_the_default_printer_only_to_those_who_may_use_it(
+    hub: dict[str, Any],
+) -> None:
+    """The id the 403 hides must not leak through /readiness either (fix round 1)."""
+    c, a_id, b_id = hub["client"], hub["a"], hub["b"]
+
+    async def body(key: dict[str, str]) -> Any:
+        resp = await c.get("/readiness", headers=key)
+        assert resp.status_code in (200, 503), resp.text
+        return resp
+
+    refused = await body(_k(await _insert_key(["read"], [str(b_id)])))
+    assert "printer_id" not in refused.json()["checks"]["printer_runtime"].get("metric", {})
+    assert str(a_id) not in refused.text
+    for allowed in ([str(a_id)], [str(a_id), str(b_id)], []):
+        resp = await body(_k(await _insert_key(["read"], allowed)))
+        assert resp.json()["checks"]["printer_runtime"]["metric"]["printer_id"] == str(a_id)
+    admin = await body(_k(await _insert_key(["admin"])))
+    assert admin.json()["checks"]["printer_runtime"]["metric"]["printer_id"] == str(a_id)

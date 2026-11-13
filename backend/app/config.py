@@ -40,7 +40,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AnyHttpUrl, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     DotEnvSettingsSource,
@@ -56,6 +56,16 @@ from app.config_legacy import (
 )
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+
+
+MAX_HELD_RUNS_PER_PRINTER = 5
+"""#277: held tape runs (stopped, or waiting for a confirmation) one printer keeps; a sixth
+discards the oldest. Defined here so the settings can check the queued-run cap against it."""
+
+MAX_HELD_RUNS_PER_KEY_PER_PRINTER = 2
+"""Security review 3: held tape runs one API key keeps on one printer (its share of
+``MAX_HELD_RUNS_PER_PRINTER``); a third discards that key's oldest. All callers without a key
+(browser sessions, SSO) count as one key."""
 
 
 class Settings(BaseSettings):
@@ -97,6 +107,11 @@ class Settings(BaseSettings):
 
     # Webhook authentication
     webhook_api_key: SecretStr = SecretStr("")
+
+    webhook_limit_per_minute: int = Field(default=120, gt=0)
+    """Webhook calls per minute and webhook key, Spoolman and Grocy together (default 120).
+    Neither app retries a refused call, so a bulk event must fit; over the limit the webhook
+    answers 429 with ``Retry-After``."""
 
     # Snipe-IT integration (optional)
     snipeit_url: str = ""
@@ -143,6 +158,30 @@ class Settings(BaseSettings):
 
     sse_probe_interval_s: float = Field(default=30.0, gt=0)
     """SNMP probe interval for StatusProbeProducer (seconds). Must be > 0."""
+
+    # 263-76: tape runs (batches) a printer and an API key may have in the queue at once. A run
+    # counts from the request until it is over; a held run (waiting for ``/continue`` or a
+    # reprint) counts against its key only. Over a cap the batch answers 429
+    # ``too-many-queued-runs``.
+    max_queued_runs_per_printer: int = Field(default=5, gt=0)
+    max_queued_runs_per_key: int = Field(default=20, gt=0)
+
+    render_timeout_s: float = Field(default=60.0, gt=0, le=600, allow_inf_nan=False)
+    """#293: seconds one page may take to draw (sheet preview page, page job). Past it the
+    preview answers 504 ``render-timeout`` and the page job fails ``render_timeout``. The
+    thread cannot be stopped: it keeps its render slot until it ends and counts as stuck
+    (readiness check ``render_slots``). At most 600; ``inf`` and ``nan`` are refused."""
+
+    @model_validator(mode="after")
+    def _queued_runs_cover_held_runs(self) -> Settings:
+        """The printer's queued-run cap must not be below the runs it may hold (#277)."""
+        if self.max_queued_runs_per_printer < MAX_HELD_RUNS_PER_PRINTER:
+            raise ValueError(
+                "PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER must be at least "
+                f"{MAX_HELD_RUNS_PER_PRINTER} (the held runs a printer keeps), "
+                f"got {self.max_queued_runs_per_printer}"
+            )
+        return self
 
     # D10: proxy headers are trusted only with the SSO trust token. The two legacy
     # paths below are opt-in (default off) and never mint a browser session.

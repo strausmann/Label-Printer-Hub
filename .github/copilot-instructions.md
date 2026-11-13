@@ -34,9 +34,11 @@ Before suggesting code, skim [`docs/learnings/code-review-patterns.md`](../docs/
 
 7. **No mid-print cancel.** Brother spec forbids commands during print. Pause/cancel only from `queued` or `paused` states.
 
-8. **Website in English and German together.** A page under `website/src/content/docs/` changes in English and in German (`de/`, same slug) in the same pull request; the `website / locale parity` check fails otherwise.
+8. **Branches and PR targets.** Features (`feat`, `!`, `BREAKING CHANGE:`) branch from and target `milestone/x.y.0`; fixes, docs and CI branch from and target `main`. Never suggest a `feat` commit or PR title for `main` outside a milestone merge. Merge milestone PRs (`milestone/x.y.0` → `main`) and sync PRs (`main` → `milestone/x.y.0`) with a merge commit, never squash. Releases come from `main` only. Details: [CONTRIBUTING.md — Milestones, branches and releases](../CONTRIBUTING.md#milestones-branches-and-releases).
 
-9. **Write for the reader.** Goal first, then how; short sentences, one idea each. German is written natively (not word for word) and says „du“. Use the term from `docs/glossary.toml` for every concept, in both languages; the `prose` check (Vale) fails on the former product name and on rejected terms. See [CONTRIBUTING.md](../CONTRIBUTING.md#writing).
+9. **Website in English and German together.** A page under `website/src/content/docs/` changes in English and in German (`de/`, same slug) in the same pull request; the `website / locale parity` check fails otherwise.
+
+10. **Write for the reader.** Goal first, then how; short sentences, one idea each. German is written natively (not word for word) and says „du“. Use the term from `docs/glossary.toml` for every concept, in both languages; the `prose` check (Vale) fails on the former product name and on rejected terms. See [CONTRIBUTING.md](../CONTRIBUTING.md#writing).
 
 ## Trademark and privacy
 

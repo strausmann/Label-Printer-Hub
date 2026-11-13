@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a rewrite: your data, your API keys and your API clients carry over. The reasons and the full compatibility table are in the [rename decision](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0025-rename-to-labelyard.md).
+Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a rewrite: your data, your API keys and your API clients carry over. The reasons and the full compatibility table are in the [rename decision](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0026-rename-to-labelyard.md).
 
 ## What changes
 

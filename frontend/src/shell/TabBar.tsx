@@ -29,6 +29,7 @@ export function TabBar() {
   const sheets = useFeature("sheets");
 
   return (
+    // `data-tabbar` is a contract: SheetTypeCombobox queries it to keep its list above this bar. Keep the attribute if the bar is rebuilt.
     <nav
       aria-label={t`Tabs`}
       data-tabbar=""

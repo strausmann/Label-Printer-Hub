@@ -6,7 +6,7 @@ readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
 authors = [
-    {name = "Björn Strausmann", email = "strausmannservices@googlemail.com"},
+    {name = "Björn Strausmann", email = "projects@strausmann.ch"},
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",

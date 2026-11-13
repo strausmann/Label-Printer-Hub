@@ -29,7 +29,11 @@ from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
 from app.services.batch_dispatch import dispatch_batch
 from app.services.lookup_service import LookupFailedError, UnknownAppError
-from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
+from app.services.print_queue import (
+    MAX_LABELS_PER_TAPE_JOB,
+    QUEUED_RUN_RETRY_AFTER_S,
+    TooManyQueuedRunsError,
+)
 from app.sheets.errors import MediaKindMismatchError
 
 # SessionDep locally — Hub has no central app/api/deps.py module.
@@ -66,7 +70,11 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
         "or hardware precondition (printer_offline, cover_open, unsupported_tape, "
         "no_tape_loaded, content_type_data_mismatch) rejects the whole batch "
         "with the appropriate 4xx status code. A page printer (IPP) answers "
-        "409 media_kind_mismatch."
+        "409 media_kind_mismatch. A printer holds at most "
+        "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most "
+        "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. "
+        "A run that waits for `/continue` or a reprint counts against its key only. Over a "
+        "cap the batch answers 429 too-many-queued-runs."
     ),
 )
 async def create_batch(
@@ -145,7 +153,25 @@ async def create_batch(
             half_cut=use_half_cut,
             run_id=run_id,
             label_ids=label_ids,
+            queue=getattr(http.app.state, "print_queue", None),
+            printer_id=printer.id,
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
         )
+    except TooManyQueuedRunsError as exc:
+        # 263-76: the rate-limit answer's shape; nothing was looked up, drawn or stored.
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error_code": "too-many-queued-runs",
+                "error_message": (
+                    f"{exc} Retry after {QUEUED_RUN_RETRY_AFTER_S} seconds, or continue or "
+                    "discard a waiting run."
+                ),
+                "retry_after_seconds": QUEUED_RUN_RETRY_AFTER_S,
+            },
+            headers={"Retry-After": str(QUEUED_RUN_RETRY_AFTER_S)},
+        ) from exc
     except UnknownAppError as exc:
         # 422: the request names an integration this hub does not have (a client mistake).
         # Fixed message: the exception text lists the registered integrations.

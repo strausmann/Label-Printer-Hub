@@ -22,7 +22,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-from collections.abc import Callable, Sequence
+import traceback
+from collections.abc import Callable, Hashable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass
 from typing import Any, Final, Literal, Protocol
 from uuid import UUID, uuid4
@@ -61,6 +64,7 @@ from app.schemas.sheet_print import (
     SheetPrintRequest,
     SheetPrintResponse,
 )
+from app.services import render_slots
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.lookup_service import AppLookupService, LookupFailedError, UnknownAppError
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
@@ -118,7 +122,6 @@ from app.sheets.planner import (
 )
 from app.sheets.printer_facts import PrinterFacts, load_printer_facts
 from app.sheets.reservation import (
-    ID_CELL_PURPOSE,
     ExpectedPage,
     ItemMeta,
     NewSheetIn,
@@ -140,6 +143,7 @@ from app.sheets.sheet_page import (
     margin_id_payload,
     render_preview_png,
 )
+from app.sheets.sheet_service import ID_CELL_PURPOSE
 from app.sheets.text import sanitise_text
 from app.sheets.type_service import version_geometry
 
@@ -148,13 +152,18 @@ __all__ = [
     "MAX_PREVIEW_PAGES",
     "NO_MARGIN_BAND_REASON",
     "MarginCheck",
+    "RenderTimeoutApiError",
+    "RenderUnavailableApiError",
     "ResolvedItem",
+    "TooManyPreviewsError",
     "create_sheet_with_id_label",
     "id_cell_label",
+    "id_cell_title",
     "margin_check",
     "margin_id_text",
     "page_margin_id_payload",
     "preview",
+    "preview_slot",
     "print_sheets",
     "reserved_margin_id_payload",
     "resolve_items",
@@ -167,7 +176,7 @@ logger = logging.getLogger(__name__)
 
 LOOKUP_CONCURRENCY: Final = 8
 MAX_QR_PAYLOAD: Final = QR_PAYLOAD_MAX  # request-level cap on a cell's QR payload
-MAX_CONCURRENT_RENDERS: Final = 2  # preview renders at once, process-wide (spec 18, CPU)
+MAX_CONCURRENT_RENDERS: Final = render_slots.MAX_CONCURRENT_RENDERS  # renders at once (spec 18)
 # #277: one sheet print run prints one sheet; the items that do not fit stay in the cart. Also the
 # preview bound (spec 18, CPU): a plan has one page per placement.
 MAX_SHEETS_PER_RUN: Final = 1
@@ -228,17 +237,33 @@ def sheet_type_label(vendor: str | None, product_codes: Sequence[str], key: str)
     return product_codes[0] if product_codes else key
 
 
+def id_cell_title(vendor: str | None, product_codes: Sequence[str], key: str) -> str:
+    """The title line of the ID cell: ``"<first product code> <vendor>"``.
+
+    The code comes first, so when the cell is too small the renderer's cut (always at the end of the
+    line) takes the vendor and never the code.
+    """
+    if vendor and product_codes:
+        return f"{product_codes[0]} {vendor}"
+    return sheet_type_label(vendor, product_codes, key)
+
+
 def margin_id_text(code: str, type_label: str) -> str:
     """The text of the margin ID: the code, then the type (spec 10.2)."""
     return f"{code} · {type_label}"
 
 
-def id_cell_label(code: str, type_label: str, scan_payload: str) -> LabelData:
-    """The label of the sheet ID cell: `qr_two_lines`, the code and the type (spec 10.2)."""
+def id_cell_label(code: str, title: str, scan_payload: str) -> LabelData:
+    """The label of the sheet ID cell: `qr_two_lines`, the code and the type (spec 10.2).
+
+    The title is the type alone (266-10): on a 45.7 x 21.2 mm cell a "· sheet ID" suffix was
+    always cut off. Build it with ``id_cell_title`` (product code first, then the vendor): the
+    renderer shortens the title at its end, so on a small cell the vendor goes and the code stays.
+    """
     return LabelData(
         source_app="hub",
         primary_id=code,
-        title=f"{type_label} · sheet ID",
+        title=title,
         qr_payload=scan_payload,
     )
 
@@ -399,6 +424,7 @@ class _SheetInfo:
     version: int
     type_label: str
     hint: str | None  # the probable code of a sheet that does not exist yet
+    id_title: str  # the title line of the ID cell: the product code first
 
 
 async def _info_of_existing(session: AsyncSession, view: SheetView) -> _SheetInfo:
@@ -406,7 +432,13 @@ async def _info_of_existing(session: AsyncSession, view: SheetView) -> _SheetInf
     v = await session.get(SheetTypeVersion, view.type_version_id)
     if t is None or v is None:  # foreign keys make this unreachable
         raise SheetTypeNotFoundError()
-    return _SheetInfo(t.key, v.version, sheet_type_label(t.vendor, t.product_codes, t.key), None)
+    return _SheetInfo(
+        t.key,
+        v.version,
+        sheet_type_label(t.vendor, t.product_codes, t.key),
+        None,
+        id_cell_title(t.vendor, t.product_codes, t.key),
+    )
 
 
 def _next_hint(code: str, ahead: int) -> str:
@@ -461,7 +493,11 @@ async def _new_view_of(
         code_hint=hint,
     )
     return view, _SheetInfo(
-        t.key, v.version, sheet_type_label(t.vendor, t.product_codes, t.key), hint
+        t.key,
+        v.version,
+        sheet_type_label(t.vendor, t.product_codes, t.key),
+        hint,
+        id_cell_title(t.vendor, t.product_codes, t.key),
     )
 
 
@@ -600,6 +636,7 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
             dpi=PREVIEW_DPI,
             content_type=job.content_type,
             data=data,
+            qr_mask=PREVIEW_QR_MASK,  # a picture needs no mask search (266-08)
         )
 
     payload = job.data.qr_payload
@@ -616,7 +653,9 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
         and modules <= PREVIEW_QR_MAX_MODULES
         and _qr_fits_at(payload, w_mm, h_mm, PREVIEW_DPI)
     ):
-        symbol = build_qr_preview(payload, w_mm, h_mm, render_dpi, PREVIEW_DPI)
+        symbol = build_qr_preview(
+            payload, w_mm, h_mm, render_dpi, PREVIEW_DPI, mask=PREVIEW_QR_MASK
+        )
         assert symbol is not None  # the arithmetic above said it fits
         cell.image.paste(symbol, (0, 0))
     else:
@@ -633,47 +672,139 @@ def _draw_page(
     render_dpi: int,
 ) -> _Drawn:
     """Everything CPU-bound for one page (run in a thread)."""
-    token = PREVIEW_QR_MASK.set(0)  # a picture needs no mask search; the job's renderer has it
-    try:
-        images: list[tuple[int, CellImage]] = []
-        truncated: set[int] = set()
-        for job in jobs:
-            try:
-                image = _render_cell(renderer, content_box(geometry, job.cell), job, render_dpi)
-            except ContentTypeDataMismatchError as exc:
-                if job.item_index is None:
-                    raise
-                raise ItemContentMismatchError(job.item_index, exc.missing_fields) from None
-            images.append((job.cell, image))
-            if image.truncated:
-                truncated.add(job.cell)
-        png = render_preview_png(
-            geometry, images, margin, render_dpi=render_dpi, feed_mark=feed_mark
-        )
-        return _Drawn(images, truncated, png)
-    finally:
-        PREVIEW_QR_MASK.reset(token)
+    images: list[tuple[int, CellImage]] = []
+    truncated: set[int] = set()
+    for job in jobs:
+        try:
+            image = _render_cell(renderer, content_box(geometry, job.cell), job, render_dpi)
+        except ContentTypeDataMismatchError as exc:
+            if job.item_index is None:
+                raise
+            raise ItemContentMismatchError(job.item_index, exc.missing_fields) from None
+        images.append((job.cell, image))
+        if image.truncated:
+            truncated.add(job.cell)
+    png = render_preview_png(geometry, images, margin, render_dpi=render_dpi, feed_mark=feed_mark)
+    return _Drawn(images, truncated, png)
 
 
 # ---------------------------------------------------------------------------- preview
 
-_render_gate: asyncio.Semaphore | None = None
-_render_gate_loop: asyncio.AbstractEventLoop | None = None
-
 
 def _gate() -> asyncio.Semaphore:
-    """The process-wide cap on preview renders; rebuilt if the event loop changed (tests)."""
-    global _render_gate, _render_gate_loop
-    loop = asyncio.get_running_loop()
-    if _render_gate is None or _render_gate_loop is not loop:
-        _render_gate, _render_gate_loop = asyncio.Semaphore(MAX_CONCURRENT_RENDERS), loop
-    return _render_gate
+    """The process-wide cap on renders (``render_slots``), shared with the page-job render."""
+    return render_slots.gate()
 
 
-async def draw_page_bounded(*args: Any) -> Any:
-    """``_draw_page`` in a thread, at most ``MAX_CONCURRENT_RENDERS`` at once in the process."""
-    async with _gate():
-        return await asyncio.to_thread(_draw_page, *args)
+class RenderTimeoutApiError(SheetApiError):
+    """#293: a preview page took longer than ``PRINTER_HUB_RENDER_TIMEOUT_S`` to draw."""
+
+    status = 504
+    error_code = "render-timeout"
+    message = "The preview took too long to draw. Try again later, or with fewer or shorter labels."
+
+
+class RenderUnavailableApiError(SheetApiError):
+    """#293: no render slot became free in time (every slot stuck, or the wait hit the limit)."""
+
+    status = 503
+    error_code = "render-unavailable"
+    message = "The hub cannot draw a preview right now. Try again later."
+
+
+async def draw_page_bounded(*args: Any, timeout_s: float | None = None) -> Any:
+    """``_draw_page`` in a thread under a render slot (``render_slots.render_bounded``).
+
+    266-07: the slot is held until the thread has finished, not until the caller stops
+    waiting: a cancelled request (the client went away) leaves its thread drawing, and a slot
+    freed at the cancel would let the next request start one more thread than the cap.
+    #293: past the time limit the caller gets ``RenderTimeoutApiError`` (504
+    ``render-timeout``). The render slot and the key's preview slot stay with the stuck thread
+    until it ends: a key whose render hangs gets 429 ``too-many-previews`` meanwhile, so one
+    key cannot hang every render slot by retrying. A key with a stuck page job gets 429 as
+    well (stuck renders count per key, ``render_slots.owner_of``). Each owner holds at most
+    ``render_slots.OWNER_LIMIT`` slots at once, previews and page jobs together. With every
+    slot stuck, or no turn and slot within the limit, the caller gets
+    ``RenderUnavailableApiError`` (503).
+    """
+    # The caller's preview slot (``preview_slot``) stays taken with the render (F3).
+    owner = _preview_owner.get()
+    held = False
+
+    def take_owner() -> None:
+        nonlocal held
+        if owner is not None:
+            held = True
+            _previews_in_progress[owner] = _previews_in_progress.get(owner, 0) + 1
+
+    def release_owner() -> None:
+        nonlocal held
+        if held:
+            held = False
+            assert owner is not None
+            _release_preview(owner)
+
+    try:
+        return await render_slots.render_bounded(
+            _draw_page,
+            *args,
+            label="sheet preview page",
+            owner=_render_owner.get(),
+            timeout_s=timeout_s,
+            on_start=take_owner,
+            on_end=release_owner,
+        )
+    except render_slots.RenderTimeoutError:
+        raise RenderTimeoutApiError() from None
+    except render_slots.RenderUnavailableError:
+        raise RenderUnavailableApiError() from None
+    except render_slots.OwnerRenderStuckError:
+        raise TooManyPreviewsError() from None
+
+
+class TooManyPreviewsError(Exception):
+    """266-07: the caller has a preview in progress already (one per key at a time)."""
+
+
+# Per owner: the open ``preview_slot`` plus its renders still drawing in a thread.
+_previews_in_progress: dict[Hashable, int] = {}
+_preview_owner: ContextVar[Hashable | None] = ContextVar("_preview_owner", default=None)
+# #293: whose stuck renders count against this preview (the key, or ``render_slots.NO_KEY``).
+_render_owner: ContextVar[Hashable | None] = ContextVar("_render_owner", default=None)
+
+
+def _release_preview(owner: Hashable) -> None:
+    left = _previews_in_progress.get(owner, 0) - 1
+    if left > 0:
+        _previews_in_progress[owner] = left
+    else:
+        _previews_in_progress.pop(owner, None)
+
+
+@contextmanager
+def preview_slot(owner: Hashable, render_owner: Hashable | None = None) -> Iterator[None]:
+    """One preview per *owner* (API key) at a time; a second one raises at once.
+
+    Synchronous check and claim (no await between them). The slot is free once the block has
+    ended AND every render it started has finished: a cancelled request whose picture is still
+    drawing in a thread keeps it, so one key cannot take both render slots (F3). All callers
+    without a key are grouped by source, user and address (see the route). ``render_owner``
+    (default: ``owner``) is whom the preview's renders count against (#293): the key, or
+    ``render_slots.NO_KEY`` for every caller without a key, one group that holds at most
+    ``render_slots.OWNER_LIMIT`` slots (each of those callers is held to one preview by
+    ``owner``).
+    """
+    if owner in _previews_in_progress:
+        raise TooManyPreviewsError()
+    _previews_in_progress[owner] = 1
+    token = _preview_owner.set(owner)
+    render_token = _render_owner.set(owner if render_owner is None else render_owner)
+    try:
+        yield
+    finally:
+        _render_owner.reset(render_token)
+        _preview_owner.reset(token)
+        _release_preview(owner)
 
 
 def _margin_payload(
@@ -839,7 +970,7 @@ async def preview(
         mapped_cells: set[int] = set()
         if page.id_cell is not None:
             id_type, _ = map_content_type(ContentType.QR_TWO_LINES, view.allow_qr)
-            id_label = id_cell_label(code, info.type_label, scan(code))
+            id_label = id_cell_label(code, info.id_title, scan(code))
             jobs.append(_CellJob(page.id_cell, id_type, id_label, None))
             purposes[page.id_cell] = (None, ID_CELL_PURPOSE)
         for cell in page.item_cells:
@@ -1046,6 +1177,7 @@ def _placement_request(p: PlacementInModel, version: int | None = None) -> Place
 class _TypeInfo:
     key: str
     label: str
+    id_title: str
     allow_qr: bool
     geometry: Geometry
 
@@ -1064,6 +1196,7 @@ async def _type_info(
     info = _TypeInfo(
         sheet_type.key,
         sheet_type_label(sheet_type.vendor, sheet_type.product_codes, sheet_type.key),
+        id_cell_title(sheet_type.vendor, sheet_type.product_codes, sheet_type.key),
         sheet_type.allow_qr,
         version_geometry(version),
     )
@@ -1110,7 +1243,7 @@ def _page_payload(
     for a in page.assignments:
         if a.item_index is None:
             id_type, mapped = map_content_type(ContentType.QR_TWO_LINES, info.allow_qr)
-            label = id_cell_label(page.sheet_code, info.label, scan(page.sheet_code))
+            label = id_cell_label(page.sheet_code, info.id_title, scan(page.sheet_code))
             id_cell = SheetCellPayload(
                 cell=a.cell,
                 content_type=id_type,
@@ -1213,6 +1346,14 @@ async def _undo_partial_print(
     if isinstance(exc, SheetApiError):
         exc.detail = {**(exc.detail or {}), "batch_id": str(batch_id), "job_ids": ids}
         return
+    # The cause by type and where it was raised (266-13). Not the message: a database error
+    # quotes its parameters, and those are the page payload (item titles, QR content).
+    logger.error(
+        "print interrupted for batch %s (%s)\n%s",
+        batch_id,
+        type(exc).__name__,
+        "".join(traceback.format_tb(exc.__traceback__)),
+    )
     raise PrintInterruptedError(str(batch_id), ids) from exc
 
 
@@ -1590,6 +1731,44 @@ def _retry_meta(cell: SheetCellPayload) -> ItemMeta:
     )
 
 
+def _check_retry_fits(detail: SheetPageDetail, render_dpi: int) -> None:
+    """``check_item_fits`` for every stored cell at the retry's fresh render dpi (266-11).
+
+    The printer's resolution may have changed since the first attempt: a QR that fit at the old
+    dpi can be too fine for the new one. Refused here as a 422 naming the item, instead of the
+    runner failing with ``render_failed`` after the cells were reserved again. The content type
+    is the stored, already mapped one. The ID cell (the hub's own label) gets the checks of
+    ``check_id_cell_fits`` on its stored label: its short-URL QR can become too fine the same way.
+    """
+    geometry = Geometry(**detail.geometry)
+    if detail.id_cell is not None:
+        id_label = LabelData(**detail.id_cell.label_data)
+        box = content_box(geometry, detail.id_cell.cell)
+        if not box_fits_a_line(box):
+            raise IdCellContentMismatchError(("label_size",))
+        if (
+            detail.id_cell.content_type.value.startswith("qr_")
+            and id_label.qr_payload
+            and not _qr_fits_at(id_label.qr_payload, box.w / 100, box.h / 100, render_dpi)
+        ):
+            raise IdCellContentMismatchError(("qr_payload",))
+    for index, cell in enumerate(detail.cells):
+        item = ResolvedItem(
+            label=LabelData(**cell.label_data),
+            content_type=cell.content_type,
+            meta=_retry_meta(cell),
+            lookup=None,
+        )
+        check_item_fits(
+            item,
+            index,
+            allow_qr=detail.allow_qr,
+            geometry=geometry,
+            cell=cell.cell,
+            render_dpi=render_dpi,
+        )
+
+
 async def retry_sheet_page(
     session_factory: async_sessionmaker[AsyncSession],
     queue: PageQueue,
@@ -1624,6 +1803,7 @@ async def retry_sheet_page(
             raise CellsUnconfirmedError(unconfirmed)
         snapshot = await calibration_service.snapshot(session, job.printer_id, payload.tray)
         facts = await load_printer_facts(session, job.printer_id)
+        _check_retry_fits(detail, facts.render_dpi)  # 266-11: before anything is reserved
         margin = MarginContext(
             deviation=snapshot_to_deviation(snapshot),
             scan_payload=scan,

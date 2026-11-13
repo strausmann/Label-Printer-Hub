@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, SIGNED_IN } from "../../test-utils";
 import { mockApi, PRINTER_A, respond } from "../test-api";
 import { CART_KEY, reloadCart } from "./cart";
 
@@ -61,6 +61,34 @@ describe("CartPage", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Print 3 labels" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("No tape is loaded.");
     expect(screen.getByRole("list", { name: "Cart" })).toBeVisible();
+  });
+
+  it("read key cannot print from cart", async () => {
+    const { calls } = mockApi(routes());
+    await renderApp({ path: "/cart", session: { ...SIGNED_IN, scope: "read" } });
+    const print = await screen.findByRole("button", { name: "Print 3 labels" });
+    expect(print).toBeDisabled();
+    expect(screen.getByText("Printing needs a print or admin key.")).toBeVisible();
+    await userEvent.click(print);
+    expect(calls.filter((c) => c.method === "POST")).toEqual([]);
+  });
+
+  it("refused tape print is localized", async () => {
+    const refusal = (code: string, detail: Record<string, unknown> | null) => respond(422, { detail: { error_code: code, error_message: "English sentence from the server.", error_detail: detail } });
+    mockApi(routes({ [`POST /api/v1/print/${PRINTER_A.id}/batch`]: refusal("qr_payload_too_long", { length: 700, max_bytes: 512 }) }));
+    const first = await renderApp({ path: "/cart" });
+    await userEvent.click(await screen.findByRole("button", { name: "Print 3 labels" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The link in the QR code is 700 bytes long, but this layout holds at most 512 bytes.");
+    expect(alert).not.toHaveTextContent("English sentence");
+    first.unmount();
+
+    mockApi(routes({ [`POST /api/v1/print/${PRINTER_A.id}/batch`]: refusal("conflicting_orientation", { orientations: ["along", "across"] }) }));
+    await renderApp({ path: "/cart" });
+    await userEvent.click(await screen.findByRole("button", { name: "Print 3 labels" }));
+    const second = await screen.findByRole("alert");
+    expect(second).toHaveTextContent("These labels ask for different directions (along and across). Print them in separate runs.");
+    expect(second).not.toHaveTextContent("English sentence");
   });
 
   it("removes an item and changes copies", async () => {

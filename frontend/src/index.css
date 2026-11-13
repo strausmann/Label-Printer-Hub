@@ -59,6 +59,11 @@
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior: none;
   }
+  /* The visible area; src/shell/viewport.ts keeps these current while the on-screen keyboard is open. */
+  :root {
+    --vvh: 100dvh;
+    --vv-top: 0px;
+  }
   body {
     margin: 0;
     min-height: 100dvh;
@@ -112,7 +117,8 @@
   }
 }
 
-/* Entrances for popovers and dialogs: opacity plus a small scale, never from nothing. */
+/* Entrances: dialogs use opacity plus a small scale (popin); positioned popovers use opacity only (fadein),
+   because React Aria measures a scaling popover at its smaller size (#292, src/popover-motion.test.ts). */
 @keyframes popin {
   from {
     opacity: 0;

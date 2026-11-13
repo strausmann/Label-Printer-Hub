@@ -6,6 +6,11 @@ type code, so the raw media text stands for it and any text change counts as a c
 the cassette out and putting it back passes through ``(None, None)`` and prompts again, because
 the same cassette cannot be proven.
 
+A probe that sees no tape is not believed at once: taking the cassette out clears the recorded
+colour only after ``NO_TAPE_PROBES_TO_CLEAR`` such probes in a row, so one failed or half-read
+poll cannot make the operator answer the colour question again. A different cassette is found on
+the first probe.
+
 The first observation after a start is compared with the stored row, so a swap while the hub
 was down is found, and found once. A printer seen for the first time counts as a change.
 """
@@ -70,6 +75,7 @@ def publish_roll_event(
 
 
 _MAX_ATTEMPTS = 3
+NO_TAPE_PROBES_TO_CLEAR = 2
 MEDIA_RAW_MAX = 64
 
 
@@ -136,8 +142,21 @@ class RollTracker:
         self._bus = bus
         self._session_factory = session_factory
         self._locks: dict[UUID, asyncio.Lock] = {}
+        # Consecutive probes without a tape, per printer (in memory: a restart starts again).
+        self._no_tape_streak: dict[UUID, int] = {}
         # Test seam: runs between the read and the write of ``observe``.
         self._after_read: Callable[[], Awaitable[None]] | None = None
+
+    def forget(self, printer_id: UUID) -> None:
+        """Drop what this tracker keeps for a printer that is detached or deleted (T10).
+
+        Called after its producer has stopped, so no ``observe`` for it runs any more; the
+        stored roll row stays (the printer's delete removes it, a re-attach compares with it).
+        """
+        self._no_tape_streak.pop(printer_id, None)
+        lock = self._locks.get(printer_id)
+        if lock is not None and not lock.locked():
+            del self._locks[printer_id]
 
     def _session(self) -> AsyncSession:
         if self._session_factory is not None:
@@ -156,10 +175,27 @@ class RollTracker:
         lock = self._locks.setdefault(printer_id, asyncio.Lock())
         prompt = width_mm is not None
         async with lock:
+            if width_mm is None:
+                streak = self._no_tape_streak.get(printer_id, 0) + 1
+                self._no_tape_streak[printer_id] = streak
+            else:
+                streak = 0
+                self._no_tape_streak.pop(printer_id, None)
             for _attempt in range(_MAX_ATTEMPTS):
                 async with self._session() as s:
                     row = await s.get(PrinterRoll, printer_id)
+                    if width_mm is None and (row is None or row.width_mm is None):
+                        # Nothing stored to clear: the count only debounces clearing a roll.
+                        self._no_tape_streak.pop(printer_id, None)
                     if row is not None and (row.width_mm, row.media_raw) == (width_mm, media_raw):
+                        return None
+                    if (
+                        width_mm is None
+                        and row is not None
+                        and row.width_mm is not None
+                        and streak < NO_TAPE_PROBES_TO_CLEAR
+                    ):
+                        # One probe without a tape: keep the roll and its colour for now.
                         return None
                     old = None if row is None else (row.width_mm, row.media_raw)
                     if self._after_read is not None:

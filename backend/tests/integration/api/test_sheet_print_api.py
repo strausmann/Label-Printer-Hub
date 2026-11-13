@@ -685,6 +685,11 @@ class _SubmitProbe:
         self.n = n
         self.inside = 0
         self.checked_out: int | None = None
+        # What the pool already hands out when the probe is made, before any of the requests: the
+        # test asserts the requests add nothing to it, not that the whole pool is idle (266-15).
+        import app.db.engine as engine_module
+
+        self.baseline: int = engine_module.engine.pool.checkedout()  # type: ignore[attr-defined]
         self.everyone_in = asyncio.Event()
 
     async def __call__(self, *_a: Any, **_k: Any) -> UUID:
@@ -717,7 +722,23 @@ async def test_no_connection_is_held_while_page_jobs_are_submitted(
             other = await rig.client.get(f"/api/v1/sheets/{codes[0]}", headers=rig.reader)
         responses = await asyncio.gather(*tasks)
 
-    assert probe.checked_out == 0
+    assert probe.checked_out is not None
+    assert probe.checked_out <= probe.baseline
     assert other.status_code == 200, other.text
     assert {r.status_code for r in responses} == {409}
     assert await _cells() == []
+
+
+async def test_the_key_reads_its_own_sheet_batch_and_another_key_gets_404() -> None:
+    """#294 fix round 2: a sheet batch stores its owner as ``key:<uuid>`` (the write actor);
+    the key that printed it reads it, another print key gets the missing-batch 404."""
+    async with running() as rig:
+        code = await _sheet(used=0)
+        resp = await rig.print(_body(code, 2))
+        assert resp.status_code == 202, resp.text
+        url = f"/api/v1/batches/{resp.json()['batch_id']}"
+        mine = await rig.client.get(url, headers=rig.key)
+        assert mine.status_code == 200, mine.text
+        other = {"X-Label-Hub-Key": await _insert_key(["print"])}
+        foreign = await rig.client.get(url, headers=other)
+        assert (foreign.status_code, foreign.content) == (404, b'{"detail":"Batch not found"}')

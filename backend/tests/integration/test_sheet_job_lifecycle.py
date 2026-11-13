@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from app.models.job import Job as DbJob
@@ -461,3 +461,220 @@ async def test_mark_language_fixed_at_reservation(monkeypatch: pytest.MonkeyPatc
     (doc,) = [r.document for r in fake.received if r.operation == "Print-Job"]
     assert "▲ Oben \u2013 diese Kante zuerst" in pi.texts(doc)
     assert "▲ Top \u2013 this edge first" not in pi.texts(doc)
+
+
+# ---------------------------------------------------------------------------- 266-09, 266-13
+
+
+async def test_print_interrupted_logs_cause_type(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The page's row is committed, then its save raises: the request answers 502
+    ``print_interrupted``, the row ends ``failed`` (no restart prints it), the cells are free,
+    and the cause is logged by type and batch, never with the error text (it may carry the
+    payload: a database error quotes its parameters)."""
+    import logging
+
+    from tests.integration.api.test_sheet_print_api import _body, _cells, _sheet, running
+
+    qr = "https://r.example.invalid/0"
+    async with running() as rig:
+        store = rig.app.state.print_queue._store
+        real = store.save_queued
+
+        async def saved_then_raises(job: Any) -> None:
+            await real(job)
+            raise RuntimeError(f"database is locked [parameters: {qr}]")
+
+        monkeypatch.setattr(store, "save_queued", saved_then_raises)
+        code = await _sheet()
+        caplog.set_level(logging.INFO)
+        resp = await rig.print(_body(code, 3))
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "print_interrupted"
+        batch_id = detail["error_detail"]["batch_id"]
+        (job_id,) = detail["error_detail"]["job_ids"]
+        row = await _row(UUID(job_id))
+        assert row.state == "failed" and (row.error or "").startswith("print_interrupted:")
+        await _until(lambda: _no_cells(_cells))
+    records = [r for r in caplog.records if batch_id in r.getMessage()]
+    assert records, caplog.text
+    assert any("RuntimeError" in r.getMessage() for r in records)
+    assert qr not in caplog.text
+
+
+async def test_partial_print_interrupted_marks_cells(monkeypatch: pytest.MonkeyPatch) -> None:
+    """267-14: the page job is queued (its row is committed, the printer receives it) and the
+    print then fails before the route has the page: the request answers 502 ``print_interrupted``
+    and names the job, the batch keeps it, and the page is not given up. It prints, and its
+    cells are marked ``used`` instead of being freed under it."""
+    import app.db.engine as eng
+    from app.models.print_batch import PrintBatch
+    from app.sheets import print_service
+
+    from tests.integration.api.test_sheet_print_api import _body, _sheet, _used, running
+
+    def raising(_page: Any) -> Any:
+        raise RuntimeError("the page was queued, then this broke")
+
+    async with running() as rig:
+        code = await _sheet()
+        monkeypatch.setattr(print_service, "_printed_page", raising)
+        resp = await rig.print(_body(code, 3))
+
+        assert resp.status_code == 502, resp.text
+        detail = resp.json()["detail"]
+        assert detail["error_code"] == "print_interrupted"
+        (job_id,) = detail["error_detail"]["job_ids"]
+        # The queued page goes on: the fake printer gets the document, the cells end used.
+        await rig.until_sheet(code, _used(1, 2, 3))
+        assert [r.operation for r in rig.fake.received].count("Print-Job") == 1
+        async with eng.async_session() as s:
+            batch = await s.get(PrintBatch, UUID(detail["error_detail"]["batch_id"]))
+        assert batch is not None and batch.job_ids == [job_id]
+        assert (await _row(UUID(job_id))).error is None
+
+
+async def _no_cells(cells: Callable[[], Awaitable[list[Any]]]) -> bool:
+    return await cells() == []
+
+
+async def test_reservation_sweep_starts_after_the_runtime_and_stops_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """266-04: the periodic sweep runs while the printers are live, and is the first thing
+    stopped, before the producers and the queue it asks."""
+    from app.services.printer_runtime import PrinterRuntime
+    from app.sheets.sweep import SheetReservationSweep
+
+    order: list[str] = []
+
+    def recording(cls: Any, name: str, label: str) -> None:
+        real = getattr(cls, name)
+
+        async def wrapper(self: Any, *a: Any, **k: Any) -> Any:
+            order.append(label)
+            return await real(self, *a, **k)
+
+        monkeypatch.setattr(cls, name, wrapper)
+
+    recording(PrinterRuntime, "start", "runtime.start")
+    recording(PrinterRuntime, "stop", "runtime.stop")
+    recording(SheetReservationSweep, "start", "sweep.start")
+    recording(SheetReservationSweep, "stop", "sweep.stop")
+    app = _app(FakeIppPrinter())
+    async with app.router.lifespan_context(app):
+        assert isinstance(app.state.sheet_reservation_sweep, SheetReservationSweep)
+        assert app.state.sheet_reservation_sweep._queue is app.state.print_queue
+
+    assert order == ["runtime.start", "sweep.start", "sweep.stop", "runtime.stop"]
+
+
+# ---------------------------------------------------------------- recovery check (263-47)
+
+
+async def _seed_queued_sheet_page(
+    pid: UUID, *, free_the_cells: bool, re_own_one: UUID | None = None
+) -> UUID:
+    """A ``queued`` sheet page row as a failed end write leaves it: reserved cells, or (the case
+    the check exists for) cells that were freed meanwhile and taken by nobody yet."""
+    import app.db.engine as eng
+    from sqlalchemy import delete, update
+
+    async with eng.async_session() as s:
+        await ts.create_type(s, _fields(), G48, actor="tester")
+    page, code = await _reserve_manual(MARGIN, n=2)
+    async with eng.async_session() as s:
+        s.add(
+            DbJob(
+                id=page.job_id,
+                printer_id=pid,
+                template_key=None,
+                payload=_mark_payload(page, code).model_dump(mode="json"),
+                state="queued",
+            )
+        )
+        if free_the_cells:
+            await s.execute(delete(SheetCell).where(SheetCell.job_id == page.job_id))
+        if re_own_one is not None:
+            # One cell now belongs to another job (freed, then reserved again by another print).
+            first = min(c.cell_no for c in await _held_cells(s, page.job_id))
+            await s.execute(
+                update(SheetCell)
+                .where(SheetCell.job_id == page.job_id, SheetCell.cell_no == first)
+                .values(job_id=re_own_one)
+            )
+        await s.commit()
+    return page.job_id
+
+
+async def _held_cells(s: Any, job_id: UUID) -> list[SheetCell]:
+    from sqlalchemy import select
+
+    return list((await s.execute(select(SheetCell).where(SheetCell.job_id == job_id))).scalars())
+
+
+async def test_restart_prints_a_queued_sheet_page_whose_cells_are_still_its_own() -> None:
+    fake = FakeIppPrinter(job_script=[9])
+    pid = await _printer()
+    jid = await _seed_queued_sheet_page(pid, free_the_cells=False)
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+
+        async def _done() -> bool:
+            return (await _row(jid)).state == "done"
+
+        await _until(_done)
+    assert [r.operation for r in fake.received].count("Print-Job") == 1
+
+
+async def test_restart_refuses_a_queued_sheet_page_whose_cells_were_freed() -> None:
+    """The page would print over whatever another print reserved there: it ends ``failed``
+    (never started) instead, and nothing reaches the printer."""
+    fake = FakeIppPrinter(job_script=[9])
+    pid = await _printer()
+    jid = await _seed_queued_sheet_page(pid, free_the_cells=True)
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+
+        async def _failed() -> bool:
+            return (await _row(jid)).state == "failed"
+
+        await _until(_failed)
+        await asyncio.sleep(0.1)
+    row = await _row(jid)
+    assert (row.error or "").startswith("recovery_refused:")
+    assert "Print-Job" not in [r.operation for r in fake.received]
+
+
+async def test_restart_refuses_a_queued_sheet_page_when_one_of_its_cells_is_foreign() -> None:
+    """T8 N1: one cell was re-reserved by another job, the other is still ours. The page is
+    refused as a whole (it would print over the other job's cell); nothing reaches the
+    printer, the foreign cell stays reserved for its job, and our remaining cell is freed."""
+    import app.db.engine as eng
+
+    other = uuid4()
+    fake = FakeIppPrinter(job_script=[9])
+    pid = await _printer()
+    jid = await _seed_queued_sheet_page(pid, free_the_cells=False, re_own_one=other)
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+
+        async def _failed() -> bool:
+            return (await _row(jid)).state == "failed"
+
+        await _until(_failed)
+
+        async def _ours_freed() -> bool:
+            async with eng.async_session() as s:
+                return all(c.state != "reserved" for c in await _held_cells(s, jid))
+
+        await _until(_ours_freed)
+    row = await _row(jid)
+    assert (row.error or "").startswith("recovery_refused:")
+    assert "Print-Job" not in [r.operation for r in fake.received]
+    async with eng.async_session() as s:
+        foreign = await _held_cells(s, other)
+    assert [c.state for c in foreign] == ["reserved"]

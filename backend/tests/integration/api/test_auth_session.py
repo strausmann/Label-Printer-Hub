@@ -681,8 +681,8 @@ def test_limiter_key_accepts_ips_and_collapses_everything_else():
     from app.api.routes.auth_session import _limiter_key
 
     assert _limiter_key("192.0.2.7") == "192.0.2.7"
-    assert _limiter_key("2001:db8::1") == "2001:db8::1"
-    assert _limiter_key("2001:DB8:0:0:0:0:0:1") == "2001:db8::1"  # one bucket per address
+    assert _limiter_key("2001:db8::1") == "2001:db8::/64"  # one bucket per /64 (263-81)
+    assert _limiter_key("2001:DB8:0:0:0:0:0:1") == "2001:db8::/64"
     for bad in ("evil-1", "999.1.1.1", "", " ", "a" * 500, None):
         assert _limiter_key(bad) == "unknown"
 
@@ -699,3 +699,24 @@ async def test_sign_in_with_garbage_forwarded_value_cannot_mint_buckets(api_clie
     resp = await _sign_in(api_client_with_seed, "lh_pat_unknown_key")
     assert resp.status_code == 401  # normal limit path unchanged: wrong key is a 401, not a 429
     assert len(_sign_in_rate_limiter._buckets) <= 1
+
+
+@pytest.mark.asyncio
+async def test_sign_in_attempts_from_one_ipv6_64_share_one_bucket(api_client_with_seed):
+    """263-81 at the call site: the route keys its limiter with the widened key."""
+    from app.main import create_app
+    from app.services.rate_limiter import _sign_in_rate_limiter
+    from httpx import ASGITransport, AsyncClient
+
+    _sign_in_rate_limiter.clear()
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(), client=("2001:db8:1:2::1", 1)),
+        base_url="http://t",
+    ) as one:
+        assert (await _sign_in(one, "lh_pat_unknown_key")).status_code == 401
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app(), client=("2001:db8:1:2:aaaa::7", 1)),
+        base_url="http://t",
+    ) as other:
+        assert (await _sign_in(other, "lh_pat_unknown_key")).status_code == 401
+    assert list(_sign_in_rate_limiter._buckets) == ["2001:db8:1:2::/64"]

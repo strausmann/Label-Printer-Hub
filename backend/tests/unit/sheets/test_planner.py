@@ -993,3 +993,24 @@ def test_an_id_only_page_is_still_planned_when_there_are_no_items() -> None:
         margin=margin_ctx(),
     )
     assert result.pages[0].item_cells == [] and result.pages[0].margin_id is True
+
+
+def test_free_cells_for_explicit_list() -> None:
+    """266-01: an explicit list with no room for the ID reports the capacity left for items
+    once the ID takes its cell, like a ``first_free`` placement does, not the list's length."""
+    full = sheet(used=set(range(1, 47)), id_placement="cell")  # cells 47 and 48 free
+    explicit = PlacementIn(sheet=full, cells=[47, 48], skip=[], count=None)
+    with pytest.raises(InsufficientCellsError) as exc:
+        plan([explicit], 2, hw_margins_hmm=None, margin=None)
+    auto = sheet(used=set(range(1, 47)), id_placement="cell")
+    with pytest.raises(InsufficientCellsError) as same:
+        plan([first_free(auto, 2)], 2, hw_margins_hmm=None, margin=None)
+    assert (
+        exc.value.detail
+        == same.value.detail
+        == {
+            "free_cells": [1],
+            "needed": 2,
+            "shortfall": 1,
+        }
+    )

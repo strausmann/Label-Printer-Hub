@@ -21,6 +21,12 @@ describe("PauseReason", () => {
     expect(screen.getByText("Tape is empty")).toBeVisible();
   });
 
+  it("the hub's status-unavailable hold reads as a sentence, not the code font", () => {
+    const { container } = render(ui("status-unavailable"));
+    expect(screen.getByText("Waiting for the printer's status check")).toBeVisible();
+    expect(container.querySelector("code")).toBeNull();
+  });
+
   it("a page printer keyword falls back to its words, not the code font", () => {
     const { container } = render(ui("toner-empty"));
     expect(screen.getByText("toner empty")).toBeVisible();

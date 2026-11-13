@@ -131,7 +131,7 @@ export function ImportDialog({ isOpen, onClose, onShow }: { isOpen: boolean; onC
 
   return (
     <ModalDialog title={t`Import a sheet type`} isOpen={isOpen} onClose={close}>
-      <div className="flex max-h-[70dvh] flex-col gap-4 overflow-y-auto">
+      <div className="flex flex-col gap-4">
         {phase === "done" && result ? (
           <>
             <p role="status">{outcomes[result.outcome]}</p>

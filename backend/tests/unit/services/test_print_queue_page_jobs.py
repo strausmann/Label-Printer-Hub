@@ -4,6 +4,7 @@ the printer, and the media-kind guard. The printer is ``FakeIppPrinter``; waits 
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -499,3 +500,214 @@ async def test_backstop_ends_the_job_completely(handler: RecordingHandler) -> No
             "error_code": "interrupted",
         }
         await env.wait_db(jid, DbJobState.FAILED.value)
+
+
+# ---------------------------------------------------------------------------- 266-09
+
+
+class _SavedThenRaises(MemoryJobStore):
+    """``save_queued`` commits the row, then raises (a lock on the refresh after the commit)."""
+
+    def __init__(self, exc: BaseException, *, mark_fails: bool = False) -> None:
+        super().__init__()
+        self.exc = exc
+        self.mark_fails = mark_fails
+
+    async def save_queued(self, job: Any) -> None:
+        await super().save_queued(job)
+        raise self.exc
+
+    async def mark_failed_code(self, job_id: UUID, *a: Any, **k: Any) -> None:
+        if self.mark_fails:
+            raise RuntimeError("database is locked")
+        await super().mark_failed_code(job_id, *a, **k)
+
+
+async def _submit_into(env: _Env, store: MemoryJobStore, jid: UUID) -> None:
+    env.queue._store = store  # type: ignore[assignment]
+    env.runner._store = store  # type: ignore[assignment]
+    await env.queue.pause_printer(env.page.id, reason="user", source="user")
+    await env.queue.submit_page_job(
+        env.page.id, payload("sheet_page"), api_key_id=None, source_ip=None, job_id=jid
+    )
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [RuntimeError("database is locked"), TimeoutError("refresh timed out")],
+    ids=["db-error", "timeout"],
+)
+async def test_save_queued_failure_marks_row_failed_and_releases_cells(
+    handler: RecordingHandler, exc: BaseException
+) -> None:
+    """The row was committed, then ``save_queued`` raised: the row ends ``failed`` with
+    ``print_interrupted`` (no restart prints it), the cells are freed through ``on_ended`` and
+    the job leaves memory. The caller still sees the error (the route answers 502)."""
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        store = _SavedThenRaises(exc)
+        jid = uuid4()
+        with pytest.raises(type(exc)):
+            await _submit_into(env, store, jid)
+        row = await store.get(jid)
+        assert row is not None and row.state == DbJobState.FAILED.value
+        assert (row.error or "").startswith("print_interrupted:")
+        assert (row.result or {}).get("started") is False
+        assert handler.ended(jid) == {
+            "state": "failed",
+            "started": False,
+            "error_code": "print_interrupted",
+        }
+        assert not env.queue.has_job(jid)
+        await env.queue.resume_printer(env.page.id)
+        await asyncio.sleep(0.05)
+        assert env.ops("Print-Job") == []
+
+
+async def test_save_queued_failure_with_a_failing_end_write_keeps_the_cells(
+    handler: RecordingHandler, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The end cannot be written either: the row may still say ``queued`` and a restart could
+    print it, so the cells stay reserved (the startup sweep or the job settles them) and the
+    job stays known, ended, and is never evicted or printed by this process. The failure is
+    logged by type: the save error in the chain quotes the payload (a database error quotes
+    its parameters), and none of it reaches the log."""
+    marker = "QR-MARKER-9f3e"
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        store = _SavedThenRaises(
+            RuntimeError(f"database is locked [parameters: {marker}]"), mark_fails=True
+        )
+        jid = uuid4()
+        caplog.set_level(logging.DEBUG)
+        with pytest.raises(RuntimeError):
+            env.queue._store = store  # type: ignore[assignment]
+            env.runner._store = store  # type: ignore[assignment]
+            await env.queue.pause_printer(env.page.id, reason="user", source="user")
+            await env.queue.submit_page_job(
+                env.page.id,
+                payload("sheet_page", title=marker),
+                api_key_id=None,
+                source_ip=None,
+                job_id=jid,
+            )
+        assert marker not in caplog.text
+        assert any(
+            str(jid) in r.getMessage() and "RuntimeError" in r.getMessage() for r in caplog.records
+        )
+        # F4: readers see the job end (no waiter exists, the caller got the error)
+        assert (str(jid), JobState.QUEUED, JobState.FAILED) in [e[:3] for e in env.events]
+        assert "ended" not in handler.names(jid)
+        assert env.queue.has_job(jid)
+        assert (await env.queue.get(jid)).state == JobState.FAILED
+        assert env.queue.forget_job(jid) is False  # unpersisted: never evicted
+        await env.queue.resume_printer(env.page.id)
+        await asyncio.sleep(0.05)
+        assert env.ops("Print-Job") == []
+
+
+async def test_save_queued_failure_before_the_commit_is_unchanged(
+    handler: RecordingHandler,
+) -> None:
+    """No row was written: nothing to mark; the job leaves memory as before."""
+
+    class _Raises(MemoryJobStore):
+        async def save_queued(self, job: Any) -> None:
+            raise ConnectionError("database unreachable")
+
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        store = _Raises()
+        jid = uuid4()
+        with pytest.raises(ConnectionError):
+            await _submit_into(env, store, jid)
+        assert await store.get(jid) is None
+        assert not env.queue.has_job(jid)
+        assert "ended" not in handler.names(jid)  # the caller frees the cells of a job-less page
+
+
+async def test_save_queued_failure_after_a_cancel_persists_the_cancel(
+    handler: RecordingHandler,
+) -> None:
+    """A cancel lands while the row is saved, then the save raises after its commit: the row
+    ends ``cancelled`` (what the user asked for), with the one ``on_ended`` the cancel sent."""
+
+    class _GatedThenRaises(_GatedStore):
+        async def save_queued(self, job: Any) -> None:
+            await super().save_queued(job)
+            raise RuntimeError("database is locked")
+
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        store = _GatedThenRaises()
+        env.queue._store = store  # type: ignore[assignment]
+        await env.queue.pause_printer(env.page.id, reason="user", source="user")
+        jid = uuid4()
+        submit = asyncio.create_task(
+            env.queue.submit_page_job(
+                env.page.id, payload(), api_key_id=None, source_ip=None, job_id=jid
+            )
+        )
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await store.entered.wait()
+        assert await env.queue.cancel(str(jid))
+        store.gate.set()
+        with pytest.raises(RuntimeError):
+            await submit
+        row = await store.get(jid)
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+        assert handler.ended(jid)["state"] == "cancelled"
+        assert not env.queue.has_job(jid)
+
+
+class _DoneAndFailFail(_DoneFails):
+    async def mark_failed_code(self, job_id: UUID, *a: Any, **k: Any) -> None:
+        raise RuntimeError("db down")
+
+
+async def test_backstop_end_that_cannot_be_written_is_never_evicted(
+    handler: RecordingHandler,
+) -> None:
+    """The backstop ends the job in memory, but its row could not be written (it still says
+    ``printing``). Like a tape job whose end was not written, it stays known: eviction must
+    not forget it (Task 7's ``_unpersisted`` rule, applied to page jobs)."""
+    async with _env(FakeIppPrinter(job_script=[5, 9])) as env:
+        failing = _DoneAndFailFail()
+        failing._jobs = env.store._jobs  # type: ignore[attr-defined]
+        env.queue._store = failing  # type: ignore[assignment]
+        env.runner._store = failing  # type: ignore[assignment]
+        jid = await _submit(env)
+        job = await env.wait_terminal(jid)
+        assert job.state == JobState.FAILED
+        assert env.queue.forget_job(jid) is False
+        assert jid not in {j for j, _ in env.queue.finished_jobs()}
+
+
+async def test_a_cancel_whose_write_fails_during_the_end_keeps_the_job_known(
+    handler: RecordingHandler,
+) -> None:
+    """F3 edge case: the save raised after its commit; while the job's end is written, a cancel
+    lands whose own write fails. That cancel marks the job unpersisted; the end that follows
+    must not drop it from memory (an unpersisted job is never forgotten)."""
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    class _Store(_SavedThenRaises):
+        async def mark_failed_code(self, job_id: UUID, *a: Any, **k: Any) -> None:
+            entered.set()
+            await gate.wait()
+            await super().mark_failed_code(job_id, *a, **k)
+
+        async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+            raise RuntimeError("database is locked")
+
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        store = _Store(RuntimeError("database is locked"))
+        jid = uuid4()
+        submit = asyncio.create_task(_submit_into(env, store, jid))
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await entered.wait()
+        with pytest.raises(RuntimeError):
+            await env.queue.cancel(str(jid))
+        gate.set()
+        with pytest.raises(RuntimeError):
+            await submit
+        assert env.queue.has_job(jid)
+        assert (await env.queue.get(jid)).state == JobState.CANCELLED
+        assert env.queue.forget_job(jid) is False

@@ -5,7 +5,7 @@ import type { VitePWAOptions } from "vite-plugin-pwa";
  * fonts, icons and the code reader's WebAssembly) so the installed app opens at once.
  *
  * It never touches the API: no runtime caching, and the navigation fallback skips `/api/`,
- * the interactive docs and the OpenAPI document. A cached answer from the hub (a job state,
+ * the interactive docs, the OpenAPI document and the licence texts. A cached answer from the hub (a job state,
  * a printer, an item behind a sign-in) is worse than none.
  */
 export const pwaOptions: Partial<VitePWAOptions> = {
@@ -20,7 +20,9 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     // The API reference viewer (/docs) is a 5 MB developer tool, not part of the installable app.
     globIgnores: ["scalar/**"],
     navigateFallback: "/index.html",
-    navigateFallbackDenylist: [/^\/api\//, /^\/docs(\/|$)/, /^\/openapi\.json$/],
+    // /licenses/ holds the licence texts the About page links (AGPL section 13); they are not precached,
+    // so the fallback would answer that link with the app shell instead of the text.
+    navigateFallbackDenylist: [/^\/api\//, /^\/docs(\/|$)/, /^\/openapi\.json$/, /^\/licenses\//],
     runtimeCaching: [],
     cleanupOutdatedCaches: true,
     clientsClaim: true,

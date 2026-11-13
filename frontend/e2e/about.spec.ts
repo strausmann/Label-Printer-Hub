@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
@@ -199,5 +199,43 @@ test.describe.serial("about", () => {
       for (let i = 0; i < 6; i += 1) await page.keyboard.press("Tab");
       await shot(page, `about-licences-phone-h${height}-tab-focus.png`, false);
     }
+  });
+});
+
+// AGPL section 13 in the installed app: once the service worker controls the page, its navigation fallback
+// must not answer the licence link with the app shell (the texts are not precached). The image ships the
+// project licence as /licenses/agpl-3.0.txt (backend/Dockerfile); the e2e build gets the same file here.
+test.describe("licence link with a real service worker", () => {
+  const agpl = resolve(import.meta.dirname, "..", "dist", "licenses", "agpl-3.0.txt");
+  let added = false;
+  test.beforeAll(() => {
+    if (existsSync(agpl)) return;
+    copyFileSync(resolve(import.meta.dirname, "..", "..", "LICENSE"), agpl);
+    added = true;
+  });
+  test.afterAll(() => {
+    if (added) rmSync(agpl);
+  });
+
+  test("Read the licence opens the licence text, not the app", async ({ signedInPage: page }) => {
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true);
+
+    await page.goto("/about");
+    const [licence] = await Promise.all([
+      page.context().waitForEvent("page"),
+      page.getByRole("link", { name: "Read the licence" }).click(),
+    ]);
+    await licence.waitForLoadState();
+    expect(await licence.evaluate(() => document.contentType)).toBe("text/plain");
+    await expect(licence.locator("body")).toContainText("GNU AFFERO GENERAL PUBLIC LICENSE");
+    await licence.close();
+
+    // The same navigation in the controlled tab reaches the server, not the worker's fallback.
+    const response = await page.goto("/licenses/agpl-3.0.txt");
+    expect(response?.fromServiceWorker()).toBe(false);
+    expect(response?.headers()["content-type"]).toMatch(/^text\/plain/);
   });
 });

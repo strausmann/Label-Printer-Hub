@@ -1,7 +1,9 @@
 """Per-printer ACL on job and batch endpoints (follow-up to #146).
 
 Foreign jobs/batches answer 404 (not 403) so their existence is not leaked.
-Covers restricted and unrestricted API keys and a browser session.
+Covers restricted and unrestricted API keys and a browser session. The job and batch tests use
+admin keys: a plain key sees only the jobs and batches it submitted (#294,
+test_job_ownership.py, test_batch_run_auth.py), and the printer ACL applies to admin keys too.
 """
 
 from __future__ import annotations
@@ -81,7 +83,7 @@ def _job_ids(resp) -> set[str]:
 @pytest.mark.asyncio
 async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world):
     (pa, ja, _), (pb, jb, _) = world
-    key = await _insert_key(["read"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
     resp = await api_client_with_seed.get("/api/v1/jobs?limit=200", headers=h)
     assert resp.status_code == 200, resp.text
@@ -94,7 +96,7 @@ async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world
 @pytest.mark.asyncio
 async def test_job_list_unrestricted_sees_all(api_client_with_seed, world):
     (_, ja, _), (_, jb, _) = world
-    key = await _insert_key(["read"], [])
+    key = await _insert_key(["admin"], [])
     resp = await api_client_with_seed.get(
         "/api/v1/jobs?limit=200", headers={"X-Label-Hub-Key": key}
     )
@@ -104,7 +106,7 @@ async def test_job_list_unrestricted_sees_all(api_client_with_seed, world):
 @pytest.mark.asyncio
 async def test_job_detail_and_mutations_of_foreign_job_404(api_client_with_seed, world):
     (pa, ja, _), (_, jb, _) = world
-    key = await _insert_key(["read", "print"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
     own = await api_client_with_seed.get(f"/api/v1/jobs/{ja}", headers=h)
     assert own.status_code == 200, own.text
@@ -132,11 +134,11 @@ def _pb(world) -> UUID:
 @pytest.mark.asyncio
 async def test_batch_of_foreign_printer_404(api_client_with_seed, world):
     (pa, _, ba), (_, _, bb) = world
-    key = await _insert_key(["read"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     h = {"X-Label-Hub-Key": key}
     assert (await api_client_with_seed.get(f"/api/v1/batches/{ba}", headers=h)).status_code == 200
     assert (await api_client_with_seed.get(f"/api/v1/batches/{bb}", headers=h)).status_code == 404
-    unrestricted = await _insert_key(["read"], [])
+    unrestricted = await _insert_key(["admin"], [])
     r = await api_client_with_seed.get(
         f"/api/v1/batches/{bb}", headers={"X-Label-Hub-Key": unrestricted}
     )
@@ -146,7 +148,7 @@ async def test_batch_of_foreign_printer_404(api_client_with_seed, world):
 @pytest.mark.asyncio
 async def test_session_job_and_batch_acl(api_client_with_seed, world):
     (pa, ja, ba), (_, jb, bb) = world
-    key = await _insert_key(["print"], [str(pa)])
+    key = await _insert_key(["admin"], [str(pa)])
     signed = await api_client_with_seed.post("/api/v1/auth/session", json={"key": key})
     assert signed.status_code in (200, 201, 204), signed.text
     jobs = await api_client_with_seed.get("/api/v1/jobs?limit=200")

@@ -46,7 +46,12 @@ async function jobsOf(page: Page, id: string): Promise<string[]> {
 async function chooseType(page: Page) {
   const box = page.getByRole("combobox", { name: /Sheet type|Bogentyp/ });
   await box.click();
+  // Wait for the list and select the shown label explicitly, so the first character is typed over it and never lost to a
+  // late re-selection (263-85); then check what the field holds before picking.
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type(TYPE);
+  await expect(box).toHaveValue(TYPE);
   await page.getByRole("option", { name: new RegExp(`\\(${TYPE}\\)`) }).click();
 }
 
@@ -151,11 +156,13 @@ test.describe.serial("calibration", () => {
     expect(await box.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
     await page.keyboard.press("Escape");
     await box.click();
-    await page.waitForTimeout(300); // the list scales in for 140 ms; a box measured mid-way is smaller
-    expect((await page.getByRole("option").first().boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    // Wait for the option to have its size.
+    await expect.poll(async () => (await page.getByRole("option").first().boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     // On a phone: no sideways scroll, and the open list ends above the fixed tab bar.
     await page.keyboard.press("Escape");
+    // A popover that is still leaving (it waits for its enter animation to end) keeps the width of the wide window: resize after it is gone.
+    await expect(page.getByRole("listbox")).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 800 });
     expect(await noSideScroll(page)).toBe(true);
     // Bring the field itself into view first, and let the scroll settle. The heading above it is already visible at 390 px, so
@@ -166,10 +173,18 @@ test.describe.serial("calibration", () => {
     await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
     const scrolledTo = await page.evaluate(() => window.scrollY);
     await box.click();
-    await page.waitForTimeout(300); // the list scales in for 140 ms
-    expect(await page.evaluate(() => window.scrollY), "the click must not scroll the page").toBe(scrolledTo);
     const listbox = page.getByRole("listbox");
     await expect(listbox).toBeVisible();
+    // The list fades in for 140 ms: wait until its box stopped changing instead of sleeping.
+    await expect
+      .poll(async () => {
+        const first = await listbox.boundingBox();
+        await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => done())));
+        const second = await listbox.boundingBox();
+        return first && second ? first.height === second.height && first.y === second.y : false;
+      })
+      .toBe(true);
+    expect(await page.evaluate(() => window.scrollY), "the click must not scroll the page").toBe(scrolledTo);
     const list = (await listbox.boundingBox())!;
     const bar = (await page.locator("[data-tabbar]").boundingBox())!;
     expect(list.y + list.height).toBeLessThanOrEqual(bar.y);
@@ -239,20 +254,20 @@ test.describe.serial("calibration", () => {
     await page.reload();
     await expect(page.getByRole("combobox", { name: "Sheet type" })).toHaveValue(named);
 
-    // A tray change keeps it, when the printer has a second tray.
+    // A tray change keeps it. The fixture printer has two trays (the main tray and "Automatic"), so this is not optional.
     const trayButton = page.getByRole("button", { name: / Tray$/ });
-    if (await trayButton.count()) {
-      await trayButton.click();
-      const other = page.getByRole("option").filter({ hasNotText: (await trayButton.textContent()) ?? "" }).first();
-      await other.click();
-      await expect(async () => expect(new URL(page.url()).searchParams.get("tray")).not.toBe(TRAY)).toPass();
-      await expect(page.getByRole("combobox", { name: "Sheet type" })).toHaveValue(named);
-      expect(new URL(page.url()).searchParams.get("type")).toBe(TYPE);
-    }
+    await expect(trayButton).toBeVisible();
+    await trayButton.click();
+    await page.getByRole("option", { name: "Automatic" }).click();
+    await expect(async () => expect(new URL(page.url()).searchParams.get("tray")).toBe("auto")).toPass();
+    await expect(page.getByRole("combobox", { name: "Sheet type" })).toHaveValue(named);
+    expect(new URL(page.url()).searchParams.get("type")).toBe(TYPE);
 
     // A key the hub does not know opens on the default type instead of breaking the page.
     await page.goto(`/calibration?printer=${id}&tray=${TRAY}&type=no-such-type`);
     await expect(page.getByRole("combobox", { name: "Sheet type" })).not.toHaveValue("");
+    // ... and the unknown key leaves the address (263-57).
+    await expect(async () => expect(new URL(page.url()).searchParams.get("type")).toBeNull()).toPass();
   });
 
   test("screenshots: the kept type after a tray change, light and dark, desktop and phone (#238)", async () => {
@@ -401,6 +416,8 @@ test.describe.serial("calibration", () => {
           }),
         );
         await page.reload();
+        // The step heading in the page's language is there once the language file has arrived.
+        await expect(page.getByRole("heading", { level: 2, name: de ? "Schritt 1: Kalibrierseite drucken" : "Step 1: Print the calibration page" })).toBeVisible();
         await chooseType(page);
         for (const crossing of ["S1 · Z1", "S3 · Z1", "S1 · Z11", "S3 · Z11"]) {
           await page.getByRole("textbox", { name: new RegExp(`^(Across|Quer) (at|bei) ${crossing} \\(mm\\)$`) }).fill("0,3");
@@ -408,6 +425,11 @@ test.describe.serial("calibration", () => {
         }
         await page.getByRole("button", { name: de ? "Berechnen" : "Fit", exact: true }).click();
         await expect(page.getByRole("table", { name: de ? "Ergebnis der Berechnung" : "Result of the fit" })).toBeVisible();
+        // The box around the table scrolls sideways: it is a named region and the keyboard reaches it (axe: scrollable-region-focusable).
+        const fitRegion = page.getByRole("region", { name: de ? "Ergebnis der Berechnung" : "Result of the fit" });
+        await expect(fitRegion).toHaveAttribute("tabindex", "0");
+        await fitRegion.focus();
+        await expect(fitRegion).toBeFocused();
         // The flag on the far reading is on screen without scrolling the table sideways.
         const flag = await page.getByText(de ? "diesen Messwert prüfen" : "check this reading").boundingBox();
         expect(flag, "the flag is rendered").not.toBeNull();

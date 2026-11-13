@@ -1,4 +1,4 @@
-# 0025 — The project is called Labelyard
+# 0026 — The project is called Labelyard
 
 - **Status:** Accepted
 - **Date:** 2026-11-11

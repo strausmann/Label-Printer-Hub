@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import type { components } from "../../api/schema.gen";
 import { FIELD } from "../../shell/SignIn";
+import { listRoom, perFrame, readViewport, sameRoom, subscribeViewport, type ListRoom } from "../../shell/viewport";
 import { LABEL } from "../settings/controls";
 import { foldForSearch, foldWithMap, matchSheetType } from "./matchSheetType";
 import { typePickerLabel } from "./typeLabel";
@@ -32,6 +33,18 @@ export interface SheetTypeComboboxProps {
 /** The tallest the list gets (px) and the gap it keeps to the screen edge and the tab bar. */
 const LIST_MAX = 384;
 const LIST_GAP = 12;
+/** How long the dialog frame must have stopped scrolling before a list that its scroll closed is opened again (ms). */
+const QUIET = 150;
+/** A close this soon after Escape, a choice or a press on the arrow is the person's, not a scroll's (ms). */
+const PERSON = 300;
+/** What a field sits in when it is in a dialog. */
+const DIALOG = '[role="dialog"], [role="alertdialog"]';
+
+/** Selects the whole text. `select()` alone is dropped by some mobile browsers; an explicit range holds. */
+function selectAll(input: HTMLInputElement) {
+  input.select();
+  input.setSelectionRange(0, input.value.length);
+}
 
 /** The label with the part that matched the query marked. Folding drops spaces (around "×"), so the match is mapped back to the label's own offsets. */
 function Highlighted({ text, query }: { text: string; query: string }) {
@@ -76,14 +89,113 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   const cleared = typed !== null && typed === "";
   const trigger = useRef<HTMLButtonElement>(null);
   const hadFocus = useRef(false);
+  // Whether the person has pressed one of the options, or pressed Enter or Tab on a chosen one, since the list opened: only then is a selection theirs (see onSelectionChange).
+  const pickIntent = useRef(false);
   const typedRef = useRef(typed);
   useEffect(() => {
     typedRef.current = typed;
   }, [typed]);
   // Where the list goes and how tall it may get. React Aria measures against the whole page, not the screen, so the list
-  // would run past the bottom edge and under the fixed tab bar of a phone; this measures the screen at the moment it opens.
+  // would run past the bottom edge, under the fixed tab bar of a phone and under the on-screen keyboard. This measures what
+  // is visible: when the list opens, and again while it is open, because the keyboard comes up after the focus opened it.
   const field = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState<{ placement: "bottom start" | "top start"; maxHeight: number }>({ placement: "bottom start", maxHeight: LIST_MAX });
+  const [room, setRoom] = useState<ListRoom>({ placement: "bottom start", maxHeight: LIST_MAX });
+  const [open, setOpen] = useState(false);
+  const measure = () => {
+    if (!field.current) return;
+    // The tab bar of a phone limits the list, but not inside a dialog: the dialog covers it, and with the keyboard open
+    // the bar sits right above the keyboard, so counting it would take a strip of the room off for nothing.
+    const bar = field.current.closest(DIALOG) ? null : document.querySelector("[data-tabbar]");
+    const lowest = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : undefined;
+    const next = listRoom(field.current.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: 44 });
+    setRoom((prev) => (sameRoom(prev, next) ? prev : next));
+  };
+  // React Aria closes a list that is not modal when an ancestor of the field scrolls. Inside a dialog that ancestor is the
+  // dialog's own frame, and the browser scrolls it when it brings the field above the keyboard, so the list would close
+  // the moment the keyboard comes up. A close that comes with such a scroll is undone, but only
+  //  - when nothing else closed it (Escape, a choice, the arrow button: `person`),
+  //  - once the scrolling has been quiet for `QUIET` ms (a finger still scrolling is not overruled), and
+  //  - once per focus.
+  const scroll = useRef({ last: -Infinity, armed: false, reopened: false, person: -Infinity, timer: 0, check: 0 });
+  const settle = () => {
+    const state = scroll.current;
+    window.clearTimeout(state.timer);
+    state.timer = window.setTimeout(() => {
+      state.armed = false;
+      const input = field.current?.querySelector("input");
+      if (input && input === document.activeElement && input.getAttribute("aria-expanded") === "false") {
+        state.reopened = true;
+        trigger.current?.click();
+      }
+    }, QUIET);
+  };
+  useEffect(() => {
+    const state = scroll.current;
+    const note = (event: Event) => {
+      // The text field scrolls inside itself while a long query is typed; that is not what is meant.
+      if (event.target instanceof HTMLInputElement) return;
+      state.last = performance.now();
+      if (state.armed) settle();
+    };
+    // A press on one of this field's options is the person choosing; the selection that follows is a pick (see onSelectionChange).
+    // Mouse and touch select on pointer-up (a touch that turned into a scroll never gets one), a virtual click only sends a click.
+    // The list is in a portal, so these listen on the document, but only count an option of the list this field owns.
+    const intend = (event: Event) => {
+      const listId = field.current?.querySelector("input")?.getAttribute("aria-controls");
+      const option = event.target instanceof Element ? event.target.closest('[role="option"]') : null;
+      if (listId && option?.closest('[role="listbox"]')?.id === listId) pickIntent.current = true;
+    };
+    document.addEventListener("scroll", note, true);
+    document.addEventListener("pointerup", intend, true);
+    document.addEventListener("click", intend, true);
+    return () => {
+      document.removeEventListener("pointerup", intend, true);
+      document.removeEventListener("click", intend, true);
+      document.removeEventListener("scroll", note, true);
+      window.clearTimeout(state.timer);
+      window.clearTimeout(state.check);
+    };
+  }, []);
+  // Marks a close that is about to happen (or just happened) as the person's doing: Escape, a choice, the arrow button.
+  const closedByPerson = () => {
+    scroll.current.person = performance.now();
+  };
+  const stopReopening = () => {
+    const state = scroll.current;
+    state.armed = false;
+    window.clearTimeout(state.timer);
+    window.clearTimeout(state.check);
+  };
+  const listClosed = () => {
+    const state = scroll.current;
+    // Only in a dialog: on a page a scroll that closes the list is the expected behaviour (the field moved away).
+    if (state.reopened || !field.current?.closest(DIALOG)) return;
+    const closedAt = performance.now();
+    // React Aria closes inside the scroll event; ours may come a moment later, so look back a little and ahead a little.
+    window.clearTimeout(state.check);
+    state.check = window.setTimeout(() => {
+      // The person's mark may come a moment after the close (a press handler runs after the one that closes the list).
+      if (state.person >= closedAt - PERSON) return;
+      if (state.last < closedAt - 50) return;
+      state.armed = true;
+      settle();
+    }, 20);
+  };
+  const measureRef = useRef(measure);
+  useEffect(() => {
+    measureRef.current = measure;
+  });
+  // While the list is open: measure again when the visible area changes (the keyboard comes up after the focus opened the
+  // list). A scroll needs no measuring of its own: it closes the list, and opening it again measures (see above).
+  useEffect(() => {
+    if (!open) return;
+    const again = perFrame(() => measureRef.current());
+    const stop = subscribeViewport(again.run);
+    return () => {
+      stop();
+      again.cancel();
+    };
+  }, [open]);
 
   return (
     <ComboBox
@@ -94,25 +206,36 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       isDisabled={disabled}
       menuTrigger="focus"
       allowsEmptyCollection
-      onOpenChange={(open) => {
-        if (!open || !field.current) return;
-        const rect = field.current.getBoundingClientRect();
-        const bar = document.querySelector("[data-tabbar]");
-        const barTop = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : window.innerHeight;
-        const below = Math.min(window.innerHeight, barTop) - rect.bottom - LIST_GAP;
-        const above = rect.top - LIST_GAP;
-        // Below the field unless that leaves room for fewer than about four options and above has more.
-        const up = below < 4 * 44 && above > below;
-        setRoom({ placement: up ? "top start" : "bottom start", maxHeight: Math.max(88, Math.min(LIST_MAX, Math.floor(up ? above : below))) });
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen);
+        if (isOpen) {
+          pickIntent.current = false;
+          stopReopening();
+          // A mark from before this opening (a choice, Escape) belongs to the list that was closed then, not to this one.
+          scroll.current.person = -Infinity;
+          measure();
+        } else listClosed();
       }}
       onInputChange={(text) => setTyped(text === shownText ? null : text)}
       onSelectionChange={(key) => {
         // Typing makes React Aria let go of the selection; the value only changes when a type is picked.
         if (key === null) return;
+        // Every close of the list, also one a scroll causes (useCloseOnScroll), runs `state.close`, which is `commitValue`
+        // (react-stately useComboBoxState.mjs:333). With the selection and the text both controlled, it calls
+        // `onSelectionChange(selectedKey)` whenever the text differs from the chosen item's (:262-270). That is not a pick:
+        // taken as one it wipes the search (the typed character is lost, the rest is appended to the label) and marks the
+        // close as the person's, so a list a scroll closed is not brought back (#292). A pick has a press on an option, or Enter,
+        // or Tab on an option the person has moved to, before it.
+        if (!pickIntent.current) return;
+        closedByPerson();
         setTyped(null);
         onChange(String(key));
       }}
-      onBlur={() => setTyped(null)}
+      onBlur={() => {
+        setTyped(null);
+        stopReopening();
+        scroll.current.reopened = false;
+      }}
     >
       <Label className={LABEL}>{label}</Label>
       <div ref={field} className="relative">
@@ -130,9 +253,11 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             const input = e.currentTarget;
             // The input gets the focus again when the list opens under the first keystroke: by then there is a query, leave it be.
             if (typedRef.current !== null) return;
-            input.select();
+            selectAll(input);
+            // Only while the field still has the focus: `select()` takes the focus, so a late call after a Tab would pull it
+            // back from the next control and trap the keyboard in the field.
             setTimeout(() => {
-              if (typedRef.current === null) input.select();
+              if (typedRef.current === null && document.activeElement === input) selectAll(input);
             }, 0);
           }}
           // A tap on a field that already has the focus (the list was closed by a choice or a drag) opens it again.
@@ -146,7 +271,7 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
             trigger.current?.click();
             // A new search, as with a fresh focus; after the click, because opening the list moves the caret.
             const select = () => {
-              if (typedRef.current === null) input.select();
+              if (typedRef.current === null && document.activeElement === input) selectAll(input);
             };
             select();
             setTimeout(select, 0);
@@ -154,12 +279,18 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           onKeyDownCapture={(e) => {
             // React Aria undoes a search on Escape by writing the chosen item's text back, read from the filtered list.
             // That list may not hold the chosen type, and the write is then an empty string. Escape means "back to the value".
-            if (e.key === "Escape") setTimeout(() => setTyped(null), 0);
+            // Enter, and Tab on an option the person has moved to, choose it (react-aria useComboBox: both end in state.commit()).
+            if (e.key === "Enter" || (e.key === "Tab" && e.currentTarget.getAttribute("aria-activedescendant"))) pickIntent.current = true;
+            if (e.key === "Escape") {
+              closedByPerson();
+              setTimeout(() => setTyped(null), 0);
+            }
             // Enter on a search nobody has moved into takes the first match, so "type 4736, Enter" works.
             const first = shown[0];
             if (e.key === "Enter" && query !== "" && first && !e.currentTarget.getAttribute("aria-activedescendant")) {
               e.preventDefault();
               e.stopPropagation();
+              closedByPerson();
               setTyped(null);
               onChange(first.id);
             }
@@ -183,6 +314,11 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           ) : null}
           <Button
             ref={trigger}
+            // Only a press that closes an open list is the person's doing; one that opens it brings up the keyboard, and the
+            // scroll that follows must still be undone.
+            onPressStart={() => {
+              if (field.current?.querySelector("input")?.getAttribute("aria-expanded") === "true") closedByPerson();
+            }}
             aria-label={t`Show all sheet types`}
             className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 data-[focus-visible]:outline-3 data-[focus-visible]:outline-link"
           >
@@ -192,7 +328,17 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
           </Button>
         </div>
       </div>
-      <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+      {/* A cut label has no hover on a touch screen, so the title is no help there: the whole text is written below the field.
+          Hidden where a mouse can hover (the title serves), and while a query is typed (the box then shows the query). */}
+      {!isNone && typed === null && chosenText !== "" ? (
+        <p data-full-label="" className="m-0 text-small text-ink-2 [overflow-wrap:anywhere] [@media(hover:hover)_and_(pointer:fine)]:hidden">
+          {chosenText}
+        </p>
+      ) : null}
+      <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
+        {/* Opacity only, no scale: React Aria scrolls the chosen option into view while the popover enters, from the rect it sees.
+            A scaled popover shows a smaller rect than its layout, the option stays a few pixels short, and the second step
+            (a native scrollIntoView) scrolls the page to make up for it. That scroll closes the list again (#292). */}
         {/* The popover is as tall as the room beside the field; a long list scrolls inside it. */}
         <ListBox
           className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none"

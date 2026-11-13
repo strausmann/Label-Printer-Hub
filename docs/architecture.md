@@ -26,24 +26,52 @@ The web UI is built from `frontend/` at image build time (multi-stage Dockerfile
 
 ```
 backend/app/
-├── main.py                  # FastAPI app instantiation
-├── api/                     # FastAPI routers (printers, jobs, lookup, webhooks, events)
-├── printer_models/          # Plugin per model family (ADR 0004)
-│   ├── base.py              # PrinterModel Protocol
-│   ├── pt_series.py
-│   ├── ql_series.py
-│   └── registry.py          # Auto-discovery via SNMP PJL string
+├── main.py                       # FastAPI app instantiation and lifespan
+├── cli.py                        # printer-hub command (admin create-key, ...)
+├── config.py                     # environment settings
+├── api/
+│   ├── routes/                   # one router per resource (print, jobs, printers, sheets, webhooks, events, ...)
+│   └── dependencies/             # auth, rate limits, webhook key
+├── auth/                         # API keys, sessions, CSRF
+├── printer_models/               # Plugin per model family (ADR 0004)
+│   ├── base.py                   # PrinterModel Protocol
+│   ├── pt.py                     # Brother PT-Series driver
+│   ├── ql.py                     # Brother QL-Series driver
+│   └── registry.py               # ModelRegistry: entry points, lookup by PJL string / SNMP value
+├── printer_backends/             # How bytes reach a printer (ADR 0020)
+│   ├── base.py                   # backend interface
+│   ├── ptouch_backend.py         # PT-Series over TCP/9100
+│   ├── brother_ql_backend.py     # QL-Series over TCP/9100
+│   ├── mock_backend.py           # fake printer for tests and the smoke compose file
+│   └── ipp/                      # own IPP client for page printers
 ├── services/
-│   ├── status_block.py      # 32-byte Brother status block parser
-│   ├── tape_registry.py     # Brother tape spec lookup table
-│   ├── status_probe.py      # Phase-aware status fetcher (ADR 0006)
-│   ├── print_queue.py       # asyncio queue + worker per printer (ADR 0005)
-│   ├── event_bus.py         # in-memory pub/sub for SSE (ADR 0009)
-│   ├── label_renderer.py    # Pillow + qrcode → PIL.Image
-│   ├── app_lookup.py        # Snipe-IT / Grocy / Spoolman clients
-│   └── template_service.py  # CRUD for label templates
-├── models/                  # SQLModel persistence (jobs, templates, printers, ...)
-└── seed/                    # Default templates loaded at startup
+│   ├── layout_engine.py          # draws a label from LabelData and a content type
+│   ├── print_service.py          # preflight, lookup, render, persist, queue
+│   ├── print_queue.py            # asyncio queue + worker per printer (ADR 0005)
+│   ├── page_job_runner.py        # page jobs on IPP printers, settled from what the printer reports
+│   ├── printer_runtime.py        # the one code path that wires a printer into the running hub (ADR 0024)
+│   ├── hardware_identity.py      # printer identity from the hardware serial (ADR 0024)
+│   ├── status_block.py           # 32-byte Brother status block parser
+│   ├── status_freshness.py       # how old a cached status may be before it counts as unknown
+│   ├── roll_tracker.py           # roll (tape cassette) change detection
+│   ├── tape_registry.py          # Brother tape spec lookup table
+│   ├── event_bus.py              # in-memory pub/sub for SSE (ADR 0009)
+│   └── producers/                # feed the event bus (queue, status probe, tape change, IPP status)
+├── integrations/
+│   ├── base.py                   # IntegrationPlugin Protocol
+│   ├── registry.py               # IntegrationRegistry: entry points
+│   ├── snipeit/plugin.py
+│   ├── spoolman/plugin.py
+│   └── grocy/plugin.py
+├── sheets/                       # label sheet types, planner, reservations (ADR 0023)
+├── calibration/                  # page printer calibration (fit, model, service)
+├── page_render/                  # PDF pages for page printers
+├── settings_store/               # settings in the database; environment locks fields (ADR 0017)
+├── models/                       # SQLModel persistence (jobs, printers, rolls, sheets, ...)
+├── repositories/                 # database access
+├── schemas/                      # request and response models
+├── db/                           # engine, session, lifespan
+└── seed/                         # sheet types loaded at startup
 ```
 
 ### Web UI ([ADR 0016](decisions/0016-react-typescript-web-ui.md), supersedes [0003](decisions/0003-go-tailwind-htmx-pwa-frontend.md))
@@ -68,35 +96,33 @@ Browsers sign in with an API key (or proxy SSO) and receive a session cookie wit
 ### Pull mode — user scans a barcode in the UI
 
 1. User opens `https://labelyard.example.com/` (served by the hub)
-2. Selects a printer tab (e.g. `pt750w`) and an app (e.g. Snipe-IT)
-3. Scans a barcode or opens a label link (`/asset/<id>`) → the UI calls `GET /api/v1/lookup/snipeit/<id>`
-4. Backend fetches asset data from Snipe-IT, returns `LabelData`
-5. The UI shows a preview rendered by the backend
-6. User clicks **Print** → `POST /api/v1/print` → backend enqueues job, returns `202` + `job_id`
-7. The UI already holds one SSE connection to `/api/v1/events` for the whole tab
-8. Backend's PrintQueue worker picks up the job, opens TCP/9100 to the printer, sends raster bytes
-9. Backend pushes `job` and `status` events on the EventBus → SSE (JSON frames) → the UI updates its data in place
-10. Job completes; SSE event triggers a browser notification (if enabled — [ADR 0010](decisions/0010-pwa-progressive-enhancement.md))
+2. Opens an item: searches for it in Snipe-IT, Grocy or Spoolman, scans its barcode, or follows a label link (`/asset/<id>`) → the UI calls `GET /api/v1/lookup/snipeit/<id>`
+3. Backend fetches asset data from Snipe-IT, returns `LabelData`
+4. The print dialog shows a preview rendered by the backend; the user chooses the printer, the layout and the number of copies
+5. User clicks **Print** → `POST /api/v1/print` → backend enqueues job, returns `202` + `job_id`
+6. The UI already holds one SSE connection to `/api/v1/events` for the whole tab
+7. Backend's PrintQueue worker picks up the job, opens TCP/9100 to the printer, sends raster bytes
+8. Backend pushes `job` and `status` events on the EventBus → SSE (JSON frames) → the UI updates its data in place
+9. Job completes; the job's state on the page changes from the SSE event. The hub sends no browser notification (a notification centre is planned in [#255](https://github.com/strausmann/label-printer-hub/issues/255))
 
-### Push mode — Grocy webhook (only Grocy)
+### Push mode — Spoolman and Grocy webhooks
 
-Among the three integrations, only **Grocy** can post webhooks to the hub (and only when `FEATURE_FLAG_LABEL_PRINTING=true` is set in Grocy's `data/config.php`). Snipe-IT and Spoolman do not have webhook-out functionality at the time of this document, so they're pull-only via the hub UI.
+The hub takes webhooks for Spoolman spools (`POST /api/v1/webhook/spoolman`) and Grocy products (`POST /api/v1/webhook/grocy`). Grocy can post them itself when `FEATURE_FLAG_LABEL_PRINTING=true` is set in its `data/config.php`; for Spoolman, whatever reacts to the spool event (for example an automation tool) calls the route. Snipe-IT has no webhook route and is pull-only via the hub UI. [Getting started](getting-started.md#5-webhooks-print-when-something-happens) lists the payloads.
 
-1. Grocy posts to `https://labelyard.example.com/api/v1/webhook/grocy`
+1. Grocy posts to `https://labelyard.example.com/api/v1/webhook/grocy` (a Spoolman event goes to `/api/v1/webhook/spoolman`)
 2. Reverse proxy routes the webhook subroute **without SSO** to the hub
-3. Backend validates `X-API-Key`, picks the default layout for `(grocy, default_tape)` (or a `layout_id` override if the payload includes one), fetches label data, renders, enqueues job
-4. Returns `202` with job ID; webhook caller doesn't wait for print completion
+3. Backend validates `X-API-Key` and the per-key rate limit (`PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE`, default 120), then submits a `qr_two_lines` label for the spool or product to the first enabled tape printer through the print service, the same path as `POST /api/v1/print`: preflight, lookup, render, persist, queue. Printer and lookup errors answer 409/422/502/503 like the print route, an unknown spool or product 404 `app-lookup-not-found`, and an integration that is not configured 503 `integration_not_configured` (both in the problem-detail body shape); nothing is queued. One label is printed; `quantity` is accepted but not printed ([#284](https://github.com/strausmann/label-printer-hub/issues/284))
+4. Returns `202` with job ID; webhook caller doesn't wait for print completion (webhook jobs have no owner, so only admin or SSO callers see them)
 5. Backend prints; any active SSE consumer sees the live state changes
 
 ### Status by phase ([ADR 0006](decisions/0006-status-sources-by-phase.md))
 
-| Phase | Source |
+| Question | Source |
 |---|---|
-| Pre-print check | TCP/9100 `ESC i S` (32-byte block) |
-| Active print | passive read of automatic Brother notifications on the open TCP socket |
-| Idle / dashboard | SNMP Display-OID + page counter (every 30 s) |
-| Wake-from-sleep | SNMP polled at 1 Hz for up to 30 s |
-| Tape changed | SNMP-detected diff → fresh `ESC i S` for full details |
+| Tape printer: status, tape width, page counter | SNMP, polled by `StatusProbeProducer` (every 30 s by default). `ESC i S` on TCP/9100 gets no answer over the network on the PT and QL families |
+| Tape printer: did the roll change | `roll_tracker` compares the probe with the stored roll record; the printer reports no tape colour, so the operator is asked when the roll changes |
+| Page printer (IPP): status and supplies | `IppStatusProducer`, polled with a failure backoff |
+| Is the cached status still good | `status_freshness`: older than 90 s or three probe intervals (whichever is longer) shows as unknown |
 
 ## Print queue ([ADR 0005](decisions/0005-print-queue-is-mandatory.md))
 
@@ -153,16 +179,14 @@ For Pangolin specifically, the **Two-Resources pattern** is used:
 1. Main UI: SSO-protected, full domain; the resource injects the trust token header the hub requires (`LABELYARD_SSO_TRUST_TOKEN`)
 2. Webhook subroute (`/api/v1/webhook/`): SSO bypass, authenticated by `LABELYARD_WEBHOOK_API_KEY`
 
-Upgrading from the two-container release: [`migration/v-next-single-container.md`](migration/v-next-single-container.md).
-
 ## Where things live
 
 | Need | Location |
 |---|---|
 | Why a decision was made | [`decisions/`](decisions/) ADRs |
-| How to deploy the hub | [`getting-started.md`](getting-started.md) (TBD) |
-| How to add a new printer model | [`plugin-development.md`](plugin-development.md) (TBD) |
+| How to deploy the hub | [`getting-started.md`](getting-started.md) |
+| How to add a printer model or a lookup plugin | [`plugin-development.md`](plugin-development.md) |
 | API reference | `/docs` on a running hub |
-| Brother protocol details | [`research/`](research/) (TBD — to be migrated from maintainer's mono-repo) |
+| Research notes (printer protocols, IPP interoperability) | [`research/`](research/) |
 | Privacy and trademark policy | [`policies/`](policies/) |
 | Sample deployments | [`../examples/`](../examples/) |

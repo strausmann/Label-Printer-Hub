@@ -35,6 +35,20 @@ async function open(sheet: SheetRead, extra: Record<string, unknown> = {}, sessi
 }
 
 describe("the sheet detail page", () => {
+  it("id cell from flag", async () => {
+    const base = sheetRead(CODE, { used: [1, 2] }, { id_placement: "cell", id_printed: true });
+    // Both cells are written by the hub; only the flagged one holds the ID label.
+    await open({ ...base, cells: base.cells.map((c) => ({ ...c, source: "hub", is_id_cell: c.cell === 1 })) });
+    expect(cell(1)).toHaveAccessibleName(/sheet ID/);
+    expect(cell(2)).not.toHaveAccessibleName(/sheet ID/);
+  });
+
+  it("no cell is called the ID cell when the flag is off, whatever the placement says", async () => {
+    const base = sheetRead(CODE, { used: [1] }, { id_placement: "cell", id_printed: false });
+    await open({ ...base, cells: base.cells.map((c) => ({ ...c, source: "hub", is_id_cell: false })) });
+    expect(cell(1)).not.toHaveAccessibleName(/sheet ID/);
+  });
+
   it("is reachable under both paths (the QR code prints /sheet/<code>)", async () => {
     await open(sheetRead(CODE), {}, PRINT_SESSION, `/sheet/${CODE}`);
     expect(screen.getByRole("grid", { name: CODE })).toBeVisible();
@@ -99,7 +113,7 @@ describe("the sheet detail page", () => {
   it("lists 'Cell n → purpose · source' with the source in words", async () => {
     const sheet = byHand(sheetRead(CODE, { used: [1, 2, 3, 4] }), [1]);
     sheet.cells[1] = { ...sheet.cells[1]!, source: "grocy", purpose: "flour 1 kg" };
-    sheet.cells[2] = { ...sheet.cells[2]!, source: "hub", purpose: null };
+    sheet.cells[2] = { ...sheet.cells[2]!, source: "hub", purpose: null, is_id_cell: true };
     sheet.cells[3] = { ...sheet.cells[3]!, source: "kept-app", purpose: "tag" };
     await open(sheet);
     const list = screen.getByRole("list", { name: "Cells in use" });

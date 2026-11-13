@@ -38,9 +38,10 @@ COPY frontend/ ./
 # The build fails on a licence outside the policy and writes the web licence list and its CycloneDX document.
 COPY licence-policy.yml /licence-policy.yml
 ENV LICENCE_POLICY=/licence-policy.yml
+# The bundle knows the version it was built for; the hub reports its own and a mismatch reloads (#288).
 # Placed directly before the build so a new version never invalidates the `pnpm install` layer above.
 ARG VERSION=0.0.0-dev
-ENV HUB_VERSION=${VERSION}
+ENV HUB_VERSION="${VERSION}"
 RUN pnpm build && mkdir /dist && cp -r dist/. /dist/
 
 # -----------------------------------------------------------------------------
@@ -131,7 +132,7 @@ LABEL org.opencontainers.image.title="label-printer-hub-backend" \
       org.opencontainers.image.url="https://github.com/strausmann/label-printer-hub" \
       org.opencontainers.image.source="https://github.com/strausmann/label-printer-hub" \
       org.opencontainers.image.documentation="https://github.com/strausmann/label-printer-hub/tree/main/docs" \
-      org.opencontainers.image.authors="Björn Strausmann <strausmannservices@googlemail.com>" \
+      org.opencontainers.image.authors="Björn Strausmann <projects@strausmann.ch>" \
       org.opencontainers.image.vendor="strausmann (independent open-source project; not affiliated with Brother Industries, Ltd.)" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}" \
@@ -154,7 +155,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000 \
     # uvicorn FORWARDED_ALLOW_IPS default — safe restriction to localhost only.
     # Deployments behind a reverse proxy must override this with the proxy's
-    # IP or CIDR via the FORWARDED_ALLOW_IPS env var.
+    # single address via the FORWARDED_ALLOW_IPS env var; no subnet.
     FORWARDED_ALLOW_IPS=127.0.0.1
 
 # Minimal runtime deps:

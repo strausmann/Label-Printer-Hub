@@ -34,6 +34,7 @@ from app.sheets.reservation import (
     margin_id_in_flight,
     release,
     reserve,
+    reserve_exact,
 )
 from app.sheets.sheet_service import MarkedCell
 from sqlalchemy import delete, func, select
@@ -738,3 +739,29 @@ async def test_reading_many_existing_sheets_costs_a_fixed_number_of_statements(
     two = await statements(2)
     twenty = await statements(18)  # the remaining sheets
     assert twenty <= two + 4, (two, twenty)
+
+
+async def test_reserve_exact_hands_back_the_cells_in_the_order_it_was_given(session: Any) -> None:
+    """266-12: the retry of a page job reserves the cells of the first attempt in the caller's
+    order (not sorted by number), the ID cell first. The answer is what the job carries on."""
+    code = await make_sheet(session)
+    given = [
+        (9, ItemMeta("api", "nine", "r-9")),
+        (2, ItemMeta("api", "two", "r-2")),
+        (5, ItemMeta("api", "five", "r-5")),
+    ]
+
+    page = await reserve_exact(
+        session,
+        job_id=uuid4(),
+        sheet_code=code,
+        cells=given,
+        id_cell=1,
+        hw_margins_hmm=None,
+        margin=MARGIN,
+        actor="tester",
+    )
+
+    assert [a.cell for a in page.assignments] == [1, 9, 2, 5]
+    assert [a.item_index for a in page.assignments] == [None, 0, 1, 2]
+    assert [a.ref for a in page.assignments[1:]] == ["r-9", "r-2", "r-5"]

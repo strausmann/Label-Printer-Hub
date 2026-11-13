@@ -5,13 +5,19 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
+from app.services.job_retention import KEEP_FINISHED_S, evict_finished
 from app.services.job_store import JobStore
+
+if TYPE_CHECKING:
+    from app.services.print_queue import PrintQueue
 
 logger = logging.getLogger(__name__)
 
 _DEFAULT_INTERVAL = timedelta(hours=24)
+_DEFAULT_EVICT_INTERVAL = timedelta(minutes=5)
 
 
 class CleanupTask:
@@ -37,6 +43,8 @@ class CleanupTask:
         retention_days: int | Callable[[], int],
         interval: timedelta = _DEFAULT_INTERVAL,
         session_purge: Callable[[], Awaitable[int]] | None = None,
+        queue: PrintQueue | None = None,
+        evict_interval: timedelta = _DEFAULT_EVICT_INTERVAL,
     ) -> None:
         if isinstance(retention_days, int):
             if retention_days < 1:
@@ -50,7 +58,11 @@ class CleanupTask:
         self._interval = interval
         # Browser sessions expired for more than a day are purged on the same schedule.
         self._session_purge = session_purge
+        # Finished jobs leave the queue's memory on their own, shorter tick (``job_retention``).
+        self._queue = queue
+        self._evict_interval = evict_interval
         self._task: asyncio.Task[None] | None = None
+        self._evict_task: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
 
     async def start(self) -> None:
@@ -58,6 +70,8 @@ class CleanupTask:
         if self._task is not None:
             return
         self._task = asyncio.create_task(self._loop(), name="job-cleanup")
+        if self._queue is not None:
+            self._evict_task = asyncio.create_task(self._evict_loop(), name="job-memory-evict")
 
     async def stop(self, timeout_s: float = 5.0) -> None:
         """Signalisiert dem Loop zu stoppen und wartet bis zu timeout_s Sekunden.
@@ -65,6 +79,18 @@ class CleanupTask:
         Nach Ablauf des Timeouts wird der Task gecancelled.
         """
         self._stopping.set()
+        if self._evict_task is not None:
+            try:
+                await asyncio.wait_for(self._evict_task, timeout=timeout_s)
+            except TimeoutError:
+                logger.warning(
+                    "CleanupTask: eviction loop did not end in %ss, cancelled", timeout_s
+                )
+            except Exception as exc:
+                # Its own errors are caught per tick; an end with an exception must still
+                # leave the daily loop stopped and the rest of the lifespan's shutdown running.
+                logger.error("CleanupTask: eviction loop had ended with %s", type(exc).__name__)
+            self._evict_task = None
         if self._task is not None:
             try:
                 await asyncio.wait_for(self._task, timeout=timeout_s)
@@ -74,6 +100,8 @@ class CleanupTask:
                     "CleanupTask hat sich nicht in %ss beendet, Task gecancelled",
                     timeout_s,
                 )
+            except Exception as exc:
+                logger.error("CleanupTask: daily loop had ended with %s", type(exc).__name__)
             self._task = None
 
     async def _loop(self) -> None:
@@ -110,3 +138,27 @@ class CleanupTask:
                     logger.info("CleanupTask: %d expired browser sessions purged", purged)
             except Exception:
                 logger.exception("CleanupTask: session purge failed")
+
+    async def _evict_loop(self) -> None:
+        """Drop finished jobs from the queue's memory every ``evict_interval``."""
+        while not self._stopping.is_set():
+            self._evict_once()
+            try:
+                await asyncio.wait_for(
+                    self._stopping.wait(), timeout=self._evict_interval.total_seconds()
+                )
+            except TimeoutError:
+                continue
+
+    def _evict_once(self) -> None:
+        if self._queue is None:
+            return
+        try:
+            evict_finished(self._queue, now=datetime.now(UTC), keep_s=KEEP_FINISHED_S)
+        except Exception:
+            logger.exception("CleanupTask: dropping finished jobs from memory failed")
+        try:
+            # 263-76: runs that wait for ``/continue`` too long give up their pictures.
+            self._queue.drop_waiting_pictures()
+        except Exception:
+            logger.exception("CleanupTask: dropping the pictures of waiting runs failed")

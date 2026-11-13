@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { test as base, expect, type Page } from "@playwright/test";
+import { test as base, expect, type APIRequestContext, type Page } from "@playwright/test";
 import { BOOTSTRAP, MAIN } from "./env";
 
 /** The key the test hub wrote for us: plaintext, never logged. */
@@ -110,7 +110,38 @@ export async function pagePrinterControl(page: Page): Promise<PagePrinterControl
   return (await response.json()) as PagePrinterControl;
 }
 
-export const test = base.extend<{ signedInPage: Page }>({
+/**
+ * Discards every held tape run of the e2e key.
+ *
+ * Held runs live in the hub's queue for the whole e2e session, not per test: a job another spec
+ * retried on a mock printer that refuses it stays as a stopped run ("Tape prints that wait for
+ * you"), and a batch left between its parts waits for ever. Both would show up in a later spec
+ * and make its outcome depend on which specs ran before it. The API key needs no CSRF token.
+ */
+export async function discardHeldRuns(request: APIRequestContext): Promise<void> {
+  const list = await request.get("/api/v1/batches/runs/held");
+  expect(list.ok(), await list.text()).toBe(true);
+  const held = (await list.json()) as Array<{ batch_id: string }>;
+  for (const run of held) {
+    const response = await request.post(`/api/v1/batches/${run.batch_id}/discard`);
+    expect(response.status(), await response.text()).toBe(204);
+  }
+}
+
+export const test = base.extend<{ signedInPage: Page; cleanHeldRuns: void }>({
+  // Automatic: every test of every spec starts without held runs (263-71).
+  cleanHeldRuns: [
+    async ({ playwright }, use) => {
+      const request = await playwright.request.newContext({ baseURL: MAIN.url, extraHTTPHeaders: { "X-Label-Hub-Key": mainKey() } });
+      try {
+        await discardHeldRuns(request);
+        await use();
+      } finally {
+        await request.dispose();
+      }
+    },
+    { auto: true },
+  ],
   signedInPage: async ({ page }, use) => {
     await page.goto("/");
     await signInWith(page, mainKey());

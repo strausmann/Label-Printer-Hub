@@ -74,6 +74,10 @@ class SQLiteJobStore(JobStore):
             job = await jobs_repo.get(session, job_id)
             if job is None:
                 return  # silent no-op (Protocol contract)
+            if job.state == JobState.DONE.value:
+                # A repeat after the removal timeout (``_persist_through_cancel``): already written.
+                logger.debug("mark_done: job %s is already done", job_id)
+                return
             if job.state != JobState.PRINTING.value:
                 logger.warning(
                     "mark_done called on job %s in state %s (expected printing)",

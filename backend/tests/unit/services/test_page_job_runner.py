@@ -7,6 +7,7 @@ is bounded by ``asyncio.timeout`` (no pytest-timeout plugin).
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID, uuid4
@@ -43,6 +44,7 @@ class _Env:
         poll_interval_s: float = 0.0,
         max_backoff_s: float = 0.0,
         sleep: Callable[[float], Any] | None = None,
+        render_timeout_s: float | None = None,
     ) -> None:
         self.fake = fake
         self.store = MemoryJobStore()
@@ -58,17 +60,22 @@ class _Env:
             notify=self._notify,
             poll_interval_s=poll_interval_s,
             max_backoff_s=max_backoff_s,
+            render_timeout_s=render_timeout_s,
             **kwargs,
         )
 
     def _notify(self, job: Job, from_state: JobState, to_state: JobState, **_: Any) -> None:
         self.events.append((from_state, to_state, job.at_printer))
 
-    async def job(self, p: PagePayload | None = None) -> PageJob:
+    async def job(self, p: PagePayload | None = None, *, api_key_id: UUID | None = None) -> PageJob:
         p = p or payload()
         row = DbJob(printer_id=self.printer.id, payload=p.model_dump(mode="json"))
         await self.store.save_queued(row)
-        return PageJob(job=Job(id=str(row.id), printer_id=self.printer.id, kind=p.kind), payload=p)
+        return PageJob(
+            job=Job(id=str(row.id), printer_id=self.printer.id, kind=p.kind),
+            payload=p,
+            api_key_id=api_key_id,
+        )
 
     async def row(self, page_job: PageJob) -> DbJob:
         row = await self.store.get(UUID(page_job.job.id))
@@ -187,27 +194,35 @@ async def test_terminal_state_is_persisted_before_it_is_published(
 
 
 @pytest.mark.parametrize("bad_state", [0, 2, 10, 99, -1])
-async def test_out_of_range_job_state_is_an_unusable_answer(
+async def test_out_of_range_job_state_is_waiting_not_a_failure(
     handler: RecordingHandler, bad_state: int
 ) -> None:
-    """A printer that keeps answering with a job-state outside 3..9 must not hold the queue."""
-    env = _Env(FakeIppPrinter(job_script=[bad_state]))
-    pj = await env.job()
-    await env.run(pj)  # bounded by the env timeout
-    assert pj.job.state == JobState.FAILED
-    assert env.ops("Get-Job-Attributes") == MAX_CONSECUTIVE_POLL_ERRORS
-    assert pj.job.error_code == "interrupted"
-    assert handler.names(UUID(pj.job.id)) == ["ended"]  # never started, never completed
+    """A job-state outside 3..9 is shown as waiting; the printer, not the hub, owns the job.
 
-
-async def test_a_valid_answer_resets_the_unusable_count(handler: RecordingHandler) -> None:
-    script = (
-        [99] * (MAX_CONSECUTIVE_POLL_ERRORS - 1) + [3] + [99] * (MAX_CONSECUTIVE_POLL_ERRORS - 1)
-    )
-    env = _Env(FakeIppPrinter(job_script=[*script, 9]))
+    It never ends the job by itself (265-08): the poll goes on until the printer says
+    something usable, however many unusable states came before.
+    """
+    script = [bad_state] * (MAX_CONSECUTIVE_POLL_ERRORS + 2) + [9]
+    env = _Env(FakeIppPrinter(job_script=script))
     pj = await env.job()
     await env.run(pj)
     assert pj.job.state == JobState.COMPLETED
+    assert env.ops("Get-Job-Attributes") == len(script)
+    assert (JobState.PRINTING, JobState.PRINTING, "waiting") in env.events
+
+
+async def test_unknown_job_state_logged_once(
+    handler: RecordingHandler, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Two polls with the same unknown state give one WARNING per job, without payload."""
+    env = _Env(FakeIppPrinter(job_script=[99, 99, 9]))
+    pj = await env.job()
+    with caplog.at_level(logging.WARNING, logger="app.services.page_job_runner"):
+        await env.run(pj)
+    unknown = [r for r in caplog.records if "unknown job-state" in r.getMessage()]
+    assert len(unknown) == 1
+    assert unknown[0].levelno == logging.WARNING
+    assert f"job {pj.job.id}: unknown job-state 99" in unknown[0].getMessage()
 
 
 async def test_completed_flow(handler: RecordingHandler) -> None:
@@ -591,6 +606,206 @@ async def test_render_error_fails_cleanly(handler: RecordingHandler) -> None:
         "started": False,
         "error_code": "render_failed",
     }
+
+
+async def test_a_render_past_its_limit_fails_render_timeout(
+    handler: RecordingHandler, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#293: the job ends ``failed/render_timeout`` and nothing is sent; the log names the job
+    by id and kind only. The thread keeps its render slot until it ends, then frees it."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+
+    def hung(_p: PagePayload) -> bytes:
+        release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    caplog.set_level(logging.WARNING)
+    try:
+        with registered(handler, render=hung):
+            env = _Env(FakeIppPrinter(), render_timeout_s=0.05)
+            pj = await env.job()
+            await env.run(pj)
+        row = await env.row(pj)
+        assert row.state == DbJobState.FAILED.value
+        assert row.error is not None and row.error.startswith("render_timeout: ")
+        assert env.ops("Print-Job") == 0
+        assert handler.ended(UUID(pj.job.id)) == {
+            "state": "failed",
+            "started": False,
+            "error_code": "render_timeout",
+        }
+        assert render_slots.stuck_renders() == 1
+        warned = [r.getMessage() for r in caplog.records if "exceeded" in r.getMessage()]
+        assert warned == [
+            f"Render page job {pj.job.id} ({pj.payload.kind}) exceeded 0.05s; its thread keeps "
+            f"a render slot until it ends (1 of {render_slots.MAX_CONCURRENT_RENDERS} slots stuck)"
+        ]
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_a_page_job_prints_with_a_single_render_slot(
+    handler: RecordingHandler, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deadlock guard (#293): the runner takes one render slot per page and none inside it;
+    with only one slot the job still prints."""
+    from app.services import render_slots
+
+    slots = render_slots._current()
+    monkeypatch.setattr(slots, "gate", asyncio.Semaphore(1))
+    env = _Env(FakeIppPrinter(job_script=[9]))
+    pj = await env.job()
+    await env.run(pj)
+    assert (await env.row(pj)).state == DbJobState.DONE.value
+    assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_a_key_with_a_stuck_render_cannot_hang_the_second_slot(
+    handler: RecordingHandler,
+) -> None:
+    """F1 (#293): two runs of one key with hanging input. The first job times out and keeps
+    its slot; the second fails ``render_timeout`` at once without drawing, so one slot stays
+    free and another key's job prints."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+    drawn: list[str] = []
+
+    def render(p: PagePayload) -> bytes:
+        drawn.append(p.detail["tag"])
+        if p.detail["tag"].startswith("hang"):
+            release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    key, other = uuid4(), uuid4()
+    try:
+        with registered(handler, render=render):
+            env = _Env(FakeIppPrinter(job_script=[9]), render_timeout_s=0.05)
+            first = await env.job(payload(tag="hang-1"), api_key_id=key)
+            await env.run(first)
+            second = await env.job(payload(tag="hang-2"), api_key_id=key)
+            await env.run(second)
+            assert drawn == ["hang-1"]  # the second never got a thread
+            for pj in (first, second):
+                assert handler.ended(UUID(pj.job.id))["error_code"] == "render_timeout"
+            assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+            third = await env.job(payload(tag="ok"), api_key_id=other)
+            await env.run(third)
+            assert (await env.row(third)).state == DbJobState.DONE.value
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_two_page_jobs_of_one_key_on_two_printers_leave_a_slot(
+    handler: RecordingHandler,
+) -> None:
+    """Round 2, ruling 1: two page jobs of one key with hanging input, started together on
+    two printers. One draws and times out, the other never draws and fails
+    ``render_unavailable``; one slot stays free."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+    drawn: list[str] = []
+
+    def render(p: PagePayload) -> bytes:
+        drawn.append(p.detail["tag"])
+        release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    key = uuid4()
+    try:
+        with registered(handler, render=render):
+            one = _Env(FakeIppPrinter(), render_timeout_s=0.2)
+            two = _Env(FakeIppPrinter(), render_timeout_s=0.2)
+            a = await one.job(payload(tag="a"), api_key_id=key)
+            b = await two.job(payload(tag="b"), api_key_id=key)
+            await asyncio.gather(one.run(a), two.run(b))
+            codes = sorted(handler.ended(UUID(pj.job.id))["error_code"] for pj in (a, b))
+            assert codes == ["render_timeout", "render_unavailable"]
+            assert len(drawn) == 1
+            assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_jobs_without_a_key_cannot_hang_the_last_slot(handler: RecordingHandler) -> None:
+    """Jobs without a key share ``NO_KEY``, which may hang all slots but one: the next job
+    without a key fails ``render_unavailable`` at once, a key's job prints on the last slot."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+    drawn: list[str] = []
+
+    def render(p: PagePayload) -> bytes:
+        drawn.append(p.detail["tag"])
+        if p.detail["tag"] == "hang":
+            release.wait(TEST_TIMEOUT_S)
+        return b"%PDF-"
+
+    try:
+        with registered(handler, render=render):
+            env = _Env(FakeIppPrinter(job_script=[9]), render_timeout_s=0.05)
+            first = await env.job(payload(tag="hang"))
+            await env.run(first)
+            assert handler.ended(UUID(first.job.id))["error_code"] == "render_timeout"
+            second = await env.job(payload(tag="no-key"))
+            await env.run(second)
+            assert handler.ended(UUID(second.job.id))["error_code"] == "render_unavailable"
+            keyed = await env.job(payload(tag="key"), api_key_id=uuid4())
+            await env.run(keyed)
+            assert (await env.row(keyed)).state == DbJobState.DONE.value
+            assert drawn == ["hang", "key"]
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
+
+
+async def test_with_every_slot_stuck_a_page_job_fails_render_unavailable_at_once(
+    handler: RecordingHandler,
+) -> None:
+    """F2 (#293): no job waits in ``printing`` for a slot that may never free."""
+    import threading
+
+    from app.services import render_slots
+
+    release = threading.Event()
+
+    def hung() -> None:
+        release.wait(TEST_TIMEOUT_S)
+
+    try:
+        for _ in range(render_slots.MAX_CONCURRENT_RENDERS):
+            with pytest.raises(render_slots.RenderTimeoutError):
+                await render_slots.render_bounded(hung, label="t", owner=None, timeout_s=0.05)
+        with registered(handler):
+            env = _Env(FakeIppPrinter(), render_timeout_s=TEST_TIMEOUT_S)
+            pj = await env.job()
+            async with asyncio.timeout(TEST_TIMEOUT_S / 5):  # at once, not after the limit
+                await env.run(pj)
+        row = await env.row(pj)
+        assert row.error is not None and row.error.startswith("render_unavailable: ")
+        assert env.ops("Print-Job") == 0
+        assert handler.ended(UUID(pj.job.id)) == {
+            "state": "failed",
+            "started": False,
+            "error_code": "render_unavailable",
+        }
+    finally:
+        release.set()
+    await _until(lambda: render_slots.stuck_renders() == 0)
 
 
 async def test_handler_error_does_not_break_the_runner(handler: RecordingHandler) -> None:

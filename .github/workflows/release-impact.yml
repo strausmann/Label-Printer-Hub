@@ -1,0 +1,86 @@
+name: Release impact
+
+# Keeps version numbers honest before anything is merged into main.
+#
+# main only takes patch-level or non-releasing changes. Minor and major
+# versions come from a milestone integration branch `milestone/x.y.z` that is
+# merged into main as ONE pull request with a merge commit. The check reads the
+# PR title (used by a squash merge) and every commit of the PR (kept by a merge
+# commit) and classifies each one with the release rules of .releaserc.json.
+#
+#   head branch not milestone/*  -> only patch or none; feat / ! / BREAKING
+#                                   CHANGE fail and name the milestone branch
+#   head branch milestone/x.y.z  -> last release + highest impact must be
+#                                   x.y.z, and the GitHub milestone x.y.z must
+#                                   be open
+#   head branch milestone/x.y.x  -> patch milestone: the computed version must
+#                                   be x.y.Z (Z >= 1), so a minor or major
+#                                   change fails; the milestone x.y.x must be
+#                                   open
+#
+# Logic and tests: scripts/release_impact.py, scripts/test_release_impact.py.
+# The same script guards the release itself (verifyReleaseCmd in .releaserc.json).
+# See CONTRIBUTING.md, "Milestones, branches and releases", and ADR 0025.
+#
+# Untrusted input (title, branch names) reaches the script only through env
+# and argv, never through `${{ }}` inside `run:`.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: release-impact-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: release-impact unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Run the unit tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
+  release-impact:
+    name: release-impact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read  # tags and history
+      issues: read    # open milestones
+    steps:
+      # Full history and tags: the last release is the highest vX.Y.Z tag
+      # reachable from the base, and the PR's commits are base..head.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Classify the PR and check the target
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/release_impact.py check
+          --repo "$REPO"
+          --title "$PR_TITLE"
+          --head-ref "$HEAD_REF"
+          --head-repo "$HEAD_REPO"
+          --base-repo "$BASE_REPO"
+          --base-sha "$BASE_SHA"
+          --head-sha "$HEAD_SHA"

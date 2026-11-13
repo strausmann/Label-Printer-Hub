@@ -1,6 +1,8 @@
 name: Sheet type dimensions
 description: Report wrong dimensions of a sheet type, or confirm that they are right
 title: "[sheet type] "
+# Triage: reporters cannot set labels. A maintainer labels the issue from the `kind` field below
+# (see "Triage" in CONTRIBUTING.md).
 labels:
   - "area:sheets"
 body:

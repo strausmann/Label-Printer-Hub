@@ -33,10 +33,13 @@ References:
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 
 from fastapi import Header, HTTPException, Request, status
 
+from app.auth.dependencies import enforce_key_rate_limit
+from app.config import get_settings
 from app.settings_store import SettingsStore
 
 
@@ -67,3 +70,16 @@ async def require_webhook_key(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",
         )
+
+
+async def enforce_webhook_rate_limit(
+    x_api_key: str = Header(..., alias="X-API-Key"),
+) -> None:
+    """Consume one token of the webhook key's per-minute bucket (429 with ``Retry-After``).
+
+    Runs after ``require_webhook_key`` (list it second in ``dependencies``): a call with a wrong
+    key never reaches it, so it uses no token. One bucket per key, shared by both webhook
+    routes; the bucket is named by a short hash, so the key itself is never stored or shown.
+    """
+    digest = hashlib.sha256(x_api_key.encode()).hexdigest()[:16]
+    enforce_key_rate_limit(("webhook", digest), get_settings().webhook_limit_per_minute, "webhook")

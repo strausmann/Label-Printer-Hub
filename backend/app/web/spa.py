@@ -5,10 +5,10 @@ container and no proxy hop between them.
 
 ``mount_spa`` registers one catch-all GET route *after* every router. Anything
 no other route matched is answered with ``index.html`` so client-side routes
-survive a reload, except ``/api/...``, the interactive API docs and the OpenAPI
-document, which keep their JSON 404. Requests for ``/assets/...`` that do not
-exist are a real 404 as well: handing a browser HTML where it asked for a
-script only hides the problem.
+survive a reload, except ``/api/...``, the interactive API docs, the OpenAPI
+document and unknown ``/licenses/...`` files, which keep their JSON 404. Requests for
+``/assets/...`` that do not exist are a real 404 as well: handing a browser HTML where it
+asked for a script only hides the problem.
 
 When ``dist_dir/index.html`` is missing the hub runs API-only: one warning is
 logged and nothing is mounted (tests and the backend-only compose example rely
@@ -30,7 +30,12 @@ IMMUTABLE = "public, max-age=31536000, immutable"
 NO_CACHE = "no-cache"
 
 # Paths owned by the API; never answered with the app shell.
-_RESERVED_PREFIXES = ("api/", "docs", "openapi.json")
+_RESERVED_PREFIXES = ("api/", "docs", "openapi.json", "licenses/")
+
+# Reserved prefixes whose existing files are still served: ``licenses/`` holds the static
+# licence texts that ``vite build`` and the Dockerfile copy into ``dist/licenses/``. Anything
+# under it that is not such a file answers 404 and never the app shell.
+_FILE_FIRST_PREFIXES = ("licenses/",)
 
 # react-aria injects two fixed `<style>` elements at runtime: a touch-action rule
 # (id react-aria-pressable-style) and, while a modal is open on iOS, an overscroll-behavior
@@ -84,18 +89,28 @@ def mount_spa(app: FastAPI, dist_dir: Path) -> None:
 
     async def spa(request: Request) -> Response:
         full_path: str = request.path_params.get("full_path", "")
-        if _is_reserved(full_path):
+        if _is_reserved(full_path) and not full_path.startswith(_FILE_FIRST_PREFIXES):
             raise HTTPException(status_code=404, detail="Not Found")
         if full_path:
-            candidate = (root / full_path).resolve()
-            if candidate.is_file() and candidate.is_relative_to(root):
+            try:
+                candidate = (root / full_path).resolve()
+                is_file = candidate.is_file()
+            except (ValueError, OSError):  # e.g. a NUL byte in the path
+                raise HTTPException(status_code=404, detail="Not Found") from None
+            # Existing files of a reserved prefix are served only from inside that directory.
+            in_prefix = not _is_reserved(full_path) or any(
+                candidate.is_relative_to(root / prefix.rstrip("/"))
+                for prefix in _FILE_FIRST_PREFIXES
+                if full_path.startswith(prefix)
+            )
+            if is_file and candidate.is_relative_to(root) and in_prefix:
                 request.scope[_SPA_SCOPE_KEY] = True
                 is_asset = candidate.is_relative_to(root / "assets")
                 return FileResponse(
                     candidate,
                     headers={"Cache-Control": IMMUTABLE if is_asset else NO_CACHE},
                 )
-            if full_path.startswith("assets/"):
+            if full_path.startswith("assets/") or _is_reserved(full_path):
                 raise HTTPException(status_code=404, detail="Not Found")
         response = serve_index(request)
         assert response is not None  # index existed at mount time

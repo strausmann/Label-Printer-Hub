@@ -154,3 +154,73 @@ async def test_tape_404_cases_are_declared_in_openapi(api) -> None:
     desc = op["responses"]["404"]["description"]
     for phrase in ("Not polled", "older than", "no tape", "no cached status"):
         assert phrase in desc
+
+
+async def test_offline_printer_reports_no_tape(api) -> None:
+    """An offline printer shows no tape and ``/tape`` answers 404 ``printer offline`` (263-31).
+
+    The row is what ``StatusProbeProducer`` writes after a failed probe.
+    """
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(
+        factory,
+        pid,
+        {"online": False, "loaded_tape_mm": None, "media_raw": None, "last_error": "timed out"},
+    )
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert r.status_code == 404
+    assert r.json() == {"detail": "printer offline"}
+    status = (await client.get(f"/api/v1/printers/{pid}/status")).json()
+    assert status["online"] is False
+    assert status["tape_loaded"] is None
+    assert status["tape_width_mm"] is None
+    assert status["tape_colour"] is None
+    assert status["roll_prompt"] is False
+
+
+async def test_offline_row_with_a_leftover_tape_still_reports_none(api) -> None:
+    """A row written before the producer cleared the tape must not resurrect it."""
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, {"online": False, "loaded_tape_mm": 62, "media_raw": "62mm"})
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert (r.status_code, r.json()["detail"]) == (404, "printer offline")
+    status = (await client.get(f"/api/v1/printers/{pid}/status")).json()
+    assert status["tape_loaded"] is None and status["tape_width_mm"] is None
+
+
+async def test_tape_404_body_matches_model(api) -> None:
+    """The 404 body is the ``{"detail": ...}`` FastAPI sends, and OpenAPI describes exactly that."""
+    from app.schemas.problem import DetailError
+
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, {"online": False, "loaded_tape_mm": None})
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert r.status_code == 404
+    assert set(r.json()) == {"detail"}
+    assert DetailError.model_validate(r.json()).detail == "printer offline"
+    spec = app.openapi()
+    for path in ("/api/v1/printers/{printer_id}/tape", "/api/v1/printers/{printer_id}/status"):
+        schema = spec["paths"][path]["get"]["responses"]["404"]["content"]["application/json"][
+            "schema"
+        ]
+        assert schema == {"$ref": "#/components/schemas/DetailError"}
+
+
+async def test_tape_endpoint_returns_every_tape_read_field(api) -> None:
+    from app.models.printer_roll import PrinterRoll
+
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, {"online": True, "loaded_tape_mm": 12, "media_raw": "12mm"})
+    async with factory() as s:
+        s.add(PrinterRoll(printer_id=pid, width_mm=12, media_raw="12mm", colour="red"))
+        await s.commit()
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid}, labels={12: "12mm"})
+    body = (await client.get(f"/api/v1/printers/{pid}/tape")).json()
+    assert body == {"width_mm": 12, "label": "12mm", "media_raw": "12mm", "colour": "red"}

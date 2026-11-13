@@ -1,6 +1,6 @@
 # Migrating to Labelyard
 
-Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a rewrite: your data, your API keys and your API clients carry over. The reasons and the full compatibility table are in [ADR 0025](../decisions/0025-rename-to-labelyard.md).
+Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a rewrite: your data, your API keys and your API clients carry over. The reasons and the full compatibility table are in [ADR 0026](../decisions/0026-rename-to-labelyard.md).
 
 ## What changes
 

@@ -13,7 +13,7 @@ class FakeEventSource {
   closed = false;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  private listeners = new Map<string, ((e: MessageEvent) => void)[]>();
+  listeners = new Map<string, ((e: MessageEvent) => void)[]>();
 
   constructor(url: string, init?: { withCredentials?: boolean }) {
     this.url = url;
@@ -36,6 +36,11 @@ class FakeEventSource {
     const body = JSON.stringify({ channel: "hub", printer_id: printerId, type, ts: "2026-01-01T00:00:00Z", data });
     for (const fn of this.listeners.get(type) ?? []) fn(new MessageEvent(type, { data: body }));
   }
+}
+
+function hello(source: FakeEventSource, payload: unknown) {
+  const listeners = (source as unknown as { listeners: Map<string, ((e: MessageEvent) => void)[]> }).listeners.get("hello") ?? [];
+  for (const fn of listeners) fn(new MessageEvent("hello", { data: JSON.stringify(payload) }));
 }
 
 const last = () => FakeEventSource.instances[FakeEventSource.instances.length - 1]!;
@@ -74,16 +79,54 @@ describe("useHubEvents", () => {
     expect(result.current.connected).toBe(true);
   });
 
+  it("shows the new-version banner from the hello frame", async () => {
+    const updates = await import("../app/updates");
+    updates.setVersionCheckForTest({ buildVersion: "1.5.0" });
+    const { result: banner } = renderHook(() => updates.useNeedRefresh());
+    setup();
+    expect(banner.current).toBe(false);
+    act(() => hello(last(), { version: "1.6.0" }));
+    expect(banner.current).toBe(true);
+    updates.resetUpdatesForTest();
+  });
+
+  it("notices a new version after the hub was down for many retries, once it is back", async () => {
+    const updates = await import("../app/updates");
+    updates.setVersionCheckForTest({ buildVersion: "1.5.0" });
+    const { result: banner } = renderHook(() => updates.useNeedRefresh());
+    setup();
+    act(() => last().open());
+    // The hub restarts: the stream fails again and again (delays double up to the 30 s ceiling and stay there).
+    for (let attempt = 0; attempt < 8; attempt++) {
+      act(() => last().fail());
+      act(() => void vi.advanceTimersByTime(31_000));
+    }
+    expect(FakeEventSource.instances.length).toBeGreaterThanOrEqual(9);
+    expect(banner.current).toBe(false);
+    // It is back, with the new version: the greeting after the reconnect raises the banner.
+    act(() => last().open());
+    act(() => hello(last(), { version: "1.6.0" }));
+    expect(banner.current).toBe(true);
+    updates.resetUpdatesForTest();
+  });
+
+  it("ignores a hello frame it cannot read", () => {
+    setup();
+    const fns = (last() as unknown as { listeners: Map<string, ((e: MessageEvent) => void)[]> }).listeners.get("hello") ?? [];
+    expect(fns).toHaveLength(1);
+    expect(() => fns[0]!(new MessageEvent("hello", { data: "not json" }))).not.toThrow();
+  });
+
   it("job.state_changed invalidates jobs and the printer queue", () => {
     const { invalidate } = setup();
     act(() => last().emit("job.state_changed", "p1"));
     expect(keys(invalidate)).toEqual([["jobs"], ["printers", "p1", "queue"]]);
   });
 
-  it("printer.status invalidates printers and the printer", () => {
+  it("printer.status invalidates the printers prefix once, which reaches the printer's own queries", () => {
     const { invalidate } = setup();
     act(() => last().emit("printer.status", "p1"));
-    expect(keys(invalidate)).toEqual([["printers"], ["printers", "p1"]]);
+    expect(keys(invalidate)).toEqual([["printers"]]);
   });
 
   it("printer.tape_changed invalidates the printer", () => {
@@ -107,10 +150,10 @@ describe("useHubEvents", () => {
     expect(keys(invalidate)).toEqual([["jobs", "held-runs"]]);
   });
 
-  it("printer.identity_mismatch invalidates the printers and the printer, status included", () => {
+  it("printer.identity_mismatch invalidates the printers prefix once, status included", () => {
     const { invalidate } = setup();
     act(() => last().emit("printer.identity_mismatch", "p1", { mismatch: true, since: "2026-11-09T10:00:00Z" }));
-    expect(keys(invalidate)).toEqual([["printers"], ["printers", "p1"]]);
+    expect(keys(invalidate)).toEqual([["printers"]]);
   });
 
   it("an event without a printer id only invalidates the lists", () => {

@@ -62,7 +62,10 @@ for inclusion in the Work.
 
 ## Signing the CLA
 
-By opening a pull request to this repository, you affirm that you have read
-this CLA and agree to its terms for the Contribution(s) included in that pull
-request. The pull request template includes an acknowledgement checkbox that
-must be ticked before review.
+You sign this CLA once, through [CLA assistant](https://cla-assistant.io/).
+When you open your first pull request, the CLA assistant bot comments with a
+link; follow it, sign in with GitHub and accept. The pull request carries the
+`license/cla` status check, which must pass before the pull request can be
+merged. Your signature covers all your later Contributions to the Project.
+
+If this CLA changes, CLA assistant asks you to sign the new version.

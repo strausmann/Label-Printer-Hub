@@ -29,6 +29,12 @@ Jobs are persisted in **SQLite** before being placed on the in-memory queue. Aft
 > (`printer_interrupted`), because the printer may or may not have printed it. A label of a tape run that waited
 > for the user's confirmation fails with `tape_run_interrupted`, since that confirmation is not kept across a restart.
 > `printing` page jobs stay as they are: the IPP printer still holds them, and the queue resumes or settles them.
+>
+> **Update (1.5.x):** Recovered rows that belong to one tape run (`payload.tape_run.run_id`) are re-batched: they come
+> back as one batch, in the order the rows were created, so the printer feeds the run with one pre-roll instead of
+> one per label. Rows without a run id stay single jobs. A recovered run is not continuable: its labels that waited
+> for a confirmation have already failed, so no further sub-job follows. Terminal jobs also leave the queue's memory
+> an hour after they ended (`job_retention.evict_finished`); their rows stay in SQLite.
 
 **Job state machine:**
 

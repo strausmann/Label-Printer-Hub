@@ -26,13 +26,12 @@ const LONG_LIST = 30;
 type CellData = SheetRead["cells"][number];
 type Mode = "view" | "mark" | "unmark";
 
-/** The words for who wrote a cell: an integration by its name, the hub's own ID, a hand mark, any other client as sent. */
+/** The words for who wrote a cell: an integration by its name, a hand mark, any other client as sent. The ID label is told by `is_id_cell`, not by this. */
 function useSourceName(): (source: string) => string {
   const { t } = useLingui();
   const appName = useAppName();
   return (source) => {
     if (isLookupApp(source)) return appName(source);
-    if (source === "hub") return t({ message: "Sheet ID", context: "cell source" });
     if (source === "manual") return t({ message: "marked by hand", context: "cell source" });
     return source;
   };
@@ -45,7 +44,7 @@ function useCellLine(): (cell: CellData) => string {
   return (cell) => {
     const n = cell.cell;
     const purpose = cell.purpose && cell.purpose.trim() !== "" ? cell.purpose : t`no purpose`;
-    const source = sourceName(cell.source);
+    const source = cell.is_id_cell ? t({ message: "Sheet ID", context: "cell source" }) : sourceName(cell.source);
     return t`Cell ${n} → ${purpose} · ${source}`;
   };
 }
@@ -73,8 +72,9 @@ function Time({ iso, withTime }: { iso: string; withTime?: boolean }) {
   );
 }
 
-function toGridCell(c: CellData, hasId: boolean): GridCell {
-  return { cell: c.cell, state: c.state, purpose: c.purpose ?? undefined, isId: hasId && c.source === "hub" };
+/** The ID cell is the one the hub flags (`is_id_cell`); it is never inferred from `source`, which any hub-written cell has. */
+function toGridCell(c: CellData): GridCell {
+  return { cell: c.cell, state: c.state, purpose: c.purpose ?? undefined, isId: c.is_id_cell };
 }
 
 function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean }) {
@@ -109,12 +109,11 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   );
 
   const gridCells: GridCell[] = useMemo(() => {
-    const idInCell = sheet.id_placement === "cell";
-    const cells = sheet.cells.filter((c) => !(mode === "unmark" && chosen.includes(c.cell))).map((c) => toGridCell(c, idInCell));
+    const cells = sheet.cells.filter((c) => !(mode === "unmark" && chosen.includes(c.cell))).map(toGridCell);
     // What the choice will be: chosen cells to mark show as used, chosen cells to un-mark as free.
     if (mode === "mark") for (const cell of chosen) cells.push({ cell, state: "used" });
     return cells;
-  }, [sheet.cells, sheet.id_placement, mode, chosen]);
+  }, [sheet.cells, mode, chosen]);
 
   const selectable = (c: GridCell) => (mode === "mark" ? !byNumber.has(c.cell) : mode === "unmark" ? handMarked.has(c.cell) : false);
 

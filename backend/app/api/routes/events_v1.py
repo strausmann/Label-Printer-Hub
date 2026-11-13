@@ -16,6 +16,12 @@ restriction) and to ``printer:{id}:{queue,state,tape}`` of each
 enabled printer (or only the requested one), never to printers outside the caller's
 ``allowed_printer_ids``. Printers that appear later (``hub.printers_changed``) are
 picked up without reconnecting.
+
+An API key without ``admin`` scope gets the job events of the ``queue`` channel
+(``job.state_changed``, ``run.state_changed``) and the snapshot's job frames only for the
+jobs and tape runs it submitted (#294); printer events stay printer-scoped. A browser session
+signed in with such a key is bound to it the same way. SSO users and admin keys (also an
+admin key's session) see every job of their printers.
 """
 
 from __future__ import annotations
@@ -30,13 +36,18 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy import select
+from sqlmodel import col
 from starlette.background import BackgroundTask
 
 import app.db.engine as db_engine
 from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext
+from app.auth.ownership import owner_key_of, owner_only
 from app.auth.scope_deps import require_read_stream
 from app.config import Settings, get_settings
+from app.models.job import Job
+from app.models.print_batch import PrintBatch
 from app.observability.sse_metrics import (
     sse_active_subscribers,
     sse_connections_total,
@@ -66,6 +77,14 @@ HUB_CHANNEL = "hub"
 PRINTERS_CHANGED = "hub.printers_changed"
 AUTH_EXPIRED = "auth.expired"
 _PRINTER_CHANNEL_SUFFIXES = ("queue", "state", "tape")
+
+
+def _hello_frame() -> str:
+    """``event: hello`` with the running hub version (#288)."""
+    # Imported lazily: app.main imports this module.
+    from app.main import HUB_VERSION
+
+    return f"event: hello\ndata: {json.dumps({'version': HUB_VERSION})}\n\n"
 
 
 def printer_channels(printer_id: str | uuid.UUID) -> list[str]:
@@ -145,6 +164,96 @@ async def _current_printer_ids(
     return list(auth.allowed_printer_ids)
 
 
+JOB_STATE_CHANGED = "job.state_changed"
+RUN_STATE_CHANGED = "run.state_changed"
+# Owners per stream that are remembered; ownership never changes, so the cache only saves
+# lookups. Cleared when full, so a long stream cannot grow it without bound.
+_OWNER_CACHE_MAX = 4096
+
+
+def _snapshot_scope(auth: AuthContext) -> dict[str, Any]:
+    """``build_snapshot`` keywords: a plain API key's snapshot lists its own jobs only (#294)."""
+    if not owner_only(auth):
+        return {}
+    if auth.api_key_id is None:
+        return {"no_jobs": True}
+    return {"jobs_of_key": auth.api_key_id}
+
+
+class _OwnerFilter:
+    """Which events of the ``queue`` channel a plain API key may see (#294).
+
+    A ``job.state_changed`` frame passes when the job row names this key, a
+    ``run.state_changed`` frame when the tape run (in the queue, else its batch row) does.
+    Everything else on a ``queue`` channel, an unknown id, a row that is gone and a lookup
+    that fails are not delivered (fail closed). Events of other channels always pass.
+    """
+
+    def __init__(self, key_id: uuid.UUID | None, queue: PrintQueue | None) -> None:
+        self._key = key_id
+        self._queue = queue
+        self._jobs: dict[str, bool] = {}
+        self._runs: dict[str, bool] = {}
+
+    async def visible(self, event: BusEvent) -> bool:
+        if not event.channel.endswith(":queue"):
+            return True
+        if self._key is None:
+            return False
+        if event.event_type == JOB_STATE_CHANGED:
+            return await self._job(str(event.data.get("job_id", "")))
+        if event.event_type == RUN_STATE_CHANGED:
+            return await self._run(str(event.data.get("run_id", "")))
+        return False
+
+    @staticmethod
+    def _remember(cache: dict[str, bool], key: str, visible: bool) -> bool:
+        if len(cache) >= _OWNER_CACHE_MAX:
+            cache.clear()
+        cache[key] = visible
+        return visible
+
+    async def _job(self, job_id: str) -> bool:
+        if (cached := self._jobs.get(job_id)) is not None:
+            return cached
+        try:
+            jid = uuid.UUID(job_id)
+            # A client that disconnects cancels this query mid-flight; CancelledError is not an
+            # Exception, so it propagates and the session closes in __aexit__. In the tests a
+            # cancelled SQLite query can stall the loop's teardown (fix round 1), in uvicorn it
+            # is the same pattern as the credential re-check of this stream.
+            async with db_engine.async_session() as db:
+                row = (
+                    await db.execute(select(col(Job.api_key_id)).where(col(Job.id) == jid))
+                ).first()
+        except Exception:
+            return False
+        if row is None:
+            return False  # not remembered: a row that is not visible yet may still appear
+        return self._remember(self._jobs, job_id, row[0] == self._key)
+
+    async def _run(self, run_id: str) -> bool:
+        if (cached := self._runs.get(run_id)) is not None:
+            return cached
+        try:
+            rid = uuid.UUID(run_id)
+            info = self._queue.run_info(rid) if self._queue is not None else None
+            if info is not None:
+                return self._remember(self._runs, run_id, info.api_key_id == self._key)
+            async with db_engine.async_session() as db:
+                created_by = (
+                    await db.execute(
+                        select(col(PrintBatch.created_by)).where(col(PrintBatch.id) == rid)
+                    )
+                ).scalar_one_or_none()
+        except Exception:
+            return False
+        if created_by is None:
+            return False
+        # Tape batches store the bare key id, sheet batches "key:<uuid>" (#294).
+        return self._remember(self._runs, run_id, owner_key_of(created_by) == str(self._key))
+
+
 class _Subscriptions:
     """The queues one stream listens on, keyed by channel."""
 
@@ -192,6 +301,8 @@ async def _event_stream(
 ) -> AsyncGenerator[str, None]:
     queue: PrintQueue | None = getattr(request.app.state, "print_queue", None)
     runtime: PrinterRuntime | None = getattr(request.app.state, "printer_runtime", None)
+    owners = _OwnerFilter(auth.api_key_id, queue) if owner_only(auth) else None
+    scope = _snapshot_scope(auth)
     sse_connections_total.labels(printer_id=only_printer or "all").inc()
     sse_active_subscribers.inc()
     _log.info("SSE v1 connect: subscriber=%s printers=%d", subscriber_id, len(printer_ids))
@@ -199,6 +310,8 @@ async def _event_stream(
         for pid in printer_ids:
             subs.add(printer_channels(pid))
         yield ": connected\n\n"
+        # EventSource cannot read response headers, so the version travels in the stream too.
+        yield _hello_frame()
 
         # Subscriptions are in place before the snapshot, so nothing between the two is lost.
         # Read everything first and yield after the session is closed: a slow client must
@@ -207,7 +320,7 @@ async def _event_stream(
         async with db_engine.async_session() as db:
             for pid in printer_ids:
                 snapshot.extend(
-                    await build_snapshot(db, uuid.UUID(pid), queue=queue, runtime=runtime)
+                    await build_snapshot(db, uuid.UUID(pid), queue=queue, runtime=runtime, **scope)
                 )
         for item in snapshot:
             yield _snapshot_frame(item)
@@ -264,10 +377,14 @@ async def _event_stream(
                         channel=event.channel, subscriber_id=subscriber_id
                     ).inc(dropped)
                 sse_events_published_total.labels(channel=event.channel).inc()
+                if owners is not None and not await owners.visible(event):
+                    continue  # another key's job (#294)
                 if event.event_type == PRINTERS_CHANGED:
                     if not _hub_event_visible(event, only_printer, allowed):
                         continue
-                    async for frame in _follow_printer_change(subs, event, allowed, queue, runtime):
+                    async for frame in _follow_printer_change(
+                        subs, event, allowed, queue, runtime, scope
+                    ):
                         yield frame
                 yield _event_frame(event)
     finally:
@@ -282,6 +399,7 @@ async def _follow_printer_change(
     allowed: list[str],
     queue: PrintQueue | None = None,
     runtime: PrinterRuntime | None = None,
+    scope: dict[str, Any] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Make the printer's subscriptions match its persisted ``enabled`` state.
 
@@ -304,7 +422,9 @@ async def _follow_printer_change(
         if newly_subscribed:
             # Subscribe before the snapshot, as at connect, so nothing in between is lost.
             subs.add(printer_channels(pid))
-            items = await build_snapshot(db, printer_uuid, queue=queue, runtime=runtime)
+            items = await build_snapshot(
+                db, printer_uuid, queue=queue, runtime=runtime, **(scope or {})
+            )
     if not enabled:
         subs.drop(printer_channels(pid))
     for item in items:
@@ -318,7 +438,9 @@ async def _follow_printer_change(
         "``text/event-stream`` with JSON frames ``{channel, printer_id, type, ts, data}``. "
         "Without ``printer_id`` it carries every printer the caller may see plus the "
         "``hub`` channel (``hub.printers_changed``) and the ``sheets`` channel "
-        "(``sheet.updated``). Ends with ``auth.expired`` when the "
+        "(``sheet.updated``). An API key without ``admin`` scope gets ``job.state_changed`` "
+        "and ``run.state_changed`` (live and in the snapshot) only for the jobs and tape runs "
+        "it submitted. Ends with ``auth.expired`` when the "
         "session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 "
         "when the credentials exclude it, 429 when ``LABELYARD_SSE_MAX_SUBSCRIBERS`` "
         "connections are open."

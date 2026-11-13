@@ -388,6 +388,10 @@ msgstr "A sheet type with the key {existingKey} already exists. Add this geometr
 msgid "A sheet type with this key already exists."
 msgstr "A sheet type with this key already exists."
 
+#: src/features/archive/errors.ts
+msgid "A text is too long."
+msgstr "A text is too long."
+
 #: src/features/settings/feedback.tsx
 msgid "A tray is set that the printer does not report. Read the printer again."
 msgstr "A tray is set that the printer does not report. Read the printer again."
@@ -697,6 +701,10 @@ msgstr "Calibration"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Calibration for this printer will appear here."
 msgstr "Calibration for this printer will appear here."
+
+#: src/features/printers/PrinterDetail.tsx
+msgid "Calibration is held until an admin settles the device swap."
+msgstr "Calibration is held until an admin settles the device swap."
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/model.ts
@@ -1171,7 +1179,7 @@ msgstr "Device swap"
 msgid "Diameter (mm)"
 msgstr "Diameter (mm)"
 
-#: src/features/printers/PrinterCard.tsx
+#: src/features/printers/model.ts
 msgid "Different device"
 msgstr "Different device"
 
@@ -1275,6 +1283,10 @@ msgstr "Download settings"
 #: src/features/lookup/LabelPreview.tsx
 msgid "Drawing the label…"
 msgstr "Drawing the label…"
+
+#: src/features/jobs/jobErrorText.ts
+msgid "Drawing the page took too long."
+msgstr "Drawing the page took too long."
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Drawing the sheet…"
@@ -1560,6 +1572,10 @@ msgstr "Host"
 #: src/features/settings/sections.tsx
 msgid "How long finished jobs stay in the history."
 msgstr "How long finished jobs stay in the history."
+
+#: src/features/printers/PageStatus.tsx
+msgid "How to turn on status discovery"
+msgstr "How to turn on status discovery"
 
 #. placeholder {0}: test.data.status
 #: src/features/settings/Integrations.tsx
@@ -2063,6 +2079,10 @@ msgstr "No camera was found on this device. Choose a photo of the code instead."
 msgid "No cell is in use."
 msgstr "No cell is in use."
 
+#: src/features/archive/TypeForm.tsx
+msgid "No change: the measurements are the same as in the current version."
+msgstr "No change: the measurements are the same as in the current version."
+
 #: src/features/settings/Integrations.tsx
 msgid "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
 msgstr "No client keys yet. Create one under <0>Access and keys</0>, named after the client (for example “Kept”)."
@@ -2074,6 +2094,10 @@ msgstr "No code found in this photo. Hold the camera closer and try again."
 #: src/features/calibration/CalibrationPage.tsx
 msgid "No correction stored for this tray."
 msgstr "No correction stored for this tray."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "No drawing slot became free in time; the page was not drawn. Try again later."
+msgstr "No drawing slot became free in time; the page was not drawn. Try again later."
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "No hardware identity — device swaps are not detected"
@@ -2405,6 +2429,10 @@ msgstr "Open Settings › Integrations"
 msgid "Open the job"
 msgstr "Open the job"
 
+#: src/features/printers/PageStatus.tsx
+msgid "Open the printer settings"
+msgstr "Open the printer settings"
+
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Open the sheet"
 msgstr "Open the sheet"
@@ -2653,6 +2681,14 @@ msgid "Printer is paused"
 msgstr "Printer is paused"
 
 #: src/features/printers/TestPrintButton.tsx
+msgid "Printer is stopped"
+msgstr "Printer is stopped"
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "Printer is stopped: {reasons}"
+msgstr "Printer is stopped: {reasons}"
+
+#: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
 msgstr "Printer status unknown"
 
@@ -2686,6 +2722,8 @@ msgid "Printing and marking cells need a print or admin key."
 msgstr "Printing and marking cells need a print or admin key."
 
 #: src/features/calibration/CalibrationPage.tsx
+#: src/features/lookup/CartPage.tsx
+#: src/features/lookup/ItemView.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Printing needs a print or admin key."
 msgstr "Printing needs a print or admin key."
@@ -2919,6 +2957,10 @@ msgstr "Resume"
 msgid "Retry"
 msgstr "Retry"
 
+#: src/features/jobs/JobDetail.tsx
+msgid "Retrying and cancelling need a print or admin key."
+msgstr "Retrying and cancelling need a print or admin key."
+
 #: src/features/jobs/RetryError.tsx
 msgid "Retrying needs a print or admin key."
 msgstr "Retrying needs a print or admin key."
@@ -2996,6 +3038,7 @@ msgstr "S1, S2 … number the gaps between columns (solid lines)."
 msgid "Same device"
 msgstr "Same device"
 
+#: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
 msgid "Save"
@@ -3454,6 +3497,10 @@ msgstr "State"
 msgid "state unknown"
 msgstr "state unknown"
 
+#: src/features/printers/PageStatus.tsx
+msgid "Status discovery is off for this printer. An admin can turn it on through the admin API."
+msgstr "Status discovery is off for this printer. An admin can turn it on through the admin API."
+
 #: src/features/printers/model.ts
 msgid "Status unknown"
 msgstr "Status unknown"
@@ -3545,6 +3592,7 @@ msgstr "Tape is empty"
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known"
 msgstr "Tape not known"
 
@@ -3686,6 +3734,10 @@ msgstr "The address or the certificate setting is not valid."
 msgid "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
 msgstr "The address redirects, often to a login page in front of the app. Use an address that reaches the app's API directly."
 
+#: src/features/settings/feedback.tsx
+msgid "The address saved for this printer is not valid. Enter the address again and save."
+msgstr "The address saved for this printer is not valid. Enter the address again and save."
+
 #: src/features/sheets/print/errors.ts
 msgid "The app behind an item did not answer ({code}). Check Settings › Integrations."
 msgstr "The app behind an item did not answer ({code}). Check Settings › Integrations."
@@ -3823,6 +3875,18 @@ msgstr "The horizontal pitch"
 #: src/features/archive/errors.ts
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "The horizontal pitch must not be smaller than the label width."
+
+#: src/features/sheets/print/errors.ts
+msgid "The hub cannot draw a preview right now. Try again later."
+msgstr "The hub cannot draw a preview right now. Try again later."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."
+msgstr "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."
+
+#: src/features/printers/PageStatus.tsx
+msgid "The hub cannot read this printer's status. An admin can check its address in the printer settings."
+msgstr "The hub cannot read this printer's status. An admin can check its address in the printer settings."
 
 #: src/features/jobs/RetryError.tsx
 msgid "The hub could not be reached. Try again."
@@ -3995,10 +4059,12 @@ msgid "The licence list of the web app is not included in this build."
 msgstr "The licence list of the web app is not included in this build."
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 msgstr "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 
 #: src/features/lookup/LabelPreview.tsx
+#: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is too long for this layout."
 msgstr "The link in the QR code is too long for this layout."
 
@@ -4091,6 +4157,10 @@ msgstr "The port must be between 1 and 65535."
 msgid "The prefix is fixed once sheets of this type exist."
 msgstr "The prefix is fixed once sheets of this type exist."
 
+#: src/features/sheets/print/errors.ts
+msgid "The preview took too long. Try again later."
+msgstr "The preview took too long. Try again later."
+
 #: src/features/jobs/jobErrorText.ts
 msgid "The print failed (error code {code})."
 msgstr "The print failed (error code {code})."
@@ -4179,6 +4249,14 @@ msgstr "The printer is not reachable. Check that it is switched on and connected
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The printer is not ready. The pages go into the print queue and print when it is ready again."
 msgstr "The printer is not ready. The pages go into the print queue and print when it is ready again."
+
+#: src/features/printers/TestPrintButton.tsx
+msgid "The printer is paused. Resume it, then try again."
+msgstr "The printer is paused. Resume it, then try again."
+
+#: src/features/printers/PageStatus.tsx
+msgid "The printer is switched off in the hub. An admin can switch it on in the printer settings."
+msgstr "The printer is switched off in the hub. An admin can switch it on in the printer settings."
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer is switched off in the hub. Switch it on in the printer settings."
@@ -4406,6 +4484,10 @@ msgstr "There is nothing to print yet."
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
 msgstr "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
+
+#: src/features/lookup/PrinterPicker.tsx
+msgid "These labels ask for different directions (along and across). Print them in separate runs."
+msgstr "These labels ask for different directions (along and across). Print them in separate runs."
 
 #: src/features/sheets/print/errors.ts
 msgid "These labels need {pages} pages, and at most {max} pages can be previewed at once. Print fewer labels, or print in two rounds."
@@ -4713,6 +4795,10 @@ msgstr "unverified"
 msgid "Updating the preview…"
 msgstr "Updating the preview…"
 
+#: src/shell/UpdatePrompt.tsx
+msgid "Updating…"
+msgstr "Updating…"
+
 #: src/features/settings/Integrations.tsx
 msgid "URL"
 msgstr "URL"
@@ -4787,6 +4873,14 @@ msgstr "View the job"
 #: src/features/jobs/pageJobText.ts
 msgid "Waiting at the printer"
 msgstr "Waiting at the printer"
+
+#: src/features/settings/Printers.tsx
+msgid "Waiting for the current job to finish…"
+msgstr "Waiting for the current job to finish…"
+
+#: src/features/printers/PauseReason.tsx
+msgid "Waiting for the printer's status check"
+msgstr "Waiting for the printer's status check"
 
 #: src/features/jobs/HeldRuns.tsx
 #: src/shell/PrintToasts.tsx

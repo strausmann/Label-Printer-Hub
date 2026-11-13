@@ -246,3 +246,46 @@ async def test_loaded_media_is_merged_into_configured_trays(api) -> None:
     body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
     # Only configured trays are listed; the reported media comes from the matching key.
     assert [(t["key"], t["media"]) for t in body["trays"]] == [("main-tray", "A4 labels")]
+
+
+async def test_page_status_trays_in_printer_order(api) -> None:
+    """Trays come in the order the printer lists its ``media-source-supported`` (265-05).
+
+    A tray the printer does not list (``auto``) comes last, however its key sorts.
+    """
+    from app.printer_backends.ipp.attributes import TrayLoad
+    from app.services.producers.ipp_status_producer import _offline_record
+
+    client, factory = api
+    pid = await _printer(factory, "ipp")
+    record = _offline_record(None).model_copy(
+        update={
+            "online": True,
+            "printer_state": "idle",
+            "trays": [
+                TrayLoad(key="tray-3", media=None, ready=False),
+                TrayLoad(key="tray-1", media=None, ready=False),
+                TrayLoad(key="tray-2", media=None, ready=False),
+            ],
+        }
+    )
+    async with factory() as s:
+        s.add(
+            PrinterStatusCache(
+                printer_id=pid, parsed=record.model_dump(mode="json"), captured_at=datetime.now(UTC)
+            )
+        )
+        s.add_all(
+            PrinterTray(
+                printer_id=pid,
+                tray_key=key,
+                label=key,
+                load_hint=None,
+                enabled=True,
+                is_default=key == "tray-3",
+            )
+            for key in ("tray-1", "tray-2", "tray-3", "auto")
+        )
+        await s.commit()
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
+    assert [t["key"] for t in body["trays"]] == ["tray-3", "tray-1", "tray-2", "auto"]

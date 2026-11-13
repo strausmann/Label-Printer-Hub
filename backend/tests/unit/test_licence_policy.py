@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -98,8 +99,11 @@ def test_exception_entries_are_complete() -> None:
                 "licence",
                 "reason",
                 "reviewed_expression",
+                "licence-text-sha256",
             }
         )
+        if "licence-text-sha256" in entry:
+            assert re.fullmatch(r"[0-9a-f]{64}", entry["licence-text-sha256"])
         assert entry["purl"].startswith("pkg:")
         assert entry["reason"].strip()
         key = normalise_purl(entry["purl"])

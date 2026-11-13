@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault
-from app.services.tape_status import TapeColourName
+from app.schemas.tape import TapeColourName
 
 
 class PauseRead(BaseModel):

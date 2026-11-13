@@ -447,8 +447,8 @@ async def test_resolve_binds_to_the_reviewed_device() -> None:
 
         assert resp.status_code == 409, resp.text
         detail = resp.json()["detail"]
-        assert detail["type"] == "identity-changed" and detail["status"] == 409
-        assert str(rig.printer_id) in detail["detail"]
+        assert detail["error_code"] == "identity-changed"
+        assert str(rig.printer_id) in detail["error_message"]
         for value in (SERIAL_A, SERIAL_B, SERIAL_C):
             assert value not in resp.text
         assert await _calibration_trays(rig.printer_id) == ["auto", "gone"]
@@ -575,3 +575,62 @@ async def test_409_does_not_delete_before_the_check(monkeypatch: pytest.MonkeyPa
             resp = await _resolve(rig, "replaced", expected=SERIAL_A)
 
         assert resp.status_code == 409 and deletes == 0
+
+
+async def test_identity_changed_409_shape() -> None:
+    """263-50: the 409 uses ``error_code``/``error_message`` like the other answers of the route."""
+    async with running() as rig:
+        await _flag_swap(rig)
+
+        changed = await _resolve(rig, "replaced", expected=SERIAL_C)
+        none_flagged = await _resolve(rig, "same_device", pid=await _other_printer())
+
+        assert changed.status_code == 409, changed.text
+        assert set(changed.json()["detail"]) == {"error_code", "error_message"}
+        assert changed.json()["detail"]["error_code"] == "identity-changed"
+        # the sibling 409 of the same route has the same keys
+        assert set(none_flagged.json()["detail"]) == set(changed.json()["detail"])
+
+
+async def test_replaced_adopts_before_delete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """263-50: the adopt is also the check, so it runs before the first calibration is deleted.
+
+    Records the calibration rows the session still sees when ``adopt_observed`` runs, and the
+    order of adopt and delete. A delete that moved in front of the adopt (a 409 would then have
+    to rely on the rollback) turns this red.
+    """
+    async with running() as rig:
+        await _seed_calibrations(rig.printer_id, "auto", "gone")
+        await _flag_swap(rig)
+        headers = await _admin()
+        order: list[str] = []
+        seen_at_adopt: list[int] = []
+        adopt = identity_repo.adopt_observed
+
+        async def spying_adopt(session: Any, *args: Any, **kw: Any) -> Any:
+            order.append("adopt")
+            found = await session.execute(
+                select(PrinterCalibration).where(PrinterCalibration.printer_id == rig.printer_id)  # type: ignore[arg-type]
+            )
+            seen_at_adopt.append(len(list(found.scalars())))
+            return await adopt(session, *args, **kw)
+
+        monkeypatch.setattr(identity_repo, "adopt_observed", spying_adopt)
+
+        def setup(session: Any, m: pytest.MonkeyPatch) -> None:
+            original = session.delete
+
+            async def recording(instance: object) -> None:
+                order.append("delete")
+                await original(instance)
+
+            m.setattr(session, "delete", recording)
+
+        with monkeypatch.context() as m:
+            _on_service_session(m, setup)
+            resp = await _resolve(rig, "replaced", headers)
+
+        assert resp.status_code == 200, resp.text
+        assert order == ["adopt", "delete", "delete"]
+        assert seen_at_adopt == [2], "both calibrations still exist when the adopt runs"
+        assert await _calibration_trays(rig.printer_id) == []

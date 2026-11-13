@@ -8,6 +8,7 @@ sessions racing through ``asyncio.gather``.
 from __future__ import annotations
 
 import asyncio
+import os
 import pathlib
 import shutil
 import subprocess
@@ -25,9 +26,13 @@ from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
 from app.sheets.errors import CellsTakenError
 from app.sheets.geometry import Geometry
-from app.sheets.locking import acquire_sheet_write_lock
+from app.sheets.locking import (
+    acquire_sheet_write_lock,
+    install_statement_counter,
+    uninstall_statement_counter,
+)
 from app.sheets.sheet_service import MarkedCell
-from sqlalchemy import event, func, select, text
+from sqlalchemy import Engine, event, func, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -184,8 +189,6 @@ def _alembic_upgrade_to_head(db_path: pathlib.Path) -> None:
         ini = (sandbox / "alembic.ini").read_text()
         ini = ini.replace("sqlite+aiosqlite:///./data/hub.db", f"sqlite+aiosqlite:///{db_path}")
         (sandbox / "alembic.ini").write_text(ini)
-        import os
-
         env = os.environ.copy()
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = f"{BACKEND_DIR}{os.pathsep}{existing}" if existing else str(BACKEND_DIR)
@@ -212,6 +215,7 @@ async def test_write_lock_on_migrated_schema(tmp_path: pathlib.Path) -> None:
         async with maker() as s:
             rows = (await s.execute(text("SELECT id, seq FROM sheet_write_lock"))).all()
             assert [tuple(r) for r in rows] == [(1, 0)]
+            await s.commit()  # the lock is the first statement of its transaction (264-01)
             await acquire_sheet_write_lock(s)
             await s.commit()
             rows = (await s.execute(text("SELECT id, seq FROM sheet_write_lock"))).all()
@@ -232,3 +236,69 @@ async def test_write_lock_on_migrated_schema(tmp_path: pathlib.Path) -> None:
             assert seq == 3
     finally:
         await engine.dispose()
+
+
+# --- the lock must be the first statement (264-01) --------------------------------------
+
+
+async def _lock_seq(maker: async_sessionmaker[AsyncSession]) -> int:
+    async with maker() as s:
+        return int((await s.execute(text("SELECT seq FROM sheet_write_lock"))).scalar_one())
+
+
+async def test_lock_as_first_statement_passes(factory: async_sessionmaker[AsyncSession]) -> None:
+    before = await _lock_seq(factory)
+    async with factory() as s:
+        await acquire_sheet_write_lock(s)
+        await s.commit()
+    assert await _lock_seq(factory) == before + 1
+
+
+async def test_lock_after_read_raises(factory: async_sessionmaker[AsyncSession]) -> None:
+    before = await _lock_seq(factory)
+    async with factory() as s:
+        await s.execute(select(func.count()).select_from(SheetCell))
+        with pytest.raises(RuntimeError, match="must be the first statement"):
+            await acquire_sheet_write_lock(s)
+        await s.rollback()
+        # A new transaction starts at zero again: the guard counts per transaction.
+        await acquire_sheet_write_lock(s)
+        await s.commit()
+    assert await _lock_seq(factory) == before + 1
+
+
+async def test_lock_without_counter_refuses(tmp_path: pathlib.Path) -> None:
+    """An engine without the counter must not pass as "no statement yet"."""
+    uninstall_statement_counter(Engine)  # the test engine factory installs it on the class
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'bare.db'}")
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as s:
+            with pytest.raises(RuntimeError, match="statement counter not installed"):
+                await acquire_sheet_write_lock(s)
+    finally:
+        await engine.dispose()
+        install_statement_counter(Engine)
+
+
+async def test_read_then_foreign_write_then_lock(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The case the order rule exists for: A reads, B commits a write, then A asks for the lock.
+
+    Without the guard SQLite answers A's upgrade from a stale read snapshot with
+    ``database is locked`` (SQLITE_BUSY_SNAPSHOT); with it A is refused before SQLite is asked,
+    and B's write stands.
+    """
+    async with factory() as a:
+        # The driver opens no SQLite transaction for a bare SELECT (legacy transaction control),
+        # so the read snapshot is opened explicitly, as an earlier write in the transaction would.
+        await a.execute(text("BEGIN"))
+        await a.execute(select(func.count()).select_from(SheetCell))
+        async with factory() as b:
+            await acquire_sheet_write_lock(b)
+            await b.commit()
+        seq = await _lock_seq(factory)
+        with pytest.raises(RuntimeError, match="must be the first statement"):
+            await acquire_sheet_write_lock(a)
+        await a.rollback()
+    assert await _lock_seq(factory) == seq

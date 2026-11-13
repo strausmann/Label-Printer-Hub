@@ -15,7 +15,10 @@ function walk(dir: string, ext: string): string[] {
   });
 }
 
-describe.skipIf(!required && !existsSync(dist))("built output", () => {
+const built = required || existsSync(dist);
+if (!built) console.info("built output checks skipped: dist/ is missing (run `pnpm build`; CI sets REQUIRE_DIST=1)");
+
+describe.skipIf(!built)("built output", () => {
   it("test_no_external_font_urls", () => {
     expect(existsSync(dist), "run `pnpm build` first").toBe(true);
     const files = walk(dist, ".css");
@@ -53,12 +56,42 @@ describe.skipIf(!required && !existsSync(dist))("built output", () => {
 
   it("pwa: the generated service worker never caches /api", () => {
     const sw = readFileSync(join(dist, "sw.js"), "utf8");
-    // The only route is the navigation fallback, and it skips the API, docs and OpenAPI document.
+    // The only route is the navigation fallback, and it skips the API, docs, OpenAPI document and licence texts.
     expect(sw.match(/registerRoute\(/g)).toHaveLength(1);
     expect(sw).toContain('createHandlerBoundToURL("/index.html")');
-    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/"]) expect(sw).toContain(denied);
+    for (const denied of ["/^\\/api\\//", "/^\\/docs(\\/|$)/", "/^\\/openapi\\.json$/", "/^\\/licenses\\//"])
+      expect(sw).toContain(denied);
     // Nothing under /api is precached either.
     expect(sw).not.toMatch(/["']\/?api\//);
+  });
+
+  it("pwa: the built shell links the manifest with credentials and the manifest makes the app installable", () => {
+    const html = readFileSync(join(dist, "index.html"), "utf8");
+    // Behind an auth proxy the manifest request must carry the session cookie (see src/manifest-link.test.ts).
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const links = doc.querySelectorAll('link[rel="manifest"]');
+    expect(links).toHaveLength(1);
+    expect(links[0]!.getAttribute("href")).toBe("/manifest.webmanifest");
+    expect(links[0]!.getAttribute("crossorigin")).toBe("use-credentials");
+    const m = JSON.parse(readFileSync(join(dist, "manifest.webmanifest"), "utf8")) as Record<string, unknown>;
+    expect(m.display).toBe("standalone");
+    expect(m.start_url).toBe("/");
+    expect(m.scope).toBe("/");
+    const icons = m.icons as Array<{ src: string; sizes: string; purpose?: string }>;
+    expect(icons.some((i) => i.sizes === "192x192")).toBe(true);
+    expect(icons.some((i) => i.sizes === "512x512")).toBe(true);
+    expect(icons.some((i) => i.purpose === "maskable")).toBe(true);
+    // Every icon the manifest names is in the build.
+    for (const icon of icons) expect(existsSync(join(dist, icon.src)), icon.src).toBe(true);
+  });
+
+  it("pwa: the service worker's precache requests carry the session cookie of this origin", () => {
+    // Behind an auth proxy a precache request without the cookie would be answered with a sign-in page and
+    // the worker would cache that as the app. workbox-precaching builds every install request with
+    // credentials "same-origin" (PrecacheController.install, workbox 7.4.1); keep that visible in the build.
+    const runtime = readdirSync(dist).filter((name) => /^workbox-.*\.js$/.test(name));
+    expect(runtime).toHaveLength(1);
+    expect(readFileSync(join(dist, runtime[0]!), "utf8")).toContain('credentials:"same-origin"');
   });
 
   it("ships the code reader's WebAssembly from this origin, not a CDN", () => {

@@ -130,6 +130,7 @@ def test_actions_are_pinned_to_full_commit_shas() -> None:
     sha = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
     for name in (
         "release.yml",
+        "release-tools.yml",
         "docker-publish.yml",
         "licence-gate.yml",
         "licence-backend.yml",
@@ -228,3 +229,66 @@ def test_release_toolchain_is_locked_to_exact_versions() -> None:
 def test_license_scope_is_allowed() -> None:
     text = (REPO_ROOT / "commitlint.config.cjs").read_text(encoding="utf-8")
     assert "'license'" in text
+
+
+def test_release_tools_check_always_reports_and_is_read_only() -> None:
+    """The check must exist on every PR (it is meant to become a required check)."""
+    wf = _load("release-tools.yml")
+    # YAML parses the key `on` as the boolean True.
+    triggers = wf.get("on", wf.get(True))
+    assert set(triggers) == {"pull_request", "push"}
+    for event in ("pull_request", "push"):
+        assert triggers[event]["branches"] == ["main", "milestone/**"]
+        # A paths filter would skip the check on unrelated PRs and block them once required.
+        assert "paths" not in triggers[event]
+        assert "paths-ignore" not in triggers[event]
+
+    assert wf["permissions"] == {}
+    assert list(wf["jobs"]) == ["dry-run"]
+    job = wf["jobs"]["dry-run"]
+    assert job["name"] == "release-tools dry run"  # the name the operator ruleset needs
+    assert job["permissions"] == {"contents": "read"}
+    assert "if" not in job  # a skipped job reports nothing
+
+    text = _text("release-tools.yml")
+    assert "secrets." not in text
+    assert "github.token" not in text and "GITHUB_TOKEN" not in text
+    checkout = _checkout_steps(job)
+    assert len(checkout) == 1
+    assert checkout[0]["with"]["persist-credentials"] is False
+    assert checkout[0]["with"]["fetch-depth"] == 0  # the scope check diffs base...head
+
+
+def test_release_tools_steps_gate_on_the_scope_check() -> None:
+    job = _load("release-tools.yml")["jobs"]["dry-run"]
+    steps = job["steps"]
+    scope = next(s for s in steps if s.get("id") == "scope")
+    assert "release_tools_scope.sh" in scope["run"]
+    assert "if" not in scope  # it always runs; the later steps depend on it
+
+    heavy = [
+        s
+        for s in steps
+        if s is not scope and not str(s.get("uses", "")).startswith("actions/checkout")
+    ]
+    runs = " ".join(str(s.get("run", "")) for s in heavy)
+    for needed in (
+        "npm ci --ignore-scripts",
+        "release_dry_run.sh --all",
+        "release_dry_run.sh --notes",
+    ):
+        assert needed in runs, f"missing step: {needed}"
+    assert "### Features" in runs
+    for step in heavy:
+        assert step["if"] == "steps.scope.outputs.touched == 'true'", step.get("name")
+    install = next(s for s in heavy if "npm ci" in str(s.get("run", "")))
+    assert install["working-directory"] == ".github/release-tools"
+    node = next(s for s in heavy if str(s.get("uses", "")).startswith("actions/setup-node"))
+    assert (
+        node["with"]["node-version"]
+        == next(
+            st
+            for st in _load("release.yml")["jobs"]["release"]["steps"]
+            if str(st.get("uses", "")).startswith("actions/setup-node")
+        )["with"]["node-version"]
+    )

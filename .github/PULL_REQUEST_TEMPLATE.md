@@ -9,16 +9,24 @@ The PR title MUST follow Conventional Commits — see CONTRIBUTING.md.
 
 ## Contributor License Agreement (CLA)
 
-By opening this pull request you affirm that you have read and agree to the
-project's [Contributor License Agreement](../CLA.md) for the contribution(s)
-included here.
+The [Contributor License Agreement](../CLA.md) is signed once through CLA assistant.
+On your first pull request the bot comments with a link; the `license/cla` check must
+pass before merge.
 
-- [ ] I have read and agree to the [Contributor License Agreement](../CLA.md).
+- [ ] I have signed the CLA via CLA assistant.
 
 ## Linked issue
 
 Closes #
 <!-- or Refs # if it's a partial fix -->
+
+## Target branch
+
+<!-- Mark one. See CONTRIBUTING.md, "Milestones, branches and releases". The release-impact check enforces it. -->
+
+- [ ] `main` — patch-level or non-releasing changes only (`fix`, `perf`, `docs`, `ci`, `chore`, …; no `feat`, `!` or `BREAKING CHANGE:`)
+- [ ] `milestone/x.y.0` — feature work for that milestone
+- [ ] Milestone release `milestone/x.y.0` → `main` — merge with a **merge commit**, not squash
 
 ## Type of change
 
@@ -56,6 +64,7 @@ Closes #
 - [ ] CHANGELOG entry isn't needed (semantic-release generates it)
 - [ ] Documentation updated (if behaviour, API, or config changed)
 - [ ] Website pages changed in English and German (if any page under `website/src/content/docs/` changed)
+- [ ] UI change visible in a README screenshot → ran `pnpm screenshots` and committed the changed PNGs
 - [ ] Changes a recorded decision → ADR added/amended and register updated (`docs/decisions/`)
 - [ ] No private IPs, hostnames, domains, real tokens, or PII in commits
 - [ ] CI is green (will be checked again after CI runs)

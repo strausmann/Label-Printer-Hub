@@ -32,6 +32,9 @@ export function useErrorText(): (error: unknown, fallback?: string) => string {
           return t`The address did not answer like an IPP printer.`;
         case "tray_unknown":
           return t`A tray is set that the printer does not report. Read the printer again.`;
+        case "stored_connection_invalid":
+          // The server's text names the printer by id; the operator's way out is the form, not the id.
+          return t`The address saved for this printer is not valid. Enter the address again and save.`;
         case "invalid_connection":
           return t`The address or the certificate setting is not valid.`;
         case "scope_too_low":

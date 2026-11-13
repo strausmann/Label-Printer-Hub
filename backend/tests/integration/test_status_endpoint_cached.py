@@ -171,7 +171,6 @@ def printer_contact_guard(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     import asyncio.base_events
     import socket
 
-    import app.api.routes.printers as printers_route
     import app.printer_backends.snmp_helper as snmp_helper
 
     calls: list[str] = []
@@ -198,7 +197,6 @@ def printer_contact_guard(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     )
     monkeypatch.setattr(snmp_helper, "query_preflight", _refuse("query_preflight")[1])
     monkeypatch.setattr(snmp_helper, "query_identity", _refuse("query_identity")[1])
-    monkeypatch.setattr(printers_route, "_probe_status_sync", _refuse("_probe_status_sync")[0])
     return calls
 
 

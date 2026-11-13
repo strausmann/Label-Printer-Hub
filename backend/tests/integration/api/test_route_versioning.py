@@ -15,7 +15,7 @@ from app.config import get_settings
 from httpx import AsyncClient
 
 from tests.helpers.routes import iter_routes
-from tests.integration.api.conftest import INDEX_HTML
+from tests.helpers.spa import INDEX_HTML
 
 ALLOWED_UNVERSIONED = frozenset(
     {

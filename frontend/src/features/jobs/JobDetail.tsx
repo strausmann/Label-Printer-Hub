@@ -3,10 +3,12 @@ import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
+import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { usePrinters } from "../printers/api";
 import { useJobStateBadge } from "../printers/model";
+import { HINT } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useCancelJobById, useJob, useRetryJob, type Job } from "./api";
 import { canCancel, canRetry, formatTime, historyOf, summarizePayload } from "./model";
@@ -52,6 +54,8 @@ function JobDetail({ job }: { job: Job }) {
   const printers = usePrinters();
   const retry = useRetryJob();
   const cancel = useCancelJobById();
+  // A read key sees the job but may not retry or cancel it: say so before the press, not with a 403 after it.
+  const readOnly = useSession().scope === "read";
   const state = stateOf(job.state);
   const summary = summarizePayload(job);
   const title = useJobTitle(job);
@@ -80,7 +84,7 @@ function JobDetail({ job }: { job: Job }) {
           {canRetry(job) && (
             <Button
               className={PRIMARY_BUTTON}
-              isDisabled={retry.isPending}
+              isDisabled={retry.isPending || readOnly}
               onPress={() =>
                 retry.mutate(job.id, { onSuccess: (created) => void navigate({ to: "/jobs/$jobId", params: { jobId: created.id } }) })
               }
@@ -89,12 +93,16 @@ function JobDetail({ job }: { job: Job }) {
             </Button>
           )}
           {canCancel(job) && !cancelRequested && (
-            <Button className={SECONDARY_BUTTON} isDisabled={cancel.isPending} onPress={() => cancel.mutate(job.id)}>
+            <Button className={SECONDARY_BUTTON} isDisabled={cancel.isPending || readOnly} onPress={() => cancel.mutate(job.id)}>
               {t`Cancel`}
             </Button>
           )}
         </div>
       </header>
+
+      {readOnly && (canRetry(job) || (canCancel(job) && !cancelRequested)) && (
+        <p className={`${HINT} m-0`}>{t`Retrying and cancelling need a print or admin key.`}</p>
+      )}
 
       {(retry.isError || cancel.isError) && (
         <p role="alert" className="text-small text-bad">

@@ -547,6 +547,7 @@ async def test_create_refuses_over_long_text(session: AsyncSession, field: str, 
     with pytest.raises(InvalidGeometryError) as exc:
         await ts.create_type(session, fields(**{field: value}), G_4X12, actor="tester")
     assert exc.value.status == 422
+    assert exc.value.error_code == "label_too_long"  # 264-12
     assert exc.value.detail == {"field": field, "reason": "too long"}
     assert await _version_count(session) == 0
 
@@ -644,6 +645,7 @@ async def test_source_url_over_500_characters_is_refused(session: AsyncSession) 
             session, fields(source_url="https://e.invalid/" + "a" * 500), G_4X12, actor="tester"
         )
     assert exc.value.detail == {"field": "source_url", "reason": "too long"}
+    assert exc.value.error_code == "label_too_long"
 
 
 async def test_service_refuses_more_than_fifty_product_codes(session: AsyncSession) -> None:

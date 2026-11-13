@@ -128,6 +128,27 @@ async def test_sqlite_store_mark_printing_logs_warning_on_wrong_state(
 
 
 @pytest.mark.asyncio
+async def test_sqlite_store_mark_done_repeated_on_a_done_row_does_not_warn(
+    async_session_factory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The removal-timeout retry writes ``mark_done`` again on a row the first call already
+    committed (``_persist_through_cancel``): that is the expected path, not a wrong state."""
+    store = SQLiteJobStore(async_session_factory)
+    job = Job(printer_id=uuid4(), template_key="t", payload={})
+    await store.save_queued(job)
+    await store.mark_printing(job.id)
+    await store.mark_done(job.id)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.job_store_sqlite"):
+        await store.mark_done(job.id)
+
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING], caplog.records
+    fetched = await store.get(job.id)
+    assert fetched is not None
+    assert fetched.state == JobState.DONE.value
+
+
+@pytest.mark.asyncio
 async def test_sqlite_store_mark_done_logs_warning_on_wrong_state(
     async_session_factory, caplog: pytest.LogCaptureFixture
 ) -> None:

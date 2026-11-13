@@ -27,7 +27,6 @@ from app.printer_backends.exceptions import (
 from app.services.job_lifecycle import JobState
 from app.services.job_store import MemoryJobStore
 from app.services.print_queue import (
-    MAX_HELD_RUNS_PER_PRINTER,
     MAX_LABELS_PER_TAPE_JOB,
     TAPE_GROUP_SIZE,
     PrintQueue,
@@ -710,21 +709,28 @@ async def test_discard_frees_a_stopped_run_and_refuses_a_printing_one() -> None:
 
 
 async def test_at_most_five_runs_wait_per_printer_the_oldest_is_discarded() -> None:
-    """I3: a sixth held run discards the oldest, with ``run_discarded_limit``."""
+    """I3: a sixth held run discards the oldest of its own key, with ``run_discarded_limit``.
+
+    Three keys with two held runs each (a key keeps at most two on one printer): the sixth,
+    of the third key, discards that key's first run.
+    """
     printer = TapeRoll()
     store = MemoryJobStore()
     queue = PrintQueue([printer], store=store)
     await queue.start()
+    keys = [k for k in (uuid4(), uuid4(), uuid4()) for _ in range(2)]
     try:
         runs: list[tuple[UUID, list[UUID]]] = []
-        for _ in range(MAX_HELD_RUNS_PER_PRINTER + 1):
+        for key in keys:
             ids = [uuid4() for _ in range(51)]
+            slot = queue.claim_run_slot(printer.id, key, per_printer=100, per_key=100)
             run_id = await queue.enqueue_batch(
                 printer_id=printer.id,
                 images=[_img() for _ in ids],
                 job_ids=ids,
                 tape_mm=12,
                 options={},
+                slot=slot,
             )
             runs.append((run_id, ids))
             await _until(
@@ -734,8 +740,8 @@ async def test_at_most_five_runs_wait_per_printer_the_oldest_is_discarded() -> N
                 )
             )  # type: ignore[misc,union-attr]
         held = [info.run_id for info in queue.held_runs(printer.id)]
-        assert held == [r for r, _ in runs[1:]]  # oldest first, the first one gone
-        oldest_label = runs[0][1][50]
+        assert held == [r for r, _ in [*runs[:4], runs[5]]]  # the third key's first run gone
+        oldest_label = runs[4][1][50]
         assert (await queue.get(oldest_label)).error_code == "run_discarded_limit"
     finally:
         await queue.stop(timeout_s=2.0)
@@ -814,3 +820,42 @@ async def test_a_failing_run_callback_does_not_break_the_run() -> None:
         await _until(lambda: queue.run_info(run_id) is None)
     finally:
         await queue.stop(timeout_s=2.0)
+
+
+async def test_cancel_during_reprint_registration_survives_restart() -> None:
+    """263-75: a clone is registered in memory before its row is saved. A cancel in between
+    finds no row to persist; the save then writes ``queued``. The reprint must persist the
+    cancel, or a restart would print the label the user cancelled."""
+    store = GatedStore()
+    printer = TapeRoll(15)
+    queue, run_id, ids, _ = await _run(printer, 30, store=store)
+    restarted: PrintQueue | None = None
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = None
+        store.gate = asyncio.Event()
+        reprint = asyncio.create_task(queue.reprint_from(run_id, 11))
+        await store.entered.wait()
+        known = {str(j) for j in ids}
+        (clone,) = [j for j in queue._jobs if j not in known]  # the first clone, being saved
+        assert await queue.cancel(clone)
+        store.gate.set()
+        store.gate = None
+        result = await reprint
+        assert str(result.new_job_ids[0]) == clone
+
+        row = await store.get(UUID(clone))
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+        await _until(lambda: queue.run_info(run_id) is None)
+        printed = printer.printed
+        await queue.stop(timeout_s=2.0)
+
+        restarted = PrintQueue([printer], store=store)
+        await restarted.start()
+        await asyncio.sleep(0.1)
+        assert printer.printed == printed  # nothing was resurrected
+        assert [r for r in store._jobs.values() if r.state == DbJobState.QUEUED.value] == []
+    finally:
+        await queue.stop(timeout_s=2.0)
+        if restarted is not None:
+            await restarted.stop(timeout_s=2.0)

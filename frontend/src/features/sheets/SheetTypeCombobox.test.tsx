@@ -1,5 +1,5 @@
 import { I18nProvider } from "@lingui/react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -118,6 +118,77 @@ describe("SheetTypeCombobox", () => {
     expect(within(await screen.findByRole("listbox")).getAllByRole("option")).toHaveLength(1);
   });
 
+  it("selects the whole label on tap", async () => {
+    const spy = vi.spyOn(HTMLInputElement.prototype, "setSelectionRange");
+    try {
+      render(<Harness initial="avery-5159" />);
+      await userEvent.click(box());
+      const input = box() as HTMLInputElement;
+      // An explicit range, not only select(): some mobile browsers drop the latter.
+      expect(spy).toHaveBeenCalledWith(0, input.value.length);
+      expect(input.value.length).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps the first character typed after a selection", () => {
+    // The deferred re-select (setTimeout 0, for iOS) is still pending when the first keystroke arrives. RTL drains a
+    // macrotask after each user-event call, which hides this window, so the events here are synchronous and the timers fake.
+    vi.useFakeTimers();
+    try {
+      render(<Harness initial="avery-5159" />);
+      const input = box() as HTMLInputElement;
+      act(() => input.focus());
+      // The label is selected; typing one character replaces it.
+      fireEvent.change(input, { target: { value: "4" } });
+      expect(input).toHaveValue("4");
+      act(() => {
+        vi.advanceTimersByTime(0);
+      });
+      // A re-select now would put the typed character under the selection: the next keystroke would replace it.
+      expect(input).toHaveValue("4");
+      expect(input.selectionStart).toBe(input.selectionEnd);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ArrowDown to an option and Tab chooses it", async () => {
+    // react-aria's Tab handler commits the option that has the virtual focus, like Enter does.
+    const onChange = vi.fn();
+    render(<Harness initial="my-small" onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("avery");
+    await screen.findByRole("listbox");
+    await userEvent.keyboard("{ArrowDown}{Tab}");
+    expect(onChange).toHaveBeenCalledWith("avery-5159");
+  });
+
+  it("a selection that nobody pressed, or chose with Enter or Tab on an option, is not a pick", async () => {
+    // react-aria commits the chosen key on its own (useComboBoxState commitValue -> onSelectionChange(selectedKey)), e.g.
+    // when a scroll closes the list; that must not be taken as a choice (it wipes the search).
+    const onChange = vi.fn();
+    render(<Harness initial="L4736REV" onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("4736"); // matches the chosen type itself, so its text is still in the list
+    expect(await screen.findByRole("listbox")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}"); // react-aria reverts: commitSelection -> onSelectionChange(selectedKey)
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("a press on an option that never ends (a touch that turns into a scroll) is not a choice", async () => {
+    const onChange = vi.fn();
+    render(<Harness initial="L4736REV" onChange={onChange} />);
+    await userEvent.click(box());
+    await userEvent.keyboard("4736");
+    const option = await screen.findByRole("option", { name: /L4736REV/ });
+    fireEvent.pointerDown(option);
+    fireEvent.pointerCancel(option); // the finger moved: it is a scroll, there is no pointer-up
+    await userEvent.keyboard("{Escape}"); // react-aria reverts and commits the chosen key
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("a tap on the field that already has the focus opens the list again", async () => {
     render(<Harness />);
     await userEvent.click(box());
@@ -202,6 +273,26 @@ describe("SheetTypeCombobox", () => {
     await userEvent.click(screen.getByRole("button", { name: "Clear the search", hidden: true }) /* React Aria hides everything but the list while it is open */);
     expect(box()).toHaveValue("");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("select shows full text on touch", () => {
+    const long: Type = { ...AVERY, key: "avery-zweckform-l4736rev", vendor: "Avery Zweckform", product_codes: ["L4736REV"] };
+    render(
+      <I18nProvider i18n={i18n}>
+        <SheetTypeCombobox label="Sheet type" types={[long]} value={long.key} onChange={() => {}} />
+      </I18nProvider>,
+    );
+    // The text below the field is the whole label, product code included; it is hidden for a mouse by CSS, not left out of the page.
+    const full = document.querySelector("[data-full-label]");
+    expect(full).not.toBeNull();
+    expect(full!.textContent).toBe(box().getAttribute("title"));
+    expect(full!.textContent).toContain("Avery Zweckform L4736REV");
+    expect(full!.className).toContain("[@media(hover:hover)_and_(pointer:fine)]:hidden");
+  });
+
+  it("writes no full text below the field for the none option", () => {
+    render(<Harness initial="__any__" noneOption={{ id: "__any__", label: "Any sheet type" }} />);
+    expect(document.querySelector("[data-full-label]")).toBeNull();
   });
 
   it("shows a 64-character key and a long vendor on one line with the full text in the title", async () => {

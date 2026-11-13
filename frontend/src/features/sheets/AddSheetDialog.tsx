@@ -17,7 +17,7 @@ import { GeometryDiagram } from "./GeometryDiagram";
 import { SheetGrid } from "./SheetGrid";
 import { SheetTypeCombobox } from "./SheetTypeCombobox";
 
-type Placement = SheetCreate["id_placement"];
+type Placement = NonNullable<SheetCreate["id_placement"]>;
 
 const NO_TYPE = "";
 const NO_PRINTER = "";

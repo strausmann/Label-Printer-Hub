@@ -4,7 +4,7 @@ import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
-import { useAdminPrinters, usePrinterAdmin, type AdminPrinter } from "./api";
+import { useAdminPrinters, usePrinterAdmin, usePrintersInFlight, type AdminPrinter } from "./api";
 import { useErrorText } from "./feedback";
 import { PrinterForm } from "./PrinterForm";
 import { Section } from "./sections";
@@ -14,6 +14,7 @@ export function Printers() {
   const errorText = useErrorText();
   const printers = useAdminPrinters();
   const admin = usePrinterAdmin();
+  const inFlight = usePrintersInFlight();
   const [editing, setEditing] = useState<AdminPrinter | "new" | null>(null);
 
   return (
@@ -41,6 +42,9 @@ export function Printers() {
               printer.backend === "ipp"
                 ? String((printer.connection as { uri?: unknown }).uri ?? "")
                 : `${String((printer.connection as { host?: unknown }).host ?? "")}:${String((printer.connection as { port?: unknown }).port ?? "")}`;
+            // The lock is per printer: another printer's row keeps its buttons while this one waits.
+            const waiting = inFlight.has(printer.slug);
+            const waitingId = `printer-waiting-${printer.slug}`;
             return (
               <li key={printer.id} className={`${PANEL} flex flex-wrap items-center gap-x-6 gap-y-3`}>
                 <div className="min-w-48 flex-1">
@@ -49,6 +53,12 @@ export function Printers() {
                     {printer.model ? `${printer.model} · ` : ""}
                     <span className="font-mono break-all">{address}</span>
                   </div>
+                  {/* The hub answers only after the printer's current job is done: say why the buttons are off. */}
+                  {waiting && (
+                    <div id={waitingId} role="status" className="mt-1 text-small text-ink-2">
+                      {t`Waiting for the current job to finish…`}
+                    </div>
+                  )}
                 </div>
                 <StatusBadge state={printer.enabled ? "ok" : "idle"} label={printer.enabled ? t`Enabled` : t`Disabled`} />
                 <div className="flex gap-2">
@@ -57,7 +67,8 @@ export function Printers() {
                   </Button>
                   <Button
                     aria-label={printer.enabled ? t`Disable ${printer.name}` : t`Enable ${printer.name}`}
-                    isDisabled={admin.toggle.isPending}
+                    isDisabled={waiting}
+                    aria-describedby={waiting ? waitingId : undefined}
                     onPress={() => admin.toggle.mutate({ slug: printer.slug, enable: !printer.enabled })}
                     className={SECONDARY_BUTTON}
                   >

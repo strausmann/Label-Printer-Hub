@@ -109,3 +109,22 @@ export function geometryOf(
     },
   };
 }
+
+/** Whether two geometries are the same measurements. The server refuses a new version that changes none of them (`unchanged`). */
+export function sameGeometry(a: GeometryMm, b: GeometryMm): boolean {
+  return (
+    a.page_size === b.page_size &&
+    a.shape === b.shape &&
+    a.cols === b.cols &&
+    a.rows === b.rows &&
+    a.label_w === b.label_w &&
+    a.label_h === b.label_h &&
+    a.pitch_x === b.pitch_x &&
+    a.pitch_y === b.pitch_y &&
+    a.margin_top === b.margin_top &&
+    a.margin_left === b.margin_left &&
+    (a.corner_radius ?? null) === (b.corner_radius ?? null) &&
+    (a.page_w ?? null) === (b.page_w ?? null) &&
+    (a.page_h ?? null) === (b.page_h ?? null)
+  );
+}

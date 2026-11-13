@@ -15,6 +15,8 @@ import pytest_asyncio
 from app.config import get_settings
 from httpx import ASGITransport, AsyncClient
 
+from tests.helpers.spa import INDEX_HTML
+
 
 @pytest_asyncio.fixture
 async def api_client_with_seed():
@@ -44,9 +46,6 @@ async def api_client_with_seed():
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         yield c
-
-
-INDEX_HTML = "<!doctype html><html><body>hub-app-shell</body></html>"
 
 
 @pytest.fixture

@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Final, Literal
 from uuid import UUID
 
@@ -39,13 +40,13 @@ from app.schemas.label_data import LabelData
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
 from app.sheets.cell_render import (
     DEFAULT_CELL_RENDERER,
+    PREVIEW_QR_MASK,
     BoxHmm,
     CellImage,
     CellRenderer,
     build_qr,
     build_qr_preview,
     content_box,
-    load_cell_font,
     qr_edge_px,
 )
 from app.sheets.geometry import Geometry, cell_count, remaining_margins
@@ -75,6 +76,14 @@ __all__ = [
 PREVIEW_DPI: Final = 150
 _MAX_PT: Final = 11.0
 _MIN_PT: Final = 6.0
+
+
+@lru_cache(maxsize=16)
+def _preview_font(size_px: float) -> ImageFont.FreeTypeFont:
+    """The bundled font at a fractional pixel size for the margin ID and the feed mark, read
+    from disk once per size instead of on every preview (T11 M4). The few sizes in use are
+    fixed by the layout, so the cache stays small."""
+    return ImageFont.truetype(str(resolve_font_path()), size_px)
 
 
 class SheetCellPayload(BaseModel):
@@ -324,11 +333,16 @@ def render_sheet_page(
     )
 
 
-def _preview_qr(payload: str, usable_hmm: int, render_dpi: int) -> Image.Image:
-    """The margin QR at preview size: the symbol the job prints (see ``build_qr_preview``)."""
-    qr = build_qr_preview(payload, usable_hmm / 100, usable_hmm / 100, render_dpi, PREVIEW_DPI)
-    assert qr is not None  # the job could draw it, so the symbol exists
-    return qr
+def _preview_qr(payload: str, usable_hmm: int, render_dpi: int) -> Image.Image | None:
+    """The margin QR at preview size: the symbol the job prints (see ``build_qr_preview``).
+
+    ``None`` if there is no symbol after all (266-03): the preview then draws the text alone
+    instead of failing; the stored QR flag says the job would draw one.
+    """
+    edge_mm = usable_hmm / 100
+    return build_qr_preview(
+        payload, edge_mm, edge_mm, render_dpi, PREVIEW_DPI, mask=PREVIEW_QR_MASK
+    )
 
 
 def _paste_turned_text(
@@ -355,14 +369,15 @@ def render_preview_png(
     cells: Sequence[tuple[int, CellImage]],
     margin: MarginIdPayload | None,
     *,
-    render_dpi: int = 600,
+    render_dpi: int,
     feed_mark: FeedMarkPayload | None = None,
 ) -> bytes:
     """1-bit PNG of the page at 150 dpi (spec 12): only the new content, at nominal positions.
 
     The page size comes from ``geometry``. The preview is never calibrated. ``cells`` carry
     images rendered at ``PREVIEW_DPI`` for their content boxes. ``render_dpi`` is the job's
-    resolution (600 if unknown, OC-26); it matters only for a margin ID stored without its QR
+    resolution (the caller passes 600 if unknown, OC-26), required so a stored payload is never
+    previewed at a guessed dpi (266-02); it matters only for a margin ID stored without its QR
     flag, where the rule is evaluated at that dpi, never at the preview's.
     """
     k = PREVIEW_DPI / 2540
@@ -384,7 +399,9 @@ def render_preview_png(
         lay = _margin_layout(geometry, margin, with_qr=qr is not None)
         if qr is not None and lay.qr is not None:
             page.paste(qr, (px(lay.qr.x), px(lay.qr.y)))
-        font = load_cell_font(max(1, round(lay.size_pt * PREVIEW_DPI / 72)))
+        # A fractional pixel size, like the feed mark: a whole-pixel size made the preview's
+        # margin ID about a millimetre shorter than the PDF's (266-05).
+        font = _preview_font(lay.size_pt * PREVIEW_DPI / 72)
         if not lay.text:
             pass
         elif lay.rotation == 90:
@@ -396,7 +413,7 @@ def render_preview_png(
     # Last: nothing the ID or a cell drew can cover it.
     if feed_mark is not None:
         # A fractional pixel size, so the preview mark is as wide as the PDF's (6 pt is 12.5 px).
-        font = ImageFont.truetype(str(resolve_font_path()), feed_mark.size_pt * PREVIEW_DPI / 72)
+        font = _preview_font(feed_mark.size_pt * PREVIEW_DPI / 72)
         ImageDraw.Draw(page).text(
             (px(feed_mark.x_hmm), px(feed_mark.baseline_y_hmm)),
             feed_mark.text,
