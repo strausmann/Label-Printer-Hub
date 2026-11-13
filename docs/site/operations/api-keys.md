@@ -119,6 +119,11 @@ SSO users are trusted, and each of them still previews once at a time.
 `GET /readiness` shows stuck renders in the check `render_slots` (failing when every slot is
 stuck). `/healthz` does not, so restart the hub by hand then.
 
+The slots, the per-owner limit and the preview limit are counted in the hub's process. The
+image runs one process; if you start the backend with several worker processes (for example
+`uvicorn --workers 2`), each process has its own two slots and its own counts, so a key can
+hold one slot in each.
+
 All callers without a key (SSO users) count as **one** key for the held-run limits: one
 SSO user's held run lets every SSO user pass the held-places check, and an SSO user's
 further held run can discard another SSO user's oldest one. A browser session signed in

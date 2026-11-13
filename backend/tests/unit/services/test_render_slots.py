@@ -57,7 +57,7 @@ async def test_a_render_past_its_limit_raises_and_keeps_its_slot_until_the_threa
     hang: _Hang,
 ) -> None:
     with pytest.raises(render_slots.RenderTimeoutError):
-        await render_slots.render_bounded(hang, 1, label="t", timeout_s=SHORT_S)
+        await render_slots.render_bounded(hang, 1, label="t", owner=None, timeout_s=SHORT_S)
     # The thread draws on: its slot stays taken and it counts as stuck.
     assert render_slots.stuck_renders() == 1
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS - 1
@@ -71,31 +71,35 @@ async def test_with_every_slot_stuck_a_render_is_refused_at_once(hang: _Hang) ->
     """F2: no thread beyond the cap, and no caller waiting for a slot that may never free."""
     for n in range(render_slots.MAX_CONCURRENT_RENDERS):
         with pytest.raises(render_slots.RenderTimeoutError):
-            await render_slots.render_bounded(hang, n, label="t", timeout_s=SHORT_S)
+            await render_slots.render_bounded(hang, n, label="t", owner=None, timeout_s=SHORT_S)
     assert render_slots.stuck_renders() == render_slots.MAX_CONCURRENT_RENDERS
     started: list[int] = []
     async with asyncio.timeout(WAIT_S / 10):  # refused at once, not after the limit
         with pytest.raises(render_slots.RenderUnavailableError):
             await render_slots.render_bounded(
-                lambda: started.append(1), label="t", timeout_s=WAIT_S
+                lambda: started.append(1), label="t", owner=None, timeout_s=WAIT_S
             )
     assert started == []
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
-    assert await render_slots.render_bounded(lambda: 7, label="t", timeout_s=WAIT_S) == 7
+    assert (
+        await render_slots.render_bounded(lambda: 7, label="t", owner=None, timeout_s=WAIT_S) == 7
+    )
 
 
 async def test_waiting_for_a_slot_ends_at_the_time_limit(hang: _Hang) -> None:
     """F2: the slots are busy, not stuck: a caller waits at most its limit for one."""
     busy = [
-        asyncio.create_task(render_slots.render_bounded(hang, n, label="t", timeout_s=WAIT_S))
+        asyncio.create_task(
+            render_slots.render_bounded(hang, n, label="t", owner=None, timeout_s=WAIT_S)
+        )
         for n in range(render_slots.MAX_CONCURRENT_RENDERS)
     ]
     for _ in busy:
         assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
     assert render_slots.free_slots() == 0 and render_slots.stuck_renders() == 0
     with pytest.raises(render_slots.RenderUnavailableError):
-        await render_slots.render_bounded(lambda: 1, label="t", timeout_s=SHORT_S)
+        await render_slots.render_bounded(lambda: 1, label="t", owner=None, timeout_s=SHORT_S)
     hang.release.set()
     assert await asyncio.gather(*busy) == [0, 1]
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
@@ -108,11 +112,11 @@ async def test_a_failing_on_start_gives_its_slot_back() -> None:
         raise RuntimeError("on_start")
 
     with pytest.raises(RuntimeError, match="on_start"):
-        await render_slots.render_bounded(lambda: 1, label="t", on_start=boom)
+        await render_slots.render_bounded(lambda: 1, label="t", owner=None, on_start=boom)
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
     assert render_slots.gate().locked() is False
     for _ in range(render_slots.MAX_CONCURRENT_RENDERS + 1):  # every slot can still be taken
-        assert await render_slots.render_bounded(lambda: 2, label="t") == 2
+        assert await render_slots.render_bounded(lambda: 2, label="t", owner=None) == 2
 
 
 async def test_one_owner_cannot_hang_every_slot(hang: _Hang) -> None:
@@ -140,7 +144,9 @@ async def test_an_owner_with_a_stuck_render_is_refused_without_waiting_for_a_slo
     mine = uuid4()
     with pytest.raises(render_slots.RenderTimeoutError):
         await render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=SHORT_S)
-    busy = asyncio.create_task(render_slots.render_bounded(hang, 2, label="t", timeout_s=WAIT_S))
+    busy = asyncio.create_task(
+        render_slots.render_bounded(hang, 2, label="t", owner=None, timeout_s=WAIT_S)
+    )
     await _until(lambda: render_slots.free_slots() == 0)
     async with asyncio.timeout(WAIT_S / 10):
         with pytest.raises(render_slots.OwnerRenderStuckError):
@@ -163,7 +169,7 @@ async def test_a_keys_second_render_waits_for_its_turn_and_never_gets_a_second_s
             render_slots.render_bounded(hang, 1, label="t", owner=mine, timeout_s=0.2)
         )
         busy = asyncio.create_task(
-            render_slots.render_bounded(other, 2, label="t", timeout_s=WAIT_S)
+            render_slots.render_bounded(other, 2, label="t", owner=None, timeout_s=WAIT_S)
         )
         await _until(lambda: render_slots.free_slots() == 0)
         waiting = asyncio.create_task(
@@ -265,7 +271,7 @@ async def test_a_cancelled_callers_hanging_render_counts_as_stuck(hang: _Hang) -
 
 async def test_a_normal_render_is_never_marked_stuck() -> None:
     """The timer is cancelled at the end of the thread."""
-    assert await render_slots.render_bounded(lambda: 1, label="t", timeout_s=0.05) == 1
+    assert await render_slots.render_bounded(lambda: 1, label="t", owner=None, timeout_s=0.05) == 1
     await asyncio.sleep(0.1)
     assert render_slots.stuck_renders() == 0
 
@@ -447,7 +453,7 @@ def test_the_render_timeout_setting_accepts_sane_values(
 
 
 async def test_a_normal_render_is_unaffected() -> None:
-    assert await render_slots.render_bounded(lambda a, b: a + b, 2, 3, label="t") == 5
+    assert await render_slots.render_bounded(lambda a, b: a + b, 2, 3, label="t", owner=None) == 5
     assert render_slots.stuck_renders() == 0
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
@@ -457,7 +463,7 @@ async def test_a_render_error_is_still_raised_and_frees_its_slot() -> None:
         raise ValueError("bug")
 
     with pytest.raises(ValueError, match="bug"):
-        await render_slots.render_bounded(broken, label="t", timeout_s=WAIT_S)
+        await render_slots.render_bounded(broken, label="t", owner=None, timeout_s=WAIT_S)
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
 
 
@@ -468,7 +474,7 @@ async def test_one_warning_per_stuck_render_without_payload(
     secret = "ZQX-private-label-text"
     with pytest.raises(render_slots.RenderTimeoutError):
         await render_slots.render_bounded(
-            hang, 1, secret, label="page job J (sheet_page)", timeout_s=SHORT_S
+            hang, 1, secret, label="page job J (sheet_page)", owner=None, timeout_s=SHORT_S
         )
     warnings = [r for r in caplog.records if "exceeded" in r.getMessage()]
     assert len(warnings) == 1
@@ -484,7 +490,7 @@ async def test_without_an_explicit_limit_the_setting_applies(
     assert Settings.model_fields["render_timeout_s"].default == 60.0
     monkeypatch.setattr(render_slots, "default_timeout_s", lambda: SHORT_S)
     with pytest.raises(render_slots.RenderTimeoutError):
-        await render_slots.render_bounded(hang, 1, label="t")
+        await render_slots.render_bounded(hang, 1, label="t", owner=None)
     hang.release.set()
     await _until(lambda: render_slots.stuck_renders() == 0)
 
@@ -541,12 +547,12 @@ async def test_readiness_shows_stuck_renders_and_fails_when_every_slot_is_stuck(
 ) -> None:
     assert _check_render_slots().status == "ok"
     with pytest.raises(render_slots.RenderTimeoutError):
-        await render_slots.render_bounded(hang, 1, label="t", timeout_s=SHORT_S)
+        await render_slots.render_bounded(hang, 1, label="t", owner=None, timeout_s=SHORT_S)
     one = _check_render_slots()
     assert one.status == "ok"
     assert one.metric == {"stuck": 1, "slots": render_slots.MAX_CONCURRENT_RENDERS}
     with pytest.raises(render_slots.RenderTimeoutError):
-        await render_slots.render_bounded(hang, 2, label="t", timeout_s=SHORT_S)
+        await render_slots.render_bounded(hang, 2, label="t", owner=None, timeout_s=SHORT_S)
     every = _check_render_slots()
     assert every.status == "fail"
     assert every.metric == {"stuck": 2, "slots": render_slots.MAX_CONCURRENT_RENDERS}
@@ -569,7 +575,9 @@ async def test_a_running_page_job_does_not_starve_previews(
 
     with registered(RecordingHandler(), render=lambda _p: hang(0)):
         job = asyncio.create_task(
-            render_slots.render_bounded(render_page, payload(), label="page job", timeout_s=WAIT_S)
+            render_slots.render_bounded(
+                render_page, payload(), label="page job", owner=None, timeout_s=WAIT_S
+            )
         )
         assert await asyncio.to_thread(hang.entered.acquire, True, WAIT_S)
         monkeypatch.setattr(sps, "_draw_page", lambda n: n)
@@ -581,3 +589,36 @@ async def test_a_running_page_job_does_not_starve_previews(
         hang.release.set()
         await job
     assert render_slots.free_slots() == render_slots.MAX_CONCURRENT_RENDERS
+
+
+async def test_every_caller_names_its_owner() -> None:
+    """T9b: an owner left out meant no per-owner limit at all. The argument has no default, so a
+    new caller has to name the owner (``owner_of``) or say ``None`` on purpose."""
+    with pytest.raises(TypeError, match="owner"):
+        await render_slots.render_bounded(lambda: 1, label="t")  # type: ignore[call-arg]
+
+
+async def test_an_on_end_that_raises_is_logged_and_does_not_escape_the_callback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """T9b: ``on_end`` runs in the task's done callback. An exception there went to the loop's
+    handler and skipped retrieving the render's own exception; it is now logged by type."""
+    loop = asyncio.get_running_loop()
+    escaped: list[dict[str, object]] = []
+    previous = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: escaped.append(context))
+
+    def bad_end() -> None:
+        raise RuntimeError("on_end broke")
+
+    try:
+        with caplog.at_level(logging.ERROR, logger="app.services.render_slots"):
+            assert (
+                await render_slots.render_bounded(lambda: 3, label="t", owner=None, on_end=bad_end)
+                == 3
+            )
+            await asyncio.sleep(0)  # the done callback has run
+    finally:
+        loop.set_exception_handler(previous)
+    assert escaped == []
+    assert any("RuntimeError" in r.getMessage() for r in caplog.records), caplog.records

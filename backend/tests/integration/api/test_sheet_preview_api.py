@@ -657,7 +657,7 @@ async def test_a_preview_without_a_free_render_slot_is_503_at_once(
         for _ in range(render_slots.MAX_CONCURRENT_RENDERS):
             with pytest.raises(render_slots.RenderTimeoutError):
                 await render_slots.render_bounded(
-                    lambda: release.wait(10.0), label="t", timeout_s=0.05
+                    lambda: release.wait(10.0), label="t", owner=None, timeout_s=0.05
                 )
         async with asyncio.timeout(5):
             resp = await api_client_with_seed.post(_url(pid), json=_body(code), headers=headers)

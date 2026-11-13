@@ -789,7 +789,7 @@ async def test_with_every_slot_stuck_a_page_job_fails_render_unavailable_at_once
     try:
         for _ in range(render_slots.MAX_CONCURRENT_RENDERS):
             with pytest.raises(render_slots.RenderTimeoutError):
-                await render_slots.render_bounded(hung, label="t", timeout_s=0.05)
+                await render_slots.render_bounded(hung, label="t", owner=None, timeout_s=0.05)
         with registered(handler):
             env = _Env(FakeIppPrinter(), render_timeout_s=TEST_TIMEOUT_S)
             pj = await env.job()

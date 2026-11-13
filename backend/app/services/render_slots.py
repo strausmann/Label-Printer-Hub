@@ -165,22 +165,23 @@ async def render_bounded[T](
     fn: Callable[..., T],
     *args: Any,
     label: str,
-    owner: Hashable | None = None,
+    owner: Hashable | None,
     timeout_s: float | None = None,
     on_start: Callable[[], None] | None = None,
     on_end: Callable[[], None] | None = None,
 ) -> T:
     """``fn(*args)`` in a thread under a render slot, within ``timeout_s`` seconds.
 
-    ``label`` names the render in the log (an id and a kind, never payload data). ``owner``
-    (see ``owner_of``) holds at most ``OWNER_LIMIT`` slots at once; a key with a stuck render
-    is refused with ``OwnerRenderStuckError``, the group ``NO_KEY`` with
-    ``RenderUnavailableError`` while ``NO_KEY_STUCK_LIMIT`` of its renders are stuck. With
-    every slot stuck the call raises ``RenderUnavailableError`` at once; otherwise it waits at
-    most ``timeout_s`` for its owner's turn and a slot (then the same error). ``on_start``
-    runs when the slot is taken, ``on_end`` once the thread has ended (both on the event loop,
-    without an await in between). Raises ``RenderTimeoutError`` past the limit; the thread
-    keeps its slot until it ends.
+    ``label`` names the render in the log (an id and a kind, never payload data). ``owner`` (see
+    ``owner_of``; required, so no caller can forget it; ``None`` only on purpose, for a render
+    no caller owns, which then has no per-owner limit) holds at most ``OWNER_LIMIT`` slots at
+    once; a key with a stuck render is refused with ``OwnerRenderStuckError``, the group
+    ``NO_KEY`` with ``RenderUnavailableError`` while ``NO_KEY_STUCK_LIMIT`` of its renders are
+    stuck. With every slot stuck the call raises ``RenderUnavailableError`` at once; otherwise
+    it waits at most ``timeout_s`` for its owner's turn and a slot (then the same error).
+    ``on_start`` runs when the slot is taken, ``on_end`` once the thread has ended (both on the
+    event loop, without an await in between). Raises ``RenderTimeoutError`` past the limit; the
+    thread keeps its slot until it ends.
     """
     limit = default_timeout_s() if timeout_s is None else timeout_s
     slots = _current()
@@ -278,7 +279,12 @@ async def render_bounded[T](
                 "Stuck render %s ended; its slot is free (%d still stuck)", label, slots.stuck
             )
         if on_end is not None:
-            on_end()
+            try:
+                on_end()
+            except Exception as exc:
+                # A done callback must not raise: the loop would only log it, and the render's
+                # own exception below would go unretrieved.
+                logger.error("Render %s: on_end failed (%s)", label, type(exc).__name__)
         if not done.cancelled():
             done.exception()  # retrieved: a render nobody waits for any more is not logged twice
 
