@@ -1,0 +1,30 @@
+[
+  {
+    "name": "DejaVu Sans",
+    "version": "2.37",
+    "license": "Bitstream-Vera",
+    "licenseTextFile": "app/page_render/fonts/LICENSE-DejaVu.txt",
+    "repository": "https://dejavu-fonts.github.io/"
+  },
+  {
+    "name": "Atkinson Hyperlegible Next",
+    "version": "google/fonts@66eef70",
+    "license": "OFL-1.1",
+    "licenseTextFile": "app/page_render/fonts/LICENSE-AtkinsonHyperlegibleNext-OFL.txt",
+    "repository": "https://github.com/google/fonts"
+  },
+  {
+    "name": "IBM Plex Mono Bold",
+    "version": "google/fonts@633f320",
+    "license": "OFL-1.1",
+    "licenseTextFile": "app/page_render/fonts/LICENSE-IBMPlexMono-OFL.txt",
+    "repository": "https://github.com/google/fonts"
+  },
+  {
+    "name": "gLabels-qt templates",
+    "version": "37901c1",
+    "license": "MIT",
+    "licenseTextFile": "licences/glabels-qt-MIT.txt",
+    "repository": "https://github.com/j-evins/glabels-qt"
+  }
+]

@@ -59,7 +59,7 @@ ship as `.py` source files in `/opt/venv`, so their source is part of the image 
 | Package | Licence | Upstream | Notes |
 |---|---|---|---|
 | brother_ql | GPL-3.0-or-later | [pklaus/brother_ql](https://github.com/pklaus/brother_ql) | QL-Series raster protocol. The wheel ships no licence text; the image carries the canonical GPL-3.0-or-later text from `backend/licences/` and lists it in URL `/licenses/backend.json` |
-| ptouch | LGPL-2.1-or-later | [ptouch on PyPI](https://pypi.org/project/ptouch/) | PT-Series protocol. The wheel ships no licence text; the image carries the canonical LGPL-2.1-or-later text from `backend/licences/` and lists it in URL `/licenses/backend.json` |
+| ptouch | LGPL-2.1-or-later | [ptouch on PyPI](https://pypi.org/project/ptouch/) | PT-Series protocol. The wheel ships the LGPL-2.1-or-later text; the image lists the package with that text in URL `/licenses/backend.json` |
 
 Because of `brother_ql` the combined work is distributed under the AGPL-3.0-or-later (the
 project's licence is in `/opt/app/LICENSE`). The complete corresponding source of the project

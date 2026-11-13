@@ -50,3 +50,5 @@ jobs:
           /tmp/tool/bin/python -m scripts.licence_report
           --python /tmp/rt/bin/python
           --policy ../licence-policy.yml
+          --own-project pyproject.toml
+          --extra licences/extra-records.json

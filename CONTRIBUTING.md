@@ -301,7 +301,7 @@ To run the backend check locally:
 python -m venv /tmp/rt && /tmp/rt/bin/pip install ./backend
 python -m venv /tmp/tool && /tmp/tool/bin/pip install pip-licenses==5.5.5
 cd backend && /tmp/tool/bin/python -m scripts.licence_report \
-  --python /tmp/rt/bin/python --policy ../licence-policy.yml
+  --python /tmp/rt/bin/python --policy ../licence-policy.yml --own-project pyproject.toml
 ```
 
 It prints every package the policy refuses as `name (licence)` and exits 1.
@@ -317,6 +317,29 @@ It prints every package the policy refuses as `name (licence)` and exits 1.
 - For an npm package that the dependency graph mis-reports, or reports with no licence at all, also add the purl to `allow-dependencies-licenses`. A test requires an exception with a reason for every purl there. `Dependency review` fails on a dependency whose licence cannot be detected, so such a package is never let through unread.
 
 A licence that is **not** on the allow list is not an exception to add quietly: it is a decision about what the project may redistribute. Open an issue first. `GPL-2.0-only` and `LGPL-2.0-only` are left out on purpose (incompatible with AGPL-3.0), as is anything non-free.
+
+### A licence text is missing
+
+The image build runs `licence_report.py` with `--require-texts`. It stops on purpose when a package of the
+backend list has no licence text, because the image must not ship a licence list with holes. The output names each
+package and its licence expression. Decide by the expression:
+
+- **A single SPDX id** (for example `MIT`): add the verbatim canonical text as `backend/licences/<SPDX-id>.txt`.
+  Put the source URL and the sha256 of the file in the commit body.
+- **A compound or wrong expression** (for example `MIT OR Apache-2.0`, or metadata that is not an SPDX id): add an
+  `x-licence-exceptions` entry to `licence-policy.yml` whose `licence` is the single id the package really carries,
+  then add that id's text as above. Never guess a text.
+- **No usable licence at all:** open an issue, as described below for licences that are not allowed.
+
+To reproduce the check locally, run the builder-stage command against a local venv:
+
+```bash
+python -m venv /tmp/rt && /tmp/rt/bin/pip install ./backend
+python -m venv /tmp/tool && /tmp/tool/bin/pip install pip-licenses==5.5.5
+cd backend && /tmp/tool/bin/python -m scripts.licence_report \
+  --python /tmp/rt/bin/python --policy ../licence-policy.yml \
+  --own-project pyproject.toml --extra licences/extra-records.json --require-texts
+```
 
 ## Milestones, branches and releases
 

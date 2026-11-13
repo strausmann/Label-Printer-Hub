@@ -102,13 +102,22 @@ RUN pip install --no-deps --force-reinstall .
 # were just installed. A violation fails the build. The policy is the repository's single
 # licence-policy.yml; the script imports nothing from `app`. The tool venv holds
 # pip-licenses (build-time only) and never reaches the runtime stage.
+# The same run writes the list the image serves as /licenses/backend.json (D23). It stops on a
+# package without a licence text (--require-texts); CONTRIBUTING.md says what to do then.
 COPY licence-policy.yml /opt/licence/licence-policy.yml
 COPY backend/scripts/licence_report.py /opt/licence/licence_report.py
+COPY backend/licences/ /build/licences/
 RUN python -m venv /opt/licence-tool \
     && /opt/licence-tool/bin/pip install pip-licenses==5.5.5 \
     && /opt/licence-tool/bin/python /opt/licence/licence_report.py \
         --python /opt/venv/bin/python \
-        --policy /opt/licence/licence-policy.yml
+        --policy /opt/licence/licence-policy.yml \
+        --own-project /build/pyproject.toml \
+        --output /build/backend-licences.json \
+        --require-texts \
+        --extra /build/licences/extra-records.json \
+        --extra-root /build \
+        --fallback-dir /build/licences
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime
@@ -198,6 +207,8 @@ COPY --chown=hub:hub THIRD_PARTY_NOTICES.md /opt/app/THIRD_PARTY_NOTICES.md
 # The project licence, also served as /licenses/agpl-3.0.txt for the About page.
 COPY --chown=hub:hub LICENSE /opt/app/LICENSE
 COPY --chown=hub:hub LICENSE /opt/app/web/licenses/agpl-3.0.txt
+# The Python and font licence list, generated in the builder stage from the installed venv.
+COPY --from=builder --chown=hub:hub /build/backend-licences.json /opt/app/web/licenses/backend.json
 
 # Alembic runtime configuration and migration scripts.
 #

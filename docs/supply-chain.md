@@ -27,7 +27,7 @@ receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
 |---|---|---|---|
 | Web licence list | Every package the web app ships, with licence and text | `/licenses/frontend.json` of the running app; `/opt/app/web/licenses/frontend.json` in the image; About page | on the branch |
 | Web SBOM | CycloneDX document of the web bundle | `frontend.cdx.json` in the image (`/opt/app/web/frontend.cdx.json`) | on the branch |
-| Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | lands with the backend list step (B1); until then the About page says the list is missing |
+| Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | generated at build time; the About page says the list is missing in builds without it |
 | BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published today; see the note on its limits below |
 | BuildKit provenance | How and where the image was built | registry, read without pulling | published today, with `mode=max` content by the build action's default; the attestation step (B5) makes it explicit |
 | Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | lands with the release SBOM step (B6); the first release that carries it is 1.6.0 |
@@ -146,7 +146,7 @@ version, licence and the licence text on demand. The same data is available as `
 that the running app answers these URLs is confirmed in B8, and `backend.json` exists only after B1). A list that is missing in an image (for example an API-only build) is reported as
 missing; the page keeps the project's own licence and source link either way.
 
-Both lists exclude the project itself. The backend list reads the name from `backend/pyproject.toml`.
+Both lists exclude the project itself. The backend list reads the name from `backend/pyproject.toml`. The backend list is generated at build time with `--require-texts`, so the build stops when a package has no licence text; see [A licence text is missing](../CONTRIBUTING.md#a-licence-text-is-missing).
 
 ## Operating system packages
 

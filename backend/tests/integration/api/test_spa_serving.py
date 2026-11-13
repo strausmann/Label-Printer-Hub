@@ -164,6 +164,16 @@ async def test_known_licence_file_is_served(spa: AsyncClient, dist: Path) -> Non
     assert "hub-app-shell" not in resp.text
 
 
+async def test_backend_licence_list_served(spa: AsyncClient, dist: Path) -> None:
+    (dist / "licenses").mkdir()
+    body = '[{"name": "x", "licenseText": "Grüße <b>"}]'.encode()
+    (dist / "licenses" / "backend.json").write_bytes(body)
+    resp = await spa.get("/licenses/backend.json")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.content == body
+
+
 async def test_licences_prefix_does_not_escape_to_other_files(spa: AsyncClient, dist: Path) -> None:
     (dist / "licenses").mkdir()
     for path in (
