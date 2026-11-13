@@ -59,7 +59,7 @@ A page printer appears on the overview with its state and supplies, read over IP
 
 ### Turn on status discovery
 
-The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off, and the form has no switch for it yet ([#296](https://github.com/strausmann/label-printer-hub/issues/296)). Until then, a test print on that printer is refused with "no current status". An admin turns discovery on through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
+The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off, and the form has no switch for it yet ([#296](https://github.com/strausmann/label-printer-hub/issues/296)). Printing does not depend on it: a print or a test print checks the printer once when it is sent. What stays unknown is the state and the tape shown on the overview. An admin turns discovery on through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
 
 ```bash
 curl -X PUT http://localhost:8000/api/v1/admin/printers/<slug> \
