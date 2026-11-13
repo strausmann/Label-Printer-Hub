@@ -1,5 +1,5 @@
-// Fails when a README screenshot in docs/screenshots/ is over budget. The files are deliberately not
-// recompressed: an optimiser that ran in one place only would break the byte-identical regeneration.
+// Fails when a README screenshot in docs/screenshots/ is over budget; it changes no file. The files are
+// deliberately not recompressed: an optimiser that ran in one place only would break the byte-identical regeneration.
 // Run by `pnpm screenshots` after the screenshots were taken.
 import { readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";

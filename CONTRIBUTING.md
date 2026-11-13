@@ -240,8 +240,10 @@ pnpm screenshots
 It builds the web UI, starts the e2e hub (`backend/tests/e2e_app.py`) on its fixtures and writes the PNGs; two runs on the
 same sources give identical files. Set `E2E_PYTHON` to the backend interpreter (default `.venv/bin/python` in `backend/`).
 The views and their file names are listed at the top of `frontend/e2e/readme-screenshots.spec.ts`; add a view there.
-The files are not recompressed (so regeneration stays byte-identical); each file must stay under 300 KB.
-The Screenshots workflow renders them on demand and opens a PR when they changed.
+The files are not recompressed (so regeneration stays byte-identical); `scripts/check-screenshot-sizes.mjs`, run by
+`pnpm screenshots`, fails when a file is over 300 KB.
+The Screenshots workflow renders them on demand and opens a PR when they changed. It opens that PR with `GITHUB_TOKEN`,
+and GitHub does not start other workflows for it: close and reopen the PR to run the checks.
 
 ## Dependencies and licences
 

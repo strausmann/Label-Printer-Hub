@@ -18,8 +18,25 @@ export default defineConfig({
       name: "screenshots",
       use: {
         browserName: "chromium",
-        // Text is rasterised the same way on every run: grayscale (no LCD sub-pixels, whose use depends on layer timing), no hinting.
-        launchOptions: { args: ["--disable-lcd-text", "--font-render-hinting=none", "--disable-gpu", "--num-raster-threads=1", "--force-color-profile=srgb", "--disable-gpu-compositing", "--disable-gpu-rasterization", "--disable-partial-raster"] },
+        // Every flag removes a source of pixel differences between two runs, so `pnpm screenshots` renders
+        // byte-identical files on the same machine.
+        launchOptions: {
+          args: [
+            // Grayscale text: LCD sub-pixel text is used or not depending on layer timing.
+            "--disable-lcd-text",
+            // No hinting: glyph outlines are not snapped differently from run to run.
+            "--font-render-hinting=none",
+            // Software rendering only: GPU paths vary with driver and timing.
+            "--disable-gpu",
+            "--disable-gpu-compositing",
+            "--disable-gpu-rasterization",
+            // One raster thread, whole tiles: the order of tile work cannot change the result.
+            "--num-raster-threads=1",
+            "--disable-partial-raster",
+            // The same colour profile everywhere, whatever the host display reports.
+            "--force-color-profile=srgb",
+          ],
+        },
       },
     },
   ],
