@@ -169,6 +169,10 @@ This project takes **AI-assisted code review seriously** as part of the standard
 
 **Side-effects must be in the PR description.** If a PR primarily fixes A but also changes B, list both in the description. Reviewers shouldn't have to discover changes by reading the diff line by line.
 
+## Triage
+
+Issues opened from a form get the labels the form names (for example `area:sheets`). People outside the project cannot set labels themselves, so a maintainer sets the rest while triaging: the type label comes from what the reporter chose, not from the reporter. For the *Sheet type dimensions* form it comes from the `kind` field: "Dimensions are wrong" gets `type:bug`, "Dimensions are confirmed" gets `type:feedback`.
+
 ## Adding a new printer model (plugin)
 
 Want to add support for a new Brother model (or even a non-Brother printer)? Excellent.

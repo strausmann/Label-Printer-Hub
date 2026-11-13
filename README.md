@@ -261,7 +261,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | `PRINTER_HUB_GROCY_API_KEY` | _empty_ | Grocy API key |
 | `PRINTER_HUB_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
 | `PRINTER_HUB_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
-| `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. At `DEBUG` the hub's own loggers are verbose, but the database driver stays at `INFO` and SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it |
 
 All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. A variable set in the environment wins over the stored value and locks the field in the UI (D4). Printers have no variables: they are managed in Settings > Printers.
 
@@ -271,17 +271,16 @@ All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` mode
 
 - [Architecture overview](docs/architecture.md) — how the pieces fit
 - [Decisions (ADRs)](docs/decisions/) — *why* each architectural choice was made
-- [Plugin development](docs/plugin-development.md) (TBD) — adding new printer models
+- [Getting started](docs/getting-started.md) — from `docker compose up` to the first label, the phone app and webhooks
+- [Plugin development](docs/plugin-development.md) — adding a printer model or a lookup plugin
 - [Privacy policy](docs/policies/privacy.md), [Trademark policy](docs/policies/trademarks.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Conventional Commits, TDD, PR workflow
 
 **On the wiki (tutorials and platform recipes — community-friendly):**
 
-- [Getting started](https://github.com/strausmann/label-printer-hub/wiki/Getting-Started)
 - [Snipe-IT integration](https://github.com/strausmann/label-printer-hub/wiki/Snipe-IT-Integration)
 - [Grocy integration](https://github.com/strausmann/label-printer-hub/wiki/Grocy-Integration)
 - [Spoolman integration](https://github.com/strausmann/label-printer-hub/wiki/Spoolman-Integration)
-- [Install as PWA](https://github.com/strausmann/label-printer-hub/wiki/Install-as-PWA) (TBD)
 - [Troubleshooting](https://github.com/strausmann/label-printer-hub/wiki/Troubleshooting) (TBD)
 
 **Live API reference** (when running): `/openapi.json` and `/docs` (interactive reference, Scalar, served by the hub itself) — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).

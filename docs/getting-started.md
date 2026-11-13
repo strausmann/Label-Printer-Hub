@@ -1,0 +1,127 @@
+# Getting started
+
+This page takes you from nothing to a printed label: start the hub, sign in, add a printer, print, install the web app on a phone, and connect Spoolman or Grocy.
+
+## 1. Start the hub
+
+The hub is one container. Pick the compose file in [`examples/`](../examples/) that matches your setup (standalone, Traefik, Pangolin, Caddy; [`examples/README.md`](../examples/README.md) explains the variants) and copy it together with `.env.example`.
+
+```bash
+git clone https://github.com/strausmann/Label-Printer-Hub.git
+cd Label-Printer-Hub/examples
+cp .env.example .env
+```
+
+Set at least these two values in `.env`:
+
+| Variable | Value |
+|---|---|
+| `PRINTER_HUB_SECRET_KEY` | encrypts the secrets stored in the database; generate with `openssl rand -base64 32 \| tr '+/' '-_'` |
+| `PRINTER_HUB_PUBLIC_URL` | the address you open the hub at, for example `http://localhost:8000` or `https://printerhub.example.com` |
+
+Keep the secret key: without it the stored secrets cannot be decrypted.
+
+```bash
+docker compose -f compose.standalone.yml up -d
+curl http://localhost:8000/healthz
+curl http://localhost:8000/api/v1/info
+```
+
+Both calls answer with `200`. To try the hub without any printer or reverse proxy, `docker compose -f dev/docker-compose.smoke.yml up --build` builds it from the local tree.
+
+### Sign in
+
+A fresh install has no API key. Create the first admin key inside the container:
+
+```bash
+docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
+```
+
+Open the hub in a browser and sign in with that key. (Alternative: set `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` to a one-time key of 32 or more characters and use it for the first sign-in.) Further keys, with the scopes `read`, `print` or `admin` and an optional restriction to chosen printers, are made under **Settings > Access and keys**.
+
+## 2. Add your first printer
+
+Printers are not configured in `.env`. Open **Settings > Printers** and add one:
+
+| Field | Meaning |
+|---|---|
+| Name and slug | what people see, and a short lower-case id (`office-pt`) |
+| Backend | `ptouch` for a PT-Series tape printer, `brother_ql` for a QL-Series printer, `ipp` for a page printer (sheets of labels) |
+| Host and port | the printer's address and TCP port `9100`, for example `192.0.2.20` (an IPP printer takes a URI instead) |
+| Status discovery | read the model and the loaded tape from the printer over SNMP; turn it on for Brother printers, otherwise the hub has no current status |
+
+The printer appears on the overview with its status and the tape it holds. The hub reads the status over SNMP; if the printer shows as offline, check that the hub's container can reach the printer's address and that SNMP is enabled on the printer.
+
+A tape printer cannot report the tape colour over the network. When the roll changes, the hub asks you once which colour is loaded.
+
+## 3. Print your first label
+
+In the web UI, open the print dialog for an item (search for an item of Snipe-IT, Grocy or Spoolman, or scan a code), choose the printer, the layout and the number of copies, check the preview and press **Print**. The job appears under **Jobs** and changes state as the queue works through it.
+
+The same from a script, with an API key of scope `print`:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/print \
+  -H "X-Label-Hub-Key: $LABEL_HUB_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "content_type": "qr_two_lines",
+        "data": {"title": "Asset 123", "primary_id": "ASSET-123",
+                 "qr_payload": "https://assets.example.com/hardware/123"},
+        "options": {"copies": 1}
+      }'
+```
+
+The answer is `202` with a `job_id`; `GET /api/v1/jobs/<job_id>` shows the state. Instead of `data` you can send `"lookup": {"app": "snipeit", "identifier": "123"}` and the hub fetches the label content from the app. The full request body and the error codes are in the [README](../README.md#rest-api-surface); the interactive reference is `/docs` on a running hub.
+
+To connect Snipe-IT, Grocy or Spoolman for lookups, open **Settings > Integrations** and enter the address and the key of the app. Changes apply on the next request, without a restart.
+
+## 4. Install the web app on a phone
+
+The hub is a progressive web app: it can be added to the home screen and opens like an app, and the camera can scan barcodes.
+
+Browsers allow installing and camera access only on a secure origin: serve the hub over `https://` (the reverse-proxy examples do) or open it on `localhost`.
+
+- **Android (Chrome):** open the hub, menu > *Install app* (or *Add to Home screen*).
+- **iPhone and iPad (Safari):** open the hub, Share > *Add to Home Screen*.
+- **Desktop (Chrome, Edge):** the install icon in the address bar.
+
+The app has a **Scan** shortcut on the home-screen icon. Set `PRINTER_HUB_PUBLIC_URL` to the address people open; with an `https` value the session cookies are `Secure`, so a browser will not send them to a plain-`http` name of the same hub.
+
+## 5. Webhooks: print when something happens
+
+The hub accepts events from Spoolman and Grocy and prints the label of the item the event names.
+
+| Method and path | Payload fields |
+|---|---|
+| `POST /api/v1/webhook/spoolman` | `spool_id` (string), `type` (string), optional `quantity` |
+| `POST /api/v1/webhook/grocy` | `product_id` (string), `type` (string), optional `quantity` |
+
+Unknown extra fields are ignored; a missing or mistyped required field answers `422`.
+
+1. Generate a key of at least 32 characters, for example `openssl rand -hex 32`, and set it as `PRINTER_HUB_WEBHOOK_API_KEY` in the hub's `.env`. Restart the hub.
+2. Send it as the `X-API-Key` header with every call. Without a configured key the webhooks answer `503`; with a wrong key `401`.
+3. More than `PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE` calls per minute (default 120, both routes together) answer `429` with `Retry-After`.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/webhook/spoolman \
+  -H "X-API-Key: $PRINTER_HUB_WEBHOOK_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"spool_id": "42", "type": "updated"}'
+```
+
+What happens on a valid call:
+
+- The hub prints **one** `qr_two_lines` label on the **first enabled tape printer** (a page printer is never used for webhooks). `quantity` is accepted but does not change the number of labels.
+- The label content comes from the integration (Spoolman or Grocy), so that integration must be configured; otherwise the call answers `503` with `integration_not_configured`. An unknown spool or product answers `404` with `app-lookup-not-found`.
+- Printer problems (no tape, printer offline or disabled) answer like `POST /api/v1/print`: `409`, `422`, `502` or `503`. Nothing is queued in these cases.
+- On success the answer is `202` with the job id. The webhook key cannot read the job; an admin or a single-sign-on user sees it under **Jobs**.
+
+Behind Pangolin, give the webhook path `/api/v1/webhook/` its own resource that bypasses single sign-on, since the sender cannot log in; the key protects it ([`examples/compose.pangolin.yml`](../examples/compose.pangolin.yml)).
+
+## Where to go next
+
+- [Architecture](architecture.md) and the [decisions](decisions/) behind it
+- [Plugin development](plugin-development.md): add a printer model or a lookup plugin
+- [`examples/README.md`](../examples/README.md): reverse-proxy variants, using the hub from other containers
+- Troubleshooting for the usual first-run problems is at the end of [`examples/README.md`](../examples/README.md)
