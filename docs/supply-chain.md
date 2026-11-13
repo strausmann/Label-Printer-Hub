@@ -143,7 +143,7 @@ Until the release SBOM step has landed, no release has this asset.
 The About page of the running app shows the web list and, once the backend list has landed, the Python list: package,
 version, licence and the licence text on demand. The same data is available as `/licenses/frontend.json` and
 `/licenses/backend.json` (the app serves the files of its web directory, `/opt/app/web/licenses/` in the image;
-that the running app answers these URLs is confirmed in B8, and `backend.json` exists only after B1). A list that is missing in an image (for example an API-only build) is reported as
+that the running app answers these URLs is confirmed in B8). A list that is missing in an image (for example an API-only build) is reported as
 missing; the page keeps the project's own licence and source link either way.
 
 Both lists exclude the project itself. The backend list reads the name from `backend/pyproject.toml`. The backend list is generated at build time with `--require-texts`, so the build stops when a package has no licence text; see [A licence text is missing](../CONTRIBUTING.md#a-licence-text-is-missing).

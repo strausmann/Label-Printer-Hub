@@ -446,15 +446,26 @@ def load_extra(path: Path, root: Path) -> list[LicenceRecord]:
     return records
 
 
-_SINGLE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+\-]*")
+#: SPDX ids whose canonical text names no copyright holder, so one file serves every package
+#: with that id. Any other licence (MIT, BSD, ...) carries a holder line and needs a text of the
+#: package itself: ``<fallback-dir>/packages/<normalised name>.txt``.
+HOLDER_FREE_FALLBACKS: frozenset[str] = frozenset({"GPL-3.0-or-later"})
 
 
 def _text_for(entry: Mapping[str, str], expression: str, fallback_dir: Path) -> str | None:
-    """The package's own licence text, else the canonical text of a single SPDX id, else None."""
+    """The text of one package: its file in ``packages/``, its own text, else a holder-free one.
+
+    A text that names a copyright holder is never borrowed from another package: the result is
+    ``None`` and ``--require-texts`` stops the build.
+    """
+    name = re.sub(r"[-_.]+", "-", entry["Name"]).lower()
+    per_package = fallback_dir / "packages" / f"{name}.txt"
+    if per_package.is_file():
+        return per_package.read_text(encoding="utf-8")
     own = entry.get("LicenseText", UNKNOWN)
     if own != UNKNOWN and own.strip():
         return own
-    if expression != UNKNOWN and _SINGLE_ID.fullmatch(expression):
+    if expression in HOLDER_FREE_FALLBACKS:
         candidate = fallback_dir / f"{expression}.txt"
         if candidate.is_file():
             return candidate.read_text(encoding="utf-8")

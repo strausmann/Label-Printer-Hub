@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from scripts import licence_report
 from scripts.licence_report import (
+    HOLDER_FREE_FALLBACKS,
     LicenceException,
     Policy,
     _collect,
@@ -368,9 +369,32 @@ def test_text_fallback_for_brother_ql(tmp_path: Path) -> None:
 
 
 def test_own_text_wins_over_fallback(tmp_path: Path) -> None:
-    (tmp_path / "MIT.txt").write_text("canonical", "utf-8")
-    [record] = to_records([_record("a", expression="MIT", text="own")], _policy(), tmp_path)
+    (tmp_path / "GPL-3.0-or-later.txt").write_text("canonical", "utf-8")
+    entry = _record("a", expression="GPL-3.0-or-later", text="own")
+    [record] = to_records([entry], _policy(), tmp_path)
     assert record["licenseText"] == "own"
+
+
+def test_holder_bearing_licence_has_no_borrowed_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "fallback").mkdir()
+    (tmp_path / "fallback" / "MIT.txt").write_text("Copyright (c) Someone Else", "utf-8")
+    entry = _record("holderless", expression="MIT", text="UNKNOWN")
+    [record] = to_records([entry], _policy(), tmp_path / "fallback")
+    assert record["licenseText"] is None
+    monkeypatch.setattr(licence_report, "_collect", lambda *_: [entry])
+    assert licence_report.main(_args(tmp_path, "--require-texts")) == 1
+    assert "holderless (MIT): no licence text" in capsys.readouterr().out
+
+
+def test_per_package_text_wins_over_everything(tmp_path: Path) -> None:
+    (tmp_path / "packages").mkdir()
+    (tmp_path / "packages" / "some-pkg.txt").write_text("package text", "utf-8")
+    (tmp_path / "GPL-3.0-or-later.txt").write_text("canonical", "utf-8")
+    entry = _record("Some_Pkg", expression="GPL-3.0-or-later", text="shipped")
+    [record] = to_records([entry], _policy(), tmp_path)
+    assert record["licenseText"] == "package text"
 
 
 def test_no_fallback_for_compound_expression(tmp_path: Path) -> None:
@@ -577,3 +601,18 @@ def test_shipped_licence_texts_and_extra_records() -> None:
         "gLabels-qt templates",
     }
     assert all(r["licenseText"] for r in records)
+
+
+def test_top_level_fallback_files_are_holder_free() -> None:
+    # A top-level file serves every package with that id, so it must name no holder. Texts that
+    # extra-records.json points at are the project's own records, not fallbacks.
+    licences = REPO_ROOT / "backend" / "licences"
+    extra = json.loads((licences / "extra-records.json").read_text("utf-8"))
+    referenced = {(REPO_ROOT / "backend" / r["licenseTextFile"]).name for r in extra}
+    for path in licences.glob("*.txt"):
+        if path.name in referenced:
+            continue
+        assert path.stem in HOLDER_FREE_FALLBACKS, f"{path.name}: not a holder-free fallback"
+    assert "GPL-3.0-or-later" in HOLDER_FREE_FALLBACKS
+    for path in (licences / "packages").glob("*.txt"):
+        assert "Copyright" in path.read_text("utf-8"), f"{path.name}: expected a holder line"

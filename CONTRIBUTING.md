@@ -324,8 +324,15 @@ The image build runs `licence_report.py` with `--require-texts`. It stops on pur
 backend list has no licence text, because the image must not ship a licence list with holes. The output names each
 package and its licence expression. Decide by the expression:
 
-- **A single SPDX id** (for example `MIT`): add the verbatim canonical text as `backend/licences/<SPDX-id>.txt`.
-  Put the source URL and the sha256 of the file in the commit body.
+- **A single SPDX id:** the rule depends on the licence text.
+  - Licences whose canonical text names no copyright holder (listed in `HOLDER_FREE_FALLBACKS` in
+    `licence_report.py`, today only `GPL-3.0-or-later`) get the verbatim canonical text as
+    `backend/licences/<SPDX-id>.txt`, one file for every package. Put the source URL and the sha256 in the
+    commit body.
+  - MIT, BSD and every other licence with a holder line get a text of the package itself, as
+    `backend/licences/packages/<normalised-name>.txt`. Take the holder from the package's own source: its
+    licence file in the repository or tag, otherwise its metadata. Name that source in the commit body.
+    Never reuse another package's holder.
 - **A compound or wrong expression** (for example `MIT OR Apache-2.0`, or metadata that is not an SPDX id): add an
   `x-licence-exceptions` entry to `licence-policy.yml` whose `licence` is the single id the package really carries,
   then add that id's text as above. Never guess a text.
