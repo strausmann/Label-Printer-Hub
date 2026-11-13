@@ -79,7 +79,7 @@ export function TestPrintButton({ printer, status, mutation }: { printer: Printe
           <Button className={SECONDARY_BUTTON} isDisabled={reason !== null || mutation.isPending} aria-describedby={reason ? reasonId : undefined}>
             {t`Test print`}
           </Button>
-          <Popover placement="bottom end" className="w-[min(20rem,calc(100vw-2rem))] rounded-r2 border border-line-strong bg-surface p-3 shadow-lg origin-(--trigger-anchor-point) data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+          <Popover placement="bottom end" className="w-[min(20rem,calc(100vw-2rem))] rounded-r2 border border-line-strong bg-surface p-3 shadow-lg origin-(--trigger-anchor-point) data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
             <Dialog aria-label={t`Test print`} className="flex flex-col gap-3 outline-none">
               <TrayChoice trays={status?.trays} pending={mutation.isPending} onPrint={send} />
             </Dialog>

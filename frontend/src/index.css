@@ -117,7 +117,8 @@
   }
 }
 
-/* Entrances for popovers and dialogs: opacity plus a small scale, never from nothing. */
+/* Entrances: dialogs use opacity plus a small scale (popin); positioned popovers use opacity only (fadein),
+   because React Aria measures a scaling popover at its smaller size (#292, src/popover-motion.test.ts). */
 @keyframes popin {
   from {
     opacity: 0;

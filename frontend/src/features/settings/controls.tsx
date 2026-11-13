@@ -161,7 +161,7 @@ export function SelectField({
           <path d="M2 4.5 6 8.5 10 4.5" />
         </svg>
       </Button>
-      <Popover className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[popin_140ms_cubic-bezier(0.23,1,0.32,1)]">
+      <Popover className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
         {/* The popover is as tall as the room beside the trigger (it sets max-height); a long list scrolls inside it instead of covering the trigger. */}
         <ListBox className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none">
           {options.map((option) => (
