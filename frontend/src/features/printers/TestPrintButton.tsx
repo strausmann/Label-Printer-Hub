@@ -48,7 +48,7 @@ function useErrorText(error: unknown): string {
       case "printer-paused":
         return t`The printer is paused. Resume it, then try again.`;
       case "printer-status-unknown":
-        return t`The hub has no current status for this printer. Turn on status discovery in the printer settings, then try again.`;
+        return t`The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again.`;
     }
     if (!/^HTTP \d+$/.test(error.detail)) return error.detail;
   }

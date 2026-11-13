@@ -1538,6 +1538,10 @@ msgstr "Host"
 msgid "How long finished jobs stay in the history."
 msgstr "Wie lange abgeschlossene Aufträge im Verlauf bleiben."
 
+#: src/features/printers/PageStatus.tsx
+msgid "How to turn on status discovery"
+msgstr "So schaltest du die Statuserkennung ein"
+
 #. placeholder {0}: test.data.status
 #: src/features/settings/Integrations.tsx
 msgid "HTTP {0}"
@@ -3402,6 +3406,10 @@ msgstr "Zustand"
 msgid "state unknown"
 msgstr "Zustand unbekannt"
 
+#: src/features/printers/PageStatus.tsx
+msgid "Status discovery is off for this printer. An admin can turn it on through the admin API."
+msgstr "Die Statuserkennung ist für diesen Drucker aus. Ein Admin kann sie über die Admin-API einschalten."
+
 #: src/features/printers/model.ts
 msgid "Status unknown"
 msgstr "Status unbekannt"
@@ -3781,6 +3789,14 @@ msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite.
 msgid "The hub cannot draw a preview right now. Try again later."
 msgstr "Der Hub kann gerade keine Vorschau zeichnen. Versuch es später noch einmal."
 
+#: src/features/printers/TestPrintButton.tsx
+msgid "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."
+msgstr "Der Hub kann den Status dieses Druckers nicht lesen und weiß deshalb nicht, ob er bereit ist. Ein Admin kann seine Adresse in den Druckereinstellungen prüfen. Versuche es dann erneut."
+
+#: src/features/printers/PageStatus.tsx
+msgid "The hub cannot read this printer's status. An admin can check its address in the printer settings."
+msgstr "Der Hub kann den Status dieses Druckers nicht lesen. Ein Admin kann seine Adresse in den Druckereinstellungen prüfen."
+
 #: src/features/jobs/RetryError.tsx
 msgid "The hub could not be reached. Try again."
 msgstr "Der Hub ist nicht erreichbar. Versuche es erneut."
@@ -3792,10 +3808,6 @@ msgstr "Der Hub kennt keinen Bogen {code}."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "Der Hub kennt keinen Bogen {preselectedSheet}."
-
-#: src/features/printers/TestPrintButton.tsx
-msgid "The hub has no current status for this printer. Turn on status discovery in the printer settings, then try again."
-msgstr "Der Hub hat keinen aktuellen Status dieses Druckers. Schalte die Statuserkennung in den Druckereinstellungen ein und versuche es dann erneut."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The hub restarted while this label waited for the next part. Print it again."
@@ -4139,6 +4151,7 @@ msgstr "Der Drucker ist nicht bereit. Die Seiten kommen in die Druckwarteschlang
 msgid "The printer is paused. Resume it, then try again."
 msgstr "Der Drucker ist pausiert. Setze ihn fort und versuche es dann erneut."
 
+#: src/features/printers/PageStatus.tsx
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer is switched off in the hub. Switch it on in the printer settings."
 msgstr "Der Drucker ist im Hub ausgeschaltet. Schalte ihn in den Druckereinstellungen ein."
@@ -4616,10 +4629,6 @@ msgstr "Erneut versuchen"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Turn off the trays you do not use, and mark the one that should be used when none is chosen."
 msgstr "Schalte die Fächer aus, die du nicht nutzt, und markiere das Fach, das gilt, wenn keines gewählt wird."
-
-#: src/features/printers/PageStatus.tsx
-msgid "Turn on status discovery in the printer settings"
-msgstr "Schalte die Statuserkennung in den Druckereinstellungen ein"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Type"

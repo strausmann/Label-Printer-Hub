@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { mockApi, PRINTER_A, status } from "../test-api";
+import { mockApi, PAGE_PRINTER, pageStatus, PRINTER_A, status } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -64,24 +64,68 @@ describe("one age rule for the card and the detail page (263-28)", () => {
     else expect(screen.queryByText(/Last status/)).toBeNull();
   });
 
-  it("not monitored names the fix: text on the card, text and a way to the settings for an admin on the detail page", async () => {
+  // #296: the printer form has no switch for status discovery yet, so the hint must not send anyone there.
+  const TAPE_HINT = "Status discovery is off for this printer. An admin can turn it on through the admin API.";
+  const HOW_TO = "How to turn on status discovery";
+  const DOCS = "https://github.com/strausmann/label-printer-hub/blob/main/docs/getting-started.md#turn-on-status-discovery";
+
+  it("not monitored names what is true today: text on the card, the admin API how-to for an admin on the detail page", async () => {
     mockApi({ "GET /api/v1/printers": [PRINTER_A], ...detailRoutes({ online: null, polled: false, tape_loaded: null, note: "Not polled" }), "GET /api/v1/jobs": [] });
     const list = await renderApp({ path: "/printers" });
     const card = (await screen.findByRole("link", { name: /Workshop PT-P750W/ })) as HTMLElement;
-    expect(await within(card).findByText("Turn on status discovery in the printer settings")).toBeVisible();
+    expect(await within(card).findByText(TAPE_HINT)).toBeVisible();
     // The card is itself a link: no second link inside it.
     expect(within(card).queryByRole("link")).toBeNull();
     list.unmount();
 
     const detail = await renderApp({ path: `/printers/${PRINTER_A.id}` });
-    expect(await screen.findByText("Turn on status discovery in the printer settings")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open the printer settings" })).toHaveAttribute("href", "/settings/printers");
+    expect(await screen.findByText(TAPE_HINT)).toBeVisible();
+    expect(screen.getByRole("link", { name: HOW_TO })).toHaveAttribute("href", DOCS);
+    expect(screen.queryByRole("link", { name: "Open the printer settings" })).toBeNull();
+    expect(screen.queryByText(/in the printer settings/)).toBeNull();
     detail.unmount();
 
-    // A key below admin cannot change settings: the hint stays, the link goes.
+    // A key below admin cannot use the admin API: the hint stays, the link goes.
     await renderApp({ path: `/printers/${PRINTER_A.id}`, session: { ...SIGNED_IN, scope: "print" } });
-    expect(await screen.findByText("Turn on status discovery in the printer settings")).toBeVisible();
-    expect(screen.queryByRole("link", { name: "Open the printer settings" })).toBeNull();
+    expect(await screen.findByText(TAPE_HINT)).toBeVisible();
+    expect(screen.queryByRole("link", { name: HOW_TO })).toBeNull();
+  });
+
+  it("the how-to link points at the docs of the running version", async () => {
+    mockApi({ "GET /api/v1/printers": [PRINTER_A], ...detailRoutes({ online: null, polled: false, tape_loaded: null }), "GET /api/v1/jobs": [] });
+    await renderApp({ path: `/printers/${PRINTER_A.id}`, info: { source_url: "https://example.invalid/fork/tree/v1.5.1" } });
+    expect(await screen.findByRole("link", { name: HOW_TO })).toHaveAttribute(
+      "href",
+      "https://example.invalid/fork/blob/v1.5.1/docs/getting-started.md#turn-on-status-discovery",
+    );
+  });
+
+  it("an unpolled page printer is not about status discovery: an admin checks its address", async () => {
+    const page = { ...PAGE_PRINTER };
+    mockApi({
+      "GET /api/v1/printers": [page],
+      [`GET /api/v1/printers/${page.id}`]: page,
+      [`GET /api/v1/printers/${page.id}/status`]: pageStatus(page.id, { online: null, polled: false, markers: [], trays: [] }),
+      [`GET /api/v1/printers/${page.id}/queue`]: [],
+      "GET /api/v1/jobs": [],
+    });
+    const list = await renderApp({ path: "/printers" });
+    const card = (await screen.findByRole("link", { name: /Office laser/ })) as HTMLElement;
+    expect(await within(card).findByText("The hub cannot read this printer's status. An admin can check its address in the printer settings.")).toBeVisible();
+    expect(within(card).queryByText(/status discovery/)).toBeNull();
+    list.unmount();
+
+    await renderApp({ path: `/printers/${page.id}` });
+    expect(await screen.findByRole("link", { name: "Open the printer settings" })).toHaveAttribute("href", "/settings/printers");
+  });
+
+  it("a printer switched off in the hub says so, not that discovery is off", async () => {
+    const off = { ...PRINTER_A, enabled: false };
+    mockApi({ "GET /api/v1/printers": [off], ...detailRoutes({ online: null, polled: false, tape_loaded: null }), [`GET /api/v1/printers/${PRINTER_A.id}`]: off, "GET /api/v1/jobs": [] });
+    await renderApp({ path: "/printers" });
+    const card = (await screen.findByRole("link", { name: /Workshop PT-P750W/ })) as HTMLElement;
+    expect(await within(card).findByText("The printer is switched off in the hub. Switch it on in the printer settings.")).toBeVisible();
+    expect(within(card).queryByText(/status discovery/)).toBeNull();
   });
 
   it("a monitored printer gets no such hint", async () => {

@@ -38,7 +38,7 @@ export function PrinterCard({
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
       {view.kind === "paused" && <PauseReason pause={printer.pause} />}
-      {view.kind === "not_polled" && <NotMonitoredHint linked={false} />}
+      {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked={false} />}
       {typeof age === "number" && (
         <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`Last status ${ageWord}`}</span>
       )}

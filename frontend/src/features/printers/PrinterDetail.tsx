@@ -93,7 +93,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <h1 className="text-title font-bold">{printer.name}</h1>
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
-          {view.kind === "not_polled" && <NotMonitoredHint linked />}
+          {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked />}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
           <ReasonLine reasons={view.reasons} />
           {page && ahead > 0 && (

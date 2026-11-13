@@ -146,7 +146,7 @@ describe("TestPrintButton", () => {
     ["media-unknown", "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."],
     ["printer-disabled", "The printer is switched off in the hub. Switch it on in the printer settings."],
     ["printer-paused", "The printer is paused. Resume it, then try again."],
-    ["printer-status-unknown", "The hub has no current status for this printer. Turn on status discovery in the printer settings, then try again."],
+    ["printer-status-unknown", "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."],
   ])("explains %s in the app's own words, not the server's English", async (type, words) => {
     const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
     mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
@@ -157,7 +157,7 @@ describe("TestPrintButton", () => {
 
   it.each([
     ["printer-paused", "Der Drucker ist pausiert. Setze ihn fort und versuche es dann erneut."],
-    ["printer-status-unknown", "Der Hub hat keinen aktuellen Status dieses Druckers. Schalte die Statuserkennung in den Druckereinstellungen ein und versuche es dann erneut."],
+    ["printer-status-unknown", "Der Hub kann den Status dieses Druckers nicht lesen und weiß deshalb nicht, ob er bereit ist. Ein Admin kann seine Adresse in den Druckereinstellungen prüfen. Versuche es dann erneut."],
   ])("refusal texts are localized: %s reads German in a German UI", async (type, words) => {
     const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
     mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
