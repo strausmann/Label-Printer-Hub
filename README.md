@@ -9,11 +9,9 @@
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
 [![GitHub Issues](https://img.shields.io/github/issues/strausmann/label-printer-hub)](https://github.com/strausmann/label-printer-hub/issues)
 
-> Self-hosted multi-printer hub for Brother PT-Series and QL-Series label printers. Pull-mode (user scans barcode) and push-mode (Spoolman/Grocy webhooks). Integrates with Snipe-IT, Grocy, Spoolman. Plugin-based architecture for additional printer models. PWA-ready for smartphone use.
+> Self-hosted print server for Brother PT-Series and QL-Series label printers and for page printers over IPP (label sheets). Pull-mode (scan a barcode, print) and push-mode (Spoolman/Grocy webhooks). Integrates with Snipe-IT, Grocy and Spoolman. Plugin-based architecture for additional printer models. Installable as a PWA on a phone.
 
 ## Screenshots
-
-The screenshots follow your colour scheme. They are generated from the end-to-end fixtures by `pnpm screenshots` (see [CONTRIBUTING.md](CONTRIBUTING.md#web-ui-screenshots)).
 
 <p>
   <picture>
@@ -95,28 +93,25 @@ On a phone:
   </picture>
 </p>
 
-## Status
+## Supported hardware
 
-**Early development.** See [open issues](https://github.com/strausmann/label-printer-hub/issues) for progress and the [master tracking issue #22](https://github.com/strausmann/label-printer-hub/issues/22) for the phase roadmap.
-
-This project is being designed against the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf). Hardware tested: Brother PT-P750W (verified). Brother QL-820NWBc (in progress).
+The printer protocols follow the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and the [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf); page printers are reached over IPP (RFC 8011). Tested on hardware: Brother PT-P750W. Hardware testing of the QL-820NWBc is pending.
 
 ## Features
 
 - **Multi-printer support** via plugin architecture (PT-Series and QL-Series, more on request)
-- **Printers added and changed at runtime** in the UI (Settings > Printers), no restart and no environment variables (#224)
+- **Printers added and changed at runtime** in the UI (Settings > Printers), no restart and no environment variables
 - **Pull-mode**: Open the web UI on your phone, scan a barcode, hit print
 - **Push-mode**: Spoolman/Grocy webhook → automatic label print
 - **App integrations**: Snipe-IT (asset tags), Grocy (product labels), Spoolman (3D-print spool labels)
 - **Print queue** with pause/resume/cancel/retry operations, per printer and per job; tape runs in sub-jobs that
-  stop at an unknown outcome and offer continue or reprint (#277)
+  stop at an unknown outcome and offer continue or reprint
+- **Label sheets** on page printers: sheet types with measurements, partly used sheets, calibration per printer
 - **Live status pages** per printer via Server-Sent Events (no page reload)
 - **Tape detection** via Brother native status block (no manual configuration)
-- **PWA-installable** for smartphone use, also behind SSO (#225)
-- **Versioned API** under `/api/v1/` (#226)
+- **PWA-installable** for smartphone use, also behind SSO
+- **Versioned API** under `/api/v1/`
 - **Pluggable**: drop a new `printer_models/your_model.py` to add a new device
-
-Not built yet: job priorities in the queue.
 
 ## Tech Stack
 
@@ -165,28 +160,20 @@ docker exec label-printer-hub-backend printer-hub admin create-key --scope admin
 # then add your printers under Settings > Printers.
 ```
 
-To build and run the hub from source without any printer hardware, use the smoke-test compose file (throw-away keys, one container, built from the local tree):
-
-```bash
-export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
-docker compose -f dev/docker-compose.smoke.yml up --build
-# UI and API on http://localhost:8000
-curl http://localhost:8000/healthz
-```
-
 Other containers in the same stack can call the hub directly with an API key: [using the hub from other services](examples/README.md#using-the-hub-from-other-services-in-the-same-stack).
 
 For the REST API alone, without the web UI, see [`examples/compose.backend-only.yml`](examples/compose.backend-only.yml).
 
 ## REST API surface
 
-| Method | Path | Purpose | Body |
-|---|---|---|---|
-| `POST` | `/api/v1/print` | Submit a print job | `PrintRequest` (see below) |
-| `GET` | `/api/v1/jobs/{job_id}` | Poll job status | — |
-| `POST` | `/api/v1/printer/resume` | Resume the printer queue after a recoverable error halted it (tape empty / cover open / offline) | — |
-| `GET` | `/healthz` | Liveness probe for orchestrators | — |
-| `GET` | `/readiness` | Readiness probe — deep check for reverse-proxy routing | — |
+The complete, always current reference is served by the hub itself at `/docs` (interactive) and `/openapi.json`. The calls most integrations need:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/print` | Submit a print job (body below) |
+| `GET` | `/api/v1/jobs/{job_id}` | Poll job status |
+| `GET` | `/healthz` | Liveness probe |
+| `GET` | `/readiness` | Readiness probe |
 
 ### Health Probes
 
@@ -260,10 +247,9 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | `PRINTER_HUB_GROCY_URL` | _empty_ | Grocy base URL |
 | `PRINTER_HUB_GROCY_API_KEY` | _empty_ | Grocy API key |
 | `PRINTER_HUB_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
-| `PRINTER_HUB_SERVER_PORT` | `8090` | Internal port (overridden to `8000` in the container — see Dockerfile) |
 | `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. At `DEBUG` the hub's own loggers are verbose, but the database driver stays at `INFO` and SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it |
 
-All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. A variable set in the environment wins over the stored value and locks the field in the UI (D4). Printers have no variables: they are managed in Settings > Printers.
+All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. A variable set in the environment wins over the stored value and locks the field in the UI. Printers have no variables: they are managed in Settings > Printers.
 
 ## Documentation
 
@@ -281,7 +267,6 @@ All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` mode
 - [Snipe-IT integration](https://github.com/strausmann/label-printer-hub/wiki/Snipe-IT-Integration)
 - [Grocy integration](https://github.com/strausmann/label-printer-hub/wiki/Grocy-Integration)
 - [Spoolman integration](https://github.com/strausmann/label-printer-hub/wiki/Spoolman-Integration)
-- [Troubleshooting](https://github.com/strausmann/label-printer-hub/wiki/Troubleshooting) (TBD)
 
 **Live API reference** (when running): `/openapi.json` and `/docs` (interactive reference, Scalar, served by the hub itself) — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).
 

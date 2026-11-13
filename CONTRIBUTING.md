@@ -41,7 +41,21 @@ pip install -e ".[dev]"
 pre-commit install
 ```
 
-Frontend: see [`docs/architecture.md`](docs/architecture.md) once finalised.
+Frontend (from `frontend/`, pnpm):
+```bash
+pnpm install
+pnpm dev          # Vite dev server; /api is proxied to a backend on localhost:8000
+```
+
+To build and run the whole hub from source without printer hardware, use the smoke-test compose file (throw-away keys,
+one container, built from the local tree):
+
+```bash
+export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+docker compose -f dev/docker-compose.smoke.yml up --build
+# UI and API on http://localhost:8000
+curl http://localhost:8000/healthz
+```
 
 ### 3. Create a branch
 
