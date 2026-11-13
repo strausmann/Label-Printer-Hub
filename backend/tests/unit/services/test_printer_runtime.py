@@ -365,6 +365,17 @@ async def test_attach_tape_with_snmp_starts_producer(env: Env) -> None:
     assert env.app.state.backend_router.get(printer.slug) is not None
 
 
+async def test_the_print_service_of_a_tape_printer_knows_its_slug(env: Env) -> None:
+    """T12: the slug goes into the PrintService, so a ``printer_disabled`` answer names it."""
+    await _start(env)
+    printer = _tape(model="PT-P750W", discover=False)
+    await _store_row(env.factory, printer)
+    await env.runtime.attach(printer)
+    service = env.runtime.print_service_for(printer.id)
+    assert service is not None
+    assert service._printer_slug == printer.slug
+
+
 async def test_detach_of_a_tape_printer_forgets_its_roll_tracking(env: Env) -> None:
     """T10: a removed printer's lock and no-tape count leave the roll tracker with it."""
     await _start(env)

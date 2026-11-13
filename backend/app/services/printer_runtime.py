@@ -473,6 +473,7 @@ class PrinterRuntime:
                 queue=queue,
                 lookup_service=AppLookupService(),
                 printer_id=printer.id,
+                printer_slug=cfg.slug,
                 backend=cast(Any, backend),
                 store=self._app.state.job_store,
                 layout_defaults=parse_layout_defaults(printer.layout_defaults),
