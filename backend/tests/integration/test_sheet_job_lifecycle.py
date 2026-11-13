@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from app.models.job import Job as DbJob
@@ -575,11 +575,13 @@ async def test_reservation_sweep_starts_after_the_runtime_and_stops_first(
 # ---------------------------------------------------------------- recovery check (263-47)
 
 
-async def _seed_queued_sheet_page(pid: UUID, *, free_the_cells: bool) -> UUID:
+async def _seed_queued_sheet_page(
+    pid: UUID, *, free_the_cells: bool, re_own_one: UUID | None = None
+) -> UUID:
     """A ``queued`` sheet page row as a failed end write leaves it: reserved cells, or (the case
     the check exists for) cells that were freed meanwhile and taken by nobody yet."""
     import app.db.engine as eng
-    from sqlalchemy import delete
+    from sqlalchemy import delete, update
 
     async with eng.async_session() as s:
         await ts.create_type(s, _fields(), G48, actor="tester")
@@ -596,8 +598,22 @@ async def _seed_queued_sheet_page(pid: UUID, *, free_the_cells: bool) -> UUID:
         )
         if free_the_cells:
             await s.execute(delete(SheetCell).where(SheetCell.job_id == page.job_id))
+        if re_own_one is not None:
+            # One cell now belongs to another job (freed, then reserved again by another print).
+            first = min(c.cell_no for c in await _held_cells(s, page.job_id))
+            await s.execute(
+                update(SheetCell)
+                .where(SheetCell.job_id == page.job_id, SheetCell.cell_no == first)
+                .values(job_id=re_own_one)
+            )
         await s.commit()
     return page.job_id
+
+
+async def _held_cells(s: Any, job_id: UUID) -> list[SheetCell]:
+    from sqlalchemy import select
+
+    return list((await s.execute(select(SheetCell).where(SheetCell.job_id == job_id))).scalars())
 
 
 async def test_restart_prints_a_queued_sheet_page_whose_cells_are_still_its_own() -> None:
@@ -631,3 +647,34 @@ async def test_restart_refuses_a_queued_sheet_page_whose_cells_were_freed() -> N
     row = await _row(jid)
     assert (row.error or "").startswith("recovery_refused:")
     assert "Print-Job" not in [r.operation for r in fake.received]
+
+
+async def test_restart_refuses_a_queued_sheet_page_when_one_of_its_cells_is_foreign() -> None:
+    """T8 N1: one cell was re-reserved by another job, the other is still ours. The page is
+    refused as a whole (it would print over the other job's cell); nothing reaches the
+    printer, the foreign cell stays reserved for its job, and our remaining cell is freed."""
+    import app.db.engine as eng
+
+    other = uuid4()
+    fake = FakeIppPrinter(job_script=[9])
+    pid = await _printer()
+    jid = await _seed_queued_sheet_page(pid, free_the_cells=False, re_own_one=other)
+    app = _app(fake)
+    async with app.router.lifespan_context(app):
+
+        async def _failed() -> bool:
+            return (await _row(jid)).state == "failed"
+
+        await _until(_failed)
+
+        async def _ours_freed() -> bool:
+            async with eng.async_session() as s:
+                return all(c.state != "reserved" for c in await _held_cells(s, jid))
+
+        await _until(_ours_freed)
+    row = await _row(jid)
+    assert (row.error or "").startswith("recovery_refused:")
+    assert "Print-Job" not in [r.operation for r in fake.received]
+    async with eng.async_session() as s:
+        foreign = await _held_cells(s, other)
+    assert [c.state for c in foreign] == ["reserved"]
