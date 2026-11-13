@@ -73,9 +73,21 @@ const THIRD_PERSON_EXCEPTIONS: Record<string, string> = {
     "third person, not an address: 'Sie' = the values",
 };
 
-const FORMAL = /\b(Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihnen)\b/;
+// Word boundaries by Unicode letters: JavaScript's `\b` counts only ASCII letters as word characters, so
+// next to "ä", "ö", "ü" or "ß" it saw a word edge inside a word ("Sieä", "üSie").
+const FORMAL = /(?<![\p{L}\p{N}])(Sie|Ihr|Ihre|Ihren|Ihrem|Ihrer|Ihnen)(?![\p{L}\p{N}])/u;
 
 describe("German catalogue address form", () => {
+  it("finds the formal pronoun as a word, also next to umlauts", () => {
+    expect(FORMAL.test("Wählen Sie den Drucker")).toBe(true);
+    expect(FORMAL.test("Ihnen.")).toBe(true);
+    // Not a pronoun: a word that only contains the letters.
+    expect(FORMAL.test("Ihrzeit")).toBe(false);
+    expect(FORMAL.test("Sieb")).toBe(false);
+    expect(FORMAL.test("üSie")).toBe(false);
+    expect(FORMAL.test("Sieä")).toBe(false);
+  });
+
   it("no formal address in the German catalogue", () => {
     const entries = readPoEntries("de");
     const hits = entries
@@ -93,8 +105,12 @@ describe("German catalogue address form", () => {
   });
 });
 
-/** Names of the ICU arguments of a message: top level and nested; `#` and branch texts are not arguments. */
-export function icuArgumentNames(message: string): Set<string> {
+/**
+ * Names of the ICU arguments of a message: top level and nested; `#` and branch texts are not arguments.
+ * It does not read ICU apostrophe quoting (`'{'` as a literal brace); no catalogue message uses it, which
+ * the test "uses no apostrophe-quoted braces" below holds true.
+ */
+function icuArgumentNames(message: string): Set<string> {
   const names = new Set<string>();
   const closing = (open: number, end: number): number => {
     let depth = 0;
@@ -146,6 +162,14 @@ describe("ICU argument parser", () => {
     ).toEqual(["n", "who"]);
     expect([...icuArgumentNames("{g, select, a {x} other {y}}")]).toEqual(["g"]);
     expect([...icuArgumentNames("no arguments")]).toEqual([]);
+  });
+
+  it("uses no apostrophe-quoted braces, which it would read as arguments", () => {
+    const quoted = (["en", "de"] as const)
+      .flatMap((locale) => readPoEntries(locale).map((e) => ({ locale, ...e })))
+      .filter((e) => /'[{}]/.test(e.msgid) || /'[{}]/.test(e.msgstr))
+      .map((e) => `${e.locale} line ${e.line}: ${JSON.stringify(e.msgid)}`);
+    expect(quoted, quoted.join("\n")).toEqual([]);
   });
 });
 

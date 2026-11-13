@@ -585,7 +585,7 @@ msgstr "Anordnung"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Ask an admin to set it up."
-msgstr "Bitte einen Admin, es einzurichten."
+msgstr "Bitte einen Admin darum, es einzurichten."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Asked the printer to cancel."
@@ -1347,7 +1347,7 @@ msgstr "Gib die Adresse des Druckers ein."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
-msgstr "Trag ein, was der Drucker falsch macht; den Ausgleich in die Gegenrichtung übernimmt der Hub selbst."
+msgstr "Gib an, was der Drucker falsch macht; den Ausgleich in die Gegenrichtung übernimmt der Hub selbst."
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Every sheet is used up."
