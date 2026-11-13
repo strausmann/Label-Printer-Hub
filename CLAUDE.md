@@ -64,7 +64,7 @@ Ask in the PR description or open a draft PR with questions. Don't fabricate —
 
 ## Peer-review with other AI assistants
 
-Pull requests in this project receive review from **GitHub Copilot Chat** (configured via [`.github/copilot-instructions.md`](.github/copilot-instructions.md)) and **Gemini Code Assist** (configured via [`.gemini/styleguide.md`](.gemini/styleguide.md)).
+Every pull request in this project is reviewed by **Codex** (`chatgpt-codex-connector`; comment `@codex review` to request a new review after changes). **GitHub Copilot** can be requested on a PR and follows [`.github/copilot-instructions.md`](.github/copilot-instructions.md).
 
 When working on a PR:
 

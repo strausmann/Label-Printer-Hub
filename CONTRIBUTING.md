@@ -34,11 +34,12 @@ cd label-printer-hub
 
 ### 2. Set up your environment
 
-Backend (Python):
+Backend (Python 3.12+, from `backend/`):
 ```bash
+cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pre-commit install
+cd .. && pre-commit install
 ```
 
 Frontend (from `frontend/`, pnpm):
@@ -75,7 +76,7 @@ Branch naming follows Conventional Commits prefix:
 | `perf/` | Performance |
 | `ci/` | CI changes only |
 
-Example: `git checkout -b feat/ptouch-tape-detection origin/milestone/1.5.0`.
+Example: `git checkout -b feat/sheet-cell-history origin/milestone/1.8.0`.
 
 ### 4. Make changes — TDD please
 
@@ -86,7 +87,7 @@ This project follows **Test-Driven Development**. Every behaviour change require
 3. Refactor if needed
 4. Commit (Conventional Commits)
 
-Run tests:
+Run tests (from `backend/`; the web UI has its own tests, see [Local CI checks](#local-ci-checks)):
 ```bash
 pytest                          # all
 pytest tests/unit -v            # unit only
@@ -139,7 +140,7 @@ returns immediately with a JobId instead of blocking until print is done.
 | `test`, `refactor`, `chore`, `ci`, `style` | none | Internal |
 | `feat!` or `BREAKING CHANGE:` footer | major (x.0.0) | Breaking API change |
 
-Scopes we use: `printer-models`, `queue`, `status`, `api`, `ui`, `webhook`, `docker`, `ci`, `examples`.
+Common scopes: `ui`, `sheets`, `printers`, `api`, `queue`, `print`, `status`, `ql`, `auth`, `pwa`, `webhook`, `integrations`, `docker`, `ci`, `deps`, `license`, `examples`.
 
 ### 6. Push & open a Pull Request
 
@@ -152,20 +153,18 @@ Feature, fix and other topic PRs are squash-merged. The squash commit message **
 
 ### 7. Code review — humans and AIs
 
-This project takes **AI-assisted code review seriously** as part of the standard PR workflow:
-
 | Reviewer | What they look at | How to read their feedback |
 |---|---|---|
 | **Maintainer (human)** | Architecture fit, ADR compliance, hardware-specific behaviour, judgement calls | Authoritative — addresses or explains why not |
-| **Gemini Code Assist** | Style, common pitfalls, security smells, language idiom — configured in [`.gemini/styleguide.md`](.gemini/styleguide.md) | Take seriously — false positives exist but the signal is good. Reply inline if disagreeing |
-| **GitHub Copilot Chat** | (When invoked on a PR) similar to Gemini, plus deep code context. Following [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | Same — read every comment, reply or fix |
+| **Codex** (`chatgpt-codex-connector`) | Reviews every pull request with access to the whole repository: bugs, cross-file effects, security | Take seriously — false positives exist but the signal is good. Reply inline if disagreeing |
+| **GitHub Copilot** | When requested on a PR, following [`.github/copilot-instructions.md`](.github/copilot-instructions.md) | Same — read every comment, reply or fix |
 
 **Workflow:**
 
-1. Open the PR (draft is fine — push triggers reviews)
-2. Wait for CI green + AI reviews to land (usually within 1-2 minutes)
+1. Open the PR (draft is fine)
+2. Wait for CI green and the Codex review (comment `@codex review` to request one again after new commits)
 3. **Read every AI comment.** Even when you disagree, write a brief reply explaining why — that builds the project's institutional memory of "we don't do X because Y"
-4. Address legitimate findings with a follow-up commit; the reviewers re-run on push
+4. Address legitimate findings with a follow-up commit and request a new review
 5. Mark the PR ready for review when AI feedback is addressed
 6. The maintainer reviews next; squash-merge follows their approval
 
@@ -179,7 +178,7 @@ This project takes **AI-assisted code review seriously** as part of the standard
 
 **Before opening a PR, skim [`docs/learnings/code-review-patterns.md`](docs/learnings/code-review-patterns.md).** It collects recurring findings from previous AI reviews so you can self-correct in advance. When an AI review surfaces a *new* recurring pattern that's likely to bite future PRs, add it to that file in the same follow-up commit.
 
-**Wait for the AI reviewers, even on small PRs.** Gemini and Copilot post within ~1-2 minutes. Merging a small "trivial" PR with `--admin` before they've commented forfeits the review value and makes follow-up comments awkward to address. If a PR is *truly* time-critical (security fix, broken main), call it out explicitly in the PR description and own that you're skipping the review window — and address any post-merge comments in a follow-up PR.
+**Wait for the AI review, even on small PRs.** Codex usually posts within a few minutes. Merging a small "trivial" PR with `--admin` before they've commented forfeits the review value and makes follow-up comments awkward to address. If a PR is *truly* time-critical (security fix, broken main), call it out explicitly in the PR description and own that you're skipping the review window — and address any post-merge comments in a follow-up PR.
 
 **Side-effects must be in the PR description.** If a PR primarily fixes A but also changes B, list both in the description. Reviewers shouldn't have to discover changes by reading the diff line by line.
 
@@ -211,7 +210,14 @@ mypy app/                     # type checking (blocking in CI — strict mode)
 pytest                        # tests (blocking in CI)
 ```
 
-The CI workflow runs the same. **All four are hard gates** — no warn-only:
+And from `frontend/` for the web UI:
+
+```bash
+pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build
+pnpm e2e                      # Playwright end-to-end tests against the e2e hub
+```
+
+The CI workflow runs the same. **All of them are hard gates** — no warn-only:
 
 - `ruff check` and `ruff format --check` reject style/lint issues
 - `mypy` runs in strict mode (configured in `pyproject.toml` `[tool.mypy] strict = true`); type-check failures fail the build

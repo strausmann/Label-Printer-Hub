@@ -11,7 +11,42 @@
 
 > Self-hosted print server for Brother PT-Series and QL-Series label printers and for page printers over IPP (label sheets). Pull-mode (scan a barcode, print) and push-mode (Spoolman/Grocy webhooks). Integrates with Snipe-IT, Grocy and Spoolman. Plugin-based architecture for additional printer models. Installable as a PWA on a phone.
 
+## Features
+
+**Printers**
+- **Tape and label printers** — Brother PT-Series (P-touch tape) and QL-Series (DK rolls), several at once
+- **Page printers over IPP** — any office printer that speaks IPP prints label sheets, no print dialog, no driver
+- **Added in the UI** (Settings > Printers) while the hub runs, no restart and no environment variables
+- **Live status** — ready, printing, cover open, tape empty, toner levels; pages update without reloading (Server-Sent Events)
+- **Tape detection** from the Brother status block: the hub knows which tape width is loaded
+
+**Printing**
+- **Pull-mode** — open the web UI on your phone, scan a barcode, print
+- **Push-mode** — Spoolman and Grocy webhooks print a label automatically
+- **Preview before printing**, layout and copies per label, a cart for printing many labels at once
+- **Print queue** per printer: pause, resume, cancel, retry; an interrupted tape run stops at the unknown part and offers continue or reprint
+
+**Label sheets**
+- **36 sheet types included** (Avery, Avery Zweckform, Herma, Endisch; A4 and US Letter), more can be created or imported
+- **Partly used sheets** — every sheet gets a code; the hub remembers which cells are used and prints only onto free ones
+- **Calibration** per printer and tray: print a test page, read the offsets, the hub corrects every print
+
+**Integrations**
+- **Snipe-IT** (assets), **Grocy** (products), **Spoolman** (3D-printer filament spools): look an item up by its ID or barcode and print its label
+
+**Running it**
+- **One container**, multi-arch (amd64, arm64), on GHCR and Docker Hub
+- **Installable on a phone** (PWA), also behind single sign-on
+- **Versioned REST API** under `/api/v1/` with an interactive reference at `/docs`; API keys with scopes and per-printer restrictions
+- **Pluggable** — a new printer model is one Python file in `backend/app/printer_models/`
+
 ## Screenshots
+
+Every screenshot follows the colour scheme of your system (light or dark).
+
+### Overview
+
+The start page. **Printing now** shows the running jobs, **Needs attention** lists failed jobs and printers with a problem, **Material** shows the tape, paper or toner each printer holds. Below are all printers with their state. The **Scan** button opens the camera and looks up the scanned barcode; the search field finds items in the integrations.
 
 <p>
   <picture>
@@ -19,6 +54,9 @@
     <img src="docs/screenshots/overview-light.png" alt="The overview: what is printing, what needs attention, the material in the printers and every printer at a glance.">
   </picture>
 </p>
+### Printers
+
+All printers with their state and the loaded material. Admins add, change and disable printers under Settings > Printers.
 
 <p>
   <picture>
@@ -26,6 +64,9 @@
     <img src="docs/screenshots/printers-light.png" alt="The printers, each with its status and the tape or paper it holds.">
   </picture>
 </p>
+### Printer details
+
+One printer: its state, the loaded tape (after a roll change the hub asks for the tape colour, since the printer does not report it), the connection, the calibration and the queue. **Test print** prints a sample label, **Pause** holds the queue.
 
 <p>
   <picture>
@@ -33,6 +74,9 @@
     <img src="docs/screenshots/printer-detail-light.png" alt="One printer: status, tape roll, connection and queue.">
   </picture>
 </p>
+### Jobs
+
+Every print job, filtered by state (queued, printing, done, failed, cancelled). A failed job shows why it failed and can be retried.
 
 <p>
   <picture>
@@ -40,27 +84,9 @@
     <img src="docs/screenshots/jobs-light.png" alt="The jobs, filtered by state, with the reason of a failed one.">
   </picture>
 </p>
+### Printing one item
 
-<p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark.png">
-    <img src="docs/screenshots/sheets-light.png" alt="The label sheets in use, with how many cells are used and free.">
-  </picture>
-</p>
-
-<p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheet-archive-dark.png">
-    <img src="docs/screenshots/sheet-archive-light.png" alt="The archive of sheet types with their measurements and versions.">
-  </picture>
-</p>
-
-<p>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/calibration-dark.png">
-    <img src="docs/screenshots/calibration-light.png" alt="Calibration: measure how far a page printer is off and the hub corrects every print.">
-  </picture>
-</p>
+An item from an integration (here Snipe-IT): a preview of the label, the printer, the layout and the number of copies. **Print now** prints at once, **Add to cart** collects it for later.
 
 <p>
   <picture>
@@ -68,6 +94,9 @@
     <img src="docs/screenshots/print-dialog-light.png" alt="Printing one item: preview, printer, layout and copies.">
   </picture>
 </p>
+### Cart and printing onto a sheet
+
+The cart collects labels from several items and prints them together: on a tape printer one after the other, on a page printer onto a sheet. For a sheet you choose the sheet type, the tray and the sheet; scan the code on a partly used sheet and the hub prints only onto its free cells.
 
 <p>
   <picture>
@@ -75,43 +104,116 @@
     <img src="docs/screenshots/cart-sheet-light.png" alt="The cart printed onto a partly used sheet of labels.">
   </picture>
 </p>
+### Sheets
 
-On a phone:
+The sheets in use, each with its code, its type and how many cells are used. Used-up and discarded sheets are hidden unless you ask for them. **New sheet** registers a fresh sheet.
 
 <p>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png">
-    <img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="260">
-  </picture>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png">
-    <img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="260">
-  </picture>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png">
-    <img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="260">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark.png">
+    <img src="docs/screenshots/sheets-light.png" alt="The label sheets in use, with how many cells are used and free.">
   </picture>
 </p>
+### Sheet archive
+
+The catalogue of sheet types: search by product code, filter by page size, vendor and label size. Each type keeps its measurements as versions. **New type** enters the measurements of a sheet that is not listed, **Import type** loads one exported from another hub.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheet-archive-dark.png">
+    <img src="docs/screenshots/sheet-archive-light.png" alt="The archive of sheet types with their measurements and versions.">
+  </picture>
+</p>
+### Calibration
+
+Page printers rarely print exactly where the page says. Choose printer and tray, print the calibration page onto a real sheet, read the offsets from its scales and enter them; the hub then moves every print on that tray by the opposite amount.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/calibration-dark.png">
+    <img src="docs/screenshots/calibration-light.png" alt="Calibration: measure how far a page printer is off and the hub corrects every print.">
+  </picture>
+</p>
+### On a phone
+
+The same pages adapt to a phone held next to the printer.
+
+| Overview | Printer details | Sheets |
+|:---:|:---:|:---:|
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png"><img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png"><img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png"><img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="240"></picture> |
+
+## Roadmap
+
+What comes next, by release. Each release is a [GitHub milestone](https://github.com/strausmann/Label-Printer-Hub/milestones) and ships when all its issues are closed; the order within the list can still change.
+
+| Release | Main content |
+|---|---|
+| [1.6.0](https://github.com/strausmann/Label-Printer-Hub/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware |
+| [1.7.0](https://github.com/strausmann/Label-Printer-Hub/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery in the printer form |
+| [1.8.0](https://github.com/strausmann/Label-Printer-Hub/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration |
+| [1.9.0](https://github.com/strausmann/Label-Printer-Hub/milestone/9) | Integrations: free-text search, item details before printing, links into the apps, Snipe-IT locations, **Kept**, **Paperless-ngx** ASN labels on sheets |
+| [1.10.0](https://github.com/strausmann/Label-Printer-Hub/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB), detection by IP address, a printer test kit, job priorities |
+| [1.11.0](https://github.com/strausmann/Label-Printer-Hub/milestone/11) | E-mail notifications, a redesigned tape label layout, a print inbox other apps can fill |
 
 ## Supported hardware
 
-The printer protocols follow the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and the [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf); page printers are reached over IPP (RFC 8011). Tested on hardware: Brother PT-P750W. Hardware testing of the QL-820NWBc is pending.
+The printer protocols follow the [Brother PT-E550W/P750W/P710BT Raster Command Reference v1.02](https://download.brother.com/welcome/docp100064/cv_pte550wp750wp710bt_eng_raster_102.pdf) and the [QL-800/810W/820NWB Raster Command Reference](https://download.brother.com/welcome/docp100278/cv_ql800_eng_raster_101.pdf); page printers are reached over IPP (RFC 8011).
 
-## Features
+| Device | Kind | Tested |
+|---|---|---|
+| Brother PT-P750W | Tape printer (TZe) | Printing and status on the device |
+| Brother QL-820NWB | Label printer (DK rolls) | Driver included; test on the device pending |
+| HP LaserJet CP1525N | Page printer (IPP) | Status over IPP on the device; sheet printing on the device pending |
 
-- **Multi-printer support** via plugin architecture (PT-Series and QL-Series, more on request)
-- **Printers added and changed at runtime** in the UI (Settings > Printers), no restart and no environment variables
-- **Pull-mode**: Open the web UI on your phone, scan a barcode, hit print
-- **Push-mode**: Spoolman/Grocy webhook → automatic label print
-- **App integrations**: Snipe-IT (asset tags), Grocy (product labels), Spoolman (3D-print spool labels)
-- **Print queue** with pause/resume/cancel/retry operations, per printer and per job; tape runs in sub-jobs that
-  stop at an unknown outcome and offer continue or reprint
-- **Label sheets** on page printers: sheet types with measurements, partly used sheets, calibration per printer
-- **Live status pages** per printer via Server-Sent Events (no page reload)
-- **Tape detection** via Brother native status block (no manual configuration)
-- **PWA-installable** for smartphone use, also behind SSO
-- **Versioned API** under `/api/v1/`
-- **Pluggable**: drop a new `printer_models/your_model.py` to add a new device
+Other Brother PT and QL models that share the command reference will likely work; other IPP printers should, since the hub uses only standard IPP operations. Tested another device? Please report it in an [issue](https://github.com/strausmann/Label-Printer-Hub/issues/new/choose).
+
+## Supported label sheets
+
+The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; the sheet archive has a form to report confirmed or wrong measurements. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
+
+<details>
+<summary>36 sheet types (A4 and US Letter)</summary>
+
+| Vendor | Product codes | Labels | Label size | Per sheet | Page |
+|---|---|---|---|---|---|
+| Avery | 7160, L7160, J8160 | Mailing labels | 63.99 × 38.1 mm | 3 × 7 = 21 | A4 |
+| Avery | 7162, L7162 | Mailing labels | 99.1 × 33.9 mm | 2 × 8 = 16 | A4 |
+| Avery | 7164, L7164, J8164 | Address labels | 63.5 × 71.98 mm | 3 × 4 = 12 | A4 |
+| Avery | 7165, L7165, J8165 | Address labels | 99.06 × 67.73 mm | 2 × 4 = 8 | A4 |
+| Avery | 8651, L8651, J8651, J8551 (+2 more) | Mini address labels | 38.1 × 21.2 mm | 5 × 13 = 65 | A4 |
+| Avery | L4732 | Mini labels | 35.6 × 16.9 mm | 5 × 16 = 80 | A4 |
+| Avery Zweckform | 3474 | Address labels | 70 × 37 mm | 3 × 8 = 24 | A4 |
+| Avery Zweckform | 3481 | Multipurpose labels | 70 × 41 mm | 3 × 7 = 21 | A4 |
+| Avery Zweckform | 3669 | Rectangular labels | 70 × 50.8 mm | 3 × 5 = 15 | A4 |
+| Avery Zweckform | 4760 | Lever arch file labels | 192 × 38 mm | 1 × 7 = 7 | A4 |
+| Avery Zweckform | 4761 | Lever arch file labels | 192 × 61 mm | 1 × 4 = 4 | A4 |
+| Avery Zweckform | 4780 | Multipurpose labels | 48.5 × 25.4 mm | 4 × 10 = 40 | A4 |
+| Avery Zweckform | 6021 | Multipurpose labels | 46 × 16.9 mm | 4 × 16 = 64 | A4 |
+| Avery Zweckform | L4731REV-25, L4731REV-10, L4731REV-65, L4731 | Mini labels, removable | 25.4 × 10 mm | 7 × 27 = 189 | A4 |
+| Avery Zweckform | L4736REV-25, L4736REV-10, L4736REV-65, L4736REV-100 (+1 more) | Mini labels, removable | 45.7 × 21.2 mm | 4 × 12 = 48 | A4 |
+| Endisch | 6500040x | Round labels | 40 × 40 mm | 4 × 6 = 24 | A4 |
+| Endisch | 6500060x | Round labels | 60 × 60 mm | 3 × 4 = 12 | A4 |
+| Herma | 10001 | Rectangular labels | 25.4 × 10 mm | 7 × 27 = 189 | A4 |
+| Herma | 4097, 4221, 4232, 4235 (+10 more) | Rectangular labels | 45.72 × 21.2 mm | 4 × 12 = 48 | A4 |
+| Herma | 4098, 4222, 4233, 4347 (+12 more) | Rectangular labels | 63.5 × 29.6 mm | 3 × 9 = 27 | A4 |
+| Herma | 4103, 4113, 4641b, 4677 (+14 more) | Rectangular labels | 63.5 × 38.1 mm | 3 × 7 = 21 | A4 |
+| Herma | 4283, 5090, 5091 | Arch file labels | 192 × 39 mm | 1 × 6 = 6 | A4 |
+| Herma | 4293, 5092 | Arch file labels | 192 × 38 mm | 1 × 7 = 7 | A4 |
+| Herma | 4606, 4270 | Multipurpose labels | 38 × 21.2 mm | 5 × 13 = 65 | A4 |
+| Herma | 4607, 4271 | Multipurpose labels | 48.3 × 16.9 mm | 4 × 16 = 64 | A4 |
+| Herma | 4614, 4670, 5053 | Multipurpose labels | 66 × 33.8 mm | 3 × 8 = 24 | A4 |
+| Herma | 4625, 4674, 5057 | Mailing labels | 105 × 42.3 mm | 2 × 7 = 14 | A4 |
+| Avery | 5159 | Address labels | 101.6 × 38.1 mm | 2 × 7 = 14 | Letter |
+| Avery | 5160, 5260, 5510, 5520 (+27 more) | Address labels | 66.67 × 25.4 mm | 3 × 10 = 30 | Letter |
+| Avery | 5161, 5261, 5961, 8161 (+2 more) | Address labels | 101.6 × 25.4 mm | 2 × 10 = 20 | Letter |
+| Avery | 5162, 5262, 5512, 5522 (+11 more) | Address labels | 101.6 × 33.87 mm | 2 × 7 = 14 | Letter |
+| Avery | 5163, 5263, 5513, 5523 (+13 more) | Shipping labels | 101.6 × 50.8 mm | 2 × 5 = 10 | Letter |
+| Avery | 5164, 5264, 5514, 5524 (+5 more) | Shipping labels | 101.6 × 84.67 mm | 2 × 3 = 6 | Letter |
+| Avery | 5167, 5267, 5667, 5927 (+10 more) | Return address labels | 44.45 × 12.7 mm | 4 × 20 = 80 | Letter |
+| Avery | 5195, 5295 | Round labels | 84.14 × 84.14 mm | 2 × 3 = 6 | Letter |
+| Avery | 8195 | Return address labels | 44.45 × 16.92 mm | 4 × 15 = 60 | Letter |
+
+</details>
 
 ## Tech Stack
 
