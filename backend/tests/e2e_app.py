@@ -12,6 +12,9 @@ Environment:
 - ``E2E_KEY_FILE``: path that receives the plaintext key to sign in with (mode 0600).
   With the default seeding this is an admin API key.
 - ``E2E_PORT``: the port uvicorn listens on (default 8765); it forms ``public_url``.
+- ``E2E_FIXTURE_TIME``: an ISO 8601 instant (UTC); when set, every timestamp of the seeded jobs and
+  sheets is rewritten to it once the seeding is done, so a page that shows a date shows the same
+  date on every run (the README screenshots, ``pnpm screenshots``). Unset, the real clock is used.
 - ``E2E_BOOTSTRAP=1``: start with no API keys and the one-time bootstrap key instead (D7);
   the file then holds the bootstrap key.
 
@@ -377,6 +380,7 @@ class E2EApp:
 
         self.uri, self._stop = await serve_on_loopback(self.fake)
         await _seed_page_printer_and_sheets(self.uri)
+        await _pin_fixture_time()
 
     async def _teardown(self) -> None:
         if self._stop is not None:
@@ -531,6 +535,35 @@ async def _seed_page_printer_and_sheets(uri: str) -> None:
             ),
             actor="e2e",
         )
+
+
+# Tables whose rows the seeding creates and whose timestamps a page can show.
+_FIXTURE_TIME_TABLES = ("jobs", "sheets", "sheet_cells", "sheet_types", "sheet_type_versions")
+
+
+async def _pin_fixture_time() -> None:
+    """Rewrite the timestamps of the seeded rows to ``E2E_FIXTURE_TIME`` (a no-op when unset)."""
+    raw = os.environ.get("E2E_FIXTURE_TIME")
+    if not raw:
+        return
+    from datetime import UTC, datetime
+
+    from app.db.engine import async_session
+    from sqlalchemy import DateTime, update
+    from sqlmodel import SQLModel
+
+    instant = datetime.fromisoformat(raw)
+    if instant.tzinfo is None:
+        instant = instant.replace(tzinfo=UTC)
+    async with async_session() as session:
+        for name in _FIXTURE_TIME_TABLES:
+            table = SQLModel.metadata.tables[name]
+            for column in table.columns:
+                if isinstance(column.type, DateTime):
+                    await session.execute(
+                        update(table).where(column.is_not(None)).values({column.name: instant})
+                    )
+        await session.commit()
 
 
 def build_e2e_app() -> ASGIApp:
