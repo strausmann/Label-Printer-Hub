@@ -46,8 +46,14 @@ _log = logging.getLogger(__name__)
 
 
 def _loggable(value: str) -> str:
-    """Escape line breaks so a client-supplied value cannot start a new log line."""
-    return value.replace("\r", "\\r").replace("\n", "\\n")
+    """Make a client-supplied value safe for a log line.
+
+    ``unicode_escape`` turns every non-printable character (CR, LF, ANSI escapes, U+2028 …) into
+    its backslash form. The final replaces are no-ops after that, but they are the sanitiser
+    CodeQL's ``py/log-injection`` query recognises.
+    """
+    escaped = value.encode("unicode_escape").decode("ascii")
+    return escaped.replace("\r", "").replace("\n", "")
 
 
 # Header schema — auto_error=False so we can fall through to other paths

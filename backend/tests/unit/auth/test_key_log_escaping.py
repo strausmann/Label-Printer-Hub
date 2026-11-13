@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 from app.auth import dependencies
 
-_KEY = "lph_ab\r\nFAKE LOG LINE 0123456789abcdef"
+_KEY = "lph_\x1b[2J\r\nFAKE\u2028LOG 0123456789abcdef"
 
 
 def _messages(caplog: pytest.LogCaptureFixture) -> list[str]:
@@ -33,8 +33,8 @@ async def test_unknown_key_prefix_is_logged_escaped(monkeypatch, caplog):
 
     messages = _messages(caplog)
     assert messages, "the rejected key must still be logged"
-    assert not any("\n" in m or "\r" in m for m in messages)
-    assert any("\\r\\n" in m for m in messages)
+    assert not any(c in m for m in messages for c in ("\n", "\r", "\x1b", "\u2028"))
+    assert any("\\x1b" in m and "\\r\\n" in m for m in messages)
 
 
 async def test_bcrypt_mismatch_prefix_is_logged_escaped(monkeypatch, caplog):
@@ -56,5 +56,5 @@ async def test_bcrypt_mismatch_prefix_is_logged_escaped(monkeypatch, caplog):
 
     messages = _messages(caplog)
     assert messages, "the rejected key must still be logged"
-    assert not any("\n" in m or "\r" in m for m in messages)
-    assert any("\\r\\n" in m for m in messages)
+    assert not any(c in m for m in messages for c in ("\n", "\r", "\x1b", "\u2028"))
+    assert any("\\x1b" in m and "\\r\\n" in m for m in messages)
