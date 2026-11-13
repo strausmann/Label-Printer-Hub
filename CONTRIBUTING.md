@@ -8,7 +8,7 @@ This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By particip
 
 ## Contributor License Agreement
 
-[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
+[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/labelyard)](https://cla-assistant.io/strausmann/labelyard)
 
 Contributions need a signed [Contributor License Agreement](CLA.md). You sign it once through [CLA assistant](https://cla-assistant.io/): when you open your first pull request, the bot comments with a link; follow it, sign in with GitHub and accept. The `license/cla` check must pass before a pull request can be merged.
 
@@ -52,7 +52,7 @@ To build and run the whole hub from source without printer hardware, use the smo
 one container, built from the local tree):
 
 ```bash
-export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+export LABELYARD_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
 # UI and API on http://localhost:8000
 curl http://localhost:8000/healthz
@@ -345,7 +345,7 @@ Patch releases come from `main`. Minor and major releases come from a **mileston
 **Preview images.** Before a milestone is released, a maintainer can build a preview image from the milestone branch with the **Preview image** workflow (Actions → Preview image → Run workflow, branch `milestone/x.y.0`, version `x.y.0`). Each run publishes the next tag `x.y.0-rc.N` to GHCR only:
 
 ```bash
-docker pull ghcr.io/strausmann/label-printer-hub-backend:1.5.0-rc.1
+docker pull ghcr.io/strausmann/labelyard:1.6.0-rc.1
 ```
 
 A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags and nothing on Docker Hub. Previews are removed from GHCR once their release exists.

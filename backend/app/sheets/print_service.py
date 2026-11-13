@@ -697,7 +697,7 @@ def _gate() -> asyncio.Semaphore:
 
 
 class RenderTimeoutApiError(SheetApiError):
-    """#293: a preview page took longer than ``PRINTER_HUB_RENDER_TIMEOUT_S`` to draw."""
+    """#293: a preview page took longer than ``LABELYARD_RENDER_TIMEOUT_S`` to draw."""
 
     status = 504
     error_code = "render-timeout"

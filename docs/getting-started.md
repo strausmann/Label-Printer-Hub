@@ -7,8 +7,8 @@ This page takes you from nothing to a printed label: start the hub, sign in, add
 The hub is one container. Pick the compose file in [`examples/`](../examples/) that matches your setup (standalone, Traefik, Pangolin, Caddy; [`examples/README.md`](../examples/README.md) explains the variants) and copy it together with `.env.example`.
 
 ```bash
-git clone https://github.com/strausmann/Label-Printer-Hub.git
-cd Label-Printer-Hub/examples
+git clone https://github.com/strausmann/labelyard.git
+cd labelyard/examples
 cp .env.example .env
 ```
 
@@ -16,8 +16,8 @@ Set at least these two values in `.env`:
 
 | Variable | Value |
 |---|---|
-| `PRINTER_HUB_SECRET_KEY` | encrypts the secrets stored in the database; generate with `openssl rand -base64 32 \| tr '+/' '-_'` |
-| `PRINTER_HUB_PUBLIC_URL` | the address you open the hub at, for example `http://localhost:8000` or `https://printerhub.example.com` |
+| `LABELYARD_SECRET_KEY` | encrypts the secrets stored in the database; generate with `openssl rand -base64 32 \| tr '+/' '-_'` |
+| `LABELYARD_PUBLIC_URL` | the address you open the hub at, for example `http://localhost:8000` or `https://labelyard.example.com` |
 
 Keep the secret key: without it the stored secrets cannot be decrypted.
 
@@ -34,10 +34,10 @@ Both calls answer with `200`. To try the hub without any printer or reverse prox
 A fresh install has no API key. Create the first admin key inside the container:
 
 ```bash
-docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
+docker exec labelyard labelyard admin create-key --scope admin --name first-admin
 ```
 
-Open the hub in a browser and sign in with that key. (Alternative: set `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` to a one-time key of 32 or more characters and use it for the first sign-in.) Further keys, with the scopes `read`, `print` or `admin` and an optional restriction to chosen printers, are made under **Settings > Access and keys**.
+Open the hub in a browser and sign in with that key. (Alternative: set `LABELYARD_BOOTSTRAP_ADMIN_KEY` to a one-time key of 32 or more characters and use it for the first sign-in.) Further keys, with the scopes `read`, `print` or `admin` and an optional restriction to chosen printers, are made under **Settings > Access and keys**.
 
 ## 2. Add your first printer
 
@@ -59,7 +59,7 @@ A page printer appears on the overview with its state and supplies, read over IP
 
 ### Turn on status discovery
 
-The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off, and the form has no switch for it yet ([#296](https://github.com/strausmann/label-printer-hub/issues/296)). Printing does not depend on it: a print or a test print checks the printer once when it is sent. What stays unknown is the state and the tape shown on the overview. An admin turns discovery on through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
+The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off, and the form has no switch for it yet ([#296](https://github.com/strausmann/labelyard/issues/296)). Printing does not depend on it: a print or a test print checks the printer once when it is sent. What stays unknown is the state and the tape shown on the overview. An admin turns discovery on through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
 
 ```bash
 curl -X PUT http://localhost:8000/api/v1/admin/printers/<slug> \
@@ -81,7 +81,7 @@ The same from a script, with an API key of scope `print`:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/print \
-  -H "X-Label-Hub-Key: $LABEL_HUB_KEY" \
+  -H "X-Label-Hub-Key: $LABELYARD_KEY" \
   -H "Content-Type: application/json" \
   -d '{
         "content_type": "qr_two_lines",
@@ -105,7 +105,7 @@ Browsers allow installing and camera access only on a secure origin: serve the h
 - **iPhone and iPad (Safari):** open the hub, Share > *Add to Home Screen*.
 - **Desktop (Chrome, Edge):** the install icon in the address bar.
 
-The app has a **Scan** shortcut on the home-screen icon. Set `PRINTER_HUB_PUBLIC_URL` to the address people open; with an `https` value the session cookies are `Secure`, so a browser will not send them to a plain-`http` name of the same hub.
+The app has a **Scan** shortcut on the home-screen icon. Set `LABELYARD_PUBLIC_URL` to the address people open; with an `https` value the session cookies are `Secure`, so a browser will not send them to a plain-`http` name of the same hub.
 
 ## 5. Webhooks: print when something happens
 
@@ -118,13 +118,13 @@ The hub accepts events from Spoolman and Grocy and prints the label of the item 
 
 Unknown extra fields are ignored; a missing or mistyped required field answers `422`.
 
-1. Generate a key of at least 32 characters, for example `openssl rand -hex 32`, and set it as `PRINTER_HUB_WEBHOOK_API_KEY` in the hub's `.env`. Restart the hub.
+1. Generate a key of at least 32 characters, for example `openssl rand -hex 32`, and set it as `LABELYARD_WEBHOOK_API_KEY` in the hub's `.env`. Restart the hub.
 2. Send it as the `X-API-Key` header with every call. Without a configured key the webhooks answer `503`; with a wrong key `401`.
-3. More than `PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE` calls per minute (default 120, both routes together) answer `429` with `Retry-After`.
+3. More than `LABELYARD_WEBHOOK_LIMIT_PER_MINUTE` calls per minute (default 120, both routes together) answer `429` with `Retry-After`.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/webhook/spoolman \
-  -H "X-API-Key: $PRINTER_HUB_WEBHOOK_API_KEY" \
+  -H "X-API-Key: $LABELYARD_WEBHOOK_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"spool_id": "42", "type": "updated"}'
 ```

@@ -9,7 +9,7 @@ at the printer). The sequence:
    edge) and the queue holds it and pauses the printer.
 2. ``mark_printing`` and ``result = {"phase": "uploading", "started": false}``.
 3. Render the page from the payload (in a thread). A render error ends ``failed/render_failed``,
-   a render past ``PRINTER_HUB_RENDER_TIMEOUT_S`` ends ``failed/render_timeout`` (#293), as
+   a render past ``LABELYARD_RENDER_TIMEOUT_S`` ends ``failed/render_timeout`` (#293), as
    does a job whose key has a stuck render already; no render slot free in time ends
    ``failed/render_unavailable``.
 4. Print-Job. The error contract is in ``app.printer_backends.ipp.errors``: nothing sent or a
@@ -173,7 +173,7 @@ class PageJobRunner:
         render_timeout_s: float | None = None,
     ) -> None:
         self._store = store
-        self._render_timeout_s = render_timeout_s  # None: ``PRINTER_HUB_RENDER_TIMEOUT_S``
+        self._render_timeout_s = render_timeout_s  # None: ``LABELYARD_RENDER_TIMEOUT_S``
         self._notify = notify
         self._poll_interval_s = poll_interval_s
         self._max_backoff_s = max_backoff_s

@@ -73,8 +73,8 @@ Tape batches (`POST /api/v1/print/{printer}/batch`) are limited per printer and 
 
 | Limit | Default | Setting |
 |---|---|---|
-| Tape runs a printer has queued or printing | 5 (at least 5) | `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` |
-| Tape runs of one key, over all printers, held runs included | 20 | `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` |
+| Tape runs a printer has queued or printing | 5 (at least 5) | `LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` |
+| Tape runs of one key, over all printers, held runs included | 20 | `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` |
 | Held runs per printer (stopped, or waiting for `/continue`) | 5 | fixed |
 | Held runs of one key on one printer | 2 | fixed |
 
@@ -93,7 +93,7 @@ A sheet preview (`POST /api/v1/print/{printer}/sheet/preview`) runs once per key
 time; a second one answers 429 `too-many-previews`.
 
 At most two pages are drawn at once in the hub (sheet previews and page jobs together). A
-page that takes longer than `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 seconds) to draw
+page that takes longer than `LABELYARD_RENDER_TIMEOUT_S` (default 60 seconds) to draw
 ends the preview with `HTTP 504` `render-timeout` and fails a page job with
 `render_timeout`. Its drawing thread cannot be stopped and keeps its slot until it ends; it
 counts as stuck from the time limit on, even if its caller has gone away.

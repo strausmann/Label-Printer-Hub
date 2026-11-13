@@ -658,7 +658,7 @@ def create_app() -> _LifespanManager:
             "Deep readiness check: database connectivity, alembic migration "
             "state, printer wiring, SNMP probe recency, "
             "print-queue liveness, SSE subscriber capacity, and stuck render slots "
-            "(`render_slots`: page renders past `PRINTER_HUB_RENDER_TIMEOUT_S` whose "
+            "(`render_slots`: page renders past `LABELYARD_RENDER_TIMEOUT_S` whose "
             "thread still runs; fails when every slot is stuck, a hub restart frees them). "
             "Returns 200 with status in {ready, degraded} when all critical "
             "checks pass; 503 with status=not-ready when any critical check "

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GHCR keep rule and preview tag logic for the Label Printer Hub backend image.
+"""GHCR keep rule and preview tag logic for the Labelyard image.
 
 Used by .github/workflows/ghcr-cleanup.yml and .github/workflows/preview-image.yml
 so that the workflows and the tests share one implementation.

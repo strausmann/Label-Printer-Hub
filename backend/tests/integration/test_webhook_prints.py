@@ -60,7 +60,7 @@ class Hub:
     monkeypatch: pytest.MonkeyPatch
 
     def set_limit(self, limit: int) -> None:
-        self.monkeypatch.setenv("PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE", str(limit))
+        self.monkeypatch.setenv("LABELYARD_WEBHOOK_LIMIT_PER_MINUTE", str(limit))
         get_settings.cache_clear()
 
     @asynccontextmanager
@@ -93,7 +93,7 @@ async def hub(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Hub]:
 
     if not IntegrationRegistry.names():
         _discover_plugins()
-    monkeypatch.setenv("PRINTER_HUB_WEBHOOK_API_KEY", KEY)
+    monkeypatch.setenv("LABELYARD_WEBHOOK_API_KEY", KEY)
     get_settings.cache_clear()
     _rate_limiter.clear()
     backend = MockPrinterBackend()

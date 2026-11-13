@@ -85,6 +85,12 @@ Secret: never logged or shown.
 
 Also set in the web UI; a value set here wins and locks the field there.
 
+### `LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`
+
+Default: `120`
+
+Webhook calls per minute and webhook key, Spoolman and Grocy together. Above it the webhook answers `429` with `Retry-After`; neither app retries a refused call, so a bulk event must fit.
+
 ### `LABELYARD_SNIPEIT_URL`
 
 Default: empty
@@ -200,6 +206,24 @@ Seconds between keep-alive frames when no events flow.
 Default: `30.0`
 
 Seconds between two status queries (SNMP) of each printer.
+
+### `LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER`
+
+Default: `5`
+
+Tape runs (batches) one printer has queued or printing at once; at least `5`, the runs a printer may hold. Above it a batch answers `429` `too-many-queued-runs`.
+
+### `LABELYARD_MAX_QUEUED_RUNS_PER_KEY`
+
+Default: `20`
+
+Tape runs one API key has at once over all printers, held runs included. Above it a batch answers `429` `too-many-queued-runs`.
+
+### `LABELYARD_RENDER_TIMEOUT_S`
+
+Default: `60.0`
+
+Seconds one page may take to draw (sheet preview, page job), at most `600`. Past it the preview answers `504` `render-timeout` and the page job fails with `render_timeout`. The drawing thread cannot be stopped and keeps its render slot until it ends (readiness check `render_slots`).
 
 ### `LABELYARD_TRUST_LEGACY_PANGOLIN_USER`
 

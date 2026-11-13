@@ -1,8 +1,8 @@
 """263-76 / 263-78 / 266-07 / 266-14: bounded memory, lookups, render threads and loop time.
 
 A tape batch keeps one PNG per distinct item (its copies share it); a printer holds at most
-``PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER`` runs and a key at most
-``PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY`` (over: 429 ``too-many-queued-runs``); a run that waits
+``LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER`` runs and a key at most
+``LABELYARD_MAX_QUEUED_RUNS_PER_KEY`` (over: 429 ``too-many-queued-runs``); a run that waits
 for ``/continue`` drops its pictures after 15 minutes and draws them again on continue. The
 lookups of one batch run at most eight at once. A preview render keeps its slot until its
 thread ends, and one key previews one sheet at a time. ``reserve`` plans in a thread.
@@ -97,8 +97,8 @@ def test_the_limits_are_settings_with_the_agreed_defaults(monkeypatch: pytest.Mo
     s = Settings()
     assert s.max_queued_runs_per_printer == 5
     assert s.max_queued_runs_per_key == 20
-    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", "6")
-    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY", "7")
+    monkeypatch.setenv("LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER", "6")
+    monkeypatch.setenv("LABELYARD_MAX_QUEUED_RUNS_PER_KEY", "7")
     s = Settings()
     assert (s.max_queued_runs_per_printer, s.max_queued_runs_per_key) == (6, 7)
     assert WAITING_RUN_PICTURES_TTL_S == 15 * 60
@@ -401,12 +401,10 @@ async def test_a_run_of_a_key_without_older_runs_stays_over_the_limit() -> None:
 def test_the_printer_cap_must_cover_the_held_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     from pydantic import ValidationError
 
-    monkeypatch.setenv(
-        "PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", str(MAX_HELD_RUNS_PER_PRINTER - 1)
-    )
-    with pytest.raises(ValidationError, match="PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER"):
+    monkeypatch.setenv("LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER", str(MAX_HELD_RUNS_PER_PRINTER - 1))
+    with pytest.raises(ValidationError, match="LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER"):
         Settings()
-    monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER", str(MAX_HELD_RUNS_PER_PRINTER))
+    monkeypatch.setenv("LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER", str(MAX_HELD_RUNS_PER_PRINTER))
     assert Settings().max_queued_runs_per_printer == MAX_HELD_RUNS_PER_PRINTER
 
 
@@ -594,7 +592,7 @@ async def _route_answers_429(batch_route: dict[str, Any]) -> None:
 async def test_a_refused_batch_stores_no_rows(monkeypatch: pytest.MonkeyPatch) -> None:
     async with batch_route_rig(monkeypatch) as batch_route:
         client = batch_route["client"]
-        monkeypatch.setenv("PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY", "1")
+        monkeypatch.setenv("LABELYARD_MAX_QUEUED_RUNS_PER_KEY", "1")
         from app.config import get_settings
 
         get_settings.cache_clear()

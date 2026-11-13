@@ -85,6 +85,12 @@ Geheim: wird nie protokolliert oder angezeigt.
 
 Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sperrt das Feld dort.
 
+### `LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`
+
+Standard: `120`
+
+Webhook-Aufrufe pro Minute und Webhook-Schlüssel, Spoolman und Grocy zusammen. Darüber antwortet der Webhook mit `429` und `Retry-After`; keine der beiden Apps wiederholt einen abgewiesenen Aufruf, also muss ein Sammelereignis hineinpassen.
+
 ### `LABELYARD_SNIPEIT_URL`
 
 Standard: leer
@@ -200,6 +206,24 @@ Sekunden zwischen Keep-alive-Rahmen, wenn keine Ereignisse fließen.
 Standard: `30.0`
 
 Sekunden zwischen zwei Statusabfragen (SNMP) je Drucker.
+
+### `LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER`
+
+Standard: `5`
+
+Bandläufe (Stapel), die ein Drucker gleichzeitig in der Warteschlange hat oder druckt; mindestens `5`, so viele Läufe darf ein Drucker zurückhalten. Darüber antwortet ein Stapel mit `429` `too-many-queued-runs`.
+
+### `LABELYARD_MAX_QUEUED_RUNS_PER_KEY`
+
+Standard: `20`
+
+Bandläufe, die ein API-Schlüssel gleichzeitig über alle Drucker hat, zurückgehaltene Läufe eingeschlossen. Darüber antwortet ein Stapel mit `429` `too-many-queued-runs`.
+
+### `LABELYARD_RENDER_TIMEOUT_S`
+
+Standard: `60.0`
+
+Sekunden, die eine Seite zum Zeichnen brauchen darf (Bogenvorschau, Seitenauftrag), höchstens `600`. Danach antwortet die Vorschau mit `504` `render-timeout`, und der Seitenauftrag scheitert mit `render_timeout`. Der Zeichen-Thread lässt sich nicht anhalten und behält seinen Platz, bis er endet (Bereitschaftsprüfung `render_slots`).
 
 ### `LABELYARD_TRUST_LEGACY_PANGOLIN_USER`
 

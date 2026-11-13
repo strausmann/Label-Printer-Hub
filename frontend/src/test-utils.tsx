@@ -12,7 +12,7 @@ export const INFO: InfoData = {
   revision: "test",
   build_date: "1970-01-01T00:00:00Z",
   license: "AGPL-3.0-or-later",
-  source_url: "https://github.com/strausmann/label-printer-hub",
+  source_url: "https://github.com/strausmann/labelyard",
   default_language: "en",
   display_name: "Label Printer Hub",
   auth: { sso_configured: false, bootstrap_open: false },

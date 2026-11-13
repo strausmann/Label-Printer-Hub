@@ -43,7 +43,7 @@ async def dispatch_batch(
         items: Liste von PrintRequest-Objekten (mindestens einer).
         half_cut: Half-Cut zwischen Labels aktivieren (Standard: False).
         queue, printer_id, api_key_id: with a queue, the batch first claims a place under the
-            queued-run caps (263-76, ``PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER`` / ``…_PER_KEY``)
+            queued-run caps (263-76, ``LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER`` / ``…_PER_KEY``)
             before anything is looked up, drawn or stored; a submit that fails gives it back.
             ``api_key_id`` and ``source_ip`` are stored on every job row (#294).
 

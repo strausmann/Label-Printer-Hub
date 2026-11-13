@@ -516,7 +516,7 @@ async def test_webhook_rate_limit_is_per_key_and_shared(session, route: str, mon
     from app.config import get_settings
     from app.services.rate_limiter import _rate_limiter
 
-    monkeypatch.setenv("PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE", "1")
+    monkeypatch.setenv("LABELYARD_WEBHOOK_LIMIT_PER_MINUTE", "1")
     get_settings.cache_clear()
     _rate_limiter.clear()
     try:

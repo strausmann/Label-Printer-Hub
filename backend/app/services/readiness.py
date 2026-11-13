@@ -171,7 +171,7 @@ def _check_sse_bus(app_state: Any, settings: Settings) -> CheckStatus:
 
 
 def _check_render_slots() -> CheckStatus:
-    """#293: renders past ``PRINTER_HUB_RENDER_TIMEOUT_S`` whose thread still holds its slot.
+    """#293: renders past ``LABELYARD_RENDER_TIMEOUT_S`` whose thread still holds its slot.
 
     A thread cannot be stopped; only a restart frees a slot whose render never ends. With
     every slot stuck no sheet preview or page job can draw any more: ``fail`` (the hub is

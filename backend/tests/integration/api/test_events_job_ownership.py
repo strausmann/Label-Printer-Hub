@@ -258,7 +258,7 @@ async def test_an_admin_key_session_gets_every_job_event(hub_app) -> None:
 
 async def test_an_sso_user_gets_every_job_event(hub_app, monkeypatch) -> None:
     app, _ = hub_app
-    monkeypatch.setenv("PRINTER_HUB_SSO_TRUST_TOKEN", FAKE_TRUST_TOKEN)
+    monkeypatch.setenv("LABELYARD_SSO_TRUST_TOKEN", FAKE_TRUST_TOKEN)
     get_settings.cache_clear()
     printer, _owner, _owner_id, other_id = await _world()
     foreign = await _job(printer, other_id)

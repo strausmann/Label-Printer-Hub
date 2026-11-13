@@ -43,7 +43,7 @@ export default defineConfig({
   webServer: {
     command:
       `pnpm build && cd ../backend && E2E_FIXTURE_TIME=${FIXTURE_TIME} E2E_PORT=${SHOTS.port} E2E_KEY_FILE=${SHOTS.keyFile} ` +
-      `PRINTER_HUB_WEB_DIST_DIR=../frontend/dist ${python} -m uvicorn tests.e2e_app:app --port ${SHOTS.port}`,
+      `LABELYARD_WEB_DIST_DIR=../frontend/dist ${python} -m uvicorn tests.e2e_app:app --port ${SHOTS.port}`,
     url: `${SHOTS.url}/healthz`,
     reuseExistingServer: false,
     timeout: 240_000,

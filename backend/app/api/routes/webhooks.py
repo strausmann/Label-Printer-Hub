@@ -12,7 +12,7 @@ validates the ``X-API-Key`` request header and returns:
 - **401** when the supplied key does not match.
 
 A second dependency, ``enforce_webhook_rate_limit``, runs after the key is accepted and answers
-**429** with ``Retry-After`` above ``PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE`` calls per minute
+**429** with ``Retry-After`` above ``LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`` calls per minute
 (default 120; one bucket per webhook key, both routes together).
 
 On a valid request the handler:

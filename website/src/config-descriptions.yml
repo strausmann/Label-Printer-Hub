@@ -28,6 +28,9 @@ paperless_timeout:
 webhook_api_key:
   en: 'Shared key for the inbound Spoolman and Grocy webhooks, sent as the `X-API-Key` header. At least 32 characters (`openssl rand -hex 32`). Empty answers every webhook call with 503.'
   de: 'Gemeinsamer Schlüssel für die eingehenden Webhooks von Spoolman und Grocy, gesendet im Header `X-API-Key`. Mindestens 32 Zeichen (`openssl rand -hex 32`). Leer beantwortet jeden Webhook-Aufruf mit 503.'
+webhook_limit_per_minute:
+  en: 'Webhook calls per minute and webhook key, Spoolman and Grocy together. Above it the webhook answers `429` with `Retry-After`; neither app retries a refused call, so a bulk event must fit.'
+  de: 'Webhook-Aufrufe pro Minute und Webhook-Schlüssel, Spoolman und Grocy zusammen. Darüber antwortet der Webhook mit `429` und `Retry-After`; keine der beiden Apps wiederholt einen abgewiesenen Aufruf, also muss ein Sammelereignis hineinpassen.'
 snipeit_url:
   en: 'Snipe-IT base address.'
   de: 'Basisadresse von Snipe-IT.'
@@ -76,6 +79,15 @@ sse_heartbeat_s:
 sse_probe_interval_s:
   en: 'Seconds between two status queries (SNMP) of each printer.'
   de: 'Sekunden zwischen zwei Statusabfragen (SNMP) je Drucker.'
+max_queued_runs_per_printer:
+  en: 'Tape runs (batches) one printer has queued or printing at once; at least `5`, the runs a printer may hold. Above it a batch answers `429` `too-many-queued-runs`.'
+  de: 'Bandläufe (Stapel), die ein Drucker gleichzeitig in der Warteschlange hat oder druckt; mindestens `5`, so viele Läufe darf ein Drucker zurückhalten. Darüber antwortet ein Stapel mit `429` `too-many-queued-runs`.'
+max_queued_runs_per_key:
+  en: 'Tape runs one API key has at once over all printers, held runs included. Above it a batch answers `429` `too-many-queued-runs`.'
+  de: 'Bandläufe, die ein API-Schlüssel gleichzeitig über alle Drucker hat, zurückgehaltene Läufe eingeschlossen. Darüber antwortet ein Stapel mit `429` `too-many-queued-runs`.'
+render_timeout_s:
+  en: 'Seconds one page may take to draw (sheet preview, page job), at most `600`. Past it the preview answers `504` `render-timeout` and the page job fails with `render_timeout`. The drawing thread cannot be stopped and keeps its render slot until it ends (readiness check `render_slots`).'
+  de: 'Sekunden, die eine Seite zum Zeichnen brauchen darf (Bogenvorschau, Seitenauftrag), höchstens `600`. Danach antwortet die Vorschau mit `504` `render-timeout`, und der Seitenauftrag scheitert mit `render_timeout`. Der Zeichen-Thread lässt sich nicht anhalten und behält seinen Platz, bis er endet (Bereitschaftsprüfung `render_slots`).'
 trust_legacy_pangolin_user:
   en: 'Opt in to the legacy `X-Pangolin-User` header without a trust token. Off by default; it never creates a browser session.'
   de: 'Schaltet den alten Header `X-Pangolin-User` ohne Vertrauens-Token frei. Standardmäßig aus; er erzeugt nie eine Browsersitzung.'

@@ -51,6 +51,7 @@ def clean_legacy_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """No PRINTER_HUB_* variable in the environment (the cached settings stay untouched)."""
     clear_settings_env(monkeypatch, "PRINTER_HUB_")
 
+
 # The test engine factory: every engine a test creates counts its statements, as the app's
 # engine does, so the sheet write lock's order check (264-01) runs in every test. Installed on
 # the ``Engine`` class because the tests create their engines in many places; a test of an

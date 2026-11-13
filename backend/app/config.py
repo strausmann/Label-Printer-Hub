@@ -177,7 +177,7 @@ class Settings(BaseSettings):
         """The printer's queued-run cap must not be below the runs it may hold (#277)."""
         if self.max_queued_runs_per_printer < MAX_HELD_RUNS_PER_PRINTER:
             raise ValueError(
-                "PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER must be at least "
+                "LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER must be at least "
                 f"{MAX_HELD_RUNS_PER_PRINTER} (the held runs a printer keeps), "
                 f"got {self.max_queued_runs_per_printer}"
             )

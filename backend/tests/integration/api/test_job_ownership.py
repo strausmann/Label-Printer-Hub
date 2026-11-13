@@ -299,7 +299,7 @@ async def test_a_session_signed_in_with_an_admin_key_keeps_full_access(
 
 
 async def test_an_sso_user_keeps_full_access(api_client_with_seed, world, monkeypatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SSO_TRUST_TOKEN", FAKE_TRUST_TOKEN)
+    monkeypatch.setenv("LABELYARD_SSO_TRUST_TOKEN", FAKE_TRUST_TOKEN)
     get_settings.cache_clear()
     try:
         sso = {"Remote-User": "alice", "X-Pangolin-Token": FAKE_TRUST_TOKEN}

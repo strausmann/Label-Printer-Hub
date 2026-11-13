@@ -118,7 +118,7 @@ async def test_e2e_control_route_absent_with_the_web_bundle(
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<!doctype html><title>shell</title>", encoding="utf-8")
-    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", str(dist))
+    monkeypatch.setenv("LABELYARD_WEB_DIST_DIR", str(dist))
     get_settings.cache_clear()
     try:
         inner = create_app()._app  # type: ignore[attr-defined]
@@ -138,5 +138,5 @@ async def test_e2e_control_route_absent_with_the_web_bundle(
                 assert resp.status_code in (404, 405), where
                 assert '"uri"' not in resp.text and '"backends"' not in resp.text, where
     finally:
-        monkeypatch.delenv("PRINTER_HUB_WEB_DIST_DIR")
+        monkeypatch.delenv("LABELYARD_WEB_DIST_DIR")
         get_settings.cache_clear()
