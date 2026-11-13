@@ -25,6 +25,8 @@ let waitingWorker = false;
 // The hub runs another version than this bundle.
 let versionMismatch = false;
 let refreshing = false;
+// The Reload button was pressed and the page is still getting the new version (the button shows "Updating…").
+let updating = false;
 let updateSW: ((reloadPage?: boolean) => Promise<void>) | null = null;
 let registration: SwRegistration | null = null;
 let stopUpdateChecks: (() => void) | null = null;
@@ -105,13 +107,12 @@ function workerWaits(ms: number): Promise<boolean> {
 export async function applyUpdate(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
+  updating = true;
+  emit();
   try {
     if (!waitingWorker && registration) {
-      try {
-        await registration.update();
-      } catch {
-        // Offline or the file is gone: the bounded wait below decides.
-      }
+      // The check itself is bounded too: a network that swallows the request must not keep the button busy.
+      await withinBudget(registration.update(), deps.workerWaitMs);
       await workerWaits(deps.workerWaitMs);
     }
     if (waitingWorker && updateSW) await updateSW(true);
@@ -120,6 +121,20 @@ export async function applyUpdate(): Promise<void> {
     // The worker could not take over: the banner stays and the button can be pressed again.
   } finally {
     refreshing = false;
+    updating = false;
+    emit();
+  }
+}
+
+/** Waits for `work` for at most `ms`; its failure (offline, file gone) or a timeout is not an error here. */
+async function withinBudget(work: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([work, new Promise<void>((resolve) => (timer = setTimeout(resolve, ms)))]);
+  } catch {
+    // The bounded wait for a worker that follows decides.
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -157,6 +172,16 @@ export function noteServerVersion(serverVersion: string | null | undefined): voi
   }
 }
 
+export function useUpdating(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => updating,
+  );
+}
+
 export function useNeedRefresh(): boolean {
   return useSyncExternalStore(
     (listener) => {
@@ -171,6 +196,7 @@ export function resetUpdatesForTest(): void {
   waitingWorker = false;
   versionMismatch = false;
   refreshing = false;
+  updating = false;
   updateSW = null;
   registration = null;
   checkedFor = null;

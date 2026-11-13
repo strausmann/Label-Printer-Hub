@@ -4670,6 +4670,10 @@ msgstr "ungeprüft"
 msgid "Updating the preview…"
 msgstr "Die Vorschau wird aktualisiert …"
 
+#: src/shell/UpdatePrompt.tsx
+msgid "Updating…"
+msgstr "Wird aktualisiert…"
+
 #: src/features/settings/Integrations.tsx
 msgid "URL"
 msgstr "URL"

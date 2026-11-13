@@ -181,7 +181,7 @@ export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> 
     throw new ApiError(0, "network_error", "Network error");
   }
 
-  // Every API response names the server version; a page built for another one reloads (#288).
+  // Every API response names the server version; a page built for another one offers the update (#288).
   noteServerVersion(response.headers?.get(VERSION_HEADER));
 
   if (!response.ok) {

@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, test } from "./fixtures";
 
-// Issue #288: a tab opened before an update reloads itself once when the hub reports another version.
+// Issue #288: a tab opened before an update shows the update notice when the hub reports another version; one click on Reload lands on the new version.
 // The hub under test runs the same build as the bundle, so the mismatch is mocked: every API response
 // gets the header of a newer hub.
 

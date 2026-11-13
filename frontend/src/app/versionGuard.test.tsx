@@ -12,6 +12,7 @@ import {
   setVersionCheckForTest,
   startUpdates,
   useNeedRefresh,
+  useUpdating,
 } from "./updates";
 
 // A page built for 1.5.0 talking to a hub that reports 1.6.0 (#288).
@@ -181,6 +182,62 @@ describe("the Reload button ends on the new bundle", () => {
     await applyUpdate();
     expect(updateSW).toHaveBeenCalledTimes(2);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("an update() that never answers is given up on within the budget, then the plain reload", async () => {
+    const updateSW = vi.fn(async (reloadPage?: boolean): Promise<void> => void reloadPage);
+    const registration = { update: vi.fn(() => new Promise<never>(() => {})) };
+    startUpdates((o) => (o.onRegisteredSW?.("/sw.js", registration), updateSW));
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS - 1);
+    expect(reload).not.toHaveBeenCalled();
+    // The check used its budget; the wait for a worker has its own: both are bounded.
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS);
+    await done;
+    expect(reload).toHaveBeenCalledTimes(1);
+    // And the button is free again afterwards.
+    const again = applyUpdate();
+    await vi.advanceTimersByTimeAsync(WORKER_WAIT_MS * 2);
+    await again;
+    expect(reload).toHaveBeenCalledTimes(2);
+  });
+
+  it("is pending while it works and not before or after, on success and on failure", async () => {
+    const { result } = renderHook(() => useUpdating());
+    const { needRefresh } = setupWorker(1_000);
+    expect(result.current).toBe(false);
+    const done = applyUpdate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(result.current).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await done;
+    expect(result.current).toBe(false);
+
+    // Failure: the worker cannot take over.
+    resetUpdatesForTest();
+    setVersionCheckForTest({ buildVersion: BUILT_FOR, reload });
+    const failing = setupWorker(null);
+    failing.updateSW.mockRejectedValueOnce(new Error("no controller"));
+    failing.needRefresh();
+    const second = applyUpdate();
+    await vi.advanceTimersByTimeAsync(0);
+    await second;
+    expect(result.current).toBe(false);
+    void needRefresh;
+  });
+
+  it("disables the button and says Updating… while it works", async () => {
+    vi.useRealTimers();
+    setupWorker(300);
+    mockApi({});
+    await renderApp({ path: "/" });
+    await act(async () => noteServerVersion(SERVER));
+    expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
+    await act(async () => screen.getByRole("button", { name: "Reload" }).click());
+    expect(screen.getByRole("button", { name: "Updating…" })).toBeDisabled();
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled());
   });
 
   it("the banner's button runs this path", async () => {

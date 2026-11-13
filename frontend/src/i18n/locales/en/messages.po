@@ -4670,6 +4670,10 @@ msgstr "unverified"
 msgid "Updating the preview…"
 msgstr "Updating the preview…"
 
+#: src/shell/UpdatePrompt.tsx
+msgid "Updating…"
+msgstr "Updating…"
+
 #: src/features/settings/Integrations.tsx
 msgid "URL"
 msgstr "URL"
