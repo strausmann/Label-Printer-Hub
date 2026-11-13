@@ -213,3 +213,26 @@ async def test_a_different_roll_is_still_found_at_once(async_session_factory) ->
     pid = uuid4()
     await _seed(async_session_factory, pid)
     assert await RollTracker(EventBus(), async_session_factory).observe(pid, 29, "29mm")
+
+
+async def test_forget_drops_the_printers_memory(async_session_factory) -> None:
+    """T10: a deleted (or detached) printer leaves no lock and no no-tape count behind."""
+    pid = uuid4()
+    await _seed(async_session_factory, pid)
+    tracker = RollTracker(EventBus(), async_session_factory)
+    assert await tracker.observe(pid, None, None) is None  # one no-tape probe counted
+    assert pid in tracker._locks and tracker._no_tape_streak.get(pid) == 1
+    tracker.forget(pid)
+    assert pid not in tracker._locks and pid not in tracker._no_tape_streak
+    tracker.forget(uuid4())  # unknown ids are a no-op
+
+
+async def test_no_tape_is_not_counted_while_the_stored_roll_has_no_tape(
+    async_session_factory,
+) -> None:
+    """T10: with nothing stored to clear, a printer without a tape must not count up forever."""
+    pid = uuid4()
+    tracker = RollTracker(EventBus(), async_session_factory)
+    for _ in range(3):
+        await tracker.observe(pid, None, None)
+    assert pid not in tracker._no_tape_streak

@@ -637,6 +637,7 @@ class PrinterRuntime:
             await self._queue().remove_printer(printer_id, timeout_s=wiring.queue_timeout_s)
         finally:
             if wiring.kind == "tape":
+                self.roll_tracker.forget(printer_id)
                 self._router.unregister(wiring.slug)
                 if self._slug_to_id.get(wiring.slug) == printer_id:
                     del self._slug_to_id[wiring.slug]

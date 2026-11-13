@@ -365,6 +365,19 @@ async def test_attach_tape_with_snmp_starts_producer(env: Env) -> None:
     assert env.app.state.backend_router.get(printer.slug) is not None
 
 
+async def test_detach_of_a_tape_printer_forgets_its_roll_tracking(env: Env) -> None:
+    """T10: a removed printer's lock and no-tape count leave the roll tracker with it."""
+    await _start(env)
+    printer = _tape(model="PT-P750W", discover=False)
+    await _store_row(env.factory, printer)
+    await env.runtime.attach(printer)
+    env.runtime.roll_tracker._no_tape_streak[printer.id] = 1
+    env.runtime.roll_tracker._locks[printer.id] = asyncio.Lock()
+    await env.runtime.detach(printer.id)
+    assert printer.id not in env.runtime.roll_tracker._no_tape_streak
+    assert printer.id not in env.runtime.roll_tracker._locks
+
+
 async def test_tape_printer_without_snmp_discovery_is_not_polled(env: Env) -> None:
     """No producer is built without ``snmp.discover``: the status endpoint reports it unpolled."""
     await _start(env)

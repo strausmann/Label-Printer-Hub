@@ -147,6 +147,17 @@ class RollTracker:
         # Test seam: runs between the read and the write of ``observe``.
         self._after_read: Callable[[], Awaitable[None]] | None = None
 
+    def forget(self, printer_id: UUID) -> None:
+        """Drop what this tracker keeps for a printer that is detached or deleted (T10).
+
+        Called after its producer has stopped, so no ``observe`` for it runs any more; the
+        stored roll row stays (the printer's delete removes it, a re-attach compares with it).
+        """
+        self._no_tape_streak.pop(printer_id, None)
+        lock = self._locks.get(printer_id)
+        if lock is not None and not lock.locked():
+            del self._locks[printer_id]
+
     def _session(self) -> AsyncSession:
         if self._session_factory is not None:
             return self._session_factory()  # type: ignore[no-any-return]
@@ -173,6 +184,9 @@ class RollTracker:
             for _attempt in range(_MAX_ATTEMPTS):
                 async with self._session() as s:
                     row = await s.get(PrinterRoll, printer_id)
+                    if width_mm is None and (row is None or row.width_mm is None):
+                        # Nothing stored to clear: the count only debounces clearing a roll.
+                        self._no_tape_streak.pop(printer_id, None)
                     if row is not None and (row.width_mm, row.media_raw) == (width_mm, media_raw):
                         return None
                     if (
