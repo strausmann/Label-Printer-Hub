@@ -59,7 +59,7 @@ export function NotMonitoredHint({ printer, page, linked }: { printer: Printer; 
   let text: string;
   let link: ReactNode = null;
   if (!printer.enabled) {
-    text = t`The printer is switched off in the hub. Switch it on in the printer settings.`;
+    text = t`The printer is switched off in the hub. An admin can switch it on in the printer settings.`;
     link = <SettingsLink />;
   } else if (page) {
     text = t`The hub cannot read this printer's status. An admin can check its address in the printer settings.`;

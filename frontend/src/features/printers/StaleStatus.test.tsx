@@ -124,8 +124,16 @@ describe("one age rule for the card and the detail page (263-28)", () => {
     mockApi({ "GET /api/v1/printers": [off], ...detailRoutes({ online: null, polled: false, tape_loaded: null }), [`GET /api/v1/printers/${PRINTER_A.id}`]: off, "GET /api/v1/jobs": [] });
     await renderApp({ path: "/printers" });
     const card = (await screen.findByRole("link", { name: /Workshop PT-P750W/ })) as HTMLElement;
-    expect(await within(card).findByText("The printer is switched off in the hub. Switch it on in the printer settings.")).toBeVisible();
+    expect(await within(card).findByText("The printer is switched off in the hub. An admin can switch it on in the printer settings.")).toBeVisible();
     expect(within(card).queryByText(/status discovery/)).toBeNull();
+  });
+
+  it("the switched-off hint speaks to a print key as an admin's task, in German with du", async () => {
+    const off = { ...PRINTER_A, enabled: false };
+    mockApi({ "GET /api/v1/printers": [off], ...detailRoutes({ online: null, polled: false, tape_loaded: null }), [`GET /api/v1/printers/${PRINTER_A.id}`]: off, "GET /api/v1/jobs": [] });
+    await renderApp({ path: `/printers/${PRINTER_A.id}`, session: { ...SIGNED_IN, scope: "print" }, language: "de" });
+    expect(await screen.findByText("Der Drucker ist im Hub ausgeschaltet. Ein Admin kann ihn in den Druckereinstellungen einschalten.")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "Druckereinstellungen öffnen" })).toBeNull();
   });
 
   it("a monitored printer gets no such hint", async () => {

@@ -4152,6 +4152,9 @@ msgid "The printer is paused. Resume it, then try again."
 msgstr "The printer is paused. Resume it, then try again."
 
 #: src/features/printers/PageStatus.tsx
+msgid "The printer is switched off in the hub. An admin can switch it on in the printer settings."
+msgstr "The printer is switched off in the hub. An admin can switch it on in the printer settings."
+
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer is switched off in the hub. Switch it on in the printer settings."
 msgstr "The printer is switched off in the hub. Switch it on in the printer settings."

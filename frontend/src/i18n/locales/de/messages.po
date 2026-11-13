@@ -4152,6 +4152,9 @@ msgid "The printer is paused. Resume it, then try again."
 msgstr "Der Drucker ist pausiert. Setze ihn fort und versuche es dann erneut."
 
 #: src/features/printers/PageStatus.tsx
+msgid "The printer is switched off in the hub. An admin can switch it on in the printer settings."
+msgstr "Der Drucker ist im Hub ausgeschaltet. Ein Admin kann ihn in den Druckereinstellungen einschalten."
+
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer is switched off in the hub. Switch it on in the printer settings."
 msgstr "Der Drucker ist im Hub ausgeschaltet. Schalte ihn in den Druckereinstellungen ein."
