@@ -575,6 +575,28 @@ class ProvenanceTest(TempRepoCase):
         assert message is not None
         self.assertIn("no merge of milestone/1.5.0", message)
 
+    def test_feat_pushed_to_main_and_reverted_there_does_not_block(self) -> None:
+        # T1: a sneaked-in feat that was reverted on main carries no impact, like in commit-analyzer.
+        self.git("switch", "-q", "-c", "milestone/1.5.0")
+        self.commit("feat: inside")
+        self.git("switch", "-q", "main")
+        sneaked = self.commit("feat: sneaked in")
+        self.commit(f'Revert "feat: sneaked in"\n\nThis reverts commit {sneaked}.')
+        self.merge_milestone("1.5.0")
+        self.assertIsNone(self.violation())
+
+    def test_a_revert_of_another_commit_does_not_hide_a_feat_on_main(self) -> None:
+        self.git("switch", "-q", "-c", "milestone/1.5.0")
+        self.commit("feat: inside")
+        self.git("switch", "-q", "main")
+        other = self.commit("fix: something")
+        sneaked = self.commit("feat: sneaked in")
+        self.commit(f'Revert "fix: something"\n\nThis reverts commit {other}.')
+        self.merge_milestone("1.5.0")
+        message = self.violation()
+        assert message is not None
+        self.assertIn(sneaked[:7], message)
+
     def test_real_git_failure_raises(self) -> None:
         with self.assertRaises(subprocess.CalledProcessError):
             ri.provenance_violation("1.5.0", "9.9.9", RULES, cwd=self.repo)
