@@ -1,0 +1,122 @@
+name: Printer compatibility report
+description: Tell us how a printer works with the hub — tested, partly working or not working
+title: "[printer] <vendor> <model>"
+# Triage: reporters cannot set labels. A maintainer adds the hardware:* label from the
+# "Kind of printer" field and turns a real defect into its own bug issue (see "Triage" in
+# CONTRIBUTING.md). The printer test kit (#261) will fill in this form for you later.
+labels:
+  - "printer-report"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing a printer. Every report helps others decide what to buy and tells us
+        which models need work.
+
+        **Before submitting:** do not add serial numbers, MAC or IP addresses, host names, keys or
+        user names. None of them is needed here.
+
+  - type: input
+    id: model
+    attributes:
+      label: Printer model
+      description: Vendor and exact model as printed on the device.
+      placeholder: e.g. Brother PT-P750W, Brother QL-820NWB, HP LaserJet CP1525N
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of printer
+      options:
+        - Tape printer (Brother PT / P-touch)
+        - Label printer (Brother QL, DK rolls)
+        - Page printer over IPP (label sheets)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: From the printer's own web page or status print, if you know it.
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - Ethernet
+        - Wi-Fi
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: Overall result
+      options:
+        - Works — everything I tried printed correctly
+        - Partly works — see the details below
+        - Does not work
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What worked
+      description: Tick what you tried and what worked. Leave the rest unticked and explain below.
+      options:
+        - label: The hub shows the printer's status (ready, printing, cover open, out of media)
+        - label: The hub detects the loaded tape, roll or paper (or toner levels on a page printer)
+        - label: A label prints at the right size and position
+        - label: QR codes on the label scan reliably
+        - label: Cutting works (auto cut / half cut, where the printer has it)
+        - label: Printing onto label sheets lines up with the cells (page printers, after calibration)
+
+  - type: textarea
+    id: media
+    attributes:
+      label: Media you tested
+      description: Tape widths, DK rolls or sheet types (vendor and product code).
+      placeholder: e.g. TZe 12 mm and 24 mm; DK-22205; Avery Zweckform L4736REV
+    validations:
+      required: true
+
+  - type: textarea
+    id: detection
+    attributes:
+      label: Detection report (optional)
+      description: >-
+        Paste the anonymised report the hub creates when it analyses a printer
+        (protocols found, model strings, capabilities). It is built from a fixed list of fields
+        and contains no serial number, MAC or IP address or host name — check it anyway.
+        Until the hub offers it (#232, #261), you can paste the output of the printer's own
+        status page instead, with the same items removed.
+      render: text
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What went wrong, what you had to set up, anything others should know. Photos of a test print help.
+
+  - type: input
+    id: hub_version
+    attributes:
+      label: Hub version
+      description: Shown at the bottom of the navigation, e.g. 1.5.1.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy_check
+    attributes:
+      label: Privacy
+      options:
+        - label: I removed serial numbers, addresses, host names and anything else internal.
+          required: true

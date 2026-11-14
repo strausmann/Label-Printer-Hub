@@ -78,6 +78,7 @@ from app.printer_backends.ipp.errors import (
     IppTransportError,
     IppUnreachableError,
 )
+from app.printer_backends.ipp.job_attrs import USER_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,6 @@ MAX_CONNECT_TIMEOUT_S = 5.0
 IPP_VERSION = (1, 1)
 """IPP/1.1 is understood by every IPP printer; nothing the hub sends needs 2.0."""
 
-USER_NAME = "label-printer-hub"
 MAX_REASONS = 32
 MAX_JOB_URI_LENGTH = 1023
 JOB_ATTRIBUTES = (

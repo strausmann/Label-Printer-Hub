@@ -13,7 +13,11 @@ from app.printer_backends.ipp.codec import (
     decode,
     encode,
 )
-from app.printer_backends.ipp.job_attrs import print_job_attributes
+from app.printer_backends.ipp.job_attrs import (
+    LEGACY_IPP_USER_NAME,
+    is_own_job,
+    print_job_attributes,
+)
 
 JOB_NAME = "Sheet L4736-0002 · 9 labels"
 
@@ -61,7 +65,7 @@ def test_print_job_attributes_media_col() -> None:
     op = _by_name(ops)
     assert op["document-format"] == ["application/pdf"]
     assert op["job-name"] == [JOB_NAME]
-    assert op["requesting-user-name"] == ["label-printer-hub"]
+    assert op["requesting-user-name"] == ["labelyard"]
     job = _by_name(job_attrs)
     members = _media_col(job)
     (size,) = members["media-size"]
@@ -168,3 +172,32 @@ def test_attributes_survive_the_wire() -> None:
     assert op_tags["job-name"] == Tag.NAME
     assert op_tags["requesting-user-name"] == Tag.NAME
     assert op_tags["document-format"] == Tag.MIME
+
+
+def test_new_jobs_carry_the_labelyard_user_name() -> None:
+    ops, _ = print_job_attributes(_summary(), media="A4", tray="auto", job_name=JOB_NAME)
+    assert _by_name(ops)["requesting-user-name"] == ["labelyard"]
+
+
+def test_job_with_the_labelyard_user_name_is_own() -> None:
+    assert is_own_job(JOB_NAME, "labelyard", JOB_NAME)
+
+
+def test_job_sent_by_1_5_x_under_the_old_user_name_is_still_own() -> None:
+    # A job sent before the upgrade can still be on the printer afterwards. The name is pinned:
+    # 1.5.x sent exactly this (split so the brand guard does not report the test).
+    assert LEGACY_IPP_USER_NAME == "label-printer-" + "hub"
+    assert is_own_job(JOB_NAME, "label-printer-" + "hub", JOB_NAME)
+
+
+def test_job_with_another_user_name_is_foreign() -> None:
+    assert not is_own_job(JOB_NAME, "someone-else", JOB_NAME)
+
+
+def test_job_with_another_name_is_foreign_even_with_our_user_name() -> None:
+    assert not is_own_job("other job", "labelyard", JOB_NAME)
+    assert not is_own_job("other job", LEGACY_IPP_USER_NAME, JOB_NAME)
+
+
+def test_unreported_user_name_is_not_held_against_the_job() -> None:
+    assert is_own_job(JOB_NAME, None, JOB_NAME)

@@ -81,6 +81,19 @@ LEGACY_ENV_FILES: tuple[str, ...] = (
     "backend/app/page_render/pdf.py",
     "backend/tests/unit/test_config_legacy_prefix.py",
     "backend/tests/unit/test_pdf_font_env.py",
+    # The settings model, the log-level lookup and the example env file describe the
+    # fallback; the image reads the old port variable as a fallback too.
+    "backend/app/config.py",
+    "backend/app/main.py",
+    "backend/.env.example",
+    "backend/Dockerfile",
+    # Tests that set or clear the old names to check the fallback (and that an older,
+    # never-read variable stays ignored).
+    "backend/tests/conftest.py",
+    "backend/tests/db/test_engine.py",
+    "backend/tests/integration/test_legacy_env_startup_warning.py",
+    "backend/tests/unit/test_brand_identity.py",
+    "backend/tests/unit/test_startup_error.py",
     "docs/decisions/*-rename-to-labelyard.md",
     "scripts/brand_guard.py",
     "scripts/test_brand_guard.py",
@@ -108,6 +121,22 @@ LEGACY_SLUG_FILES: tuple[str, ...] = (
     "website/src/content/docs/admin/upgrades/index.md",
     "website/src/content/docs/de/admin/upgrades/index.md",
 )
+
+
+# The IPP user name of jobs sent by 1.5.x: the hub still recognises them as its own after the
+# upgrade, so the old name stays in exactly one constant. Only this line of this file is allowed.
+LEGACY_IPP_USER_FILE = "backend/app/printer_backends/ipp/job_attrs.py"
+LEGACY_IPP_USER_LINE_START = "LEGACY_IPP_USER_NAME = "
+
+# Temporary, until Task 13 (repository rename): semantic-release pushes over the repository URL,
+# which only changes once the repository is renamed. Only the line that sets ``repositoryUrl`` and
+# the test line that pins it are allowed, matched by their start (leading spaces ignored); any
+# other old name in these files is a hit. Remove both entries in the Task 13 commit that switches
+# ``repositoryUrl``.
+TEMPORARY_REPO_URL_LINES: dict[str, str] = {
+    ".releaserc.json": '"repositoryUrl": ',
+    "backend/tests/unit/test_release_workflows.py": 'assert releaserc["repositoryUrl"] == ',
+}
 
 
 def _glob_to_regex(glob: str) -> re.Pattern[str]:
@@ -165,7 +194,12 @@ def _slug_allowed(path: str, line: str, m: re.Match[str]) -> bool:
     # `<slug>.sheet-type` is the file format's registered name; it is stored in
     # users' exported files and stays. The migration guide and the rename ADR may
     # name the old image and repository.
-    return line.startswith(".sheet-type", m.end()) or _matches_any(path, LEGACY_SLUG_FILES)
+    if line.startswith(".sheet-type", m.end()) or _matches_any(path, LEGACY_SLUG_FILES):
+        return True
+    if path == LEGACY_IPP_USER_FILE and line.startswith(LEGACY_IPP_USER_LINE_START):
+        return True
+    start = TEMPORARY_REPO_URL_LINES.get(path)
+    return start is not None and line.lstrip().startswith(start)
 
 
 def _in_legacy_env_file(path: str, _line: str, _m: re.Match[str]) -> bool:

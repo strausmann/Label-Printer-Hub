@@ -85,7 +85,7 @@ describe("buildFeedbackUrl", () => {
   it("starts at the template, with the title and labels of each kind", () => {
     const wrong = buildFeedbackUrl(input());
     expect(wrong.startsWith(`${FEEDBACK_BASE}&`)).toBe(true);
-    expect(FEEDBACK_BASE).toBe("https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml");
+    expect(FEEDBACK_BASE).toBe("https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml");
     expect(params(wrong).get("title")).toBe("[sheet type] L4736REV v2: dimensions wrong");
     expect(params(wrong).get("labels")).toBe("area:sheets,type:bug");
     const ok = buildFeedbackUrl(input({ kind: "confirmed" }));

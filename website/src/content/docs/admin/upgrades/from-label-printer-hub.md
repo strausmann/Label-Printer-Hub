@@ -18,8 +18,11 @@ Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a 
 | PDF font override `PRINTHUB_PDF_FONT` | `LABELYARD_PDF_FONT` (the old name is still read) |
 | Repository `strausmann/Label-Printer-Hub` | `strausmann/labelyard` (GitHub redirects the old address) |
 | Example variables `PRINTERHUB_HOST`, `LABEL_HUB_URL`, `LABEL_HUB_KEY` | `LABELYARD_HOST`, `LABELYARD_URL`, `LABELYARD_KEY` |
+| User name of the print jobs sent to page printers (IPP) `label-printer-hub` | `labelyard`: update user allow lists and per-user accounting on the print server |
 
 ## Upgrade in three steps
+
+Using a page printer? Let its queue drain first. 1.6.0 still knows the print jobs 1.5.x sent as its own, but it asks about them under the new user name. A print server that lets only a job's owner cancel it (the CUPS default) may then refuse to cancel a running 1.5.x job.
 
 1. Change `image:` in your compose file to `ghcr.io/strausmann/labelyard:1.6.0` (or `docker.io/<user>/labelyard:1.6.0`).
 2. Pull the image: `docker compose pull`.

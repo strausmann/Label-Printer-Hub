@@ -124,6 +124,46 @@ class BrandGuardTest(unittest.TestCase):
         rules = sorted(self.rules())
         self.assertEqual(rules, ["cli", "cli", "env-prefix", "env-prefix", "slug"])
 
+    def test_legacy_ipp_user_name_allowed_only_in_its_constant(self) -> None:
+        path = "backend/app/printer_backends/ipp/job_attrs.py"
+        self.add(path, f'LEGACY_IPP_USER_NAME = "{SLUG}"  # jobs sent by 1.5.x\nUSER_NAME = "{SLUG}"\n')
+        self.add("backend/app/printer_backends/ipp/client.py", f'LEGACY_IPP_USER_NAME = "{SLUG}"\n')
+        hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
+        self.assertEqual(hits, [("backend/app/printer_backends/ipp/client.py", 1), (path, 2)])
+
+    def test_temporary_repo_url_allowance_covers_exactly_two_lines(self) -> None:
+        url = f"git@github.com:strausmann/{SLUG}.git"
+        allowed = {
+            ".releaserc.json": f'  "repositoryUrl": "{url}",\n',
+            "backend/tests/unit/test_release_workflows.py": f'    assert releaserc["repositoryUrl"] == "{url}"\n',
+        }
+        for path, line in allowed.items():
+            self.add(path, line)
+        for path in ("package.json", "backend/tests/unit/test_release_workflows_more.py", "x/.releaserc.json"):
+            self.add(path, allowed[".releaserc.json"])
+        hits = sorted(h.path for h in brand_guard.find_hits(self.root))
+        self.assertEqual(
+            hits,
+            ["backend/tests/unit/test_release_workflows_more.py", "package.json", "x/.releaserc.json"],
+        )
+
+    def test_temporary_repo_url_allowance_is_the_line_not_the_file(self) -> None:
+        url = f"git@github.com:strausmann/{SLUG}.git"
+        # Another key with the old slug, the pin in a different statement, and the allowed line of the other file.
+        self.add(".releaserc.json", f'  "repositoryUrl": "{url}",\n  "homepage": "https://github.com/strausmann/{SLUG}"\n')
+        self.add(
+            "backend/tests/unit/test_release_workflows.py",
+            f'    assert releaserc["repositoryUrl"] == "{url}"\n    expected = "{url}"\n    "repositoryUrl": "{url}"\n',
+        )
+        hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
+        self.assertEqual(
+            hits,
+            [(".releaserc.json", 2), ("backend/tests/unit/test_release_workflows.py", 2), ("backend/tests/unit/test_release_workflows.py", 3)],
+        )
+        # the allowance is for the slug only: other old names on the allowed line stay hits
+        self.add(".releaserc.json", f'  "repositoryUrl": "{url}", "x": "{DISPLAY}"\n')
+        self.assertEqual(self.rules(".releaserc.json"), ["display"])
+
     def test_slug_not_reported_twice(self) -> None:
         self.add("README.md", f"{SLUG}-backend\n")
         self.assertEqual(self.rules(), ["slug"])
@@ -219,6 +259,32 @@ class BrandGuardTest(unittest.TestCase):
     def test_env_prefix_allowed_in_legacy_file(self) -> None:
         self.add("backend/app/config_legacy.py", f'P = "{ENV_PREFIX}"\n')
         self.assertEqual(self.rules(), [])
+
+    def test_env_prefix_allowed_in_the_fallback_files_and_their_tests(self) -> None:
+        paths = (
+            "backend/app/config.py",
+            "backend/app/main.py",
+            "backend/.env.example",
+            "backend/Dockerfile",
+            "backend/tests/conftest.py",
+            "backend/tests/db/test_engine.py",
+            "backend/tests/integration/test_legacy_env_startup_warning.py",
+            "backend/tests/unit/test_brand_identity.py",
+            "backend/tests/unit/test_startup_error.py",
+        )
+        for path in paths:
+            self.add(path, f"{ENV_PREFIX}X {ENV_OTHER}Y\n")
+        for path in paths:
+            self.assertEqual(self.rules(path), [], path)
+
+    def test_env_allowance_is_limited_to_the_exact_paths(self) -> None:
+        # counter-test: a sibling of an allowed file, or the same name elsewhere, is still a hit
+        self.add("backend/app/config_other.py", f"{ENV_PREFIX}X\n")
+        self.add("backend/tests/unit/conftest.py", f"{ENV_PREFIX}X\n")
+        self.add("examples/.env.example", f"{ENV_PREFIX}X\n")
+        self.assertEqual(self.rules("backend/app/config_other.py"), ["env-prefix"])
+        self.assertEqual(self.rules("backend/tests/unit/conftest.py"), ["env-prefix"])
+        self.assertEqual(self.rules("examples/.env.example"), ["env-prefix"])
 
     def test_env_prefix_allowed_in_rename_adr_by_glob(self) -> None:
         self.add("docs/decisions/0031-rename-to-labelyard.md", f"{ENV_PREFIX}X\n")

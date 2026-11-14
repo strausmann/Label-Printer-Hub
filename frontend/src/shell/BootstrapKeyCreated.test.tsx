@@ -49,7 +49,7 @@ describe("BootstrapKeyCreated", () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
     expect(await screen.findByLabelText("Your new admin key")).toHaveValue("lh_pat_fake-key-for-tests");
     expect(screen.getByText(/shown only once/)).toBeInTheDocument();
-    expect(screen.getByText("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY")).toBeInTheDocument();
+    expect(screen.getByText("LABELYARD_BOOTSTRAP_ADMIN_KEY")).toBeInTheDocument();
     expect(screen.getByText(/Remove/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create admin key" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));

@@ -18,8 +18,11 @@ Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umben
 | PDF-Schriftart `PRINTHUB_PDF_FONT` | `LABELYARD_PDF_FONT` (der alte Name wird weiter gelesen) |
 | Repository `strausmann/Label-Printer-Hub` | `strausmann/labelyard` (GitHub leitet die alte Adresse weiter) |
 | Beispielvariablen `PRINTERHUB_HOST`, `LABEL_HUB_URL`, `LABEL_HUB_KEY` | `LABELYARD_HOST`, `LABELYARD_URL`, `LABELYARD_KEY` |
+| Benutzername der Aufträge an Seitendrucker (IPP) `label-printer-hub` | `labelyard`: Passe Freigabelisten für Benutzer und die Abrechnung je Benutzer auf dem Druckserver an |
 
 ## In drei Schritten aktualisieren
+
+Du nutzt einen Seitendrucker? Lass zuerst seine Warteschlange leerlaufen. 1.6.0 erkennt die Aufträge aus 1.5.x weiter als eigene, fragt aber unter dem neuen Benutzernamen nach ihnen. Ein Druckserver, der nur den Besitzer eines Auftrags abbrechen lässt (bei CUPS der Standard), kann den Abbruch eines laufenden Auftrags aus 1.5.x verweigern.
 
 1. Ändere `image:` in deiner Compose-Datei auf `ghcr.io/strausmann/labelyard:1.6.0` (oder `docker.io/<user>/labelyard:1.6.0`).
 2. Hol das Image: `docker compose pull`.

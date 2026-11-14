@@ -53,7 +53,7 @@ def test_upgrade_adds_audit_columns_to_jobs(tmp_path):
 
 
 def test_upgrade_seeds_no_api_key_and_prints_none(tmp_path, capfd):
-    """D7: the bootstrap key and `printer-hub admin create-key` replace the old seed.
+    """D7: the bootstrap key and `labelyard admin create-key` replace the old seed.
 
     The migration used to insert an enabled admin key and print its plaintext to
     stdout; that made the bootstrap key unusable and put a key in the container log.

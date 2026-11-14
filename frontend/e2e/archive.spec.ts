@@ -55,7 +55,8 @@ test.describe.serial("sheet archive", () => {
     await page.getByRole("textbox", { name: "Export file contents" }).fill(readFileSync(file, "utf8"));
     await page.getByRole("button", { name: "Import", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText(`Nothing changed: ${SEED} already has this geometry.`);
-    await page.getByRole("button", { name: "Close" }).click();
+    // The written Close button at the end, not the × in the corner (both are named Close).
+    await page.getByRole("dialog").getByRole("button", { name: "Close" }).filter({ hasText: "Close" }).click();
   });
 
   test("importing a file with a wrong shape shows the server's complaint and keeps the dialog open", async () => {
@@ -221,7 +222,7 @@ test.describe.serial("sheet archive", () => {
       page.evaluate(async (p) => ((await (await fetch(p)).json()) as { verified: boolean }).verified, `/api/v1/sheet-types/${k}`);
     const REPORT = "Report a problem with the dimensions";
     const CONFIRM = "Confirm the dimensions";
-    const BASE = "https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml";
+    const BASE = "https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml";
     await setLanguage(page, "en");
     await page.emulateMedia({ colorScheme: "light" });
     await page.setViewportSize({ width: 1280, height: 800 });

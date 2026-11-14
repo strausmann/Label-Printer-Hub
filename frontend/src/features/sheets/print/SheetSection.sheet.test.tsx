@@ -179,6 +179,29 @@ describe("not enough free cells", () => {
     expect(previews(calls).every((c) => body(c).placements.length === 1)).toBe(true);
   });
 
+  it("offers other sheets only for the sheet that was asked about, not the one before it", async () => {
+    // Picking a sheet re-asks for the preview after the debounce. Until then the refusal on screen is the one for the sheet
+    // before, and the alert offered that sheet's alternatives under the new sheet's name. A press on one of those buttons was
+    // lost when the debounce took the alert away under it: the flaky "takes the whole print" below (expected L4736-0010, got
+    // L4736-0001).
+    const { calls } = await overflow();
+    const offeredFor: string[] = [];
+    const watch = new MutationObserver(() => {
+      if (screen.queryByRole("button", { name: "Use L4736-0010 instead (28 free)" }))
+        offeredFor.push(String((body(previews(calls).at(-1)!).placements[0] as { sheet?: string }).sheet));
+    });
+    watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
+      await userEvent.click(await screen.findByRole("option", { name: /L4736-0001/ }));
+      await screen.findByRole("button", { name: "Use L4736-0010 instead (28 free)" });
+    } finally {
+      watch.disconnect();
+    }
+    expect(offeredFor.length).toBeGreaterThan(0);
+    expect(new Set(offeredFor)).toEqual(new Set(["L4736-0001"]));
+  });
+
   it("a sheet with enough room takes the whole print", async () => {
     const { calls } = await overflow();
     await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));

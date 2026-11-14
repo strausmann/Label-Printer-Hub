@@ -184,7 +184,7 @@ Feature, fix and other topic PRs are squash-merged. The squash commit message **
 
 ## Triage
 
-Issues opened from a form get the labels the form names (for example `area:sheets`). People outside the project cannot set labels themselves, so a maintainer sets the rest while triaging: the type label comes from what the reporter chose, not from the reporter. For the *Sheet type dimensions* form it comes from the `kind` field: "Dimensions are wrong" gets `type:bug`, "Dimensions are confirmed" gets `type:feedback`.
+Issues opened from a form get the labels the form names (for example `area:sheets`). People outside the project cannot set labels themselves, so a maintainer sets the rest while triaging: the type label comes from what the reporter chose, not from the reporter. For the *Sheet type dimensions* form it comes from the `kind` field: "Dimensions are wrong" gets `type:bug`, "Dimensions are confirmed" gets `type:feedback`. For the *Printer compatibility report* form (label `printer-report`) the maintainer adds the `hardware:*` label from the "Kind of printer" field; a report that shows a real defect gets its own `type:bug` issue, linked from the report.
 
 ## Adding a new printer model (plugin)
 

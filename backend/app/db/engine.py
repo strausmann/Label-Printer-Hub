@@ -13,7 +13,7 @@ from app.config import get_settings
 from app.sheets.locking import install_statement_counter
 
 # Single source of truth: Settings.database_url (env var LABELYARD_DATABASE_URL).
-# The previous code read the old LABEL_HUB_DATABASE_URL env var which was a
+# The previous code read an older, undocumented database URL variable, a
 # rename relict — see Finding F2 in docs/decisions/.
 DATABASE_URL = get_settings().database_url
 

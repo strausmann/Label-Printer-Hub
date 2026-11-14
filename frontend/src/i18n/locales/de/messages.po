@@ -939,6 +939,7 @@ msgstr "Clients"
 
 #: src/features/archive/ImportDialog.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Close"
 msgstr "Schließen"
@@ -2918,8 +2919,8 @@ msgid "Remove {itemName}"
 msgstr "{itemName} entfernen"
 
 #: src/shell/BootstrapKeyCreated.tsx
-msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
-msgstr "Entferne <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
+msgid "Remove <0>LABELYARD_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+msgstr "Entferne <0>LABELYARD_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Remove colour"

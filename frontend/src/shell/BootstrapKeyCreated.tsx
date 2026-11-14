@@ -88,7 +88,7 @@ export function BootstrapKeyCreated({ onCreate, onContinue }: Props) {
             <p>{t`This key is shown only once. Store it in your password manager before you continue.`}</p>
             <p>
               <Trans>
-                Remove <code>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</code> from the container; it no longer works once this key exists.
+                Remove <code>LABELYARD_BOOTSTRAP_ADMIN_KEY</code> from the container; it no longer works once this key exists.
               </Trans>
             </p>
             <Button onPress={() => void proceed(key)} isDisabled={busy} className={PRIMARY_BUTTON}>
