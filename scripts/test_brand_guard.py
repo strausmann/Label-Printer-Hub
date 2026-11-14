@@ -131,20 +131,37 @@ class BrandGuardTest(unittest.TestCase):
         hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
         self.assertEqual(hits, [("backend/app/printer_backends/ipp/client.py", 1), (path, 2)])
 
-    def test_temporary_repo_url_allowance_covers_exactly_two_paths(self) -> None:
-        url = f'"repositoryUrl": "git@github.com:strausmann/{SLUG}.git"\n'
-        allowed = (".releaserc.json", "backend/tests/unit/test_release_workflows.py")
-        for path in allowed:
-            self.add(path, url)
+    def test_temporary_repo_url_allowance_covers_exactly_two_lines(self) -> None:
+        url = f"git@github.com:strausmann/{SLUG}.git"
+        allowed = {
+            ".releaserc.json": f'  "repositoryUrl": "{url}",\n',
+            "backend/tests/unit/test_release_workflows.py": f'    assert releaserc["repositoryUrl"] == "{url}"\n',
+        }
+        for path, line in allowed.items():
+            self.add(path, line)
         for path in ("package.json", "backend/tests/unit/test_release_workflows_more.py", "x/.releaserc.json"):
-            self.add(path, url)
+            self.add(path, allowed[".releaserc.json"])
         hits = sorted(h.path for h in brand_guard.find_hits(self.root))
         self.assertEqual(
             hits,
             ["backend/tests/unit/test_release_workflows_more.py", "package.json", "x/.releaserc.json"],
         )
-        # the allowance is for the slug only: other old names in those files stay hits
-        self.add(".releaserc.json", f"{DISPLAY}\n")
+
+    def test_temporary_repo_url_allowance_is_the_line_not_the_file(self) -> None:
+        url = f"git@github.com:strausmann/{SLUG}.git"
+        # Another key with the old slug, the pin in a different statement, and the allowed line of the other file.
+        self.add(".releaserc.json", f'  "repositoryUrl": "{url}",\n  "homepage": "https://github.com/strausmann/{SLUG}"\n')
+        self.add(
+            "backend/tests/unit/test_release_workflows.py",
+            f'    assert releaserc["repositoryUrl"] == "{url}"\n    expected = "{url}"\n    "repositoryUrl": "{url}"\n',
+        )
+        hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
+        self.assertEqual(
+            hits,
+            [(".releaserc.json", 2), ("backend/tests/unit/test_release_workflows.py", 2), ("backend/tests/unit/test_release_workflows.py", 3)],
+        )
+        # the allowance is for the slug only: other old names on the allowed line stay hits
+        self.add(".releaserc.json", f'  "repositoryUrl": "{url}", "x": "{DISPLAY}"\n')
         self.assertEqual(self.rules(".releaserc.json"), ["display"])
 
     def test_slug_not_reported_twice(self) -> None:

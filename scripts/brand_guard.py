@@ -129,12 +129,14 @@ LEGACY_IPP_USER_FILE = "backend/app/printer_backends/ipp/job_attrs.py"
 LEGACY_IPP_USER_LINE_START = "LEGACY_IPP_USER_NAME = "
 
 # Temporary, until Task 13 (repository rename): semantic-release pushes over the repository URL,
-# which only changes once the repository is renamed. Remove both paths in the Task 13 commit
-# that switches ``repositoryUrl``.
-TEMPORARY_REPO_URL_FILES: tuple[str, ...] = (
-    ".releaserc.json",
-    "backend/tests/unit/test_release_workflows.py",
-)
+# which only changes once the repository is renamed. Only the line that sets ``repositoryUrl`` and
+# the test line that pins it are allowed, matched by their start (leading spaces ignored); any
+# other old name in these files is a hit. Remove both entries in the Task 13 commit that switches
+# ``repositoryUrl``.
+TEMPORARY_REPO_URL_LINES: dict[str, str] = {
+    ".releaserc.json": '"repositoryUrl": ',
+    "backend/tests/unit/test_release_workflows.py": 'assert releaserc["repositoryUrl"] == ',
+}
 
 
 def _glob_to_regex(glob: str) -> re.Pattern[str]:
@@ -196,7 +198,8 @@ def _slug_allowed(path: str, line: str, m: re.Match[str]) -> bool:
         return True
     if path == LEGACY_IPP_USER_FILE and line.startswith(LEGACY_IPP_USER_LINE_START):
         return True
-    return path in TEMPORARY_REPO_URL_FILES
+    start = TEMPORARY_REPO_URL_LINES.get(path)
+    return start is not None and line.lstrip().startswith(start)
 
 
 def _in_legacy_env_file(path: str, _line: str, _m: re.Match[str]) -> bool:
