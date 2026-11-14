@@ -30,6 +30,7 @@ from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext, _validate_api_key, trusted_sso_user
 from app.auth.scope_deps import require_read
 from app.config import get_settings
+from app.config_legacy import report_from_process, setting_variable_label
 from app.db.session import get_session
 from app.models.ui_session import UiSession
 from app.services.rate_limiter import _sign_in_rate_limiter
@@ -149,10 +150,11 @@ async def sign_in(
     if bootstrap_key and hmac.compare_digest(body.key.encode(), bootstrap_key.encode()):
         # D7: one-time key, only while no admin key exists.
         if await ui_sessions.admin_key_exists(db):
+            # Name the variable the deployment set: the legacy one while it is in use.
+            variable = setting_variable_label("bootstrap_admin_key", report_from_process())
             raise _unauthorized(
                 "bootstrap_disabled",
-                "The bootstrap key is disabled because an admin key exists. "
-                "Remove LABELYARD_BOOTSTRAP_ADMIN_KEY.",
+                f"The bootstrap key is disabled because an admin key exists. Remove {variable}.",
             )
         row, token = await ui_sessions.create_session(
             db, source="bootstrap", scope="admin", api_key_id=None, allowed_printer_ids=[]
