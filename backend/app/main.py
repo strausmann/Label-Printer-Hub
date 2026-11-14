@@ -173,9 +173,7 @@ OPENAPI_VERSION = "3.1.0"
 HUB_VERSION: str = os.environ.get("HUB_VERSION") or __version__
 HUB_REVISION: str = os.environ.get("HUB_REVISION", "unknown")
 HUB_BUILD_DATE: str = os.environ.get("HUB_BUILD_DATE", "1970-01-01T00:00:00Z")
-HUB_REPO_URL: str = os.environ.get(
-    "HUB_REPO_URL", "https://github.com/strausmann/label-printer-hub"
-)
+HUB_REPO_URL: str = os.environ.get("HUB_REPO_URL", "https://github.com/strausmann/labelyard")
 
 _log = logging.getLogger(__name__)
 
@@ -604,9 +602,10 @@ def create_app() -> _LifespanManager:
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
     app = FastAPI(
         lifespan=lifespan,
-        title="Label Printer Hub API",
+        title="Labelyard API",
         description=(
-            "REST + SSE API of the Label Printer Hub, which also serves the web UI. "
+            "REST + SSE API of Labelyard, the self-hosted Label Printer Hub, "
+            "which also serves the web UI. "
             "The OpenAPI spec is at /openapi.json; humans browse the interactive "
             "reference (Scalar) at /docs."
         ),

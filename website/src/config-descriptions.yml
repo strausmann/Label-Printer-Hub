@@ -56,8 +56,8 @@ spoolman_timeout:
   en: 'Seconds to wait for Spoolman.'
   de: 'Sekunden, die auf Spoolman gewartet wird.'
 server_port:
-  en: 'Currently has no effect: the application does not read it. In the container the port comes from the `PORT` variable (default `8000`), which the start command passes to uvicorn as `--port`.'
-  de: 'Derzeit ohne Wirkung: Die Anwendung liest sie nicht. Im Container kommt der Port aus der Variablen `PORT` (Standard `8000`), die der Startbefehl als `--port` an uvicorn übergibt.'
+  en: 'The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT`, then `PRINTER_HUB_SERVER_PORT`, then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.'
+  de: 'Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT`, dann `PRINTER_HUB_SERVER_PORT`, dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.'
 log_level:
   en: 'One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error.'
   de: 'Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab.'

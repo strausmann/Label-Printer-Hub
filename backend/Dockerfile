@@ -1,5 +1,5 @@
 # =============================================================================
-# Label Printer Hub — backend container
+# Labelyard — backend container
 #
 # Multi-stage build:
 #   1) web-builder   — builds the web app from frontend/ (pnpm + Vite)
@@ -135,12 +135,12 @@ ARG REVISION=unknown
 ARG BUILD_DATE=1970-01-01T00:00:00Z
 
 # OCI Image Spec labels — see https://specs.opencontainers.org/image-spec/annotations/
-# Visible via `docker inspect ghcr.io/strausmann/label-printer-hub-backend:VERSION`.
-LABEL org.opencontainers.image.title="label-printer-hub-backend" \
-      org.opencontainers.image.description="Self-hosted label printer hub for Brother PT/QL series — backend container (Python/FastAPI)" \
-      org.opencontainers.image.url="https://github.com/strausmann/label-printer-hub" \
-      org.opencontainers.image.source="https://github.com/strausmann/label-printer-hub" \
-      org.opencontainers.image.documentation="https://github.com/strausmann/label-printer-hub/tree/main/docs" \
+# Visible via `docker inspect ghcr.io/strausmann/labelyard:VERSION`.
+LABEL org.opencontainers.image.title="Labelyard" \
+      org.opencontainers.image.description="Labelyard — the self-hosted Label Printer Hub for Brother PT/QL and office printers" \
+      org.opencontainers.image.url="https://github.com/strausmann/labelyard" \
+      org.opencontainers.image.source="https://github.com/strausmann/labelyard" \
+      org.opencontainers.image.documentation="https://github.com/strausmann/labelyard" \
       org.opencontainers.image.authors="Björn Strausmann <projects@strausmann.ch>" \
       org.opencontainers.image.vendor="strausmann (independent open-source project; not affiliated with Brother Industries, Ltd.)" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
@@ -157,7 +157,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HUB_VERSION="${VERSION}" \
     HUB_REVISION="${REVISION}" \
     HUB_BUILD_DATE="${BUILD_DATE}" \
-    HUB_REPO_URL="https://github.com/strausmann/label-printer-hub" \
+    HUB_REPO_URL="https://github.com/strausmann/labelyard" \
     # The internal HTTP port the backend listens on. Override at deploy time
     # to run the container on a different port without rebuilding the image.
     # The compose files in examples/ set this via the .env file.
@@ -225,25 +225,26 @@ WORKDIR /home/hub
 
 USER hub
 
-# EXPOSE documents the DEFAULT port — overridden by the PORT env var at
-# runtime. Adjust the `docker run -p` mapping or compose `ports` to match
-# the value of PORT if you change it.
+# EXPOSE documents the DEFAULT port. The listening port is the first of LABELYARD_SERVER_PORT,
+# its deprecated old-prefix spelling and PORT that is set, else 8000; the healthcheck and the
+# start command resolve it the same way. Adjust the
+# `docker run -p` mapping or compose `ports` to match if you change it.
 EXPOSE 8000
 
 VOLUME ["/data"]
 
-# Shell-form HEALTHCHECK so $PORT is expanded by the shell. Falls back to
-# the ENV default of 8000 if PORT is somehow unset.
+# Shell-form HEALTHCHECK so the port is expanded by the shell, with the same order as the
+# start command below.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl --fail --silent --show-error "http://localhost:${PORT:-8000}/healthz" || exit 1
+    CMD curl --fail --silent --show-error "http://localhost:${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}/healthz" || exit 1
 
 # tini reaps zombies and propagates SIGTERM to uvicorn cleanly. Shell-form
-# CMD expands $PORT and $FORWARDED_ALLOW_IPS at start so deployments can
-# change them without rebuilding the image.
+# CMD expands the port (same order as the healthcheck) and $FORWARDED_ALLOW_IPS at start so
+# deployments can change them without rebuilding the image.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "-c", "exec uvicorn app.main:app \
     --host 0.0.0.0 \
-    --port \"${PORT}\" \
+    --port \"${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}\" \
     --proxy-headers \
     --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS}\" \
     --no-server-header"]

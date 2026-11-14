@@ -161,9 +161,9 @@ Also set in the web UI; a value set here wins and locks the field there.
 
 ### `LABELYARD_SERVER_PORT`
 
-Default: `8090`
+Default: `8000`
 
-Currently has no effect: the application does not read it. In the container the port comes from the `PORT` variable (default `8000`), which the start command passes to uvicorn as `--port`.
+The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT`, then `PRINTER_HUB_SERVER_PORT`, then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.
 
 ### `LABELYARD_LOG_LEVEL`
 

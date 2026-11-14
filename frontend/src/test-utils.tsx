@@ -14,7 +14,7 @@ export const INFO: InfoData = {
   license: "AGPL-3.0-or-later",
   source_url: "https://github.com/strausmann/labelyard",
   default_language: "en",
-  display_name: "Label Printer Hub",
+  display_name: "Labelyard",
   auth: { sso_configured: false, bootstrap_open: false },
   features: { jobs: true, lookup: true, scan: true, sheets: false, calibration: false, asn: false, kept: false },
   integrations: [

@@ -1,7 +1,7 @@
 [project]
-name = "label-printer-hub-backend"
+name = "labelyard"
 version = "0.0.0-dev"
-description = "Self-hosted label printer hub for Brother PT/QL series — backend"
+description = "Labelyard — the self-hosted Label Printer Hub (backend and web app server)"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -58,6 +58,8 @@ dev = [
 ]
 
 [project.scripts]
+labelyard = "app.cli:main"
+# Deprecated alias, kept so existing scripts (`docker exec … printer-hub admin create-key`) keep working.
 printer-hub = "app.cli:main"
 
 [project.entry-points."label_hub.integrations"]

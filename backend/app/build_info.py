@@ -12,7 +12,7 @@ from typing import Final
 from urllib.parse import urlsplit
 
 PROJECT_LICENSE: Final = "AGPL-3.0-or-later"
-CANONICAL_REPO_URL: Final = "https://github.com/strausmann/label-printer-hub"
+CANONICAL_REPO_URL: Final = "https://github.com/strausmann/labelyard"
 
 _SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?")
 _COMMIT = re.compile(r"[0-9a-f]{7,40}")

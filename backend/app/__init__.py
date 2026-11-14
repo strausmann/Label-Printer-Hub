@@ -1,4 +1,4 @@
-"""Label Printer Hub — backend application package."""
+"""Labelyard — backend application package."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def get_version() -> str:
     (typically ``"0.0.0-dev"``).
     """
     try:
-        return importlib.metadata.version("label-printer-hub-backend")
+        return importlib.metadata.version("labelyard")
     except importlib.metadata.PackageNotFoundError:
         return "0.0.0-dev"
 

@@ -70,7 +70,7 @@ async def test_info_shape(api_client_with_seed) -> None:
         "calibration",
     ]
     assert body["default_language"] == "en"
-    assert body["display_name"] == "Label Printer Hub"
+    assert body["display_name"] == "Labelyard"
     assert body["auth"] == {"sso_configured": False, "bootstrap_open": False}
 
 
@@ -196,7 +196,7 @@ async def test_info_license_and_source(
     """Public (no session): the licence and the link to the running build's source."""
     import app.main as main_module
 
-    repo = "https://github.com/strausmann/label-printer-hub"
+    repo = "https://github.com/strausmann/labelyard"
     monkeypatch.setattr(main_module, "HUB_VERSION", "1.1.0")
     monkeypatch.setattr(main_module, "HUB_REVISION", "0123456789abcdef0123456789abcdef01234567")
     monkeypatch.setattr(main_module, "HUB_REPO_URL", repo)

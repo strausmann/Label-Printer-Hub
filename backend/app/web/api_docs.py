@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 BUNDLE_URL = "/docs/scalar.js"
 # Relative to the web app's dist directory (see frontend/vite.config.ts).
 BUNDLE_RELATIVE_PATH = Path("scalar") / "standalone.js"
-TITLE = "Label Printer Hub API"
+TITLE = "Labelyard API"
 
 # Scalar options that keep the page from talking to anyone but the hub: no default web
 # fonts, no telemetry, no hosted request proxy (``proxyUrl`` stays unset), no hosted AI

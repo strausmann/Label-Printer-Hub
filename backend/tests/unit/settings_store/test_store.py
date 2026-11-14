@@ -71,7 +71,7 @@ def test_registry_has_exactly_the_specified_keys() -> None:
 async def test_defaults_without_env(store, async_session_factory) -> None:
     async with async_session_factory() as s:
         await store.load(s)
-    assert store.get("general.display_name") == "Label Printer Hub"
+    assert store.get("general.display_name") == "Labelyard"
     assert store.get("general.language") == "en"
     assert store.get("jobs.retention_days") == 30
     assert store.is_locked("integrations.snipeit.url") is False
@@ -127,7 +127,7 @@ async def test_none_resets_to_default(store, async_session_factory) -> None:
     async with async_session_factory() as s:
         await store.set_many(s, {"general.display_name": "Hub 1"})
         await store.set_many(s, {"general.display_name": None})
-    assert store.get("general.display_name") == "Label Printer Hub"
+    assert store.get("general.display_name") == "Labelyard"
     assert "general.display_name" not in await _raw_rows(async_session_factory)
 
 
@@ -230,7 +230,7 @@ async def test_batch_is_atomic_when_one_value_is_invalid(store, async_session_fa
         with pytest.raises(InvalidSettingValueError):
             await store.set_many(s, {"general.display_name": "ok", "jobs.retention_days": "x"})
     assert await _raw_rows(async_session_factory) == {}
-    assert store.get("general.display_name") == "Label Printer Hub"
+    assert store.get("general.display_name") == "Labelyard"
 
 
 async def test_subscribe_called_with_changed_keys(store, async_session_factory) -> None:

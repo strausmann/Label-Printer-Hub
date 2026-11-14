@@ -28,7 +28,7 @@ def _integration(
 
 
 _DEFS: list[SettingDef] = [
-    SettingDef("general.display_name", "str", "Label Printer Hub", None),
+    SettingDef("general.display_name", "str", "Labelyard", None),
     SettingDef("general.language", "enum", "en", None, choices=("en", "de")),
     SettingDef("general.time_zone", "str", "UTC", None),
     # D4: shown read-only, always taken from the environment.
