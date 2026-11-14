@@ -115,7 +115,7 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
         port=int(conn.get("port", 9100)),
         snmp=SNMPConfig(
             discover=snmp_raw.get("discover", False),
-            community=snmp_raw.get("community", "public"),
+            community=snmp_raw.get("community") or "public",
         ),
         queue=QueueConfig(timeout_s=getattr(p, "queue_timeout_s", 30)),
         cut_defaults=CutDefaults(

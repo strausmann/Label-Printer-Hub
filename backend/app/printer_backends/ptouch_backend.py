@@ -177,7 +177,14 @@ class PTouchBackend:
     backend_id = "ptouch"
     half_cut_supported: bool = True
 
-    def __init__(self, host: str, *, port: int = 9100, model_id: str = "PT-P750W") -> None:
+    def __init__(
+        self,
+        host: str,
+        *,
+        port: int = 9100,
+        model_id: str = "PT-P750W",
+        community: str = "public",
+    ) -> None:
         if not host:
             raise ValueError("PTouchBackend requires a non-empty host")
         if model_id not in _PTOUCH_PRINTER_CLASSES:
@@ -187,6 +194,8 @@ class PTouchBackend:
         self.host = host
         self._port = port
         self._model_id = model_id
+        # The stored SNMP community (#296): the preflight asks with it, like discovery does.
+        self._community = community
 
     @classmethod
     def from_settings(cls, settings: Any) -> PTouchBackend:
@@ -218,7 +227,7 @@ class PTouchBackend:
     async def preflight_check(
         self,
         *,
-        community: str = "public",
+        community: str | None = None,
         timeout_s: float = 3.0,
     ) -> PreflightStatus:
         """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
@@ -240,7 +249,7 @@ class PTouchBackend:
         try:
             preflight = await query_preflight(
                 self.host,
-                community=community,
+                community=self._community if community is None else community,
                 timeout_s=timeout_s,
             )
         except SnmpQueryError as exc:

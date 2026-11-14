@@ -62,6 +62,7 @@ from app.schemas.printer import (
 )
 from app.schemas.problem import DetailError
 from app.services.print_queue import PrinterAlreadyActiveError
+from app.services.printer_admin_service import snmp_view
 from app.services.printer_runtime import PrinterRuntime
 from app.services.status_block import PrinterError
 from app.services.status_freshness import backoff_of, is_stale, stale_after_s
@@ -76,10 +77,13 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     """The ``connection`` a caller may see.
 
     For an ``ipp`` printer the URI is connection detail (spec 14, 18): only admin callers
-    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows are returned unchanged.
+    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows show ``snmp.community_set``
+    instead of the SNMP community, for every caller (#296).
     """
     connection = dict(printer.connection or {})
-    if printer.backend != "ipp" or (auth is not None and auth.scope == "admin"):
+    if printer.backend != "ipp":
+        return snmp_view(connection)
+    if auth is not None and auth.scope == "admin":
         return connection
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 

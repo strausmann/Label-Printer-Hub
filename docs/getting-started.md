@@ -69,7 +69,7 @@ curl -X PUT http://localhost:8000/api/v1/admin/printers/<slug> \
                       "snmp": {"discover": true, "community": "public"}}}'
 ```
 
-`snmp.discover` switches the status reading on; `snmp.community` is the printer's SNMP read community (`public` unless you changed it on the printer, at most 64 characters, required when `discover` is `true`). The hub re-wires the printer before it answers; the overview shows its state after the first reading, within about 30 seconds. The full request body is in the interactive reference at `/docs` on a running hub (`PUT /api/v1/admin/printers/{slug}`).
+`snmp.discover` switches the status reading on; `snmp.community` is the printer's SNMP read community (`public` unless you changed it on the printer, at most 64 characters). It is write-only: leave it out to keep the stored one (`public` for a new printer); responses report `snmp.community_set` instead of the value. The hub re-wires the printer before it answers; the overview shows its state after the first reading, within about 30 seconds. The full request body is in the interactive reference at `/docs` on a running hub (`PUT /api/v1/admin/printers/{slug}`).
 
 A tape printer cannot report the tape colour over the network. When the roll changes, the hub asks you once which colour is loaded.
 

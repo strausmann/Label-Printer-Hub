@@ -36,3 +36,4 @@ Database migrations run at start. Your data volume, keys and settings carry over
 
 - [Coming from Label Printer Hub](/admin/upgrades/from-label-printer-hub/): Labelyard 1.6.0 is the renamed project. Images, command and environment prefix changed; data and API stay.
 - From 1.4.x: release 1.5.0 moved every API route under `/api/v1/` without aliases. Update scripts, proxy rules and bookmarks first; the [1.5.0 release notes](https://github.com/strausmann/labelyard/releases/tag/v1.5.0) list the moved paths.
+- [Upgrading to 1.7.0](/admin/upgrades/to-1-7-0/): printer responses report `connection.snmp.community_set` instead of the SNMP community.

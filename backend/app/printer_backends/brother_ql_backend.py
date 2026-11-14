@@ -117,12 +117,21 @@ class BrotherQLBackend:
     backend_id = "brother_ql"
     half_cut_supported: bool = False
 
-    def __init__(self, host: str, *, port: int = 9100, model_id: str = "QL-820NWB") -> None:
+    def __init__(
+        self,
+        host: str,
+        *,
+        port: int = 9100,
+        model_id: str = "QL-820NWB",
+        community: str = "public",
+    ) -> None:
         if not host:
             raise ValueError("BrotherQLBackend requires a non-empty host")
         self.host = host
         self._port = port
         self._model_id = model_id
+        # The stored SNMP community (#296): the preflight asks with it, like discovery does.
+        self._community = community
         self._identifier = f"tcp://{host}:{port}"
 
     async def print_image(
@@ -222,7 +231,7 @@ class BrotherQLBackend:
     async def preflight_check(
         self,
         *,
-        community: str = "public",
+        community: str | None = None,
         timeout_s: float = 3.0,
     ) -> PreflightStatus:
         """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
@@ -240,7 +249,7 @@ class BrotherQLBackend:
         try:
             preflight = await query_preflight(
                 self.host,
-                community=community,
+                community=self._community if community is None else community,
                 timeout_s=timeout_s,
             )
         except SnmpQueryError as exc:

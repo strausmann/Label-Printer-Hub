@@ -17,6 +17,12 @@ from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault
 from app.schemas.tape import TapeColourName
 
+CONNECTION_READ_DOC = (
+    "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and "
+    "``community_set`` (true when a community is stored); the SNMP community itself is never "
+    "returned (#296)."
+)
+
 
 class PauseRead(BaseModel):
     """Why a printer is paused: ``user`` (manual) or ``printer_error`` (automatic)."""
@@ -46,7 +52,7 @@ class PrinterRead(BaseModel):
     name: str
     model: str
     backend: str
-    connection: dict[str, object]
+    connection: dict[str, object] = Field(description=CONNECTION_READ_DOC)
     enabled: bool
     paused: bool  # DB flag OR queue worker paused — always set explicitly by callers
     pause: PauseRead | None = None  # reason, when the queue knows one

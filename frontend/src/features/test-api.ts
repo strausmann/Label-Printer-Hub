@@ -164,7 +164,7 @@ export const ADMIN_PRINTER = {
   slug: PRINTER_A.slug,
   model: PRINTER_A.model,
   backend: "ptouch",
-  connection: { host: "192.0.2.10", port: 9100, snmp: { discover: false, community: "public" } },
+  connection: { host: "192.0.2.10", port: 9100, snmp: { discover: false, community_set: true } },
   queue: { timeout_s: 30 },
   cut_defaults: { half_cut: false },
   enabled: true,

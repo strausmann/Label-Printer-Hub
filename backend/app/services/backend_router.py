@@ -139,8 +139,15 @@ class BackendRouter:
 
     @staticmethod
     def _build_one(cfg: PrinterYAMLConfig) -> PrinterBackend:
+        # The stored community reaches the backend, so the print preflight asks with the
+        # same community as discovery (#296).
+        community = cfg.snmp.community
         if cfg.backend == "ptouch":
-            return PTouchBackend(host=cfg.host, port=cfg.port, model_id=cfg.model)
+            return PTouchBackend(
+                host=cfg.host, port=cfg.port, model_id=cfg.model, community=community
+            )
         if cfg.backend == "brother_ql":
-            return BrotherQLBackend(host=cfg.host, port=cfg.port, model_id=cfg.model)
+            return BrotherQLBackend(
+                host=cfg.host, port=cfg.port, model_id=cfg.model, community=community
+            )
         raise UnknownBackendError(f"Unknown backend: {cfg.backend!r}")

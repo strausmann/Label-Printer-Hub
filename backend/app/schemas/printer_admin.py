@@ -29,15 +29,26 @@ MAX_IPP_URI_LENGTH = 1023
 """RFC 8011 ``uri`` values are at most 1023 octets."""
 
 
+SNMP_COMMUNITY_DOC = (
+    "Write-only (#296). Omitted or null keeps the stored community (``public`` on create); "
+    "a non-empty string replaces it. Responses never carry it; they report "
+    "``connection.snmp.community_set`` instead."
+)
+
+
 class SNMPConfig(BaseModel):
-    """Verschachtelt — konsistent mit altem YAML-Schema."""
+    """SNMP status discovery of a tape printer. The community is write-only (#296)."""
+
+    # ``None`` means "keep the stored one"; the service resolves it (merge_snmp_community).
+    # An explicit empty string with ``discover`` on is refused here; whether a stored
+    # community satisfies ``discover`` only the service can tell, as it knows the stored row.
 
     discover: bool = False
-    community: str | None = Field(default="public", max_length=64)
+    community: str | None = Field(default=None, max_length=64, description=SNMP_COMMUNITY_DOC)
 
     @model_validator(mode="after")
     def _community_required_if_discover(self) -> SNMPConfig:
-        if self.discover and not self.community:
+        if self.discover and self.community == "":
             raise ValueError("snmp.community ist Pflicht wenn snmp.discover=True ist")
         return self
 

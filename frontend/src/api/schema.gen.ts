@@ -134,7 +134,7 @@ export interface paths {
         get: operations["get_printer_api_v1_admin_printers__slug__get"];
         /**
          * Drucker aktualisieren
-         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
+         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). ``connection.snmp.community`` is write-only: omitted or null keeps the stored one; discovery without any community is 422 ``snmp_community_required``. An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
          */
         put: operations["update_printer_api_v1_admin_printers__slug__put"];
         post?: never;
@@ -3119,14 +3119,14 @@ export interface components {
         };
         /**
          * SNMPConfig
-         * @description Verschachtelt — konsistent mit altem YAML-Schema.
+         * @description SNMP status discovery of a tape printer. The community is write-only (#296).
          */
         SNMPConfig: {
             /**
              * Community
-             * @default public
+             * @description Write-only (#296). Omitted or null keeps the stored community (``public`` on create); a non-empty string replaces it. Responses never carry it; they report ``connection.snmp.community_set`` instead.
              */
-            community: string | null;
+            community?: string | null;
             /**
              * Discover
              * @default false
@@ -4022,7 +4022,10 @@ export interface components {
         app__api__routes__admin_printers_api__PrinterRead: {
             /** Backend */
             backend: string;
-            /** Connection */
+            /**
+             * Connection
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             */
             connection: {
                 [key: string]: unknown;
             };
@@ -4098,7 +4101,10 @@ export interface components {
         app__schemas__printer__PrinterRead: {
             /** Backend */
             backend: string;
-            /** Connection */
+            /**
+             * Connection
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             */
             connection: {
                 [key: string]: unknown;
             };

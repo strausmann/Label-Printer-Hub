@@ -1,8 +1,8 @@
 """Tests für printer_admin Pydantic-Schemas (Task 2.1).
 
 Testplan:
-- SNMPConfig Defaults (discover=False, community="public")
-- SNMPConfig discover=True ohne community → ValidationError
+- SNMPConfig Defaults (discover=False, community=None = "keep the stored one", #296)
+- SNMPConfig discover=True mit leerer community → ValidationError
 - PrinterConnection mit Default-SNMP
 - PrinterCreatePayload minimal (alle Defaults greifen)
 - Slug-Regex rejects uppercase
@@ -33,21 +33,26 @@ from pydantic import ValidationError
 
 class TestSNMPConfig:
     def test_defaults(self) -> None:
-        """SNMPConfig ohne Argumente: discover=False, community='public'."""
+        """SNMPConfig ohne Argumente: discover=False, community=None (keep, #296)."""
         cfg = SNMPConfig()
         assert cfg.discover is False
-        assert cfg.community == "public"
+        assert cfg.community is None
 
     def test_explicit_values(self) -> None:
         cfg = SNMPConfig(discover=True, community="private")
         assert cfg.discover is True
         assert cfg.community == "private"
 
-    def test_discover_true_ohne_community_raises(self) -> None:
-        """discover=True mit community=None muss ValidationError werfen."""
+    def test_discover_true_mit_leerer_community_raises(self) -> None:
+        """discover=True mit community="" muss ValidationError werfen."""
         with pytest.raises(ValidationError) as exc_info:
-            SNMPConfig(discover=True, community=None)
+            SNMPConfig(discover=True, community="")
         assert "community" in str(exc_info.value).lower()
+
+    def test_discover_true_ohne_community_ok(self) -> None:
+        """discover=True ohne community: der Service behält die gespeicherte (#296)."""
+        cfg = SNMPConfig(discover=True, community=None)
+        assert cfg.community is None
 
     def test_discover_false_community_none_ok(self) -> None:
         """discover=False erlaubt community=None."""
@@ -76,7 +81,7 @@ class TestPrinterConnection:
         assert conn.host == "192.0.2.1"
         assert conn.port == 9100
         assert conn.snmp.discover is False
-        assert conn.snmp.community == "public"
+        assert conn.snmp.community is None  # the service stores "public" on create (#296)
 
     def test_port_min(self) -> None:
         conn = PrinterConnection(host="192.0.2.1", port=1)
