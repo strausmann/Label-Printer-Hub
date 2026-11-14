@@ -311,9 +311,28 @@ class DockerHubTest(unittest.TestCase):
         })
         self.assertEqual(g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener), ["1.6.0", "dev"])
 
-    def test_tags_404_is_empty(self) -> None:
+    def test_tags_404_is_empty_with_a_warning(self) -> None:
         opener = _hub_opener({TAGS_URL: (404, None)})
-        self.assertEqual(g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener), [])
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            self.assertEqual(g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener), [])
+        self.assertIn("::warning::Docker Hub repository ns/labelyard not found", err.getvalue())
+
+    def test_empty_repository_has_no_warning(self) -> None:
+        opener = _hub_opener({TAGS_URL: (200, {"results": [], "next": None})})
+        err = io.StringIO()
+        with mock.patch("sys.stderr", err):
+            self.assertEqual(g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener), [])
+        self.assertEqual(err.getvalue(), "")
+
+    def test_tags_404_on_a_later_page_is_an_error(self) -> None:
+        page2 = f"{TAGS_URL}&page=2"
+        opener = _hub_opener({
+            TAGS_URL: (200, {"results": [{"name": "1.6.0"}], "next": page2}),
+            page2: (404, None),
+        })
+        with self.assertRaises(urllib.error.HTTPError):
+            g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener)
 
     def test_tags_500_is_an_error(self) -> None:
         opener = _hub_opener({TAGS_URL: (500, None)})

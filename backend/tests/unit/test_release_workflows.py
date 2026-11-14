@@ -70,8 +70,13 @@ def test_docker_hub_gets_every_flavor_but_branch() -> None:
     hub = [ln for ln in lines if re.search(r"docker\.io/", ln) and "format(" in ln]
     assert len(hub) == 1, "exactly one Docker Hub image line"
     line = hub[0]
+    # The whole line is pinned: a narrower condition (e.g. also excluding dev) must fail.
+    assert line.strip() == (
+        "${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME "
+        "&& secrets.DOCKERHUB_TOKEN) "
+        "&& format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}"
+    )
     assert "format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME)" in line
-    assert "&& secrets.DOCKERHUB_USERNAME)" in line
     assert "steps.tag.outputs.flavor != 'branch'" in line
     # Pre-releases (previews) reach Docker Hub too; only their floating tags are refused.
     assert "contains(steps.tag.outputs.tag, '-')" not in line
@@ -142,6 +147,11 @@ def test_cleanup_targets_labelyard_only() -> None:
         envs = {k: v for s in job["steps"] for k, v in (s.get("env") or {}).items()}
         assert envs["IMAGE_PATH"] == "strausmann/labelyard"
     assert wf["jobs"]["dockerhub"]["steps"][-1]["env"]["HUB_REPOSITORY"] == "labelyard"
+    # Errors of select-deletions reach the log, not only foreign.txt (F-R4-2).
+    hub_run = wf["jobs"]["dockerhub"]["steps"][-1]["run"]
+    select = hub_run[hub_run.index("select-deletions") :]
+    assert select.split("\n", 2)[1].strip() == "|| { cat foreign.txt >&2; exit 1; }"
+    assert "cat foreign.txt >&2" in select.split("\n", 3)[2]
     # The admin token reaches only the Docker Hub job.
     assert "DOCKERHUB_ADMIN_TOKEN" not in json.dumps(wf["jobs"]["ghcr"])
     assert "DOCKERHUB_ADMIN_TOKEN" in json.dumps(wf["jobs"]["dockerhub"])
@@ -178,6 +188,10 @@ def test_oci_title_matches_dockerfile() -> None:
 
 def test_dockerhub_description_workflow() -> None:
     wf = _load("dockerhub-description.yml")
+    # Forks skip the job instead of failing on missing secrets.
+    assert [job.get("if") for job in wf["jobs"].values()] == [
+        "github.repository_owner == 'strausmann'"
+    ]
     triggers = wf.get("on", wf.get(True))
     assert "workflow_dispatch" in triggers
     assert triggers["push"]["branches"] == ["main"]

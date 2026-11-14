@@ -225,8 +225,12 @@ def fetch_dockerhub_tags(
 ) -> list[str]:
     """Read every tag of ``namespace/repository`` (follows ``next``).
 
-    A repository without tags (or not created yet) answers 404: an empty list,
-    as for GHCR. Every other error is raised.
+    A 404 on the first page is an empty list, as for GHCR, with a warning on
+    stderr: a repository without tags answers 200 with no results, so a 404
+    means the namespace or repository does not exist (for example a
+    DOCKERHUB_USERNAME that is not the namespace images are pushed to), and the
+    cleanup would otherwise stay green without ever pruning. A 404 on a later
+    page and every other error are raised.
     """
     url: str | None = f"{DOCKERHUB_API}/namespaces/{namespace}/repositories/{repository}/tags?page_size=100"
     tags: list[str] = []
@@ -237,6 +241,10 @@ def fetch_dockerhub_tags(
             _, page = _hub_request("GET", url, opener, token=token)
         except urllib.error.HTTPError as err:
             if err.code == 404 and not tags:
+                print(
+                    f"::warning::Docker Hub repository {namespace}/{repository} not found; nothing to prune",
+                    file=sys.stderr,
+                )
                 return []
             raise
         tags += [str(item["name"]) for item in page.get("results") or []]

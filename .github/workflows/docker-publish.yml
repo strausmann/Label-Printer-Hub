@@ -402,10 +402,11 @@ jobs:
         with:
           # GHCR is always a target. Docker Hub receives exactly the tags GHCR
           # receives (releases, previews, dev) whenever the Docker Hub secrets are
-          # set; only a manual branch build stays off it.
+          # set; only a manual branch build stays off it. Both secrets are required,
+          # as for the login step: a username without a token would push unauthenticated.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN) && format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}
           # Tag scheme by flavor (identical on GHCR and Docker Hub):
           #   branch   <branch-slug>                       manual dispatch, GHCR only
           #   dev      dev                                 main-branch push

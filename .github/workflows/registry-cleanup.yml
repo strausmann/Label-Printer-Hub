@@ -159,7 +159,12 @@ jobs:
           python3 scripts/ghcr_rules.py fetch-tags > ghcr-tags.txt
           python3 scripts/ghcr_rules.py dockerhub-tags > hub-tags.txt
           cat ghcr-tags.txt hub-tags.txt | python3 scripts/ghcr_rules.py released > released.txt
-          python3 scripts/ghcr_rules.py select-deletions --released released.txt < hub-tags.txt > delete.txt 2> foreign.txt
+          # stderr goes to the log as well: a failure here (a traceback, a keep rule
+          # that is too long) must be visible, not only in foreign.txt. (No
+          # `2> >(tee ...)`: it runs asynchronously and foreign.txt is read below.)
+          python3 scripts/ghcr_rules.py select-deletions --released released.txt < hub-tags.txt > delete.txt 2> foreign.txt \
+            || { cat foreign.txt >&2; exit 1; }
+          cat foreign.txt >&2
           {
             echo "Docker Hub tags: $(wc -l < hub-tags.txt); to delete: $(wc -l < delete.txt) (dry run: $DRY_RUN)"
             echo '```'
