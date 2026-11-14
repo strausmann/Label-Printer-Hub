@@ -245,7 +245,11 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const toggle = (list: readonly number[], cell: number, limit = Infinity) =>
     list.includes(cell) ? list.filter((n) => n !== cell) : list.length < limit ? [...list, cell].sort((a, b) => a - b) : list;
 
-  const insufficient = insufficientCells(preview.error);
+  // A refusal answers the request it was asked for. While the debounce still holds the request before (a sheet was just
+  // picked), the refusal on screen is about the sheet before: shown under the new sheet's name it offered that sheet's
+  // alternatives, and a press on one was lost when the new request replaced the alert under it. Shown again once asked.
+  const previewError = settled.pending ? null : preview.error;
+  const insufficient = insufficientCells(previewError);
   const otherSheets = usable.filter((s) => s.code !== sheetCode);
 
   function submit() {
@@ -435,11 +439,11 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
                 else setOverride({ key: planKey, placements: choice.placements });
               }}
             />
-          ) : preview.isError ? (
-            <p role="alert" className="[overflow-wrap:anywhere]">{errorText(preview.error)}</p>
+          ) : previewError ? (
+            <p role="alert" className="[overflow-wrap:anywhere]">{errorText(previewError)}</p>
           ) : null}
           {fitNote && <p role="status" className="font-bold [overflow-wrap:anywhere]">{fitNote}</p>}
-          {busy && !preview.isError && (
+          {busy && !previewError && (
             <p role="status" className="text-ink-2">{shownData ? t`Updating the preview…` : t`Drawing the sheet…`}</p>
           )}
           {shownData && !insufficient && (
