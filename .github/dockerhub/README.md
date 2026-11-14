@@ -8,7 +8,7 @@
 
 Labelyard is a print server for Brother PT-Series and QL-Series label printers and for page printers over IPP (label sheets). Scan a barcode and print, or let Spoolman and Grocy send print jobs by webhook. One container serves the REST API, the live event stream and the web UI, which installs as an app on a phone.
 
-Labelyard was formerly called *Label Printer Hub*. The new name changes no data and no API path; see the [migration guide](https://github.com/strausmann/labelyard/blob/main/docs/migration/labelyard.md).
+Labelyard was formerly called *Label Printer Hub*. The new name changes no data and no API path; see the [upgrade guide](https://labelyard.app/admin/upgrades/).
 
 - Website and documentation: <https://labelyard.app>
 - Source code and issues: <https://github.com/strausmann/labelyard>

@@ -9,7 +9,7 @@
 
 **The self-hosted Label Printer Hub for all your labels.**
 
-Formerly *Label Printer Hub*. The new name changes no data and no API path; see the [migration guide](docs/migration/labelyard.md).
+Formerly *Label Printer Hub*. The new name changes no data and no API path; see the [upgrade guide](https://labelyard.app/admin/upgrades/).
 
 Website: <https://labelyard.app>
 
@@ -255,7 +255,7 @@ Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64
 
 ## Quick Start
 
-See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy).
+The full guide is on the website: [getting started](https://labelyard.app/install/getting-started/), [Docker Compose](https://labelyard.app/install/) and [reverse proxies](https://labelyard.app/install/reverse-proxy/). The sample compose files (standalone / Traefik / Pangolin / Caddy) are in [`examples/`](examples/).
 
 ```bash
 git clone https://github.com/strausmann/labelyard.git
@@ -275,7 +275,7 @@ docker exec labelyard labelyard admin create-key --scope admin --name first-admi
 # then add your printers under Settings > Printers.
 ```
 
-Other containers in the same stack can call the hub directly with an API key: [using the hub from other services](examples/README.md#using-the-hub-from-other-services-in-the-same-stack).
+Other containers in the same stack can call the hub directly with an API key: [calling Labelyard from another container](https://labelyard.app/integrations/#calling-labelyard-from-another-container).
 
 For the REST API alone, without the web UI, see [`examples/compose.backend-only.yml`](examples/compose.backend-only.yml).
 
@@ -341,40 +341,16 @@ Unknown fields are rejected (`extra="forbid"`). The label is laid out for the lo
 
 ## Environment variables
 
-Full reference lives in [`backend/.env.example`](backend/.env.example). The most-used variables grouped by purpose:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| **`LABELYARD_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
-| **`LABELYARD_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://labelyard:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
-| `LABELYARD_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
-| `LABELYARD_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
-| `LABELYARD_SERVER_PORT` | `8000` | Port the container listens on (read by the container start command and healthcheck; falls back to `PRINTER_HUB_SERVER_PORT`, then `PORT`). Match the published port in your compose file |
-| `LABELYARD_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
-| `LABELYARD_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
-| `LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
-| `LABELYARD_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
-| `LABELYARD_WEBHOOK_LIMIT_PER_MINUTE` | `120` | Webhook calls per minute and webhook key (Spoolman and Grocy together); above it the webhook answers `429` with `Retry-After` |
-| `LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` | `5` | Tape runs one printer has queued or printing at once (at least `5`); above it a batch answers `429` `too-many-queued-runs` |
-| `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` | `20` | Tape runs one API key has at once over all printers, held runs included; above it a batch answers `429` `too-many-queued-runs` |
-| `LABELYARD_RENDER_TIMEOUT_S` | `60` | Seconds one page may take to draw (sheet preview, page job); above it the preview answers `504` `render-timeout` and the page job fails `render_timeout` (max `600`) |
-| `LABELYARD_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
-| `LABELYARD_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
-| `LABELYARD_GROCY_URL` | _empty_ | Grocy base URL |
-| `LABELYARD_GROCY_API_KEY` | _empty_ | Grocy API key |
-| `LABELYARD_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
-| `LABELYARD_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. At `DEBUG` the hub's own loggers are verbose, but the database driver stays at `INFO` and SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it |
-
-All variables share the `LABELYARD_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. The prefix of earlier releases is still read as a deprecated fallback, and a `LABELYARD_` variable always wins; see [Environment variables](docs/migration/labelyard.md#environment-variables) in the migration guide. A variable set in the environment wins over the stored value and locks the field in the UI. Printers have no variables: they are managed in Settings > Printers.
+Two variables are required: `LABELYARD_SECRET_KEY` (master key for the secrets stored in the database; `openssl rand -base64 32 | tr '+/' '-_'`) and `LABELYARD_PUBLIC_URL` (the address people open the hub at; a local one such as `http://localhost:8000` is fine). Every other variable, its default and what it does: [configuration reference](https://labelyard.app/reference/configuration/). Printers have no variables: they are managed in Settings > Printers.
 
 ## Documentation
 
-**In this repository (engineering — change with code):**
+**On the website <https://labelyard.app> (user and developer docs, built from [`website/`](website/)) and in this repository:**
 
-- [Architecture overview](docs/architecture.md) — how the pieces fit
+- [Architecture overview](https://labelyard.app/developers/architecture/) — how the pieces fit
 - [Decisions (ADRs)](docs/decisions/) — *why* each architectural choice was made
-- [Getting started](docs/getting-started.md) — from `docker compose up` to the first label, the phone app and webhooks
-- [Plugin development](docs/plugin-development.md) — adding a printer model or a lookup plugin
+- [Getting started](https://labelyard.app/install/getting-started/) — from `docker compose up` to the first label, the phone app and webhooks
+- [Plugin authoring](https://labelyard.app/developers/plugin-authoring/) — adding a printer model or a lookup plugin
 - [Privacy policy](docs/policies/privacy.md), [Trademark policy](docs/policies/trademarks.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Conventional Commits, TDD, PR workflow
 

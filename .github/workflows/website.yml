@@ -44,6 +44,33 @@ jobs:
       - name: Every page in English and German
         run: node website/scripts/check-locale-parity.mjs
 
+  # The committed API document and configuration reference must match the backend: a changed
+  # route or setting without regenerated site files fails here.
+  freshness:
+    name: freshness
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the backend
+        run: pip install -e ./backend
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: website/.nvmrc
+      - name: Regenerate the API document and the configuration reference
+        run: |
+          node website/scripts/export-openapi.mjs
+          python website/scripts/gen-config-reference.py
+      - name: The committed files are current
+        run: git diff --exit-code -- website/openapi website/src/content/docs/reference website/src/content/docs/de/reference
+
   build:
     name: build
     runs-on: ubuntu-24.04
@@ -136,7 +163,7 @@ jobs:
   # deploy. The environment `github-pages` additionally allows main only (a second layer).
   deploy:
     name: deploy
-    needs: [parity, build]
+    needs: [parity, freshness, build]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     permissions:

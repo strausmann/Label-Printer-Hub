@@ -54,6 +54,7 @@ export default defineConfig({
       sidebar: [
         group("Try", [{ slug: "try" }]),
         group("Install", [
+          { slug: "install/getting-started" },
           { slug: "install" },
           { slug: "install/reverse-proxy" },
           { slug: "install/https" },
@@ -84,7 +85,16 @@ export default defineConfig({
           { slug: "integrations/kept" },
           { slug: "integrations/webhooks" },
         ]),
-        group("Developers", [{ slug: "developers" }, { slug: "developers/contributing" }, { slug: "developers/writing-docs" }, apiEn, apiDe]),
+        group("Developers", [
+          { slug: "developers" },
+          { slug: "developers/architecture" },
+          { slug: "developers/architecture/sse" },
+          { slug: "developers/plugin-authoring" },
+          { slug: "developers/contributing" },
+          { slug: "developers/writing-docs" },
+          apiEn,
+          apiDe,
+        ]),
         group("Reference", [{ slug: "reference/configuration" }]),
       ],
       plugins: [

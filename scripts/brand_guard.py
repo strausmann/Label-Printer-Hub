@@ -74,14 +74,13 @@ WEBSITE_UPGRADE_GUIDE: tuple[str, ...] = (
 )
 
 # Files that may keep the old environment prefixes: the compatibility layer
-# that still reads them, its tests, the migration guide (in the repo and on the
-# website, both languages), the rename ADR (glob) and the guard files that name them.
+# that still reads them, its tests, the migration guide on the website (both
+# languages), the rename ADR (glob) and the guard files that name them.
 LEGACY_ENV_FILES: tuple[str, ...] = (
     "backend/app/config_legacy.py",
     "backend/app/page_render/pdf.py",
     "backend/tests/unit/test_config_legacy_prefix.py",
     "backend/tests/unit/test_pdf_font_env.py",
-    "docs/migration/labelyard.md",
     "docs/decisions/*-rename-to-labelyard.md",
     "scripts/brand_guard.py",
     "scripts/test_brand_guard.py",
@@ -92,7 +91,6 @@ LEGACY_ENV_FILES: tuple[str, ...] = (
 LEGACY_CLI_FILES: tuple[str, ...] = (
     "backend/pyproject.toml",
     "backend/tests/unit/test_brand_identity.py",
-    "docs/migration/labelyard.md",
     "scripts/brand_guard.py",
     "scripts/test_brand_guard.py",
     *WEBSITE_UPGRADE_GUIDE,
@@ -100,8 +98,9 @@ LEGACY_CLI_FILES: tuple[str, ...] = (
 
 
 # Files that must show the old image and repository names so users can recognise their own
-# ``image:`` line: the migration guide (repo and website) and the rename ADR, plus the
-# website's upgrades overview, which links to the guide by its slug. Nothing else.
+# ``image:`` line: the migration guide on the website and the rename ADR, plus the files that
+# link to the guide by its slug (the website's upgrades overview and the pointer left at the
+# guide's old repository path). Nothing else.
 LEGACY_SLUG_FILES: tuple[str, ...] = (
     "docs/migration/labelyard.md",
     "docs/decisions/*-rename-to-labelyard.md",

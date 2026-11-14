@@ -11,6 +11,12 @@ Labelyard reaches every printer over the network. USB-only printers are not supp
 
 Brother PT-Series and QL-Series printers on the network, for example the PT-P750W and the QL-820NWB. The hub prints on TCP port 9100 and reads the printer's status, including the loaded tape or label roll, over SNMP (UDP port 161).
 
+You find a printer's address in your router's DHCP leases, on the printer's own display or web page, or with a scan of your network for the two ports:
+
+```bash
+nmap -p 9100,161 192.0.2.0/24 --open
+```
+
 Check from the host that runs the hub before you add the printer:
 
 ```bash

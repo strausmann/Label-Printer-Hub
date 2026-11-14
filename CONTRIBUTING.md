@@ -18,7 +18,7 @@ Contributions need a signed [Contributor License Agreement](CLA.md). You sign it
 |---|---|
 | Report a bug | [Issues → Bug report](../../issues/new?template=bug_report.yml) |
 | Suggest a feature | [Issues → Feature request](../../issues/new?template=feature_request.yml) |
-| **Add a new printer model** | [Issues → Plugin request](../../issues/new?template=plugin_request.yml) — see also [`docs/plugin-development.md`](docs/plugin-development.md) |
+| **Add a new printer model** | [Issues → Plugin request](../../issues/new?template=plugin_request.yml) — see also [plugin authoring](https://labelyard.app/developers/plugin-authoring/) |
 | Ask a question | [Discussions](../../discussions) |
 | Improve documentation | PR directly |
 | Security issue | See [SECURITY.md](SECURITY.md) (do **not** open a public issue) |
@@ -191,7 +191,7 @@ Issues opened from a form get the labels the form names (for example `area:sheet
 Want to add support for a new Brother model (or even a non-Brother printer)? Excellent.
 
 1. Open a [Plugin request issue](../../issues/new?template=plugin_request.yml) so others know it's in progress
-2. Read [`docs/plugin-development.md`](docs/plugin-development.md)
+2. Read [plugin authoring](https://labelyard.app/developers/plugin-authoring/) (source: `website/src/content/docs/developers/plugin-authoring.md`)
 3. Implement `app/printer_models/<your_model>.py` against the `PrinterModel` protocol
 4. Add tests in `tests/unit/printer_models/test_<your_model>.py`
 5. If you have hardware: add an integration test under `tests/hardware/`

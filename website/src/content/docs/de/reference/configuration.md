@@ -163,13 +163,13 @@ Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sper
 
 Standard: `8000`
 
-Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT`, dann `PRINTER_HUB_SERVER_PORT`, dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.
+Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT` (oder den Namen aus früheren Versionen, siehe [Aktualisieren](/de/admin/upgrades/)), dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.
 
 ### `LABELYARD_LOG_LEVEL`
 
 Standard: `INFO`
 
-Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab.
+Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab. Bei `DEBUG` sind die eigenen Logger des Hubs ausführlich, der Datenbanktreiber bleibt aber auf `INFO`, SQL-Anweisungen und ihre Werte landen also nicht im Log. Bibliotheken von Dritten protokollieren bei `DEBUG` sehr wohl: Lies ein Debug-Log, bevor du es weitergibst.
 
 ### `LABELYARD_SIGN_IN_LIMIT_PER_MINUTE`
 

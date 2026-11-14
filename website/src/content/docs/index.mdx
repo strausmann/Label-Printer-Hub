@@ -4,6 +4,8 @@ description: Labelyard, the self-hosted Label Printer Hub for all your labels. T
 template: splash
 ---
 
+import Screenshot from "../../components/Screenshot.astro";
+
 <div class="ly-home">
 
 <section class="ly-hero" aria-labelledby="ly-title">
@@ -14,6 +16,10 @@ template: splash
 <a class="ly-button ly-button-secondary" href="/try/">See what it does</a>
 </div>
 </section>
+
+<figure class="ly-hero-shot">
+<Screenshot shot="hero" lang="en" alt="The Labelyard overview: what is printing, what needs attention, the material in each printer and every printer at a glance." eager />
+</figure>
 
 <section class="ly-section" aria-labelledby="ly-what">
 <h2 id="ly-what">What it prints, and from where</h2>

@@ -11,7 +11,7 @@ body:
       value: |
         Use this for adding support for a new Brother model — or even a non-Brother printer if you're up for the protocol research.
 
-        See [`docs/plugin-development.md`](../../blob/main/docs/plugin-development.md) for the contribution path.
+        See [plugin authoring](https://labelyard.app/developers/plugin-authoring/) for the contribution path.
 
   - type: input
     id: model

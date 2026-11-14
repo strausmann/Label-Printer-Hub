@@ -11,7 +11,9 @@ The repository has a ready compose file for each of these proxies under `example
 
 1. **Trust exactly one peer.** Labelyard reads `X-Forwarded-For` only from the address in `FORWARDED_ALLOW_IPS`. Give your proxy a fixed address on the shared network and set `PROXY_IP` in `.env` to it; the examples pass it on. Without it every client looks like the proxy, and the per-address sign-in limit becomes one bucket for everybody. Do not use `*` or a subnet.
 2. **Set the public address.** `LABELYARD_PUBLIC_URL` is the `https` address people open, for example `https://labelyard.example.com`, and `LABELYARD_HOST` the host name the examples route.
-3. **Do not buffer the event stream.** Live updates arrive as Server-Sent Events on `/api/v1/events`. The Caddy example sets `flush_interval -1`, the Traefik example `responseforwarding.flushinterval=100ms`.
+3. **Do not buffer the event stream.** Live updates arrive as Server-Sent Events on `/api/v1/events`. The Caddy example sets `flush_interval -1`, the Traefik example `responseforwarding.flushinterval=100ms`. Settings for other proxies and how to check the stream: [event stream and reverse proxies](/developers/architecture/sse/).
+
+Pin the proxy's address in its own stack (`ipv4_address`). An unpinned address can go to another container after a restart, and that container would then be trusted to set `X-Forwarded-For`. The sign-in limit counts IPv6 clients per /64 network (a unique-local or link-local address counts on its own), and an IPv4-mapped IPv6 address counts as its IPv4 address. If a trusted proxy forwards a value that is not an IP address, or the request arrives over a unix socket, all such sign-ins share one bucket.
 
 ## Caddy
 

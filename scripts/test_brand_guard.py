@@ -224,6 +224,12 @@ class BrandGuardTest(unittest.TestCase):
         self.add("docs/decisions/0031-rename-to-labelyard.md", f"{ENV_PREFIX}X\n")
         self.assertEqual(self.rules(), [])
 
+    def test_moved_migration_guide_keeps_only_the_slug_allowance(self) -> None:
+        # The guide moved to the website; the pointer at its old path may name the guide's slug
+        # (in the link), but no longer the old prefix or command.
+        self.add("docs/migration/labelyard.md", f"{ENV_PREFIX}X {CLI}\n")
+        self.assertEqual(sorted(self.rules()), ["cli", "env-prefix"])
+
     def test_env_other_hit_and_legacy_allowed(self) -> None:
         self.add("docs/run.md", f"{ENV_OTHER}X=1\n")
         self.add("backend/app/page_render/pdf.py", f"{ENV_OTHER}FONT\n")

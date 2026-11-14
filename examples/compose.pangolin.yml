@@ -38,7 +38,7 @@ services:
       #   LABELYARD_TRUST_LEGACY_PANGOLIN_USER=true       legacy X-Pangolin-User header
       #   LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS=true      Authorization: Basic bypass credential
       #   LABELYARD_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true  limit the Basic bypass to a narrower scope
-      # See docs/site/operations/api-keys.md before enabling any of them.
+      # See https://labelyard.app/admin/users-and-sso/ before enabling any of them.
       - LABELYARD_DATABASE_URL=${LABELYARD_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
       - LABELYARD_WEBHOOK_API_KEY=${LABELYARD_WEBHOOK_API_KEY:-}
       - LABELYARD_LOG_LEVEL=${LABELYARD_LOG_LEVEL:-INFO}

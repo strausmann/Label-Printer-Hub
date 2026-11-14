@@ -11,7 +11,9 @@ Im Repository liegt unter `examples/` für jeden dieser Proxys eine fertige Comp
 
 1. **Genau einem Gegenüber vertrauen.** Labelyard liest `X-Forwarded-For` nur von der Adresse in `FORWARDED_ALLOW_IPS`. Gib deinem Proxy eine feste Adresse im gemeinsamen Netz und trag sie in `.env` als `PROXY_IP` ein; die Beispiele reichen sie weiter. Ohne sie sieht jeder Client aus wie der Proxy, und die Anmeldegrenze je Adresse wird zu einem Topf für alle. Nimm weder `*` noch ein Subnetz.
 2. **Die öffentliche Adresse setzen.** `LABELYARD_PUBLIC_URL` ist die `https`-Adresse, die geöffnet wird, zum Beispiel `https://labelyard.example.com`, und `LABELYARD_HOST` der Hostname, den die Beispiele weiterleiten.
-3. **Den Ereignisstrom nicht puffern.** Live-Aktualisierungen kommen als Server-Sent Events über `/api/v1/events`. Das Caddy-Beispiel setzt `flush_interval -1`, das Traefik-Beispiel `responseforwarding.flushinterval=100ms`.
+3. **Den Ereignisstrom nicht puffern.** Live-Aktualisierungen kommen als Server-Sent Events über `/api/v1/events`. Das Caddy-Beispiel setzt `flush_interval -1`, das Traefik-Beispiel `responseforwarding.flushinterval=100ms`. Einstellungen für andere Proxys und wie du den Strom prüfst: [Ereignisstrom und Reverse Proxys](/de/developers/architecture/sse/).
+
+Leg die Adresse des Proxys in seinem eigenen Stack fest (`ipv4_address`). Eine nicht festgelegte Adresse kann nach einem Neustart an einen anderen Container gehen, und dem würde der Hub dann `X-Forwarded-For` glauben. Die Anmeldegrenze zählt IPv6-Clients je /64-Netz (eine Unique-Local- oder Link-Local-Adresse zählt für sich), und eine IPv4-gemappte IPv6-Adresse zählt als ihre IPv4-Adresse. Reicht ein vertrauter Proxy einen Wert weiter, der keine IP-Adresse ist, oder kommt die Anfrage über einen Unix-Socket, teilen sich alle solchen Anmeldungen einen Topf.
 
 ## Caddy
 
