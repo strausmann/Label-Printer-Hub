@@ -259,6 +259,36 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expectInSight(page, save, "the Create printer button");
       });
 
+      test("Grocy labels: a printer list and the Save button can be brought into sight (inline panel, page scrolls)", async () => {
+        await prepare(mode);
+        await page.goto("/settings/integrations");
+        const panel = page.getByRole("group", { name: "Grocy labels" });
+        const recipe = panel.getByRole("group", { name: "Recipe" });
+        const printer = recipe.getByRole("button", { name: /Printer$/ });
+        await printer.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        // A select is a button: tapping it opens no keyboard (and closes one that was open), so its list is checked on
+        // the screen as it is. On a short screen the list must still fit what is visible.
+        await printer.click();
+        await expectInSight(page, page.locator('[role="option"]').first(), "the first printer option");
+        await page.keyboard.press("Escape");
+        // The keyboard opened by a field of this page (the Grocy URL above) must not hide the panel's buttons for good.
+        await keyboard(mode);
+        const save = panel.getByRole("button", { name: "Save" });
+        await save.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, save, "the Save button of the Grocy labels");
+        const copy = panel.getByRole("button", { name: "Copy lines" });
+        await copy.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        if (mode.visible) {
+          // The button is near the end of the page, which cannot scroll further: with the layout viewport left at full
+          // height, the browser pans the visual viewport down instead (a `scroll` of the visual viewport, no `resize`).
+          const box = (await copy.boundingBox())!;
+          const height = mode.visible;
+          if (box.y + box.height > height) await panTo(page, Math.min(mode.height - height, Math.ceil(box.y + box.height - height)));
+        }
+        await expectInSight(page, copy, "the Copy lines button");
+        await panTo(page, 0);
+      });
+
       /** New sheet with a type chosen: the tallest state of the form, with the keyboard still open. */
       async function openTallAddSheet() {
         const dialog = await openAddSheet();

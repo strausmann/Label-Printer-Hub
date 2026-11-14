@@ -55,7 +55,7 @@ msgstr "{0, plural, one {# Zelle als belegt markieren} other {# Zellen als beleg
 msgid "{0, plural, one {Resolve # cell as not printed?} other {Resolve # cells as not printed?}}"
 msgstr "{0, plural, one {# Zelle als nicht gedruckt bestätigen?} other {# Zellen als nicht gedruckt bestätigen?}}"
 
-#. placeholder {0}: resolvingAll?.count ?? 0
+#. placeholder {0}: resolvingAll.count
 #: src/features/sheets/SheetDetail.tsx
 msgid "{0, plural, one {Resolve # cell as printed?} other {Resolve # cells as printed?}}"
 msgstr "{0, plural, one {# Zelle als gedruckt bestätigen?} other {# Zellen als gedruckt bestätigen?}}"
@@ -284,6 +284,10 @@ msgstr "{revokingName} funktioniert sofort nicht mehr, ebenso jede Browser-Sitzu
 msgid "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
 msgstr "{sentLabels, plural, one {# Etikett gesendet an} other {# Etiketten gesendet an}}"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "{slug} (not available)"
+msgstr "{slug} (nicht verfügbar)"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
@@ -435,6 +439,10 @@ msgctxt "link"
 msgid "About the GNU AGPL"
 msgstr "Über die GNU AGPL"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "About the key"
+msgstr "Zum Schlüssel"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "above 1 = printed too large"
 msgstr "über 1 = zu groß gedruckt"
@@ -495,6 +503,10 @@ msgstr "Messwert hinzufügen"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Add sheet"
 msgstr "Bogen hinzufügen"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Add these lines to Grocy's <0>data/config.php</0> and replace <1><print-key></1> with an API key of this hub."
+msgstr "Füge diese Zeilen in Grocys <0>data/config.php</0> ein und ersetze <1><print-key></1> durch einen API-Schlüssel dieses Hubs."
 
 #: src/features/lookup/ItemView.tsx
 msgid "Add to cart"
@@ -676,6 +688,10 @@ msgstr "Zurück zu den Bögen"
 #: src/features/printers/PrinterDetail.tsx
 msgid "Backend"
 msgstr "Backend"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Battery"
+msgstr "Batterie"
 
 #: src/features/printers/model.ts
 msgid "Black"
@@ -906,6 +922,10 @@ msgstr "Zellen wählen"
 msgid "Choose one tray as the default."
 msgstr "Wähle ein Fach als Standard."
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Chore"
+msgstr "Hausarbeit"
+
 #: src/features/printers/model.ts
 msgctxt "tape colour"
 msgid "Clear"
@@ -1027,6 +1047,7 @@ msgstr "Mit Teil {next} weitermachen"
 
 #: src/features/scan/ScanScreen.tsx
 #: src/features/settings/AccessKeys.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Copied"
 msgstr "Kopiert"
@@ -1050,6 +1071,10 @@ msgstr "Kopieren"
 msgid "Copy failed. Select the key and copy it by hand."
 msgstr "Kopieren fehlgeschlagen. Markiere den Schlüssel und kopiere ihn von Hand."
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Copy failed. Select the lines and copy them by hand."
+msgstr "Kopieren fehlgeschlagen. Markiere die Zeilen und kopiere sie von Hand."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "Copy it now; after saving it cannot be shown again:"
 msgstr "Kopiere ihn jetzt; nach dem Speichern lässt er sich nicht mehr anzeigen:"
@@ -1058,6 +1083,10 @@ msgstr "Kopiere ihn jetzt; nach dem Speichern lässt er sich nicht mehr anzeigen
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Copy key"
 msgstr "Schlüssel kopieren"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Copy lines"
+msgstr "Zeilen kopieren"
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Corner radius"
@@ -1102,6 +1131,10 @@ msgstr "Drucker anlegen"
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Create the first admin key"
 msgstr "Den ersten Admin-Schlüssel erstellen"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Create the key under <0>Access and keys</0>."
+msgstr "Lege den Schlüssel unter <0>Zugang und Schlüssel</0> an."
 
 #: src/features/archive/TypeForm.tsx
 msgid "Create type"
@@ -1148,6 +1181,10 @@ msgstr "Standard"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Default"
 msgstr "Standard"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Default printer"
+msgstr "Standarddrucker"
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Default tray"
@@ -1471,6 +1508,10 @@ msgstr "Spule suchen"
 msgid "Find an asset or location"
 msgstr "Gerät oder Standort suchen"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "First enabled tape printer"
+msgstr "Erster eingeschalteter Banddrucker"
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "First free cells"
 msgstr "Erste freie Zellen"
@@ -1557,6 +1598,14 @@ msgstr "Raster"
 msgid "Grocy"
 msgstr "Grocy"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here."
+msgstr "Grocy kann seine eigenen Etiketten an diesen Hub schicken: Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Jedes Etikett wird ein Auftrag auf dem Drucker, den du hier wählst."
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Grocy labels"
+msgstr "Grocy-Etiketten"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "Half cut by default"
 msgstr "Halbschnitt als Standard"
@@ -1640,6 +1689,10 @@ msgstr "importiert"
 #: src/features/sheets/SheetDetail.tsx
 msgid "in a cell"
 msgstr "in einer Zelle"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "In Grocy's config.php"
+msgstr "In Grocys config.php"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "In the first free cell"
@@ -1808,6 +1861,7 @@ msgstr "Zuletzt benutzt {when}"
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/lookup/ItemView.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 msgid "Layout"
 msgstr "Layout"
 
@@ -1876,6 +1930,10 @@ msgstr "Lizenz unbekannt"
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
 msgstr "Helles Design"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Lines for Grocy's config.php"
+msgstr "Zeilen für Grocys config.php"
 
 #: src/shell/LiveStatus.tsx
 msgid "Live updates paused"
@@ -2174,6 +2232,10 @@ msgstr "Kein Drucker verfügbar"
 msgid "No printers yet."
 msgstr "Noch keine Drucker."
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "No public URL is set for this hub, so the address starts with <public-url>. Set LABELYARD_PUBLIC_URL in the container."
+msgstr "Für diesen Hub ist keine öffentliche URL gesetzt, deshalb beginnt die Adresse mit <public-url>. Setze LABELYARD_PUBLIC_URL im Container."
+
 #: src/features/sheets/SheetDetail.tsx
 msgid "no purpose"
 msgstr "kein Zweck"
@@ -2347,6 +2409,10 @@ msgstr "Jetzt an dieser Adresse"
 msgid "off"
 msgstr "aus"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Off"
+msgstr "Aus"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Off for labels too small to scan."
 msgstr "Aus für Etiketten, die zu klein zum Scannen sind."
@@ -2394,6 +2460,10 @@ msgstr "OK"
 #: src/features/printers/PrinterDetail.tsx
 msgid "on"
 msgstr "an"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "On"
+msgstr "An"
 
 #: src/shell/PrintToasts.tsx
 msgid "on {printerName}"
@@ -2585,6 +2655,10 @@ msgstr "PDF auf {pageSize}, Medientyp Etiketten, keine Skalierung"
 msgid "PDF printing"
 msgstr "PDF-Druck"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Per label type"
+msgstr "Je Etikettenart"
+
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Pitch"
 msgstr "Rastermaß"
@@ -2618,6 +2692,10 @@ msgstr "{0} drucken"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print calibration page"
 msgstr "Kalibrierseite drucken"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Print Grocy's labels"
+msgstr "Grocys Etiketten drucken"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
@@ -2680,6 +2758,7 @@ msgstr "Gedruckt, Zelle {n}"
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/lookup/PrinterPicker.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Printer"
 msgstr "Drucker"
@@ -2767,6 +2846,7 @@ msgid "Problem"
 msgstr "Problem"
 
 #: src/features/integrations/IntegrationPage.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 msgid "Product"
 msgstr "Produkt"
 
@@ -2884,6 +2964,10 @@ msgstr "Aktuelle Warnungen und Fehler"
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Recently opened"
 msgstr "Zuletzt geöffnet"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Recipe"
+msgstr "Rezept"
 
 #: src/shell/LiveStatus.tsx
 msgid "Reconnect"
@@ -3083,11 +3167,16 @@ msgstr "Lineale mit einem Strich alle 0,5 mm laufen an jeder Lückenlinie auf al
 msgid "S1, S2 … number the gaps between columns (solid lines)."
 msgstr "S1, S2 … nummerieren die Lücken zwischen den Spalten (durchgezogene Linien)."
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Same as default"
+msgstr "Wie Standard"
+
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Same device"
 msgstr "Gleiches Gerät"
 
 #: src/features/printers/RollColourPrompt.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/SectionForm.tsx
 msgid "Save"
@@ -3573,6 +3662,10 @@ msgstr "Schritt 2: Abweichung eingeben"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Step 3: Check the result"
 msgstr "Schritt 3: Ergebnis prüfen"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Stock entry"
+msgstr "Bestandseintrag"
 
 #: src/features/jobs/HeldRuns.tsx
 #: src/features/printers/model.ts
@@ -4104,6 +4197,10 @@ msgstr "Die Etiketten dieses Typs sind zu klein für einen QR-Code, deshalb wird
 #: src/features/settings/System.tsx
 msgid "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
 msgstr "Die letzten 200 Einträge der Stufe Warnung oder höher, neueste zuerst. Sie liegen im Arbeitsspeicher und beginnen mit dem Container neu."
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "The layout with a detail line needs a second line from Grocy. Grocy sends one only for a stock entry with a due date; other labels print without the detail line."
+msgstr "Das Layout mit Detailzeile braucht eine zweite Zeile von Grocy. Grocy schickt sie nur für einen Bestandseintrag mit Mindesthaltbarkeitsdatum; andere Etiketten werden ohne Detailzeile gedruckt."
 
 #. placeholder {0}: mm(g.margin_left)
 #. placeholder {1}: mm(right)
@@ -4896,6 +4993,10 @@ msgstr "URL"
 msgid "Use {roomyCode} instead ({room} free)"
 msgstr "Stattdessen {roomyCode} verwenden ({room} frei)"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Use a key with the print scope, restricted to the label printer. Grocy writes the address with the key to its own log, and shows it to the Grocy user when the hub refuses a label or does not answer within 2 seconds."
+msgstr "Nimm einen Schlüssel mit dem Bereich print, beschränkt auf den Drucker für diese Etiketten. Grocy schreibt die Adresse mit dem Schlüssel in sein eigenes Protokoll und zeigt sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet."
+
 #. placeholder {0}: type.key
 #: src/features/archive/FeedbackLinks.tsx
 msgid "Use this when you measured a sheet and the numbers match. It only marks {0} as verified in this hub; nothing is sent to GitHub."
@@ -5037,6 +5138,10 @@ msgstr "Woher die Zahlen stammen"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Where the sheet ID goes"
 msgstr "Wohin die Bogen-ID kommt"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "While this is off, the hub refuses labels from Grocy."
+msgstr "Solange das aus ist, lehnt der Hub Etiketten von Grocy ab."
 
 #: src/features/printers/model.ts
 msgid "White"

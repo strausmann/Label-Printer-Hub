@@ -37,6 +37,16 @@ curl -X POST https://labelyard.example.com/api/v1/print \
 
 Anfragen, die sich mit einem Schlüssel im Header anmelden, laufen nicht durch die CSRF-Prüfung; die schützt nur Browsersitzungen.
 
+## Schlüssel in einer Adresse
+
+Eine Route nimmt einen Schlüssel in der Adresse statt im Header an: Grocys Etikettendrucker-Webhook, `POST /api/v1/webhook/grocy/label?token=<schlüssel>`, weil Grocy keine Header schicken kann ([ADR 0027](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0027-url-token-for-the-grocy-label-webhook.md)). Alle anderen Routen ignorieren einen Parameter `token`.
+
+Einen Schlüssel in einer Adresse sieht mehr als nur der Hub. Grocy schreibt die Adresse in sein eigenes Protokoll. Außerdem zeigt Grocy sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet. Auch Proxys protokollieren sie oft. Der Hub verbirgt den Wert in seinen eigenen Protokollen. Deshalb:
+
+- Dort geht nur ein `print`-Schlüssel. Ein `read`-Schlüssel antwortet mit `403` und `insufficient_scope`, ein `admin`-Schlüssel mit `403` und `token_scope_too_wide`.
+- Leg einen Schlüssel nur für Grocy an und beschränke ihn auf die Drucker von Grocys Etiketten. Ein Etikett, das einem anderen Drucker zugeordnet ist, antwortet dann mit `403` und `printer_not_allowed`.
+- Wurde die Adresse gesehen, wo sie nicht hingehört, widerruf den Schlüssel und leg einen neuen an.
+
 ## Ratenlimits
 
 Standard sind 60 Anfragen pro Minute und Schlüssel, einstellbar von 1 bis 10.000. Darüber antwortet der Hub mit `429`, einem Header `Retry-After` und dem Fehlercode `rate_limit_exceeded`.

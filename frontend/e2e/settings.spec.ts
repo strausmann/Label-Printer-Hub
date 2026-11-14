@@ -69,6 +69,52 @@ test.describe.serial("settings", () => {
     await shot(page, "task-13-integrations-phone.png", true);
   });
 
+  test("integrations: enable the Grocy label webhook and map the stock entry layout", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/settings/integrations");
+    const panel = page.getByRole("group", { name: "Grocy labels" });
+    const enabled = panel.getByRole("switch", { name: "Print Grocy's labels" });
+    await expect(enabled).not.toBeChecked();
+    const stock = panel.getByRole("group", { name: "Stock entry" });
+    const layout = stock.getByRole("button", { name: /Layout$/ });
+    const printer = stock.getByRole("button", { name: /Printer$/ });
+    await expect(layout).toContainText("QR code, code, title and detail");
+    await expect(printer).toContainText("Same as default");
+    await expect(panel.getByRole("button", { name: /Default printer$/ })).toContainText("First enabled tape printer");
+    await expect(panel.getByRole("region", { name: "Lines for Grocy's config.php" })).toContainText("/api/v1/webhook/grocy/label?token=<print-key>");
+
+    await panel.getByText("Print Grocy's labels", { exact: true }).click();
+    await layout.click();
+    await page.getByRole("option", { name: "QR code only" }).click();
+    await printer.click();
+    await page.getByRole("option", { name: "Workshop PT-P750W" }).click();
+    await panel.getByRole("button", { name: "Save" }).click();
+    await expect(panel.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+    await shot(page, "t9-grocy-labels-desktop.png", true);
+
+    await page.reload();
+    await expect(page.getByRole("group", { name: "Grocy labels" }).getByRole("switch", { name: "Print Grocy's labels" })).toBeChecked();
+    await expect(layout).toContainText("QR code only");
+    await expect(printer).toContainText("Workshop PT-P750W");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(() => noSideScroll(page)).toBe(true);
+    await shot(page, "t9-grocy-labels-phone.png", true);
+
+    // Put the defaults back so later tests (and the README screenshots) see them.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await panel.getByText("Print Grocy's labels", { exact: true }).click();
+    await layout.click();
+    await page.getByRole("option", { name: "QR code, code, title and detail" }).click();
+    await printer.click();
+    await page.getByRole("option", { name: "Same as default" }).click();
+    await panel.getByRole("button", { name: "Save" }).click();
+    await expect(panel.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+    await page.reload();
+    await expect(enabled).not.toBeChecked();
+    await expect(layout).toContainText("QR code, code, title and detail");
+    await expect(printer).toContainText("Same as default");
+  });
+
   test("general: change the display name and see it saved", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/settings");

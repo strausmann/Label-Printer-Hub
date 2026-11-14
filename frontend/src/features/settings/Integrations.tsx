@@ -13,6 +13,7 @@ import { useInfo } from "../../app/session";
 import { sameUrl, useSettingsDraft } from "./draft";
 import { LastUsed } from "./LastUsed";
 import { SaveFeedback, useErrorText } from "./feedback";
+import { GrocyLabelSettings } from "./GrocyLabelSettings";
 import { SettingField } from "./SettingField";
 import { Section, WithSettings } from "./sections";
 
@@ -219,10 +220,13 @@ export function Integrations() {
       >
         <WithSettings>
           {(views) => (
-            <div className="grid gap-5 xl:grid-cols-2">
-              {ORDER.map((name) => (
-                <IntegrationCard key={name} name={name} views={views} />
-              ))}
+            <div className="flex flex-col gap-5">
+              <div className="grid gap-5 xl:grid-cols-2">
+                {ORDER.map((name) => (
+                  <IntegrationCard key={name} name={name} views={views} />
+                ))}
+              </div>
+              <GrocyLabelSettings views={views} />
             </div>
           )}
         </WithSettings>

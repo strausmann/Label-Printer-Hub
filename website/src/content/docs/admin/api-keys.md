@@ -37,6 +37,16 @@ curl -X POST https://labelyard.example.com/api/v1/print \
 
 Requests authenticated by a key header are not subject to the CSRF check; that check only guards browser sessions.
 
+## Keys in a URL
+
+One route accepts a key in the address instead of the header: Grocy's label printer webhook, `POST /api/v1/webhook/grocy/label?token=<key>`, because Grocy cannot send headers ([ADR 0027](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0027-url-token-for-the-grocy-label-webhook.md)). Every other route ignores a `token` parameter.
+
+A key in an address is seen by more than the hub. Grocy writes the address to its own log. It also shows it to the Grocy user when the hub refuses a label or does not answer within 2 seconds, and proxies may log it too. The hub hides the value in its own logs. So:
+
+- Only a `print` key works there. A `read` key answers `403` with `insufficient_scope`, an `admin` key `403` with `token_scope_too_wide`.
+- Create a key for Grocy alone and limit it to the printers of Grocy's labels. A label mapped to another printer then answers `403` with `printer_not_allowed`.
+- If the address was seen where it should not be, revoke the key and create a new one.
+
 ## Rate limits
 
 The default is 60 requests per minute and key, adjustable from 1 to 10,000. Above it the hub answers `429` with a `Retry-After` header and the error code `rate_limit_exceeded`.

@@ -17,3 +17,30 @@ Scanne oder tippe auf der Suchseite eine Produkt-ID oder einen Produkt-Barcode, 
 ## Drucken, wenn sich der Bestand ändert
 
 Grocy kann den Hub aufrufen, wenn Bestand hinzukommt oder entnommen wird, und der Hub druckt ein Etikett für das Produkt, mit der Bestandsänderung als dritter Zeile (zum Beispiel `Bestandsänderung: +2`), wenn das Ereignis eine mitbringt. Siehe [Webhooks](/de/integrations/webhooks/).
+
+## Grocys eigene Etiketten drucken
+
+Grocy hat eine eigene Etikettendrucker-Funktion: einen Druckknopf für Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Labelyard kann der Drucker hinter diesem Knopf sein.
+
+1. Öffne **Einstellungen > Integrationen**. Der Bereich **Grocy-Etiketten** steht unter den Integrationen.
+2. Schalte **Grocys Etiketten drucken** ein. Solange das aus ist, lehnt der Hub Grocys Etiketten mit `503` ab.
+3. Wähl den **Standarddrucker**. **Erster eingeschalteter Banddrucker** nimmt den ersten Banddrucker, der eingeschaltet ist.
+4. Wähl je Etikettenart ein Layout und einen Drucker. Eine Art auf **Wie Standard** geht an den Standarddrucker. Das Layout mit Detailzeile braucht eine zweite Zeile von Grocy. Die schickt Grocy nur für einen Bestandseintrag mit Mindesthaltbarkeitsdatum. Jedes andere Etikett mit diesem Layout wird ohne Detailzeile gedruckt, und der Auftrag hält das gedruckte Layout fest.
+5. Drück **Speichern**.
+6. Leg unter **Einstellungen > Zugang und Schlüssel** einen API-Schlüssel mit dem Bereich `print` an, beschränkt auf die Drucker dieser Etiketten (siehe [Schlüssel in einer Adresse](/de/admin/api-keys/#schlüssel-in-einer-adresse)).
+7. Kopier die Zeilen, die der Bereich zeigt, in Grocys `data/config.php` und ersetze `<print-key>` durch diesen Schlüssel:
+
+```php
+Setting('FEATURE_FLAG_LABEL_PRINTER', true);
+Setting('LABEL_PRINTER_WEBHOOK', 'https://hub.example.invalid/api/v1/webhook/grocy/label?token=<print-key>');
+Setting('LABEL_PRINTER_RUN_SERVER', true);
+Setting('LABEL_PRINTER_HOOK_JSON', true);
+```
+
+Die Adresse füllt der Bereich aus `LABELYARD_PUBLIC_URL`. `LABEL_PRINTER_RUN_SERVER` muss `true` sein: Dann ruft Grocy den Hub von seinem Server aus auf, nicht aus dem Browser. `LABEL_PRINTER_HOOK_JSON` lässt Grocy das Etikett als JSON schicken, und das verlangt der Hub.
+
+Nimm einen Schlüssel mit dem Bereich `print`, beschränkt auf den Drucker für diese Etiketten. Grocy schreibt die Adresse mit dem Schlüssel in sein eigenes Protokoll. Außerdem zeigt Grocy sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet.
+
+Der Hub antwortet innerhalb von zwei Sekunden mit `202` und der ID eines neuen Auftrags; gedruckt wird nach dieser Antwort. Grocy meldet also auch dann Erfolg, wenn das Etikett nicht drucken kann. Ein Drucker ohne Verbindung oder ohne Band endet als **fehlgeschlagener** Auftrag, ebenso ein Etikett, das der Hub nicht lesen kann. Fehlgeschlagene Etiketten stehen mit dem Grund auf der Seite **Aufträge** und lassen sich dort erneut drucken.
+
+Ein Proxy mit Single Sign-on muss `/api/v1/webhook/` durchlassen, wie bei den anderen [Webhooks](/de/integrations/webhooks/#hinter-einem-proxy-mit-sso).
