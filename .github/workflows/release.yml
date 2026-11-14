@@ -148,9 +148,11 @@ jobs:
   # semantic-release has already created the tag and the GitHub Release when
   # the image jobs run, so a failed image build leaves a release page without
   # an image. The images job failing already fails the run; this job makes the
-  # gap readable: which version is missing and how to rebuild it. The version
-  # comes in through env and is validated before it is printed. No secret is
-  # touched.
+  # gap readable: which version is missing and how to rebuild it. The rebuild
+  # reruns the failed jobs of this run, which keeps refs/heads/main as the ref,
+  # so the images are signed and release-sbom runs again. The version and the
+  # run id come in through env and are validated before they are printed. No
+  # secret is touched.
   images-missing:
     name: Report missing images
     needs: [release, images]
@@ -162,6 +164,7 @@ jobs:
         env:
           VERSION: ${{ needs.release.outputs.new-release-version }}
           IMAGES_RESULT: ${{ needs.images.result }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
@@ -176,10 +179,25 @@ jobs:
             echo "The tag and the GitHub Release \`v${VERSION}\` exist, but the image jobs ended with \`${IMAGES_RESULT}\`."
             echo "GHCR and Docker Hub may still carry the previous version."
             echo
-            echo "Rebuild the images from the tag:"
+            echo "Rerun the failed jobs of this run. That reruns the images and the release SBOM"
+            echo "on refs/heads/main, so the images are signed and the SBOM asset is attached:"
             echo
             echo '```sh'
-            echo "gh workflow run docker-publish.yml --ref v${VERSION} -f tag=${VERSION}"
+            if [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
+              echo "gh run rerun ${RUN_ID} --failed"
+            else
+              echo "gh run rerun <run-id> --failed"
+            fi
+            echo '```'
+            echo
+            echo "If the run can no longer be rerun, build the tag's commit from main (main is a"
+            echo "signing ref; a dispatch on the tag ref would publish unsigned images) and attach"
+            echo "the SBOM from the new run's \`release-sbom\` artifact by hand:"
+            echo
+            echo '```sh'
+            echo "gh workflow run docker-publish.yml --ref main -f tag=${VERSION}"
+            echo "gh run download <new-run-id> -n release-sbom"
+            echo "gh release upload v${VERSION} labelyard-${VERSION}.cdx.json"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error::Release images for ${VERSION} were not published; see the step summary for the rebuild command"

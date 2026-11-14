@@ -825,5 +825,30 @@ def test_missing_images_are_reported_with_the_rebuild_command() -> None:
     run = str(job["steps"][0]["run"])
     assert "GITHUB_STEP_SUMMARY" in run
     assert "## Release images missing: ${VERSION}" in run
-    assert "gh workflow run docker-publish.yml --ref v${VERSION} -f tag=${VERSION}" in run
+    # Primary path: rerun the failed jobs of the same run. It keeps the run's ref
+    # (refs/heads/main), so the images are signed and release-sbom runs again.
+    env = job["steps"][0]["env"]
+    assert env["RUN_ID"] == "${{ github.run_id }}"
+    assert '[[ "$RUN_ID" =~ ^[0-9]+$ ]]' in run
+    assert "gh run rerun ${RUN_ID} --failed" in run
+    # Fallback: dispatch on main (a signing ref); the tag input picks the commit.
+    assert "gh workflow run docker-publish.yml --ref main -f tag=${VERSION}" in run
+    assert "gh release upload v${VERSION} labelyard-${VERSION}.cdx.json" in run
+    # A dispatch on the tag ref publishes unsigned images (refs/tags/* is not signed).
+    assert "--ref v" not in run
     assert "secrets." not in json.dumps(job)
+
+
+def test_rebuild_dispatch_on_main_signs() -> None:
+    """The fallback `--ref main -f tag=<v>` publishes signed images.
+
+    test_release_builds_from_tag pins that a set tag input checks out the tag's
+    commit; this pins that the dispatch ref, main, is a signing ref and a tag
+    ref is not.
+    """
+    steps = _merge_steps()
+    run = str(steps[_signing_step_index(steps)]["run"])
+    match = re.search(r"signed_refs='([^']+)'", run)
+    assert match
+    assert re.fullmatch(match.group(1), "refs/heads/main")
+    assert not re.fullmatch(match.group(1), "refs/tags/v1.6.0")
