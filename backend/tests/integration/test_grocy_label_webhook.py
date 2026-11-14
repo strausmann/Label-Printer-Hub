@@ -711,3 +711,23 @@ async def test_retry_of_a_content_error_is_422_without_a_new_row(hub: Hub) -> No
         assert retry.status_code == 422, retry.text
         assert await _row_count() == before
     assert hub.backend.printed_images == []
+
+
+# --- cancel during the preflight (review F2) ------------------------------------------------
+
+
+async def test_cancel_during_preflight_never_prints(hub: Hub) -> None:
+    hub.slow_preflight(1.0)
+    async with hub.running() as (client, _app):
+        r = await _post(client)
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+        cancel = await client.post(
+            f"/api/v1/jobs/{job_id}/cancel", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert 200 <= cancel.status_code < 300, cancel.text
+        await asyncio.sleep(1.8)  # past the preflight and the render
+        row = await _row(job_id)
+    assert row.state == "cancelled"
+    assert "rendered_tape_mm" not in row.payload
+    assert hub.backend.printed_images == []
