@@ -436,12 +436,15 @@ class E2EApp:
 async def _seed_page_printer_and_sheets(uri: str) -> None:
     """Create the page printer row and the seed sheets; the order of the sheets is fixed."""
     from app.db.engine import async_session
+    from app.models.sheet import SheetCell
     from app.schemas.printer_admin import PrinterCreatePayload
     from app.seed.sheet_seed import run_sheet_seed
     from app.services.printer_admin_service import PrinterAdminService
     from app.sheets import sheet_service, type_service
     from app.sheets.geometry import Geometry
     from app.sheets.sheet_service import MarkedCell
+    from sqlalchemy import update
+    from sqlmodel import col
 
     async with async_session() as session:
         # After the two tape printers (created_at order): ``usable[0]`` stays Workshop PT-P750W.
@@ -505,6 +508,17 @@ async def _seed_page_printer_and_sheets(uri: str) -> None:
             range(1, 121),
             lambda n: f"cell {n:03d} " + "a" * (120 - len(f"cell {n:03d} ")),
         )
+        # 5./6. L4736-0004 and L4736-0005: no free cell, the last two wait for confirmation
+        #    (resolve all, #282). Full, so the default lists and the picker keep their sheets.
+        #    Two: the sheets spec resolves one, the short-viewport spec needs its own.
+        for _ in range(2):
+            waiting = await _mk_sheet(session, TAPE_L4736, range(1, 49), item)
+            await session.execute(
+                update(SheetCell)
+                .where(col(SheetCell.sheet_id) == waiting.id, col(SheetCell.cell_no).in_((47, 48)))
+                .values(state="unconfirmed", source="grocy", purpose=None, marked_by_hand=False)
+            )
+            await session.commit()
         # A custom type whose corner radius is unknown (the "measure it" case).
         await type_service.create_type(
             session,

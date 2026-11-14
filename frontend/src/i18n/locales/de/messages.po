@@ -50,6 +50,16 @@ msgstr "{0, plural, one {# Zeile} other {# Zeilen}}"
 msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 msgstr "{0, plural, one {# Zelle als belegt markieren} other {# Zellen als belegt markieren}}"
 
+#. placeholder {0}: resolvingAll.count
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Resolve # cell as not printed?} other {Resolve # cells as not printed?}}"
+msgstr "{0, plural, one {# Zelle als nicht gedruckt bestätigen?} other {# Zellen als nicht gedruckt bestätigen?}}"
+
+#. placeholder {0}: resolvingAll?.count ?? 0
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Resolve # cell as printed?} other {Resolve # cells as printed?}}"
+msgstr "{0, plural, one {# Zelle als gedruckt bestätigen?} other {# Zellen als gedruckt bestätigen?}}"
+
 #. placeholder {0}: sheet.unconfirmed
 #: src/features/sheets/SheetsPage.tsx
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
@@ -2093,6 +2103,10 @@ msgstr "Auf diesem Gerät wurde keine Kamera gefunden. Wähle stattdessen ein Fo
 msgid "No cell is in use."
 msgstr "Keine Zelle ist belegt."
 
+#: src/features/sheets/errors.ts
+msgid "No cell is waiting for confirmation any more."
+msgstr "Keine Zelle wartet mehr auf Bestätigung."
+
 #: src/features/archive/TypeForm.tsx
 msgid "No change: the measurements are the same as in the current version."
 msgstr "Keine Änderung: Die Maße sind dieselben wie in der aktuellen Version."
@@ -2957,6 +2971,22 @@ msgid "Resolutions"
 msgstr "Auflösungen"
 
 #: src/features/sheets/SheetDetail.tsx
+msgid "Resolve all as not printed"
+msgstr "Alle als nicht gedruckt bestätigen"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve all as printed"
+msgstr "Alle als gedruckt bestätigen"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve as not printed"
+msgstr "Als nicht gedruckt bestätigen"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve as printed"
+msgstr "Als gedruckt bestätigen"
+
+#: src/features/sheets/SheetDetail.tsx
 msgid "Resolve the unconfirmed cells first; the sheet ID waits for them"
 msgstr "Kläre zuerst die unbestätigten Zellen; die Bogen-ID wartet darauf"
 
@@ -3818,6 +3848,10 @@ msgid "The cells could not be marked."
 msgstr "Die Zellen konnten nicht markiert werden."
 
 #: src/features/sheets/SheetDetail.tsx
+msgid "The cells could not be resolved."
+msgstr "Die Zellen konnten nicht geklärt werden."
+
+#: src/features/sheets/SheetDetail.tsx
 msgid "The cells could not be un-marked."
 msgstr "Die Markierung der Zellen konnte nicht aufgehoben werden."
 
@@ -4162,6 +4196,10 @@ msgstr "Die Spaltenzahl"
 #: src/features/archive/errors.ts
 msgid "The number of rows"
 msgstr "Die Zeilenzahl"
+
+#: src/features/sheets/errors.ts
+msgid "The number of unconfirmed cells changed. Check the list and try again."
+msgstr "Die Zahl der unbestätigten Zellen hat sich geändert. Prüfe die Liste und versuche es noch einmal."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The page could not be queued."
@@ -4526,6 +4564,14 @@ msgstr "Es gibt noch nichts zu drucken."
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
 msgstr "Diese berechneten Werte liegen außerhalb des erlaubten Bereichs: {outOfRangeList}. Sie werden nicht eingetragen. Mehr ist ein Fehler des Druckers, nichts, was man ausgleicht."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "These labels are not on the sheet. The cells become free again."
+msgstr "Diese Etiketten sind nicht auf dem Bogen. Die Zellen werden wieder frei."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "These labels are on the sheet. The cells stay marked as used."
+msgstr "Diese Etiketten sind auf dem Bogen. Die Zellen bleiben als benutzt markiert."
 
 #: src/features/lookup/PrinterPicker.tsx
 msgid "These labels ask for different directions (along and across). Print them in separate runs."

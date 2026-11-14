@@ -331,6 +331,82 @@ describe("resolving unconfirmed cells", () => {
   });
 });
 
+describe("resolving all unconfirmed cells at once (#282)", () => {
+  const three = () => sheetRead(CODE, { used: [1], unconfirmed: [5, 6, 7] });
+  const ALL = `${PATH}/cells/resolve-all`;
+
+  it("shows the resolve-all buttons from two unconfirmed cells", async () => {
+    await open(sheetRead(CODE, { used: [1], unconfirmed: [5, 6] }));
+    expect(screen.getByRole("button", { name: "Resolve all as printed" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Resolve all as not printed" })).toBeVisible();
+  });
+
+  it("hides them with one unconfirmed cell", async () => {
+    await open(sheetRead(CODE, { used: [1], unconfirmed: [5] }));
+    expect(screen.getByRole("button", { name: "Printed, cell 5" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Resolve all/ })).toBeNull();
+  });
+
+  it("hides them for a read key", async () => {
+    await open(three(), {}, READ_SESSION);
+    expect(screen.queryByRole("button", { name: /Resolve all/ })).toBeNull();
+  });
+
+  it.each([
+    ["Resolve all as printed", "Resolve 3 cells as printed?"],
+    ["Resolve all as not printed", "Resolve 3 cells as not printed?"],
+  ])("%s: the confirmation names the count (%s) and sends nothing yet", async (button, question) => {
+    const { calls } = await open(three());
+    await userEvent.click(screen.getByRole("button", { name: button }));
+    const dialog = await screen.findByRole("alertdialog", { name: question });
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeVisible();
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it.each([
+    ["Resolve all as printed", "printed"],
+    ["Resolve all as not printed", "not_printed"],
+  ])("%s: confirming sends the outcome %s and expected_count 3", async (button, outcome) => {
+    const { calls } = await open(three(), { [`POST ${ALL}`]: sheetRead(CODE, { used: [1, 5, 6, 7] }) });
+    await userEvent.click(screen.getByRole("button", { name: button }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: outcome === "printed" ? "Resolve as printed" : "Resolve as not printed" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(body(posts(calls)[0]!)).toEqual({ outcome, expected_count: 3 });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.queryByRole("heading", { name: "Unconfirmed cells" })).toBeNull();
+  });
+
+  it("Cancel sends nothing", async () => {
+    const { calls } = await open(three());
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("a count change reloads the sheet and says so", async () => {
+    const { calls } = await open(three(), {
+      [`POST ${ALL}`]: () => respond(409, apiErrorBody("unconfirmed_count_changed", "The count changed.", { unconfirmed: 4 })),
+    });
+    const reads = () => calls.filter((c) => c.method === "GET" && c.path === PATH).length;
+    const before = reads();
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The number of unconfirmed cells changed. Check the list and try again.");
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("nothing left to resolve is said in words", async () => {
+    await open(three(), { [`POST ${ALL}`]: () => respond(409, apiErrorBody("no_unconfirmed_cells", "None.")) });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as not printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as not printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("No cell is waiting for confirmation any more.");
+  });
+});
+
 describe("discarding from the detail page", () => {
   it("asks first, then discards and shows the discarded state", async () => {
     const gone = sheetRead(CODE, { used: [1] }, { state: "discarded", discarded_at: "2026-11-02T12:00:00Z" });

@@ -7,6 +7,7 @@ const TYPE_48 = "avery-zweckform-l4736rev";
 const TYPE_189 = "avery-zweckform-l4731rev"; // the edge sheet type: 189 cells
 const FULL = "L4736-0002";
 const DISCARDED = "L4736-0003";
+const WAITING = "L4736-0004"; // full, its last two cells wait for confirmation
 const EDGE = "L4731-0001"; // the 189-cell sheet, 120 cells used with purposes of 120 characters
 
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
@@ -196,6 +197,22 @@ test.describe.serial("sheets", () => {
     await page.getByRole("button", { name: "Un-mark 1 cell" }).click();
     await expect(page.getByText(`${used} of 48 used`)).toBeVisible();
     await expect(page.getByRole("list", { name: "Cells in use" })).not.toContainText("e2e probe");
+  });
+
+  test("resolve all unconfirmed cells as printed", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/sheets/${WAITING}`);
+    const section = page.getByRole("region", { name: "Unconfirmed cells" });
+    await expect(section).toBeVisible();
+    await expect(section.getByRole("listitem")).toHaveCount(2);
+    await section.getByRole("button", { name: "Resolve all as printed" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Resolve 2 cells as printed?" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Resolve as printed" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Unconfirmed cells" })).toHaveCount(0);
+    await expect(page.getByText("48 of 48 used")).toBeVisible();
   });
 
   test("says that a discarded sheet is discarded, and that an unknown code does not exist", async () => {

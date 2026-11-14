@@ -17,6 +17,7 @@ import {
   useMarkCells,
   useNextCode,
   usePrintSheets,
+  useResolveAllCells,
   useResolveCells,
   useSheet,
   useSheetPreview,
@@ -168,6 +169,27 @@ describe("sheet writes", () => {
       ["/api/v1/sheets/L4736-0001/cells/unmark", { cells: [7] }],
       ["/api/v1/sheets/L4736-0001/cells/resolve", { cells: [8], outcome: "printed" }],
     ]);
+  });
+
+  it("useResolveAllCells posts the outcome and the expected count and caches the sheet", async () => {
+    const { calls } = mockApi({ "POST /api/v1/sheets/AB-12/cells/resolve-all": sheetRead("AB-12", { used: [1, 2] }) });
+    const { wrapper, client } = setup();
+    const { result } = renderHook(() => useResolveAllCells(), { wrapper });
+    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "not_printed", expectedCount: 2 }));
+    expect(calls.map((c) => [c.path, JSON.parse(c.body!)])).toEqual([["/api/v1/sheets/AB-12/cells/resolve-all", { outcome: "not_printed", expected_count: 2 }]]);
+    expect(client.getQueryData<{ code: string }>(sheetKey("AB-12"))?.code).toBe("AB-12");
+  });
+
+  it("useResolveAllCells surfaces a network error as isError", async () => {
+    mockApi({
+      "POST /api/v1/sheets/AB-12/cells/resolve-all": () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useResolveAllCells(), { wrapper });
+    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "printed", expectedCount: 2 }).catch(() => undefined));
+    await waitFor(() => expect(result.current.isError).toBe(true));
   });
 
   it("a cell write that fails keeps the cached sheet and surfaces the code", async () => {

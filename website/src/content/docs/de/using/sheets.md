@@ -16,7 +16,7 @@ Einen Bogentyp kannst du in eine Datei exportieren und in diesem oder einem ande
 Jeder echte Bogen bekommt einen eigenen Code. Wenn du einen Bogen hinzufügst, kannst du gleich ein ID-Etikett dafür drucken, damit du ihn später scannen kannst. Ein Bogen weiß, welche seiner Felder frei und welche belegt sind.
 
 - **Freie Felder** nehmen die nächsten Etiketten auf.
-- **Unbestätigte Felder** gehören zu einem Auftrag mit unklarem Ergebnis, zum Beispiel wenn der Drucker mitten auf der Seite ausgefallen ist. Schau dir den Bogen an und bestätige, welche davon gedruckt wurden.
+- **Unbestätigte Felder** gehören zu einem Auftrag mit unklarem Ergebnis, zum Beispiel wenn der Drucker mitten auf der Seite ausgefallen ist. Schau dir den Bogen an und bestätige einzeln, welche davon gedruckt wurden. Sind es zwei oder mehr, erledigen **Alle als gedruckt bestätigen** und **Alle als nicht gedruckt bestätigen** das in einem Zug; der Hub fragt vorher nach und nennt, um wie viele Zellen es geht. Hat sich die Zahl inzwischen geändert, wird nichts geschrieben, und du prüfst die Liste noch einmal.
 - **Verwerfen** nimmt einen Bogen aus der Auswahl. Sein Code wird nie wieder vergeben; schon gedruckte Etiketten bleiben gedruckt.
 
 ## Auf einen Bogen drucken

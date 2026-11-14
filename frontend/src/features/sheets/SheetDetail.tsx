@@ -9,9 +9,9 @@ import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { Badge } from "../archive/fields";
 import { isLookupApp, useAppName } from "../lookup/apps";
-import { TextInput } from "../settings/controls";
+import { ModalDialog, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
-import { useMarkCells, useResolveCells, useSheet, useUnmarkCells, type SheetRead } from "./api";
+import { useMarkCells, useResolveAllCells, useResolveCells, useSheet, useUnmarkCells, type SheetRead } from "./api";
 import { cellStateWord, formatMm, type GridCell, type Translate } from "./cellState";
 import { useSheetErrorText } from "./errors";
 import { sheetKey } from "./keys";
@@ -87,6 +87,9 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const mark = useMarkCells();
   const unmark = useUnmarkCells();
   const resolve = useResolveCells();
+  const resolveAll = useResolveAllCells();
+  // The count is frozen when the question opens: it is the number the person read, and the one the server checks.
+  const [resolvingAll, setResolvingAll] = useState<{ outcome: "printed" | "not_printed"; count: number } | null>(null);
   const [chosenMode, setChosenMode] = useState<Mode>("view");
   const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
   const [purpose, setPurpose] = useState("");
@@ -136,6 +139,25 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
 
   /** A refused write often means the sheet changed under us: show its current state. */
   const reload = () => void client.invalidateQueries({ queryKey: sheetKey(code) });
+
+  function askResolveAll(outcome: "printed" | "not_printed") {
+    resolveAll.reset();
+    setResolvingAll({ outcome, count: unconfirmed.length });
+  }
+  function confirmResolveAll() {
+    if (!resolvingAll) return;
+    const { outcome, count } = resolvingAll;
+    resolveAll.mutate(
+      { code, outcome, expectedCount: count },
+      {
+        onSuccess: () => setResolvingAll(null),
+        onError: () => {
+          setResolvingAll(null);
+          reload();
+        },
+      },
+    );
+  }
 
   function submitMark() {
     const text = purpose.trim();
@@ -232,12 +254,29 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             </section>
           ) : null}
 
+          {/* Outside the section: when the last unconfirmed cell is settled elsewhere the section goes, the words stay. */}
+          {canEdit && resolveAll.isError ? (
+            <p role="alert" className="font-bold text-bad">
+              {errorText(resolveAll.error, t`The cells could not be resolved.`)}
+            </p>
+          ) : null}
+
           {canEdit && unconfirmed.length > 0 ? (
             <section aria-labelledby="unconfirmed-heading" className={`${PANEL} flex flex-col gap-3`}>
               <h2 id="unconfirmed-heading" ref={unconfirmedHeading} tabIndex={-1} className={`${SECTION_HEADING} outline-none`}>
                 {t`Unconfirmed cells`}
               </h2>
               <p className="text-small text-ink-2">{t`These labels were sent to the printer, but nobody confirmed the result. Say what became of each one.`}</p>
+              {unconfirmed.length >= 2 ? (
+                <span className="flex flex-wrap gap-2">
+                  <Button isDisabled={resolve.isPending || resolveAll.isPending} onPress={() => askResolveAll("printed")} className={SECONDARY_BUTTON}>
+                    {t`Resolve all as printed`}
+                  </Button>
+                  <Button isDisabled={resolve.isPending || resolveAll.isPending} onPress={() => askResolveAll("not_printed")} className={SECONDARY_BUTTON}>
+                    {t`Resolve all as not printed`}
+                  </Button>
+                </span>
+              ) : null}
               <ul className="m-0 flex list-none flex-col gap-3 p-0">
                 {unconfirmed.map((c) => {
                   const n = c.cell;
@@ -246,7 +285,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
                       <span className="text-small [overflow-wrap:anywhere]">{cellLine(c)}</span>
                       <span className="flex flex-wrap gap-2">
                         <Button
-                          isDisabled={resolve.isPending}
+                          isDisabled={resolve.isPending || resolveAll.isPending}
                           aria-label={t`Printed, cell ${n}`}
                           onPress={() => resolve.mutate({ code, cells: [n], outcome: "printed" }, { onError: reload })}
                           className={SECONDARY_BUTTON}
@@ -254,7 +293,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
                           {t({ message: "Printed", context: "resolve an unconfirmed cell" })}
                         </Button>
                         <Button
-                          isDisabled={resolve.isPending}
+                          isDisabled={resolve.isPending || resolveAll.isPending}
                           aria-label={t`Not printed, cell ${n}`}
                           onPress={() => resolve.mutate({ code, cells: [n], outcome: "not_printed" }, { onError: reload })}
                           className={SECONDARY_BUTTON}
@@ -368,6 +407,33 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
           </details>
         </div>
       </div>
+
+      {canEdit ? (
+        <ModalDialog
+          title={
+            resolvingAll?.outcome === "not_printed"
+              ? plural(resolvingAll.count, { one: "Resolve # cell as not printed?", other: "Resolve # cells as not printed?" })
+              : plural(resolvingAll?.count ?? 0, { one: "Resolve # cell as printed?", other: "Resolve # cells as printed?" })
+          }
+          isOpen={resolvingAll !== null}
+          onClose={() => setResolvingAll(null)}
+          alert
+        >
+          <p>
+            {resolvingAll?.outcome === "not_printed"
+              ? t`These labels are not on the sheet. The cells become free again.`
+              : t`These labels are on the sheet. The cells stay marked as used.`}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button isDisabled={resolveAll.isPending} onPress={confirmResolveAll} className={PRIMARY_BUTTON}>
+              {resolvingAll?.outcome === "not_printed" ? t`Resolve as not printed` : t`Resolve as printed`}
+            </Button>
+            <Button onPress={() => setResolvingAll(null)} className={SECONDARY_BUTTON}>
+              {t`Cancel`}
+            </Button>
+          </div>
+        </ModalDialog>
+      ) : null}
 
       {canEdit ? (
         <DiscardDialog

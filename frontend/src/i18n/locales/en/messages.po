@@ -50,6 +50,16 @@ msgstr "{0, plural, one {# row} other {# rows}}"
 msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 msgstr "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 
+#. placeholder {0}: resolvingAll.count
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Resolve # cell as not printed?} other {Resolve # cells as not printed?}}"
+msgstr "{0, plural, one {Resolve # cell as not printed?} other {Resolve # cells as not printed?}}"
+
+#. placeholder {0}: resolvingAll?.count ?? 0
+#: src/features/sheets/SheetDetail.tsx
+msgid "{0, plural, one {Resolve # cell as printed?} other {Resolve # cells as printed?}}"
+msgstr "{0, plural, one {Resolve # cell as printed?} other {Resolve # cells as printed?}}"
+
 #. placeholder {0}: sheet.unconfirmed
 #: src/features/sheets/SheetsPage.tsx
 msgid "{0, plural, one {Resolve the # unconfirmed cell first; once the sheet is discarded it can no longer be cleaned up.} other {Resolve the # unconfirmed cells first; once the sheet is discarded they can no longer be cleaned up.}}"
@@ -2093,6 +2103,10 @@ msgstr "No camera was found on this device. Choose a photo of the code instead."
 msgid "No cell is in use."
 msgstr "No cell is in use."
 
+#: src/features/sheets/errors.ts
+msgid "No cell is waiting for confirmation any more."
+msgstr "No cell is waiting for confirmation any more."
+
 #: src/features/archive/TypeForm.tsx
 msgid "No change: the measurements are the same as in the current version."
 msgstr "No change: the measurements are the same as in the current version."
@@ -2957,6 +2971,22 @@ msgid "Resolutions"
 msgstr "Resolutions"
 
 #: src/features/sheets/SheetDetail.tsx
+msgid "Resolve all as not printed"
+msgstr "Resolve all as not printed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve all as printed"
+msgstr "Resolve all as printed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve as not printed"
+msgstr "Resolve as not printed"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Resolve as printed"
+msgstr "Resolve as printed"
+
+#: src/features/sheets/SheetDetail.tsx
 msgid "Resolve the unconfirmed cells first; the sheet ID waits for them"
 msgstr "Resolve the unconfirmed cells first; the sheet ID waits for them"
 
@@ -3818,6 +3848,10 @@ msgid "The cells could not be marked."
 msgstr "The cells could not be marked."
 
 #: src/features/sheets/SheetDetail.tsx
+msgid "The cells could not be resolved."
+msgstr "The cells could not be resolved."
+
+#: src/features/sheets/SheetDetail.tsx
 msgid "The cells could not be un-marked."
 msgstr "The cells could not be un-marked."
 
@@ -4162,6 +4196,10 @@ msgstr "The number of columns"
 #: src/features/archive/errors.ts
 msgid "The number of rows"
 msgstr "The number of rows"
+
+#: src/features/sheets/errors.ts
+msgid "The number of unconfirmed cells changed. Check the list and try again."
+msgstr "The number of unconfirmed cells changed. Check the list and try again."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The page could not be queued."
@@ -4526,6 +4564,14 @@ msgstr "There is nothing to print yet."
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
 msgstr "These fitted values are outside the allowed range: {outOfRangeList}. They are not filled in. More than that is a fault of the printer, not something to correct."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "These labels are not on the sheet. The cells become free again."
+msgstr "These labels are not on the sheet. The cells become free again."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "These labels are on the sheet. The cells stay marked as used."
+msgstr "These labels are on the sheet. The cells stay marked as used."
 
 #: src/features/lookup/PrinterPicker.tsx
 msgid "These labels ask for different directions (along and across). Print them in separate runs."

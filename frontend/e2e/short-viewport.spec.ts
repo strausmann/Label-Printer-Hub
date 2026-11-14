@@ -223,6 +223,21 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.keyboard.press("Escape");
       });
 
+      test("Resolve all (a confirmation): its buttons are in sight", async () => {
+        await prepare(mode);
+        await page.goto("/sheets/L4736-0005");
+        await page.getByRole("button", { name: "Resolve all as printed" }).click();
+        const dialog = dialogOf(page);
+        await expect(dialog).toBeVisible();
+        await keyboard(mode);
+        await expectInSight(page, frameOf(dialog), "the dialog");
+        await buttonIn(dialog, "Resolve as printed").scrollIntoViewIfNeeded();
+        await expectInSight(page, buttonIn(dialog, "Resolve as printed"), "the Resolve as printed button");
+        await buttonIn(dialog, "Cancel").scrollIntoViewIfNeeded();
+        await expectInSight(page, buttonIn(dialog, "Cancel"), "the Cancel button");
+        await page.keyboard.press("Escape");
+      });
+
       test("Printer form: the community field and the Save button can be brought into sight (inline form, page scrolls)", async () => {
         await prepare(mode);
         await page.goto("/settings/printers");

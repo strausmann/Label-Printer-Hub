@@ -128,6 +128,13 @@ export const useResolveCells = () =>
     outcome,
   }));
 
+/** Settles every unconfirmed cell at once. `expectedCount` is the number the person was shown: a different one is refused. */
+export const useResolveAllCells = () =>
+  useCellsWrite<{ code: string; outcome: "printed" | "not_printed"; expectedCount: number }>("resolve-all", ({ outcome, expectedCount }) => ({
+    outcome,
+    expected_count: expectedCount,
+  }));
+
 /**
  * The plan for a print onto sheets, rendered by the server. The key sits outside `["printers", …]`
  * (see keys.ts); `sheet.updated` refreshes it only when a placement names that sheet.
