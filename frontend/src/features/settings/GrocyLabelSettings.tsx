@@ -7,7 +7,9 @@ import { useState } from "react";
 import { Button } from "react-aria-components";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
+import { useSheetTypes, type SheetTypeRead } from "../archive/api";
 import { useContentTypeLabel } from "../lookup/apps";
+import { typeLabel } from "../sheets/typeLabel";
 import type { ContentType } from "../lookup/cart";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useAdminPrinters, useSaveSettings, type SettingView } from "./api";
@@ -16,14 +18,21 @@ import { useSettingsDraft, type DraftValue } from "./draft";
 import { SaveFeedback, useErrorText } from "./feedback";
 import {
   GROCY_LABEL_DEFAULT_PRINTER_KEY,
+  GROCY_LABEL_DEFAULT_SHEET_TYPE_KEY,
   GROCY_LABEL_ENABLED_KEY,
   GROCY_LABEL_TYPES,
   grocyConfigBlock,
   grocyContentTypeKey,
+  grocyLabelChanges,
   grocyLabelKeys,
   grocyPrinterKey,
+  grocySheetTypeKey,
+  grocyTargetIssues,
+  isPagePrinter,
   labelPrinterOptions,
   type GrocyLabelType,
+  type GrocyTarget,
+  type GrocyTargetIssue,
   type LabelPrinter,
 } from "./grocyLabel";
 import { SettingField } from "./SettingField";
@@ -34,8 +43,8 @@ function useTypeName(): (type: GrocyLabelType) => string {
 }
 
 /**
- * Where a label goes. Only a printer today; a page printer brings a sheet type next to it (#281, Task 8b), so a target
- * is its own block that can grow a second control.
+ * Where a label goes: a printer, and for a page printer the sheet type its labels go onto (R-281-18). The sheet type
+ * is required for a page printer; one that is archived or gone is shown with a warning instead of being replaced.
  */
 function LabelTarget({
   label,
@@ -44,6 +53,11 @@ function LabelTarget({
   emptyLabel,
   onChange,
   isDisabled,
+  sheetType,
+  types,
+  issue,
+  onSheetTypeChange,
+  sheetTypeDisabled,
 }: {
   label: string;
   value: string;
@@ -52,12 +66,43 @@ function LabelTarget({
   emptyLabel: string;
   onChange: (value: string) => void;
   isDisabled?: boolean;
+  sheetType: string;
+  /** All sheet types, archived ones included; `null` while they are not known. */
+  types: readonly SheetTypeRead[] | null;
+  issue: GrocyTargetIssue | undefined;
+  onSheetTypeChange: (value: string) => void;
+  sheetTypeDisabled?: boolean;
 }) {
   const { t } = useLingui();
-  const options = labelPrinterOptions(printers, value, emptyLabel, (slug) => t`${slug} (not available)`);
+  const options = labelPrinterOptions(printers, value, emptyLabel, (slug) => t`${slug} (not available)`, {
+    tape: t`Tape printers`,
+    page: t`Page printers`,
+  });
+  const page = value !== "" && isPagePrinter(printers?.find((p) => p.slug === value));
+  const active = (types ?? []).filter((type) => type.archived_at === null);
+  const typeOptions = active.map((type) => ({ id: type.key, label: typeLabel(type), description: type.key }));
+  if (sheetType !== "" && !active.some((type) => type.key === sheetType)) {
+    // A stored type that is archived or gone stays visible as it is: no silent fallback.
+    typeOptions.push({ id: sheetType, label: sheetType, description: sheetType });
+  }
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <SelectField label={label} value={value} options={options} onChange={onChange} isDisabled={isDisabled} />
+      {page ? (
+        <SelectField
+          label={t`Sheet type`}
+          value={sheetType}
+          options={typeOptions}
+          onChange={onSheetTypeChange}
+          isDisabled={sheetTypeDisabled}
+          isInvalid={issue === "sheet_type_required"}
+          errorMessage={t`Choose a sheet type for this page printer.`}
+          placeholder={t`Choose a sheet type`}
+        />
+      ) : null}
+      {page && issue === "sheet_type_unavailable" ? (
+        <p className="text-small font-bold text-bad">{t`This sheet type is archived or no longer exists. Grocy labels for it are refused.`}</p>
+      ) : null}
     </div>
   );
 }
@@ -127,6 +172,8 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
   const draft = useSettingsDraft(views);
   const save = useSaveSettings();
   const printers = useAdminPrinters();
+  // Archived ones too: a stored type that is archived must be told apart from one that is gone.
+  const sheetTypes = useSheetTypes({ include_archived: true });
   const typeName = useTypeName();
   const contentTypeLabel = useContentTypeLabel();
   const [saved, setSaved] = useState(false);
@@ -139,6 +186,10 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
   const changed = Object.keys(values).length > 0;
   // Until the list has arrived nothing says a saved printer is unavailable, so it is shown as it is.
   const list: readonly LabelPrinter[] | null = printers.isSuccess ? printers.data : null;
+  const types: readonly SheetTypeRead[] | null = sheetTypes.isSuccess ? sheetTypes.data : null;
+  const current = Object.fromEntries(keys.map((key) => [key, draft.valueOf(key)]));
+  const issues = grocyTargetIssues(current, list, types);
+  const required = Object.values(issues).includes("sheet_type_required");
   const enabled = Boolean(enabledView.value);
   const publicUrl = String(draft.view("general.public_url")?.value ?? "");
 
@@ -147,6 +198,21 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
     draft.set(key, value);
   };
   const locked = (key: string) => Boolean(draft.view(key)?.locked);
+  const changeTarget = (target: GrocyTarget) => (slug: string) => {
+    setSaved(false);
+    for (const [key, value] of Object.entries(grocyLabelChanges(target, slug, list))) draft.set(key, value);
+  };
+  const targetProps = (target: GrocyTarget) => {
+    const sheetKey = target === "default" ? GROCY_LABEL_DEFAULT_SHEET_TYPE_KEY : grocySheetTypeKey(target);
+    return {
+      sheetType: String(draft.valueOf(sheetKey)),
+      types,
+      issue: issues[target],
+      onSheetTypeChange: change(sheetKey),
+      sheetTypeDisabled: locked(sheetKey),
+      onChange: changeTarget(target),
+    };
+  };
 
   return (
     <div role="group" aria-labelledby="grocy-label-heading" className={`${PANEL} flex flex-col gap-6`}>
@@ -158,7 +224,7 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
           <StatusBadge state={enabled ? "ok" : "idle"} label={enabled ? t`On` : t`Off`} />
         </div>
         <p className="max-w-prose text-ink-2">
-          {t`Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here.`}
+          {t`Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet.`}
         </p>
       </div>
 
@@ -175,8 +241,8 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
           value={String(draft.valueOf(GROCY_LABEL_DEFAULT_PRINTER_KEY))}
           printers={list}
           emptyLabel={t`First enabled tape printer`}
-          onChange={change(GROCY_LABEL_DEFAULT_PRINTER_KEY)}
           isDisabled={locked(GROCY_LABEL_DEFAULT_PRINTER_KEY)}
+          {...targetProps("default")}
         />
         {printers.isError ? <p className={HINT}>{t`The printers could not be loaded. A saved printer is shown by its short name.`}</p> : null}
       </div>
@@ -190,8 +256,8 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
             const contentView = draft.view(contentKey);
             const heading = `grocy-label-${type}`;
             return (
-              <li key={type} role="group" aria-labelledby={heading} className="grid gap-4 rounded-r2 bg-sunken p-3 md:grid-cols-[8rem_1fr_1fr] md:items-end">
-                <span id={heading} className="font-bold md:pb-3">
+              <li key={type} role="group" aria-labelledby={heading} className="grid gap-4 rounded-r2 bg-sunken p-3 md:grid-cols-[8rem_1fr_1fr] md:items-start">
+                <span id={heading} className="font-bold md:pt-9">
                   {typeName(type)}
                 </span>
                 {contentView ? (
@@ -208,8 +274,8 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
                   value={String(draft.valueOf(printerKey))}
                   printers={list}
                   emptyLabel={t`Same as default`}
-                  onChange={change(printerKey)}
                   isDisabled={locked(printerKey)}
+                  {...targetProps(type)}
                 />
               </li>
             );
@@ -222,7 +288,7 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
 
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          isDisabled={!changed || invalid.length > 0 || save.isPending}
+          isDisabled={!changed || invalid.length > 0 || required || save.isPending}
           onPress={() => {
             setSaved(false);
             // Only what this save sent is settled by it; an edit made while it is on its way stays in the draft.

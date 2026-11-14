@@ -62,7 +62,7 @@ The printer and the layout come from the mapping of the label's type in **Settin
 | `413` | `body_too_large`: the body is larger than 1 MiB |
 | `415` | `json_required`: set `LABEL_PRINTER_HOOK_JSON` to `true` in Grocy |
 | `429` | `rate_limit_exceeded`: the key's limit per minute, with `Retry-After` |
-| `503` | `grocy_label_disabled` (switched off in the settings), `grocy_label_printer_unavailable` (the mapped printer is unknown, disabled or a page printer), or no tape printer is enabled |
+| `503` | `grocy_label_disabled` (switched off in the settings), `grocy_label_printer_unavailable` (the mapped printer is unknown or disabled), `grocy_label_sheet_type_unavailable` (a page printer whose sheet type is not set, unknown or archived), or no tape printer is enabled |
 
 A printer failure after the answer (offline, no tape) sets the job to failed with the same code `POST /api/v1/print` would answer. No answer names a printer.
 

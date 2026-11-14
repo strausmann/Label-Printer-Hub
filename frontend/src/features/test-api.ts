@@ -138,12 +138,14 @@ export const settingsList = (over: Record<string, Partial<SettingFixture>> = {})
     settingView("integrations.grocy.timeout", "float", { value: 5 }),
     settingView("integrations.grocy.label.enabled", "bool", { value: false }),
     settingView("integrations.grocy.label.printer", "str", { value: "" }),
+    settingView("integrations.grocy.label.sheet_type", "str", { value: "" }),
     ...(["product", "stock_entry", "chore", "battery", "recipe"] as const).flatMap((type) => [
       settingView(`integrations.grocy.label.${type}.content_type`, "enum", {
         value: type === "stock_entry" ? "qr_three_lines" : "qr_two_lines",
         choices: ["qr_only", "qr_one_line", "qr_two_lines", "qr_three_lines"],
       }),
       settingView(`integrations.grocy.label.${type}.printer`, "str", { value: "" }),
+      settingView(`integrations.grocy.label.${type}.sheet_type`, "str", { value: "" }),
     ]),
     settingView("integrations.spoolman.url", "url", { value: "" }),
     settingView("integrations.spoolman.timeout", "float", { value: 5 }),

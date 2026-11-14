@@ -62,7 +62,7 @@ Drucker und Layout kommen aus der Zuordnung der Etikettenart unter **Einstellung
 | `413` | `body_too_large`: Der Inhalt ist größer als 1 MiB |
 | `415` | `json_required`: Setz in Grocy `LABEL_PRINTER_HOOK_JSON` auf `true` |
 | `429` | `rate_limit_exceeded`: das Limit des Schlüssels pro Minute, mit `Retry-After` |
-| `503` | `grocy_label_disabled` (in den Einstellungen ausgeschaltet), `grocy_label_printer_unavailable` (der zugeordnete Drucker ist unbekannt, ausgeschaltet oder ein Seitendrucker) oder kein Banddrucker eingeschaltet |
+| `503` | `grocy_label_disabled` (in den Einstellungen ausgeschaltet), `grocy_label_printer_unavailable` (der zugeordnete Drucker ist unbekannt oder ausgeschaltet), `grocy_label_sheet_type_unavailable` (ein Seitendrucker, dessen Bogentyp nicht gesetzt, unbekannt oder archiviert ist) oder kein Banddrucker eingeschaltet |
 
 Scheitert der Drucker nach der Antwort (keine Verbindung, kein Band), wird der Auftrag mit demselben Code als fehlgeschlagen markiert, den `POST /api/v1/print` antworten würde. Keine Antwort nennt einen Drucker.
 

@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { ADMIN_PRINTER, KEY_ADMIN, KEY_KEPT, mockApi, PAGE_PRINTER, PRINTER_A, respond, settingsList } from "../test-api";
+import { ADMIN_PRINTER, KEY_ADMIN, KEY_KEPT, mockApi, PAGE_PRINTER, PRINTER_A, respond, settingsList, SHEET_TYPE } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -152,8 +152,10 @@ describe("Grocy labels", { timeout: 15_000 }, () => {
     "GET /api/v1/settings": settingsList(),
     "GET /api/v1/admin/api-keys": [],
     "GET /api/v1/admin/printers": [ADMIN_PRINTER, { ...PAGE_PRINTER, connection: { uri: "ipp://printer.example.invalid/ipp/print", tls_verify: true } }, SPARE],
+    "GET /api/v1/sheet-types": [SHEET_TYPE, ARCHIVED_TYPE],
     ...over,
   });
+  const ARCHIVED_TYPE = { ...SHEET_TYPE, key: "OLD-TYPE", vendor: "Old", product_codes: ["OLD-1"], archived_at: "2026-11-02T08:00:00Z" };
   const panel = () => screen.findByRole("group", { name: "Grocy labels" });
 
   it("the Grocy section shows the label switch, five layout selects, one default and five per-type printer selects", async () => {
@@ -168,10 +170,103 @@ describe("Grocy labels", { timeout: 15_000 }, () => {
       expect(within(grocy).getByRole("group", { name })).toBeVisible();
     }
     expect(within(within(grocy).getByRole("group", { name: "Stock entry" })).getByRole("button", { name: /Layout$/ })).toHaveTextContent("QR code, code, title and detail");
-    // Only enabled tape printers are targets: no page printer, no disabled printer.
+    // Enabled printers only: a disabled one is not a target.
     await userEvent.click(within(grocy).getByRole("button", { name: /Default printer$/ }));
     const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
-    expect(options).toEqual(["First enabled tape printer", PRINTER_A.name]);
+    expect(options).toEqual(["First enabled tape printer", PRINTER_A.name, PAGE_PRINTER.name]);
+  });
+
+  it("page printers are offered under their own group", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("button", { name: /Default printer$/ }));
+    const tape = await screen.findByRole("group", { name: "Tape printers" });
+    const page = screen.getByRole("group", { name: "Page printers" });
+    expect(within(tape).getAllByRole("option").map((o) => o.textContent)).toEqual([PRINTER_A.name]);
+    expect(within(page).getAllByRole("option").map((o) => o.textContent)).toEqual([PAGE_PRINTER.name]);
+  });
+
+  it("a page printer shows the sheet type select with active types only", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    expect(within(grocy).queryByRole("button", { name: /Sheet type$/ })).toBeNull();
+    await userEvent.click(within(grocy).getByRole("button", { name: /Default printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: PAGE_PRINTER.name }));
+    const sheetType = await within(grocy).findByRole("button", { name: /Sheet type$/ });
+    await userEvent.click(sheetType);
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("Example Labels L4736REV-25");
+    expect(options[0]).toHaveTextContent(SHEET_TYPE.key);
+    await userEvent.click(options[0]!);
+    expect(sheetType).toHaveTextContent("Example Labels L4736REV-25");
+    expect(sheetType).not.toHaveTextContent(`L4736REV-25${SHEET_TYPE.key}`);
+  });
+
+  it("save is disabled until a sheet type is chosen", async () => {
+    const { calls } = mockApi(routes({ "PUT /api/v1/settings": settingsList() }));
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    const battery = within(grocy).getByRole("group", { name: "Battery" });
+    await userEvent.click(within(battery).getByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: PAGE_PRINTER.name }));
+    const save = within(grocy).getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(within(battery).getByText("Choose a sheet type for this page printer.")).toBeVisible();
+    await userEvent.click(within(battery).getByRole("button", { name: /Sheet type$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: new RegExp(SHEET_TYPE.key) }));
+    expect(save).toBeEnabled();
+    expect(within(battery).queryByText("Choose a sheet type for this page printer.")).toBeNull();
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({
+        values: {
+          "integrations.grocy.label.battery.printer": PAGE_PRINTER.slug,
+          "integrations.grocy.label.battery.sheet_type": SHEET_TYPE.key,
+        },
+      }),
+    );
+  });
+
+  it('"Same as default" hides the sheet type', async () => {
+    const { calls } = mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({
+          "integrations.grocy.label.battery.printer": { value: PAGE_PRINTER.slug, is_set: true },
+          "integrations.grocy.label.battery.sheet_type": { value: SHEET_TYPE.key, is_set: true },
+        }),
+        "PUT /api/v1/settings": settingsList(),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const battery = within(await panel()).getByRole("group", { name: "Battery" });
+    expect(await within(battery).findByRole("button", { name: /Sheet type$/ })).toBeVisible();
+    await userEvent.click(within(battery).getByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Same as default" }));
+    expect(within(battery).queryByRole("button", { name: /Sheet type$/ })).toBeNull();
+    await userEvent.click(within(await panel()).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({
+        values: { "integrations.grocy.label.battery.printer": "", "integrations.grocy.label.battery.sheet_type": "" },
+      }),
+    );
+  });
+
+  it("an archived stored sheet type shows the warning", async () => {
+    mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({
+          "integrations.grocy.label.printer": { value: PAGE_PRINTER.slug, is_set: true },
+          "integrations.grocy.label.sheet_type": { value: ARCHIVED_TYPE.key, is_set: true },
+        }),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    expect(await within(grocy).findByText("This sheet type is archived or no longer exists. Grocy labels for it are refused.")).toBeVisible();
+    expect(within(grocy).getByRole("button", { name: /Sheet type$/ })).toHaveTextContent(ARCHIVED_TYPE.key);
   });
 
   it("saving sends only changed label keys", async () => {

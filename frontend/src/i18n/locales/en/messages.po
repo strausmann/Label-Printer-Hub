@@ -906,9 +906,14 @@ msgstr "Choose a photo of a code"
 msgid "Choose a printer and a tray to print the ID label."
 msgstr "Choose a printer and a tray to print the ID label."
 
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Choose a sheet type"
 msgstr "Choose a sheet type"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Choose a sheet type for this page printer."
+msgstr "Choose a sheet type for this page printer."
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Choose a sheet type to see its measurements and versions."
@@ -1599,8 +1604,8 @@ msgid "Grocy"
 msgstr "Grocy"
 
 #: src/features/settings/GrocyLabelSettings.tsx
-msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here."
-msgstr "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here."
+msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet."
+msgstr "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet."
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy labels"
@@ -2599,6 +2604,10 @@ msgstr "Page printer"
 msgid "Page printer (IPP)"
 msgstr "Page printer (IPP)"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Page printers"
+msgstr "Page printers"
+
 #: src/features/archive/ArchivePage.tsx
 msgid "Page size"
 msgstr "Page size"
@@ -3437,6 +3446,7 @@ msgstr "Sheet print"
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx
 #: src/features/sheets/SheetDetail.tsx
@@ -3754,6 +3764,10 @@ msgstr "Tape not known yet"
 msgctxt "printer kind"
 msgid "Tape printer"
 msgstr "Tape printer"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Tape printers"
+msgstr "Tape printers"
 
 #: src/features/jobs/HeldRuns.tsx
 msgid "Tape prints that wait for you"
@@ -4467,6 +4481,10 @@ msgstr "The printer was busy and did not take the job."
 msgid "The printers could not be loaded."
 msgstr "The printers could not be loaded."
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "The printers could not be loaded. A saved printer is shown by its short name."
+msgstr "The printers could not be loaded. A saved printer is shown by its short name."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "The queue could not be loaded."
 msgstr "The queue could not be loaded."
@@ -4818,6 +4836,10 @@ msgstr "This sheet is discarded."
 #: src/features/calibration/errors.ts
 msgid "This sheet type has fewer than two columns or two rows, so its calibration page has no crossings."
 msgstr "This sheet type has fewer than two columns or two rows, so its calibration page has no crossings."
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "This sheet type is archived or no longer exists. Grocy labels for it are refused."
+msgstr "This sheet type is archived or no longer exists. Grocy labels for it are refused."
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "This sheet type is archived. It offers no new sheets, but the sheets you have keep printing."

@@ -8,11 +8,13 @@ import {
   Checkbox,
   CheckboxGroup,
   Dialog,
+  Header,
   Heading,
   Input,
   Label,
   ListBox,
   ListBoxItem,
+  ListBoxSection,
   Modal,
   ModalOverlay,
   Popover,
@@ -136,6 +138,37 @@ export function SwitchField({
 export interface Option {
   id: string;
   label: string;
+  /** A second, smaller line in the list (a sheet type's key). */
+  description?: string;
+  /** The group the option is listed under; options without one come first, ungrouped. */
+  section?: string;
+}
+
+const OPTION =
+  "flex min-h-11 cursor-default flex-col justify-center rounded-r1 px-3 py-1 text-ink outline-none data-[focused]:bg-sunken data-[selected]:font-bold";
+
+function OptionItem({ option }: { option: Option }) {
+  return (
+    <ListBoxItem id={option.id} textValue={option.label} className={OPTION}>
+      <Text slot="label">{option.label}</Text>
+      {option.description ? (
+        <Text slot="description" className="text-small font-normal text-ink-2">
+          {option.description}
+        </Text>
+      ) : null}
+    </ListBoxItem>
+  );
+}
+
+/** Options in their order; a run of options with the same `section` becomes one labelled group. */
+function grouped(options: Option[]): { section?: string; options: Option[] }[] {
+  const out: { section?: string; options: Option[] }[] = [];
+  for (const option of options) {
+    const last = out[out.length - 1];
+    if (last && last.section === option.section) last.options.push(option);
+    else out.push({ section: option.section, options: [option] });
+  }
+  return out;
 }
 
 /** The shared select: React Aria's listbox in a popover, never a native `<select>`. */
@@ -145,28 +178,38 @@ export function SelectField({
   options,
   onChange,
   isDisabled,
+  isInvalid,
+  errorMessage,
+  placeholder,
 }: {
   label: string;
   value: string;
   options: Option[];
   onChange: (id: string) => void;
   isDisabled?: boolean;
+  isInvalid?: boolean;
+  /** Shown below the field and tied to it for screen readers while it is invalid. */
+  errorMessage?: string;
+  /** Shown while no option is selected. */
+  placeholder?: string;
 }) {
   return (
     <Select
       selectedKey={value}
       onSelectionChange={(key) => onChange(String(key))}
       isDisabled={isDisabled}
+      isInvalid={isInvalid}
       className="flex min-w-0 flex-col gap-1.5"
     >
       <Label className={LABEL}>{label}</Label>
       <Button
-        className={`press flex h-11 w-full items-center justify-between gap-2 rounded-r2 border border-line-strong bg-sunken px-3 text-left text-ink data-[disabled]:opacity-60 ${FOCUS}`}
+        className={`press flex h-11 w-full items-center justify-between gap-2 rounded-r2 border border-line-strong bg-sunken px-3 text-left text-ink data-[disabled]:opacity-60 data-[invalid]:border-bad ${FOCUS}`}
       >
         {/* One line, cut at the end: a long value (a 64-character key) must not outgrow the 44 px button. The list shows it in full. */}
         {/* The title keeps the full text reachable when the value is cut. */}
         <span title={options.find((o) => o.id === value)?.label} className="min-w-0 truncate">
-          <SelectValue />
+          {/* The label only: an option's description line belongs to the list, not to the field. */}
+          <SelectValue>{({ selectedText, isPlaceholder }) => (isPlaceholder ? placeholder : selectedText)}</SelectValue>
         </span>
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className="shrink-0 fill-none stroke-current stroke-2">
           <path d="M2 4.5 6 8.5 10 4.5" />
@@ -175,18 +218,25 @@ export function SelectField({
       <Popover className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
         {/* The popover is as tall as the room beside the trigger (it sets max-height); a long list scrolls inside it instead of covering the trigger. */}
         <ListBox className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none">
-          {options.map((option) => (
-            <ListBoxItem
-              key={option.id}
-              id={option.id}
-              textValue={option.label}
-              className="flex min-h-11 cursor-default items-center rounded-r1 px-3 text-ink outline-none data-[focused]:bg-sunken data-[selected]:font-bold"
-            >
-              {option.label}
-            </ListBoxItem>
-          ))}
+          {grouped(options).map((group, index) =>
+            group.section === undefined ? (
+              group.options.map((option) => <OptionItem key={option.id} option={option} />)
+            ) : (
+              <ListBoxSection key={`${group.section}-${index}`} className="pt-1">
+                <Header className="px-3 pb-1 pt-2 text-small font-bold text-ink-2">{group.section}</Header>
+                {group.options.map((option) => (
+                  <OptionItem key={option.id} option={option} />
+                ))}
+              </ListBoxSection>
+            ),
+          )}
         </ListBox>
       </Popover>
+      {isInvalid && errorMessage ? (
+        <Text slot="errorMessage" className="text-small font-bold text-bad">
+          {errorMessage}
+        </Text>
+      ) : null}
     </Select>
   );
 }

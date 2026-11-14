@@ -906,9 +906,14 @@ msgstr "Foto eines Codes wählen"
 msgid "Choose a printer and a tray to print the ID label."
 msgstr "Wähle einen Drucker und ein Fach, um das ID-Etikett zu drucken."
 
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Choose a sheet type"
 msgstr "Bogentyp wählen"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Choose a sheet type for this page printer."
+msgstr "Wähle einen Bogentyp für diesen Seitendrucker."
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Choose a sheet type to see its measurements and versions."
@@ -1599,8 +1604,8 @@ msgid "Grocy"
 msgstr "Grocy"
 
 #: src/features/settings/GrocyLabelSettings.tsx
-msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here."
-msgstr "Grocy kann seine eigenen Etiketten an diesen Hub schicken: Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Jedes Etikett wird ein Auftrag auf dem Drucker, den du hier wählst."
+msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet."
+msgstr "Grocy kann seine eigenen Etiketten an diesen Hub schicken: Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Jedes Etikett wird ein Auftrag auf dem Drucker, den du hier wählst. Auf einem Seitendrucker belegt es eine Zelle eines Bogens: die nächste freie Zelle des vollsten angefangenen Bogens seines Bogentyps, sonst einen neuen Bogen."
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy labels"
@@ -2599,6 +2604,10 @@ msgstr "Seitendrucker"
 msgid "Page printer (IPP)"
 msgstr "Seitendrucker (IPP)"
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Page printers"
+msgstr "Seitendrucker"
+
 #: src/features/archive/ArchivePage.tsx
 msgid "Page size"
 msgstr "Papiergröße"
@@ -3437,6 +3446,7 @@ msgstr "Bogendruck"
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx
 #: src/features/sheets/SheetDetail.tsx
@@ -3753,6 +3763,10 @@ msgstr "Band noch nicht bekannt"
 #: src/features/lookup/PrinterPicker.tsx
 msgctxt "printer kind"
 msgid "Tape printer"
+msgstr "Banddrucker"
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "Tape printers"
 msgstr "Banddrucker"
 
 #: src/features/jobs/HeldRuns.tsx
@@ -4467,6 +4481,10 @@ msgstr "Der Drucker war beschäftigt und hat den Auftrag nicht angenommen."
 msgid "The printers could not be loaded."
 msgstr "Die Drucker konnten nicht geladen werden."
 
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "The printers could not be loaded. A saved printer is shown by its short name."
+msgstr "Die Drucker ließen sich nicht laden. Ein gespeicherter Drucker wird mit seinem Kurznamen angezeigt."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "The queue could not be loaded."
 msgstr "Die Warteschlange konnte nicht geladen werden."
@@ -4818,6 +4836,10 @@ msgstr "Dieser Bogen ist verworfen."
 #: src/features/calibration/errors.ts
 msgid "This sheet type has fewer than two columns or two rows, so its calibration page has no crossings."
 msgstr "Dieser Bogentyp hat weniger als zwei Spalten oder zwei Zeilen, seine Kalibrierseite hat daher keine Kreuzungen."
+
+#: src/features/settings/GrocyLabelSettings.tsx
+msgid "This sheet type is archived or no longer exists. Grocy labels for it are refused."
+msgstr "Dieser Bogentyp ist archiviert oder existiert nicht mehr. Grocy-Etiketten dafür werden abgelehnt."
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "This sheet type is archived. It offers no new sheets, but the sheets you have keep printing."
