@@ -163,11 +163,12 @@ def _stored_community(connection: Mapping[str, Any] | None) -> str | None:
 def _snmp_target(connection: Mapping[str, Any] | None) -> tuple[str, int | None]:
     """Host and port a community would be sent to, normalised for comparison.
 
-    The host ignores case, surrounding blanks and a trailing dot; an IP address compares by
+    The host ignores case and surrounding blanks, but not a trailing dot: ``printer`` and
+    ``printer.`` are different DNS names (relative against absolute). An IP address compares by
     value (``ipaddress``), so two spellings of one address are the same target.
     """
     conn = connection or {}
-    host = str(conn.get("host") or "").strip().rstrip(".").lower()
+    host = str(conn.get("host") or "").strip().lower()
     with contextlib.suppress(ValueError):  # a name, not an address
         host = ipaddress.ip_address(host.strip("[]")).compressed
     port = conn.get("port")

@@ -523,7 +523,7 @@ class TestMergeSnmpCommunity:
         [
             ("2001:db8::1", "2001:DB8:0:0::1"),
             ("[2001:db8::1]", "2001:db8::1"),
-            ("Printer.Example.Invalid.", "printer.example.invalid"),
+            (" Printer.Example.Invalid ", "printer.example.invalid"),
         ],
     )
     def test_same_target_spelled_differently_keeps_stored(
@@ -534,12 +534,23 @@ class TestMergeSnmpCommunity:
         merged = merge_snmp_community(self._conn(new_host), self._conn(stored_host, community="k"))
         assert merged["snmp"]["community"] == "k"
 
-    @pytest.mark.parametrize(("host", "port"), [("2001:db8::2", 9100), ("2001:db8::1", 161)])
-    def test_new_target_without_community_raises(self, host: str, port: int) -> None:
+    @pytest.mark.parametrize(
+        ("stored_host", "host", "port"),
+        [
+            ("2001:db8::1", "2001:db8::2", 9100),
+            ("2001:db8::1", "2001:db8::1", 161),
+            # A trailing dot makes the name absolute: another DNS query, so another target.
+            ("printer", "printer.", 9100),
+            ("printer.example.invalid.", "printer.example.invalid", 9100),
+        ],
+    )
+    def test_new_target_without_community_raises(
+        self, stored_host: str, host: str, port: int
+    ) -> None:
         from app.services.printer_admin_service import (
             SnmpCommunityRequiredError,
             merge_snmp_community,
         )
 
         with pytest.raises(SnmpCommunityRequiredError):
-            merge_snmp_community(self._conn(host, port), self._conn("2001:db8::1", community="k"))
+            merge_snmp_community(self._conn(host, port), self._conn(stored_host, community="k"))

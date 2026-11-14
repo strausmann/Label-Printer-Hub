@@ -23,11 +23,11 @@ _CASES = [
 ]
 
 
-def _recorder(seen: list[str]) -> Any:
+def _recorder(seen: list[tuple[str, str]]) -> Any:
     async def fake_preflight(
         host: str, *, community: str = "public", timeout_s: float = 3.0
     ) -> PreflightStatus:
-        seen.append(community)
+        seen.append((host, community))
         return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, error_flags=[])
 
     return fake_preflight
@@ -38,7 +38,7 @@ def _recorder(seen: list[str]) -> Any:
 async def test_preflight_uses_stored_community(
     monkeypatch: pytest.MonkeyPatch, backend: str, model: str, target: str
 ) -> None:
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
     monkeypatch.setattr(target, _recorder(seen))
     cfg = PrinterYAMLConfig(
         slug="workshop",
@@ -52,7 +52,7 @@ async def test_preflight_uses_stored_community(
     printer_backend = BackendRouter([cfg]).get("workshop")
     assert printer_backend is not None
     await printer_backend.preflight_check()
-    assert seen == [PLANTED]
+    assert seen == [("192.0.2.10", PLANTED)]
 
 
 @pytest.mark.asyncio
@@ -61,7 +61,7 @@ async def test_preflight_uses_community_of_the_stored_row(
     monkeypatch: pytest.MonkeyPatch, backend: str, model: str, target: str
 ) -> None:
     """From the DB row through ``tape_config`` to the backend the router builds."""
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
     monkeypatch.setattr(target, _recorder(seen))
     row = SimpleNamespace(
         slug="workshop",
@@ -75,7 +75,7 @@ async def test_preflight_uses_community_of_the_stored_row(
     printer_backend = BackendRouter([tape_config(row)]).get("workshop")
     assert printer_backend is not None
     await printer_backend.preflight_check()
-    assert seen == [PLANTED]
+    assert seen == [("192.0.2.10", PLANTED)]
 
 
 @pytest.mark.asyncio
@@ -83,7 +83,7 @@ async def test_preflight_uses_community_of_the_stored_row(
 async def test_preflight_explicit_community_still_wins(
     monkeypatch: pytest.MonkeyPatch, backend: str, model: str, target: str
 ) -> None:
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
     monkeypatch.setattr(target, _recorder(seen))
     cfg = PrinterYAMLConfig(
         slug="workshop",
@@ -97,4 +97,4 @@ async def test_preflight_explicit_community_still_wins(
     printer_backend = BackendRouter([cfg]).get("workshop")
     assert printer_backend is not None
     await printer_backend.preflight_check(community="other")
-    assert seen == ["other"]
+    assert seen == [("192.0.2.10", "other")]

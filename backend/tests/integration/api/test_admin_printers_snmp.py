@@ -286,6 +286,10 @@ async def test_discovery_without_any_community_is_refused(api_client_with_seed) 
 # The community is write-only. Keeping it across a change of host or port would send the
 # stored secret over SNMP to whatever host the request names, so a changed target without a
 # community is refused before anything is saved or wired.
+#
+# A change of the print port alone is refused too, although SNMP always goes to port 161 and
+# the community would still reach the same host. That is the deliberate, stricter rule
+# (R-296-5a, the maintainer's requirement), not a leak path.
 
 
 def _call_target(args: Any) -> tuple[str, int] | None:
@@ -309,6 +313,10 @@ def _call_target(args: Any) -> tuple[str, int] | None:
 async def test_changed_target_without_community_is_refused(
     api_client_with_seed, snmp_calls, host: str, port: int
 ) -> None:
+    """A new host is refused to protect the secret. A new print port alone is refused as well,
+    by design: SNMP always goes to port 161, so no secret moves, but the rule is "same target"
+    and the controller chose the stricter reading (R-296-5a). Do not relax it to host-only
+    without a decision."""
     printer = await _insert_printer()
     resp = await _put_snmp(api_client_with_seed, printer.slug, {"discover": True}, host, port)
     assert resp.status_code == 422, resp.text
@@ -324,6 +332,7 @@ async def test_changed_target_without_community_is_refused(
     for name, call in snmp_calls.items():
         for args in call.await_args_list:
             assert (host, port) != _call_target(args), f"SNMP stub {name} reached {host}:{port}"
+    # For the port-only case this is a policy signal, not a leak: the stub reports the print port.
 
 
 async def test_changed_target_with_null_community_is_refused(api_client_with_seed) -> None:
@@ -368,7 +377,7 @@ async def test_same_target_after_normalisation_keeps_stored(api_client_with_seed
         await s.commit()
         await s.refresh(printer)
     resp = await _put_snmp(
-        api_client_with_seed, printer.slug, {"discover": True}, " printer.example.invalid. "
+        api_client_with_seed, printer.slug, {"discover": True}, " printer.example.invalid "
     )
     assert resp.status_code == 200, resp.text
     assert (await _stored_connection(printer.id))["snmp"]["community"] == PLANTED
