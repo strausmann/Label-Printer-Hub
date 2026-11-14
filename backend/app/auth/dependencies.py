@@ -201,6 +201,28 @@ def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: st
         )
 
 
+def charge_key_rate_limit(key_id: Hashable, tokens: int) -> None:
+    """Charge ``tokens`` more of the key's bucket for work one request fans out into.
+
+    All or nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover
+    it, before any of that work starts. A key without a bucket (no key limit applies) is free.
+    """
+    allowed, retry_after = _rate_limiter.try_consume(key_id, tokens)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "rate_limit_exceeded",
+                "error_message": (
+                    f"This request needs {tokens} lookups, more than the key's rate limit "
+                    f"has left. Retry after {retry_after} seconds."
+                ),
+                "retry_after_seconds": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 class ScopeRefusedError(Exception):
     """A valid key whose effective scope the caller refuses (``refuse_scopes``)."""
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.print_errors import SYNC_ERROR_TYPES, print_error_response
-from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.dependencies import AuthContext, charge_key_rate_limit, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.printer_backends.exceptions import (
@@ -35,7 +35,7 @@ from app.schemas.render_check import RenderCheckRequest, RenderCheckResponse
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrinterAlreadyActiveError
-from app.services.render_check import check_items
+from app.services.render_check import check_items, distinct_lookup_count, validate_layout
 
 _log = logging.getLogger(__name__)
 
@@ -285,20 +285,30 @@ async def render_preview(
         "``integration_unknown_app``, ``integration_lookup_failed``, "
         "``integration_not_configured``) and, where it helps, ``error_detail``.  "
         "Returns 409 (``unsupported_tape``) before any lookup when the tape width or the "
-        "orientation is not available.  Nothing is printed and no job is created."
+        "orientation is not available.  Each distinct item is charged against the key's "
+        "rate limit like a single lookup; a request the remaining budget cannot cover is "
+        "refused with 429 ``rate_limit_exceeded`` before any lookup.  "
+        "Nothing is printed and no job is created."
     ),
     response_model=RenderCheckResponse,
     responses={
         409: {"description": "Unsupported tape width or orientation (`unsupported_tape`)"},
+        429: {
+            "description": "The key's rate limit cannot cover the lookups (`rate_limit_exceeded`)"
+        },
         422: {"description": "Invalid body: no items, more than 50, or an identifier too long"},
     },
 )
 async def render_check(
     body: RenderCheckRequest,
-    _auth: Annotated[AuthContext, Depends(require_read)],
+    auth: Annotated[AuthContext, Depends(require_read)],
 ) -> RenderCheckResponse | JSONResponse:
     """Per-item verdicts for a cart; the tape is checked before the first lookup."""
     try:
+        validate_layout(body)  # a request that cannot succeed costs neither tokens nor lookups
+        if auth.api_key_id is not None:
+            # The request took one token; every distinct lookup is charged like a GET lookup.
+            charge_key_rate_limit(auth.api_key_id, distinct_lookup_count(body))
         return await check_items(body, _lookup_service)
     except UnsupportedTapeError as exc:
         return JSONResponse(

@@ -162,3 +162,13 @@ async def test_unsupported_tape_makes_no_lookup():
     with pytest.raises(UnsupportedTapeError):
         await check_items(_req(_item(), tape_mm=13), lookups)
     assert lookups.calls == []
+
+
+@pytest.mark.asyncio
+async def test_concurrent_checks_share_one_lookup_bound():
+    lookups = _FakeLookups(delay=0.02)
+    first = _req(*[_item(f"A{i}") for i in range(20)])
+    second = _req(*[_item(f"B{i}") for i in range(20)])
+    await asyncio.gather(check_items(first, lookups), check_items(second, lookups))
+    assert len(lookups.calls) == 40
+    assert 1 < lookups.peak <= MAX_BATCH_LOOKUPS

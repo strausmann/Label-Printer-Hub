@@ -21,7 +21,7 @@ _OK = LabelData(
 )
 
 
-async def _insert_key(scopes: list[str]) -> str:
+async def _insert_key(scopes: list[str], rate_limit: int = 600) -> str:
     import app.db.engine as _engine_module
 
     plaintext = f"lh_pat_{uuid4().hex}"
@@ -35,7 +35,7 @@ async def _insert_key(scopes: list[str]) -> str:
                 scopes=scopes,
                 allowed_printer_ids=[],
                 enabled=True,
-                rate_limit_per_minute=600,
+                rate_limit_per_minute=rate_limit,
             )
         )
         await s.commit()
@@ -135,3 +135,42 @@ async def test_check_results_keep_order(api_client_with_seed):
     assert [(r["index"], r["ok"]) for r in results] == [(0, True), (1, False), (2, True)]
     assert results[1]["error_code"] == "integration_lookup_failed"
     assert "internal.invalid" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_check_over_the_rate_budget_429_before_any_lookup(api_client_with_seed):
+    key = await _insert_key(["read"], rate_limit=10)
+    with patch("app.api.routes.print._lookup_service.lookup", new=AsyncMock()) as svc:
+        resp = await api_client_with_seed.post(
+            _URL,
+            json=_body(*[_item(f"A{i}") for i in range(20)]),
+            headers={"X-Label-Hub-Key": key},
+        )
+    assert resp.status_code == 429, resp.text
+    assert resp.json()["detail"]["error_code"] == "rate_limit_exceeded"
+    assert int(resp.headers["Retry-After"]) >= 1
+    svc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_charges_each_distinct_lookup_not_duplicates(api_client_with_seed):
+    key = await _insert_key(["read"], rate_limit=6)
+    # limit 6: each request takes 1 token plus 1 for its single distinct lookup. Charging the
+    # 40 duplicates instead (capped at the bucket) would refuse the second request.
+    dup = _body(*[_item("SAME")] * 40)  # 40 items, one distinct lookup
+    with patch("app.api.routes.print._lookup_service.lookup", new=AsyncMock(return_value=_OK)):
+        first = await api_client_with_seed.post(_URL, json=dup, headers={"X-Label-Hub-Key": key})
+        second = await api_client_with_seed.post(_URL, json=dup, headers={"X-Label-Hub-Key": key})
+    assert first.status_code == 200 and second.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_check_unsupported_tape_is_not_charged(api_client_with_seed):
+    key = await _insert_key(["read"], rate_limit=4)
+    for _ in range(3):  # would exhaust the bucket if the tape refusal charged the lookups
+        resp = await api_client_with_seed.post(
+            _URL,
+            json=_body(*[_item(f"A{i}") for i in range(3)], tape_mm=13),
+            headers={"X-Label-Hub-Key": key},
+        )
+        assert resp.status_code == 409

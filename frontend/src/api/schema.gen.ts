@@ -956,7 +956,7 @@ export interface paths {
         put?: never;
         /**
          * Check cart items against the layout before printing
-         * @description Looks up every distinct item once (at most eight lookups at a time), draws it for ``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one verdict per item in request order.  A failing item does not fail the request: its result carries ``error_code`` (``qr_payload_too_long``, ``content_type_data_mismatch``, ``integration_item_not_found``, ``integration_unknown_app``, ``integration_lookup_failed``, ``integration_not_configured``) and, where it helps, ``error_detail``.  Returns 409 (``unsupported_tape``) before any lookup when the tape width or the orientation is not available.  Nothing is printed and no job is created.
+         * @description Looks up every distinct item once (at most eight lookups at a time), draws it for ``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one verdict per item in request order.  A failing item does not fail the request: its result carries ``error_code`` (``qr_payload_too_long``, ``content_type_data_mismatch``, ``integration_item_not_found``, ``integration_unknown_app``, ``integration_lookup_failed``, ``integration_not_configured``) and, where it helps, ``error_detail``.  Returns 409 (``unsupported_tape``) before any lookup when the tape width or the orientation is not available.  Each distinct item is charged against the key's rate limit like a single lookup; a request the remaining budget cannot cover is refused with 429 ``rate_limit_exceeded`` before any lookup.  Nothing is printed and no job is created.
          */
         post: operations["render_check_api_v1_render_check_post"];
         delete?: never;
@@ -6450,6 +6450,13 @@ export interface operations {
             };
             /** @description Invalid body: no items, more than 50, or an identifier too long */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The key's rate limit cannot cover the lookups (`rate_limit_exceeded`) */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

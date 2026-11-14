@@ -11,6 +11,7 @@ of a lookup can carry the integration's address or its upstream's answer (CWE-20
 from __future__ import annotations
 
 import asyncio
+import weakref
 from collections.abc import Awaitable
 from typing import Protocol
 
@@ -47,6 +48,35 @@ def _key(item: RenderCheckItem) -> _Key:
     return (item.lookup.app, item.lookup.identifier, item.content_type)
 
 
+_gates: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _lookup_gate() -> asyncio.Semaphore:
+    """The one lookup bound of this process: all checks together run ``MAX_BATCH_LOOKUPS`` at most.
+
+    A semaphore belongs to one event loop, so there is one per running loop (one in production).
+    """
+    loop = asyncio.get_running_loop()
+    gate = _gates.get(loop)
+    if gate is None:
+        gate = _gates[loop] = asyncio.Semaphore(MAX_BATCH_LOOKUPS)
+    return gate
+
+
+def distinct_lookup_count(request: RenderCheckRequest) -> int:
+    """How many integration lookups the request costs: one per distinct item."""
+    return len({_key(item) for item in request.items})
+
+
+def validate_layout(request: RenderCheckRequest) -> None:
+    """Raise ``UnsupportedTapeError`` when the tape width or orientation is not available."""
+    if request.tape_mm not in TAPE_GEOMETRY:
+        raise UnsupportedTapeError(tape_mm=request.tape_mm)
+    resolve_layout(request.tape_mm, request.orientation, request.layout_preset, None)
+
+
 async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderCheckResponse:
     """One verdict per request item, in request order.
 
@@ -55,12 +85,10 @@ async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderC
             before the first lookup, so a request that cannot succeed costs the integrations
             nothing.
     """
-    if request.tape_mm not in TAPE_GEOMETRY:
-        raise UnsupportedTapeError(tape_mm=request.tape_mm)
-    resolve_layout(request.tape_mm, request.orientation, request.layout_preset, None)
+    validate_layout(request)
 
     engine = LayoutEngine()
-    gate = asyncio.Semaphore(MAX_BATCH_LOOKUPS)
+    gate = _lookup_gate()
 
     async def _verdict(key: _Key) -> _Verdict:
         app, identifier, content_type = key

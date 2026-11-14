@@ -130,3 +130,24 @@ def test_idle_buckets_are_evicted(monkeypatch):
     clock[0] += 601
     limiter.check_and_consume("fresh", limit_per_minute=10)
     assert list(limiter._buckets) == ["fresh"]
+
+
+def test_try_consume_takes_all_or_nothing():
+    from app.services.rate_limiter import RateLimiter
+
+    rl = RateLimiter()
+    assert rl.check_and_consume("k", limit_per_minute=10)  # 9 left
+    assert rl.try_consume("k", 9) == (True, 0)
+    allowed, retry_after = rl.try_consume("k", 5)
+    assert not allowed and retry_after >= 1
+    # nothing was taken by the refusal: one refilled token is still there to take singly
+    assert rl.try_consume("k", 0) == (True, 0)
+
+
+def test_try_consume_without_bucket_is_free_and_caps_at_capacity():
+    from app.services.rate_limiter import RateLimiter
+
+    rl = RateLimiter()
+    assert rl.try_consume("unknown", 50) == (True, 0)
+    assert rl.check_and_consume("k", limit_per_minute=10) is True
+    assert rl.try_consume("k", 50)[0] is False  # needs the full capacity of 10, 9 are left

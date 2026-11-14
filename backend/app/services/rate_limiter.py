@@ -106,6 +106,25 @@ class RateLimiter:
         retry_after = int(deficit / rate_per_second) + 1
         return False, retry_after
 
+    def try_consume(self, key_id: Hashable, tokens: int) -> tuple[bool, int]:
+        """Take ``tokens`` at once from the key's existing bucket, or none (all or nothing).
+
+        Charges work a request fans out into (one integration lookup each). A key without a
+        bucket has no limit to charge. ``tokens`` is capped at the bucket's capacity, so a
+        small limit can still serve a large request once the bucket is full.
+        Returns ``(allowed, retry_after_seconds)``.
+        """
+        bucket = self._buckets.get(key_id)
+        if bucket is None or tokens <= 0:
+            return True, 0
+        rate_per_second = bucket.capacity / 60.0
+        bucket.refill(rate_per_second)
+        needed = float(min(tokens, bucket.capacity))
+        if bucket.tokens >= needed:
+            bucket.tokens -= needed
+            return True, 0
+        return False, int((needed - bucket.tokens) / rate_per_second) + 1
+
     def reset(self, key_id: Hashable) -> None:
         """Remove the bucket for a key (e.g. after key revocation)."""
         self._buckets.pop(key_id, None)
