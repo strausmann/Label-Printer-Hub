@@ -7171,7 +7171,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description A cell number is outside the sheet. */
+            /** @description The request body is invalid. */
             422: {
                 headers: {
                     [name: string]: unknown;

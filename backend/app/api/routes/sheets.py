@@ -425,6 +425,7 @@ async def resolve_cells(
     summary="Settle every cell waiting for confirmation as printed or not printed",
     responses={
         **_WRITE_ERRORS,
+        422: {"description": "The request body is invalid."},
         409: {
             "description": (
                 "Sheet is discarded, nothing is waiting for confirmation "
