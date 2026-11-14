@@ -192,7 +192,7 @@ describe("DependencyLicences", () => {
     expect(screen.getAllByRole("row")).toHaveLength(301);
     expect(screen.getByText("300 packages")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Show all/ })).toBeNull();
-  });
+  }, 15_000); // rendering 300 rows takes about 3 s alone, so the 5 s default leaves no margin
 
   it("searches all records, not only the first 50, and offers no button for 50 or fewer matches", async () => {
     const many = Array.from({ length: 300 }, (_, i) => ({ name: `pkg-${String(i).padStart(3, "0")}`, version: "1.0.0", license: i === 299 ? "ISC" : "MIT", licenseText: "t" }));
