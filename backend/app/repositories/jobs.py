@@ -9,11 +9,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, exists, select, update
+from sqlalchemy import delete, exists, func, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.job import Job, JobState, is_page_payload
+from app.models.job import Job, JobState, is_page_payload, json_at
 from app.models.sheet import SheetCell
 
 
@@ -209,6 +209,46 @@ async def mark_queued_many_failed_restart(
     changed = [row[0] for row in (await session.execute(stmt)).all()]
     await session.commit()
     return changed
+
+
+def _handed_off() -> Any:
+    """A row the queue holds or is about to hold, so only the queue may cancel it.
+
+    A page payload (``kind``: a Grocy sheet row after its payload swap, #281, or any page job,
+    which the queue registers before its row exists), or a deferred tape row whose payload is
+    complete (``rendered_tape_mm``). An ordinary untracked row (a webhook row the queue never
+    saw) stays cancellable here.
+    """
+    # COALESCE: a payload without ``deferred`` must read as false, not NULL (``NOT NULL`` would
+    # exclude every ordinary row from the guarded update).
+    deferred = func.coalesce(literal_column(json_at("$.deferred")), 0) == 1
+    page = literal_column(json_at("$.kind")).is_not(None)
+    rendered = literal_column(json_at("$.rendered_tape_mm")).is_not(None)
+    return page | (deferred & rendered)
+
+
+async def cancel_queued_unhanded(session: AsyncSession, job_id: UUID) -> Job | None:
+    """QUEUED -> CANCELLED for a job the queue does not hold, in one guarded statement.
+
+    Not written (``None``) when the row is no longer ``queued`` or is a deferred job that was
+    handed to the queue meanwhile (review I-1): the cancel then has to go through the queue,
+    or the in-memory job would print a row that says ``cancelled``.
+    """
+    stmt = (
+        update(Job)
+        .where(
+            col(Job.id) == job_id,
+            col(Job.state) == JobState.QUEUED.value,
+            ~_handed_off(),
+        )
+        .values(state=JobState.CANCELLED.value, finished_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    if int(result.rowcount) == 0:  # type: ignore[attr-defined]
+        return None
+    return await session.get(Job, job_id, populate_existing=True)
 
 
 async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:

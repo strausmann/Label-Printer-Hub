@@ -850,3 +850,61 @@ async def test_deferred_row_left_by_a_crash_ends_failed_restart(hub: Hub) -> Non
         row = await _ends(job_id, "failed_restart")
     assert row.error == "deferred_interrupted"
     assert hub.backend.printed_images == []
+
+
+async def test_cancel_racing_the_tape_hand_off_is_not_lost(
+    hub: Hub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review I-1 on the tape path: the route sees the job untracked, the task completes the
+    payload and hands it to the queue before the route's write. The queue must cancel it: the
+    row ends ``cancelled``, nothing prints, and no ``failed`` is announced."""
+    import app.repositories.jobs as jobs_repo
+    from app.services.print_queue import PrintQueue
+
+    checked = asyncio.Event()
+    handed = asyncio.Event()
+    original_preflight = hub.backend.preflight_check
+
+    async def preflight() -> Any:
+        await checked.wait()
+        return await original_preflight()
+
+    hub.backend.preflight_check = preflight  # type: ignore[method-assign]
+    original_submit = PrintQueue.submit_with_id
+
+    async def submit(queue: PrintQueue, *args: Any, **kwargs: Any) -> UUID:
+        done = await original_submit(queue, *args, **kwargs)
+        handed.set()
+        return done
+
+    original_cancel = jobs_repo.cancel_queued_unhanded
+
+    async def late(session: Any, job_id: UUID) -> Any:
+        checked.set()
+        async with asyncio.timeout(WAIT_S):
+            await handed.wait()
+        return await original_cancel(session, job_id)
+
+    monkeypatch.setattr(PrintQueue, "submit_with_id", submit)
+    monkeypatch.setattr(jobs_repo, "cancel_queued_unhanded", late)
+    async with hub.running() as (client, app):
+        queue = app.state.print_queue
+        await queue.pause_printer(hub.printer_id, reason="user", source="user")
+        r = await _post(client)
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+        cancel = await client.post(
+            f"/api/v1/jobs/{job_id}/cancel", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert 200 <= cancel.status_code < 300, cancel.text
+        assert handed.is_set()
+        await queue.resume_printer(hub.printer_id)
+        await asyncio.sleep(0.5)
+        row = await _row(job_id)
+        # The queue agrees: its job was cancelled, not refused at the pick-up as a stale row.
+        live = (await queue.get(UUID(job_id))) if queue.has_job(UUID(job_id)) else None
+    assert live is None or live.state.value == "cancelled", live
+    assert row.state == "cancelled"
+    assert hub.backend.printed_images == []
+    events = _job_events(hub, job_id)
+    assert not any(to in ("printing", "failed") for _from, to in events), events

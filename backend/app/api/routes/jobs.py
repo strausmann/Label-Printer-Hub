@@ -39,6 +39,7 @@ References:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from datetime import datetime
 from typing import Annotated, Any
@@ -253,29 +254,29 @@ async def cancel_job(
     if job_state != JobState.QUEUED.value and not at_printer:
         raise _cancel_conflict(job_state)
     if tracked and queue is not None:
-        # The queue transitions the in-memory job (the state the worker gates on)
-        # and persists the cancellation.  False = the worker took the job first
-        # (tape) or the page job already ended.
-        if not await queue.cancel(str(job_id)):
-            live = await queue.get(job_id)
-            raise _cancel_conflict(live.state.value)
+        return await _cancel_tracked(session, job, queue, job_id)
+    # The queue does not hold the job (a deferred Grocy job before its hand-off, #281). The
+    # write is guarded: if the task handed the job to the queue since ``has_job`` above, the
+    # row is not touched and the cancel goes through the queue (review I-1). The hand-off
+    # registers the job just before or just after its payload write, so a short wait covers it.
+    deadline = asyncio.get_running_loop().time() + _HAND_OFF_WAIT_S
+    while True:
+        cancelled = await jobs_repo.cancel_queued_unhanded(session, job_id)
+        if cancelled is not None:
+            break
+        if queue is not None and queue.has_job(job_id):
+            await session.refresh(job)
+            return await _cancel_tracked(session, job, queue, job_id)
         await session.refresh(job)
-        read = JobRead.model_validate(job, from_attributes=True)
-        # Requested at the printer, not yet final. The row may still say ``queued``: the worker
-        # moved the page job to PRINTING in memory and has not written it yet (265-07).
-        requested = job.state == JobState.PRINTING.value or (
-            queue.is_page_job(job_id)
-            and (await queue.get(job_id)).state.value == JobState.PRINTING.value
-        )
-        if requested:
-            read = read.model_copy(update={"state": JobState.PRINTING.value})
-            return JSONResponse(
-                status_code=status.HTTP_202_ACCEPTED, content=jsonable_encoder(read)
-            )
-        return read
-    cancelled = await jobs_repo.mark_cancelled(session, job_id)
-    # The queue does not hold the job (a deferred Grocy job before its hand-off, #281): no
-    # worker transition announces it, so a watcher would keep it ``queued`` (review N4).
+        if job.state != JobState.QUEUED.value:
+            raise _cancel_conflict(job.state)
+        if asyncio.get_running_loop().time() > deadline:
+            # A completed payload the queue still does not hold (a hand-off held up, or one
+            # that failed): cancel the row; a later pick-up refuses a row that is not queued.
+            cancelled = await jobs_repo.mark_cancelled(session, job_id)
+            break
+        await asyncio.sleep(0.01)
+    # No worker transition announces it, so a watcher would keep it ``queued`` (review N4).
     publish_job_state_changed(
         getattr(request.app.state, "event_bus", None),
         printer_id=cancelled.printer_id,
@@ -284,6 +285,32 @@ async def cancel_job(
         to_state=JobState.CANCELLED.value,
     )
     return JobRead.model_validate(cancelled, from_attributes=True)
+
+
+_HAND_OFF_WAIT_S = 1.0
+
+
+async def _cancel_tracked(
+    session: AsyncSession, job: Job, queue: Any, job_id: UUID
+) -> JobRead | JSONResponse:
+    # The queue transitions the in-memory job (the state the worker gates on)
+    # and persists the cancellation.  False = the worker took the job first
+    # (tape) or the page job already ended.
+    if not await queue.cancel(str(job_id)):
+        live = await queue.get(job_id)
+        raise _cancel_conflict(live.state.value)
+    await session.refresh(job)
+    read = JobRead.model_validate(job, from_attributes=True)
+    # Requested at the printer, not yet final. The row may still say ``queued``: the worker
+    # moved the page job to PRINTING in memory and has not written it yet (265-07).
+    requested = job.state == JobState.PRINTING.value or (
+        queue.is_page_job(job_id)
+        and (await queue.get(job_id)).state.value == JobState.PRINTING.value
+    )
+    if requested:
+        read = read.model_copy(update={"state": JobState.PRINTING.value})
+        return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=jsonable_encoder(read))
+    return read
 
 
 def _cancel_conflict(job_state: str) -> HTTPException:

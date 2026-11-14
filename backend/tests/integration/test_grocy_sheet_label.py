@@ -685,3 +685,59 @@ async def test_margin_id_not_printed_twice_during_hand_off(
         gate.release.set()
         grocy = await _ends(job_id, "done")
     assert grocy.payload["detail"]["margin_id"]  # the Grocy page carries it, once
+
+
+async def test_cancel_racing_the_hand_off_is_not_lost(
+    _tape_backend: MockPrinterBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review I-1: the cancel route sees the job untracked, then the task hands it off before
+    the route's write. The cancel must still reach the queue: row ``cancelled``, cell free, no
+    print. Driven by events: the task waits until the route has checked, the route's write waits
+    until the hand-off is done."""
+    import app.repositories.jobs as jobs_repo
+
+    checked = asyncio.Event()
+    handed = asyncio.Event()
+
+    async def after_check(_self: GrocySheetLabels, _code: str | None) -> None:
+        await checked.wait()
+
+    original_submit = PrintQueue.submit_stored_page_job
+
+    async def submit(queue: PrintQueue, *args: Any, **kwargs: Any) -> UUID:
+        done = await original_submit(queue, *args, **kwargs)
+        handed.set()
+        return done
+
+    original_cancel = jobs_repo.cancel_queued_unhanded
+
+    async def late(session: Any, job_id: UUID) -> Any:
+        checked.set()  # the route has looked at the queue: untracked
+        async with asyncio.timeout(WAIT_S):
+            await handed.wait()
+        return await original_cancel(session, job_id)
+
+    monkeypatch.setattr(GrocySheetLabels, "_after_choice", after_check)
+    monkeypatch.setattr(PrintQueue, "submit_stored_page_job", submit)
+    monkeypatch.setattr(jobs_repo, "cancel_queued_unhanded", late)
+    seeded = await _seed_base()
+    code = await _sheet(used=5)
+    async with running(_tape_backend, seeded=seeded) as rig:
+        queue = rig.app.state.print_queue
+        await queue.pause_printer(rig.page_id, reason="user", source="user")
+        resp = await rig.post()
+        assert resp.status_code == 202, resp.text
+        job_id = resp.json()["job_id"]
+        cancel = await rig.client.post(f"/api/v1/jobs/{job_id}/cancel", headers=rig.key)
+        assert 200 <= cancel.status_code < 300, cancel.text
+        assert handed.is_set()  # the interleaving really happened
+
+        async def freed() -> bool:
+            return await _grocy_cells() == []
+
+        await _until(freed, 1.0)
+        await queue.resume_printer(rig.page_id)
+        await asyncio.sleep(0.5)  # the worker would take a job that was left queued
+        row = await _job(job_id)
+    assert (code, row.state) == (code, "cancelled")
+    assert rig.print_jobs() == 0
