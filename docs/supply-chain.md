@@ -8,9 +8,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 This page says how to find out what is inside a Labelyard image, where it came from, and under which licences
 its parts are distributed. It covers the published container image only. Not legal advice.
 
-Some of the artefacts below arrive with later steps of release 1.6.0. Each section says which. A statement
-without such a note describes what the repository does today.
-
 Image references on this page:
 
 | Registry | Reference |
@@ -25,13 +22,13 @@ receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
 
 | Artefact | What it is | Where | Status |
 |---|---|---|---|
-| Web licence list | Every package the web app ships, with licence and text | `/licenses/frontend.json` of the running app; `/opt/app/web/licenses/frontend.json` in the image; About page | on the branch |
-| Web SBOM | CycloneDX document of the web bundle | `frontend.cdx.json` in the image (`/opt/app/web/frontend.cdx.json`) | on the branch |
-| Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | generated at build time; the About page says the list is missing in builds without it |
-| BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published today; see the note on its limits below |
-| BuildKit provenance | How and where the image was built | registry, read without pulling | published today, with `mode=max` content by the build action's default; the attestation step (B5) makes it explicit |
-| Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | lands with the release SBOM step (B6); the first release that carries it is 1.6.0 |
-| SPDX headers in every own file | `reuse lint` clean | repository | lands with the header sweep (B9) |
+| Web licence list | Every package the web app ships, with licence and text | `/licenses/frontend.json` of the running app; `/opt/app/web/licenses/frontend.json` in the image; About page | in the image from 1.6.0 |
+| Web SBOM | CycloneDX document of the web bundle | `frontend.cdx.json` in the image (`/opt/app/web/frontend.cdx.json`), also served as `/frontend.cdx.json` | in the image from 1.6.0 |
+| Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | in the image from 1.6.0, generated at build time; the About page says the list is missing in builds without it |
+| BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published with every image; see the note on its limits below |
+| BuildKit provenance | How and where the image was built | registry, read without pulling | published with every image, `mode=max` set explicitly by the image workflow |
+| Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | attached to every release from 1.6.0 on |
+| SPDX headers in every own file | `reuse lint` clean | repository | checked in CI on every pull request |
 | Image signature | Keyless cosign signature of the image index | registry, next to the image | from release 1.6.0 and its previews; see "Verify the signature" |
 
 ## Read the SBOM and provenance without pulling the image
@@ -62,25 +59,23 @@ On a multi-platform image, `.SBOM` and `.Provenance` are maps keyed by platform.
 read-only against the 1.5.0 image of the predecessor name: `{{ json .SBOM }}` has the keys `linux/amd64` and
 `linux/arm64`, and the indexed forms print the SPDX document and the SLSA provenance.
 
-The same commands work on Docker Hub with `docker.io/<user>/labelyard:<version>` for a release version.
-Pre-release previews (`<version>-rc.N`) stay off Docker Hub until the rename step (Task 4) publishes them
-there; before that, check a preview on GHCR only. If the platform-indexed command prints `null` or an error for a
-platform that `{{ json .SBOM }}` lists, report it; do not assume the image is clean.
+The same commands work on Docker Hub with `docker.io/<user>/labelyard:<version>`; releases and pre-release
+previews (`<version>-rc.N`) are published to both registries. If the platform-indexed command prints `null` or an
+error for a platform that `{{ json .SBOM }}` lists, report it; do not assume the image is clean.
 
 Two limits you should know before relying on the BuildKit SBOM:
 
 - It describes what a scan of the final image layers finds. It does **not** list the packages bundled into the
   web app by the Vite build. Measured on 2026-11-11 on the 1.5.0 image: the SPDX document has no `react`. The
   web bundle is therefore covered by the embedded document in the next section.
-- The provenance records the build arguments, the build steps and the source of the build. On the 1.5.0 image it
-  already carries the `mode=max` content (`buildkit_metadata` with layer information): the build action's
-  default for a public repository. The attestation step (B5) sets `mode=max` explicitly so that it no longer
-  depends on that default. It contains no secrets by design (the workflow passes none as build arguments), but
-  read it before you share it.
+- The provenance records the build arguments, the build steps and the source of the build. The image workflow
+  sets `mode=max`, so it carries `buildkit_metadata` with layer information. It contains no secrets by design (the
+  workflow passes none as build arguments), but read it before you share it.
 
 ## Verify the signature
 
-Every image the image workflow publishes is signed with [cosign](https://docs.sigstore.dev/) without a key.
+Every image the image workflow publishes from a signing ref (see the table below) is signed with
+[cosign](https://docs.sigstore.dev/) without a key.
 The workflow signs with its GitHub OIDC token, and the certificate names the workflow file of this repository as
 the signer. What is signed is the digest of the multi-arch index, once on each registry. The index contains the
 platform images and the BuildKit attestation manifests (SBOM and provenance), so one signature covers them too.
@@ -113,7 +108,9 @@ workflow signs from:
 
 A release is signed from `refs/heads/main`: the release workflow runs on main and calls the image workflow, and
 the certificate carries the caller's ref. Tags are not a publishing ref: images from a tag or from any other
-branch are published unsigned. The identity
+branch are published unsigned. That includes a release image rebuilt by a dispatch on the tag ref, so a failed
+release is rebuilt by rerunning the failed jobs of its release run, or by a dispatch on main with the version as
+the `tag` input (see the Releases section of [the architecture page](https://labelyard.app/developers/architecture/)). The identity
 allows the current and the former repository name, because previews built before the rename carry the former
 name in their certificate. `[b]` in the pattern matches the letter b.
 
@@ -159,9 +156,9 @@ selection for images. To make it read the document, select it explicitly:
 syft scan ghcr.io/strausmann/labelyard:<version> --select-catalogers +sbom-cataloger -o cyclonedx-json
 ```
 
-Without `+sbom-cataloger` the result is expected to lack the web packages, in line with the BuildKit SBOM
-above. Status: Syft 1.55.0 accepts the flag (run against the 1.5.0 image, which has no embedded document yet);
-that it picks up `frontend.cdx.json` is verified in B8 against the milestone preview.
+Without `+sbom-cataloger` the result lacks the web packages, in line with the BuildKit SBOM above. The image
+workflow runs this command (Syft 1.55.0) for every release and preview build and fails when the result lacks
+`react`, a package that only `frontend.cdx.json` contributes.
 
 ### What is in it, and what is over-approximated
 
@@ -193,15 +190,13 @@ document of the image of that release, generated from the published image. It is
 and uploaded by the release workflow, so an asset exists only for a published version. A preview build
 (`<version>-rc.N`) has no release and therefore no asset; use the registry commands above for it (GHCR only, see above).
 
-Until the release SBOM step has landed, no release has this asset.
-
 ## The lists at `/about`
 
-The About page of the running app shows the web list and, once the backend list has landed, the Python list: package,
-version, licence and the licence text on demand. The same data is available as `/licenses/frontend.json` and
-`/licenses/backend.json` (the app serves the files of its web directory, `/opt/app/web/licenses/` in the image;
-that the running app answers these URLs is confirmed in B8). A list that is missing in an image (for example an API-only build) is reported as
-missing; the page keeps the project's own licence and source link either way.
+The About page of the running app shows the web list and the Python list: package, version, licence and the
+licence text on demand. The same data is available as `/licenses/frontend.json` and `/licenses/backend.json` (the
+app serves the files of its web directory, `/opt/app/web/licenses/` in the image). A list that is missing in an
+image (for example an API-only build) is reported as missing; the page keeps the project's own licence and source
+link either way.
 
 Both lists exclude the project itself. The backend list reads the name from `backend/pyproject.toml`. The backend list is generated at build time with `--require-texts`, so the build stops when a package has no licence text; see [A licence text is missing](../CONTRIBUTING.md#a-licence-text-is-missing).
 
@@ -249,7 +244,7 @@ possible. How to head a new file: `CONTRIBUTING.md`, section "Licence headers".
 ## What is not provided
 
 - **VEX.** There is no VEX statement (no machine-readable "this vulnerability does not affect this image").
-  A vulnerability scanner will report findings in the base image that do not affect Labelyard, and this release
-  cannot say which. A follow-up issue is planned.
+  A vulnerability scanner will report findings in the base image that do not affect Labelyard, and the project
+  does not say which. VEX is tracked in [issue #286](https://github.com/strausmann/labelyard/issues/286).
 - **Legal advice.** The lists and documents are generated from package metadata. They are as good as that
   metadata; the exceptions in the policy mark the known gaps.

@@ -403,7 +403,7 @@ If you run a modified version for others, set `HUB_REPO_URL` to where its source
 
 ## Supply chain: SBOM and provenance
 
-The container images carry a software bill of materials and a build provenance attestation in the registry, and the About page lists the licences of the third-party packages of the web app (the Python packages follow in 1.6.0). How to read them without pulling the image, what the web bundle's CycloneDX document (`frontend.cdx.json`) covers and the policy behind the lists: [docs/supply-chain.md](docs/supply-chain.md).
+The container images carry a software bill of materials and a build provenance attestation in the registry, and the About page lists the licences of the third-party packages of the web app and the Python backend. The image index is signed with cosign. How to read the attestations without pulling the image, how to verify the signature, what the web bundle's CycloneDX document (`frontend.cdx.json`) covers and the policy behind the lists: [docs/supply-chain.md](docs/supply-chain.md).
 
 ## Acknowledgements
 
