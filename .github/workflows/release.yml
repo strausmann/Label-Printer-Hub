@@ -145,6 +145,45 @@ jobs:
       packages: write
       id-token: write
 
+  # semantic-release has already created the tag and the GitHub Release when
+  # the image jobs run, so a failed image build leaves a release page without
+  # an image. The images job failing already fails the run; this job makes the
+  # gap readable: which version is missing and how to rebuild it. The version
+  # comes in through env and is validated before it is printed. No secret is
+  # touched.
+  images-missing:
+    name: Report missing images
+    needs: [release, images]
+    if: always() && needs.release.outputs.new-release-published == 'true' && !inputs.dry_run && needs.images.result != 'success'
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - name: Write the rebuild instructions to the step summary
+        env:
+          VERSION: ${{ needs.release.outputs.new-release-version }}
+          IMAGES_RESULT: ${{ needs.images.result }}
+        run: |
+          set -euo pipefail
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::Invalid release version: not a semantic version"
+            exit 1
+          fi
+          VERSION="${VERSION#v}"
+          {
+            echo "## Release images missing: ${VERSION}"
+            echo
+            echo "The tag and the GitHub Release \`v${VERSION}\` exist, but the image jobs ended with \`${IMAGES_RESULT}\`."
+            echo "GHCR and Docker Hub may still carry the previous version."
+            echo
+            echo "Rebuild the images from the tag:"
+            echo
+            echo '```sh'
+            echo "gh workflow run docker-publish.yml --ref v${VERSION} -f tag=${VERSION}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Release images for ${VERSION} were not published; see the step summary for the rebuild command"
+
   # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced.
   # Only GITHUB_TOKEN, no checkout, no other secret. The version reaches the
   # shell through env and is validated first.

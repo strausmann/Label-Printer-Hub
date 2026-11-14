@@ -161,11 +161,26 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          REGISTRY_HOST: ${{ env.REGISTRY_GHCR }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       # `secrets.*` is not allowed in step-level `if:` expressions — we
       # surface the value into the step env first, then condition on env.*.
@@ -174,10 +189,23 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        # Same bounded retry as the GHCR login.
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       # Classify what we're building AND derive a version-like value for
       # labels/build-args. Three flavors:
@@ -348,21 +376,49 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          REGISTRY_HOST: ${{ env.REGISTRY_GHCR }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       - name: Log in to Docker Hub
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        # Same bounded retry as the GHCR login.
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       # Classify what we're building AND derive a version-like value for
       # labels/build-args. Three flavors:
@@ -571,11 +627,26 @@ jobs:
     steps:
       # A new package may still be private, so the read goes through a login.
       - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          REGISTRY_HOST: ${{ env.REGISTRY_GHCR }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       - name: Install Syft
         id: syft

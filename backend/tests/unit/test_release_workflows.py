@@ -781,3 +781,49 @@ def test_reuse_job() -> None:
     assert reuse[0]["uses"] == "fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5"
     assert not reuse[0].get("continue-on-error")
     assert "# v6.0.0" in _text("ci.yml")
+
+
+def _login_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    return [s for s in job["steps"] if str(s.get("name", "")).startswith("Log in to ")]
+
+
+def test_registry_logins_retry_without_leaking_credentials() -> None:
+    """A slow auth endpoint must not drop a release image (#325).
+
+    Source-text guard: the logins are shell steps with a bounded loop, the
+    secret goes in over stdin. It cannot prove the retry works on GitHub.
+    """
+    wf = _load("docker-publish.yml")
+    assert "docker/login-action" not in _text("docker-publish.yml")
+    total = 0
+    for job_name in ("build", "merge", "sbom"):
+        steps = _login_steps(wf["jobs"][job_name])
+        assert steps, f"{job_name} has no registry login"
+        for step in steps:
+            total += 1
+            run = str(step.get("run", ""))
+            assert "for attempt in 1 2 3 4; do" in run, f"{job_name}: {step['name']} is not retried"
+            assert "-lt 4" in run and "sleep" in run
+            assert "exit 1" in run, f"{job_name}: a persistent failure must still fail"
+            assert "--password-stdin" in run
+            assert re.search(r"printf '%s' \"\$\w+\" \| docker login", run)
+            # No secret expression inside the script text (it goes through env).
+            assert "secrets." not in run
+    assert total == 5  # GHCR in build, merge, sbom; Docker Hub in build, merge
+
+
+def test_missing_images_are_reported_with_the_rebuild_command() -> None:
+    wf = _load("release.yml")
+    job = wf["jobs"]["images-missing"]
+    assert job["needs"] == ["release", "images"]
+    cond = str(job["if"])
+    assert "always()" in cond
+    assert "new-release-published == 'true'" in cond
+    assert "!inputs.dry_run" in cond
+    assert "needs.images.result != 'success'" in cond
+    assert job["permissions"] == {}
+    run = str(job["steps"][0]["run"])
+    assert "GITHUB_STEP_SUMMARY" in run
+    assert "## Release images missing: ${VERSION}" in run
+    assert "gh workflow run docker-publish.yml --ref v${VERSION} -f tag=${VERSION}" in run
+    assert "secrets." not in json.dumps(job)

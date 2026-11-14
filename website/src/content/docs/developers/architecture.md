@@ -153,6 +153,8 @@ The web UI's API types are generated from the backend's OpenAPI document (`pnpm 
 
 - Conventional Commits drive version bumps via semantic-release
 - Push to `main` → release pipeline: tag → GitHub Release → Docker image on GHCR + Docker Hub
+- Registry logins in the image workflow retry up to four times; a persistent failure fails the run
+- If the image jobs fail after the tag and GitHub Release exist, the run's step summary names the missing version. Rebuild the images from the tag with `gh workflow run docker-publish.yml --ref v<version> -f tag=<version>`
 - Tag scheme ([ADR 0007](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0007-docker-image-tag-scheme.md)): every stable release publishes `1.0.0`, `1.0`, `1`, and `latest` — pre-releases get only the full version
 - Multi-arch: `linux/amd64` + `linux/arm64`
 

@@ -153,6 +153,8 @@ Die API-Typen der Weboberfläche werden aus dem OpenAPI-Dokument des Backends er
 
 - Conventional Commits bestimmen über semantic-release die Versionssprünge
 - Push nach `main` → Release-Pipeline: Tag → GitHub-Release → Docker-Image auf GHCR + Docker Hub
+- Die Registry-Anmeldungen im Image-Workflow werden bis zu viermal versucht; ein dauerhafter Fehler lässt den Lauf fehlschlagen
+- Schlagen die Image-Jobs fehl, obwohl Tag und GitHub-Release schon existieren, nennt die Step-Summary des Laufs die fehlende Version. Die Images werden aus dem Tag neu gebaut mit `gh workflow run docker-publish.yml --ref v<version> -f tag=<version>`
 - Tag-Schema ([ADR 0007](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0007-docker-image-tag-scheme.md)): Jedes stabile Release veröffentlicht `1.0.0`, `1.0`, `1` und `latest` – Vorabversionen bekommen nur die volle Version
 - Mehrere Architekturen: `linux/amd64` + `linux/arm64`
 
