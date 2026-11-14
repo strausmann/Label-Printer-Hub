@@ -78,13 +78,45 @@ def test_docker_hub_gets_every_flavor_but_branch() -> None:
     assert line.strip() == (
         "${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME "
         "&& secrets.DOCKERHUB_TOKEN) "
-        "&& format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}"
+        "&& format('docker.io/{0}/{1}', env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME) || '' }}"
     )
-    assert "format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME)" in line
+    assert "format('docker.io/{0}/{1}', env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME)" in line
+    # The namespace is no longer built from the secret.
+    assert "format('docker.io/{0}/labelyard', secrets." not in line
     assert "steps.tag.outputs.flavor != 'branch'" in line
     # Pre-releases (previews) reach Docker Hub too; only their floating tags are refused.
     assert "contains(steps.tag.outputs.tag, '-')" not in line
     assert "flavor == 'release'" not in line
+
+
+def test_docker_hub_namespace_is_written_out() -> None:
+    """The Docker Hub namespace is identity, not a secret: literal in every workflow
+    that names a Docker Hub address; the secret DOCKERHUB_USERNAME only logs in."""
+    for name in ("docker-publish.yml", "dockerhub-description.yml"):
+        assert _load(name)["env"]["DOCKERHUB_NAMESPACE"] == "bstrausmann", name
+    cleanup = _load("registry-cleanup.yml")["jobs"]["dockerhub"]["steps"][-1]["env"]
+    assert cleanup["HUB_NAMESPACE"] == "bstrausmann"
+    assert cleanup["HUB_REPOSITORY"] == "labelyard"
+    # The login still comes from the secrets.
+    assert cleanup["DOCKERHUB_USERNAME"] == "${{ secrets.DOCKERHUB_USERNAME }}"
+    for name in ("docker-publish.yml",):
+        text = _text(name)
+        assert text.count("username: ") == 0
+        assert text.count("secrets.DOCKERHUB_USERNAME }}") == 2  # the two login steps
+        assert text.count('--username "$DOCKERHUB_USERNAME"') == 2
+    # No workflow builds a Docker Hub address from the login secret.
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "docker.io" in line or "hub.docker.com" in line:
+                # (the "Docker Hub configured" condition may name the secret; the address may not)
+                assert not re.search(r"format\('docker\.io[^)]*secrets\.", line), (
+                    f"{path.name}:{number}"
+                )
+                assert "DOCKERHUB_USERNAME }}/" not in line, f"{path.name}:{number}"
+                assert "docker.io/strausmann" not in line, f"{path.name}:{number}"
+                assert "<DOCKERHUB_USERNAME>" not in line, f"{path.name}:{number}"
+    login = _load("dockerhub-description.yml")["jobs"]["description"]["steps"][-1]["with"]
+    assert login["username"] == "${{ secrets.DOCKERHUB_USERNAME }}"
 
 
 TAGLINE = "Labelyard — the self-hosted Label Printer Hub for all your labels"
@@ -208,7 +240,8 @@ def test_dockerhub_description_workflow() -> None:
     assert len(action) == 1
     with_ = action[0]["with"]
     assert with_["password"] == "${{ secrets.DOCKERHUB_ADMIN_TOKEN }}"
-    assert with_["repository"] == "${{ secrets.DOCKERHUB_USERNAME }}/labelyard"
+    assert with_["repository"] == "${{ env.DOCKERHUB_NAMESPACE }}/labelyard"
+    assert with_["username"] == "${{ secrets.DOCKERHUB_USERNAME }}"
     assert with_["readme-filepath"] == ".github/dockerhub/README.md"
     assert with_["short-description"] == TAGLINE
     assert len(with_["short-description"].encode()) <= 100
@@ -217,7 +250,7 @@ def test_dockerhub_description_workflow() -> None:
     text = readme.read_text(encoding="utf-8")
     for needle in (
         "docker pull ghcr.io/strausmann/labelyard",
-        "docker pull docker.io/",
+        "docker pull docker.io/bstrausmann/labelyard",
         "https://labelyard.app",
     ):
         assert needle in text, needle
@@ -918,7 +951,7 @@ def test_rebuild_dispatch_on_main_signs() -> None:
 
 def test_no_job_output_carries_the_image_ref_or_owner() -> None:
     """GitHub drops job outputs containing a secret value (DOCKERHUB_USERNAME
-    equals the owner name), so such an output arrives empty downstream."""
+    equals the Docker Hub namespace), so such an output arrives empty downstream."""
     for name in ("docker-publish.yml", "release.yml", "preview-image.yml"):
         for job_name, job in _load(name)["jobs"].items():
             for key, value in (job.get("outputs") or {}).items():
@@ -929,6 +962,9 @@ def test_no_job_output_carries_the_image_ref_or_owner() -> None:
                     "outputs.ref",
                     "REGISTRY_",
                     "IMAGE_NAME",
+                    "DOCKERHUB_",
+                    "docker.io",
+                    "bstrausmann",
                     "strausmann",
                     "github.repository",
                     "github.actor",

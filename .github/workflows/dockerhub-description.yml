@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Push .github/dockerhub/README.md and the short description to the Docker Hub
-# repository docker.io/<DOCKERHUB_USERNAME>/labelyard.
+# repository docker.io/bstrausmann/labelyard.
 #
 # Runs when the README changes on main, or by hand. The action needs a personal
 # access token with Read, Write, Delete (DOCKERHUB_ADMIN_TOKEN); the push token
@@ -19,6 +19,10 @@ on:
   workflow_dispatch:
 
 permissions: {}
+
+env:
+  # The Docker Hub namespace (the organization) is an identity, not a secret.
+  DOCKERHUB_NAMESPACE: bstrausmann
 
 concurrency:
   group: dockerhub-description
@@ -44,7 +48,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ADMIN_TOKEN }}
-          repository: ${{ secrets.DOCKERHUB_USERNAME }}/labelyard
+          repository: ${{ env.DOCKERHUB_NAMESPACE }}/labelyard
           short-description: "Labelyard — the self-hosted Label Printer Hub for all your labels"
           readme-filepath: .github/dockerhub/README.md
           enable-url-completion: false

@@ -24,7 +24,7 @@ The same multi-arch image (`linux/amd64`, `linux/arm64`) is published to both re
 
 ```bash
 docker pull ghcr.io/strausmann/labelyard:latest
-docker pull docker.io/strausmann/labelyard:latest
+docker pull docker.io/bstrausmann/labelyard:latest
 ```
 
 ## Tags
@@ -48,7 +48,7 @@ docker run -d --name labelyard \
   -v labelyard-data:/data \
   -e LABELYARD_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')" \
   -e LABELYARD_PUBLIC_URL=http://localhost:8000 \
-  docker.io/strausmann/labelyard:latest
+  docker.io/bstrausmann/labelyard:latest
 ```
 
 Open <http://localhost:8000/> and sign in. A fresh install has no admin key; create one with

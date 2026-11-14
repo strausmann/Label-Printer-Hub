@@ -16,7 +16,7 @@ CLI (tags are read from stdin, one per line):
     python3 scripts/ghcr_rules.py next-preview <version-or-milestone>
     python3 scripts/ghcr_rules.py released               # the x.y.z tags among stdin
     python3 scripts/ghcr_rules.py select-deletions --released <file>
-    python3 scripts/ghcr_rules.py dockerhub-tags        # env: DOCKERHUB_USERNAME, DOCKERHUB_ADMIN_TOKEN, HUB_REPOSITORY
+    python3 scripts/ghcr_rules.py dockerhub-tags        # env: DOCKERHUB_USERNAME (login), DOCKERHUB_ADMIN_TOKEN, HUB_NAMESPACE, HUB_REPOSITORY
     python3 scripts/ghcr_rules.py dockerhub-delete      # same env; deletes the tags on stdin
 
 Standard library only.
@@ -233,7 +233,7 @@ def fetch_dockerhub_tags(
     A 404 on the first page is an empty list, as for GHCR, with a warning on
     stderr: a repository without tags answers 200 with no results, so a 404
     means the namespace or repository does not exist (for example a
-    DOCKERHUB_USERNAME that is not the namespace images are pushed to), and the
+    HUB_NAMESPACE that is not the namespace images are pushed to), and the
     cleanup would otherwise stay green without ever pruning. A 404 on a later
     page and every other error are raised.
     """
@@ -276,9 +276,11 @@ def delete_dockerhub_tag(
 
 
 def _hub_env() -> tuple[str, str, str]:
+    # The login name and the namespace are two inputs: the namespace is written
+    # out in the workflow, the secret only logs in.
     username = os.environ["DOCKERHUB_USERNAME"]
     token = dockerhub_token(username, os.environ["DOCKERHUB_ADMIN_TOKEN"])
-    return username.lower(), os.environ["HUB_REPOSITORY"], token
+    return os.environ["HUB_NAMESPACE"].lower(), os.environ["HUB_REPOSITORY"], token
 
 
 def _read_tags(stream: Any) -> list[str]:

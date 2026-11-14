@@ -83,9 +83,12 @@ concurrency:
 env:
   REGISTRY_GHCR: ghcr.io
   # The image name, written out: the GHCR address is ghcr.io/strausmann/labelyard
-  # and the Docker Hub address docker.io/<DOCKERHUB_USERNAME>/labelyard. Neither is
+  # and the Docker Hub address docker.io/bstrausmann/labelyard. Neither is
   # derived from github.repository, which changes when the repository is renamed.
   IMAGE_NAME: labelyard
+  # The Docker Hub namespace (the organization) is an identity, not a secret: it is
+  # written out here. DOCKERHUB_USERNAME is only the login of the organization token.
+  DOCKERHUB_NAMESPACE: bstrausmann
   # Annotate both per-platform manifests AND the index. GHCR's package UI
   # reads the package description from the index annotation; without this
   # the page shows "No description provided".
@@ -154,7 +157,7 @@ jobs:
       # instead of derived from github.repository: the repository is renamed
       # after the milestone merge, and the image address must not move with it.
       # The ref is never exposed as a job output: GitHub drops any output whose
-      # value contains a secret, and DOCKERHUB_USERNAME equals the owner name.
+      # value contains a secret, and DOCKERHUB_USERNAME equals the Docker Hub namespace.
       # The sbom job computes its own copy.
       - name: Compute image ref
         id: image
@@ -474,7 +477,7 @@ jobs:
           # as for the login step: a username without a token would push unauthenticated.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN) && format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN) && format('docker.io/{0}/{1}', env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME) || '' }}
           # Tag scheme by flavor (identical on GHCR and Docker Hub):
           #   branch   <branch-slug>                       manual dispatch, GHCR only
           #   dev      dev                                 main-branch push
