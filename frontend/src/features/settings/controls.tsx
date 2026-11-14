@@ -209,7 +209,7 @@ export function SelectField({
         {/* The title keeps the full text reachable when the value is cut. */}
         <span title={options.find((o) => o.id === value)?.label} className="min-w-0 truncate">
           {/* The label only: an option's description line belongs to the list, not to the field. */}
-          <SelectValue>{({ selectedText, isPlaceholder }) => (isPlaceholder ? placeholder : selectedText)}</SelectValue>
+          <SelectValue>{({ selectedText, isPlaceholder, defaultChildren }) => (isPlaceholder ? (placeholder ?? defaultChildren) : selectedText)}</SelectValue>
         </span>
         <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" className="shrink-0 fill-none stroke-current stroke-2">
           <path d="M2 4.5 6 8.5 10 4.5" />

@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { describe, expect, it, vi } from "vitest";
 import { i18n, initI18n } from "../../i18n";
-import { ModalDialog } from "./controls";
+import { ModalDialog, SelectField } from "./controls";
 
 async function open(props: Partial<React.ComponentProps<typeof ModalDialog>> = {}, lang: "en" | "de" = "en") {
   await initI18n(lang);
@@ -103,5 +103,23 @@ describe("ModalDialog dim area (#318)", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     // The press kept the focus where it was: the field was not given it again, so its list (and a phone's keyboard) did not reopen.
     expect(input).toHaveFocus();
+  });
+});
+
+describe("SelectField without a selected option", () => {
+  const options = [{ id: "a", label: "Tray A" }];
+
+  it("shows React Aria's own placeholder when the field names none", async () => {
+    await initI18n("en");
+    render(<SelectField label="Tray" value="" options={options} onChange={() => {}} />);
+    expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Select an item");
+  });
+
+  it("shows the field's placeholder when it names one, and the label of a chosen option", async () => {
+    await initI18n("en");
+    const { rerender } = render(<SelectField label="Tray" value="" options={options} onChange={() => {}} placeholder="Choose a tray" />);
+    expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Choose a tray");
+    rerender(<SelectField label="Tray" value="a" options={options} onChange={() => {}} placeholder="Choose a tray" />);
+    expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Tray A");
   });
 });
