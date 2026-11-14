@@ -11,7 +11,6 @@ import logging
 from collections.abc import Iterator
 
 import pytest
-from app.observability.log_buffer import LOG_BUFFER
 from app.observability.redact_query import QueryTokenRedactor, install_query_token_redaction
 
 # A made-up value in the key's shape; never a real key.
@@ -108,22 +107,36 @@ def test_create_app_installs_query_token_redaction(clean_filters: None) -> None:
         assert len(_redactors(name)) == 1, name
 
 
-def test_redaction_reaches_propagated_handlers(clean_filters: None) -> None:
-    """Outcome: the System page's log buffer (a root handler) never sees the token."""
+class _ListHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def test_redaction_reaches_parent_handlers(clean_filters: None) -> None:
+    """Outcome: a handler on a parent logger (where uvicorn's own config puts its console
+    handler) only ever sees the redacted record.
+
+    uvicorn's logging config may have run earlier in the process (it sets ``uvicorn`` to
+    not propagate), so the test pins ``propagate`` and the level for its duration instead
+    of relying on whatever state an earlier test left behind.
+    """
     install_query_token_redaction()
-    LOG_BUFFER.clear()
-    root = logging.getLogger()
-    added = LOG_BUFFER not in root.handlers
-    if added:
-        root.addHandler(LOG_BUFFER)
+    child = logging.getLogger("uvicorn.error")
+    parent = logging.getLogger("uvicorn")
+    saved = (child.propagate, child.level, child.disabled, parent.level, parent.disabled)
+    handler = _ListHandler()
+    parent.addHandler(handler)
+    child.propagate, child.disabled, parent.disabled = True, False, False
+    child.setLevel(logging.INFO)
     try:
-        logging.getLogger("uvicorn.error").warning(
-            "probe %s", f"/api/v1/webhook/grocy/label?token={SECRET}"
-        )
-        messages = [entry["message"] for entry in LOG_BUFFER.snapshot(50)]
+        child.warning("probe %s", f"/api/v1/webhook/grocy/label?token={SECRET}")
     finally:
-        if added:
-            root.removeHandler(LOG_BUFFER)
-        LOG_BUFFER.clear()
-    assert any("token=***" in m for m in messages), messages
-    assert not any(SECRET in m for m in messages)
+        parent.removeHandler(handler)
+        child.propagate, _, child.disabled, _, parent.disabled = saved
+        child.setLevel(saved[1])
+        parent.setLevel(saved[3])
+    assert handler.messages == ["probe /api/v1/webhook/grocy/label?token=***"]
