@@ -606,3 +606,36 @@ async def test_untracked_row_is_written_at_most_twice(
         r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
     assert r.status_code == 200, r.text
     assert writes == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_between_pick_up_check_and_write_is_not_overwritten(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-review R2-1: the route's last guarded write lands while the worker picks the job up.
+    ``mark_printing`` must not overwrite the ``cancelled`` row with ``printing``: it answers
+    False, the worker does not print, the row stays cancelled. The cancel is injected right
+    before the store's write, after anything it may have read."""
+    import app.repositories.jobs as jobs_repo
+
+    names = [n for n in ("mark_printing", "mark_printing_if_queued") if hasattr(jobs_repo, n)]
+    originals = {n: getattr(jobs_repo, n) for n in names}
+
+    def cancelling(name: str) -> Any:
+        async def write(session: Any, job_id: UUID) -> Any:
+            async with env.factory() as other:  # the route's deadline write, another session
+                await guarded_cancel(other, job_id, unhanded_only=False)
+            return await originals[name](session, job_id)
+
+        return write
+
+    guarded_cancel = jobs_repo.cancel_queued_unhanded
+    for n in names:
+        monkeypatch.setattr(jobs_repo, n, cancelling(n))
+    await _hold(env)
+    job_id = await env.seed_job()
+    await _settle()
+    await env.queue.resume_printer(env.printer.id)
+    await env.queue.wait_for_job(str(job_id), timeout_s=5)
+    assert env.printer.prints == 0
+    assert await env.db_state(job_id) == JobState.CANCELLED.value

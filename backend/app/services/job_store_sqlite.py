@@ -53,19 +53,20 @@ class SQLiteJobStore(JobStore):
         False if the row exists but is no longer QUEUED (the worker must not print).
         """
         async with self._session_factory() as session:
+            # One guarded statement: a cancel that commits meanwhile is never overwritten
+            # (re-review R2-1). Only when nothing was written is the row read, for the answer.
+            if await jobs_repo.mark_printing_if_queued(session, job_id):
+                return True
             job = await jobs_repo.get(session, job_id)
             if job is None:
                 return True  # nothing could have cancelled it (Protocol contract)
-            if job.state != JobState.QUEUED.value:
-                logger.warning(
-                    "mark_printing refused for job %s in state %s (expected queued); "
-                    "the worker will not print it",
-                    job_id,
-                    job.state,
-                )
-                return False
-            await jobs_repo.mark_printing(session, job_id)
-            return True
+            logger.warning(
+                "mark_printing refused for job %s in state %s (expected queued); "
+                "the worker will not print it",
+                job_id,
+                job.state,
+            )
+            return False
 
     async def mark_done(self, job_id: UUID) -> None:
         """Transition PRINTING -> DONE.

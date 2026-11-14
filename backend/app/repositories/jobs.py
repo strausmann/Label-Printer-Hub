@@ -86,18 +86,33 @@ async def _get_or_raise(session: AsyncSession, job_id: UUID) -> Job:
     return job
 
 
-async def mark_printing(session: AsyncSession, job_id: UUID) -> Job:
-    """Transition QUEUED → PRINTING. Sets started_at."""
-    job = await _get_or_raise(session, job_id)
-    if job.state != JobState.QUEUED.value:
-        raise ValueError(
-            f"Cannot mark_printing: job {job_id} is in state '{job.state}', expected 'queued'"
-        )
-    job.state = JobState.PRINTING.value
-    job.started_at = datetime.now(UTC)
-    session.add(job)
+async def mark_printing_if_queued(session: AsyncSession, job_id: UUID) -> bool:
+    """QUEUED -> PRINTING in one guarded statement; ``False``: the row is unknown or no longer
+    ``queued``, nothing written.
+
+    The test and the write are one statement, so a cancel that commits between a caller's
+    read and this write is never overwritten (re-review R2-1): the worker must not print then.
+    """
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value)
+        .values(state=JobState.PRINTING.value, started_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
     await session.commit()
-    await session.refresh(job)
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
+
+async def mark_printing(session: AsyncSession, job_id: UUID) -> Job:
+    """Transition QUEUED → PRINTING. Sets started_at. Raises ``ValueError`` otherwise."""
+    if not await mark_printing_if_queued(session, job_id):
+        current = await _get_or_raise(session, job_id)
+        raise ValueError(
+            f"Cannot mark_printing: job {job_id} is in state '{current.state}', expected 'queued'"
+        )
+    job = await session.get(Job, job_id, populate_existing=True)
+    assert job is not None  # just written
     return job
 
 
