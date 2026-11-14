@@ -110,7 +110,7 @@ A release is signed from `refs/heads/main`: the release workflow runs on main an
 the certificate carries the caller's ref. Tags are not a publishing ref: images from a tag or from any other
 branch are published unsigned. That includes a release image rebuilt by a dispatch on the tag ref, so a failed
 release is rebuilt by rerunning the failed jobs of its release run, or by a dispatch on main with the version as
-the `tag` input (see the Releases section of [the architecture page](https://labelyard.app/developers/architecture/)). The identity
+the `tag` input (see the Releases section of [the architecture page](https://labelyard.app/developers/architecture/)). Caution: that dispatch moves `latest`, `X.Y` and `X` to the dispatched version, so use it only for the newest stable release. The identity
 allows the current and the former repository name, because previews built before the rename carry the former
 name in their certificate. `[b]` in the pattern matches the letter b.
 

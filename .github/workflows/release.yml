@@ -194,7 +194,9 @@ jobs:
             echo
             echo "If the run can no longer be rerun, build the tag's commit from main (main is a"
             echo "signing ref; a dispatch on the tag ref would publish unsigned images) and attach"
-            echo "the SBOM from the new run's \`release-sbom\` artifact by hand:"
+            echo "the SBOM from the new run's \`release-sbom\` artifact by hand. Caution: this dispatch"
+            echo "moves \`latest\`, \`X.Y\` and \`X\` to ${VERSION}; use it only if ${VERSION} is the newest"
+            echo "stable release, otherwise re-point those tags afterwards:"
             echo
             echo '```sh'
             echo "gh workflow run docker-publish.yml --ref main -f tag=${VERSION}"
