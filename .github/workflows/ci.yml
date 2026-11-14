@@ -227,6 +227,8 @@ jobs:
   docker-build:
     name: Docker — build smoke test
     runs-on: ubuntu-24.04
+    env:
+      IMAGE: labelyard:ci
     steps:
       - uses: actions/checkout@v6
 
@@ -239,9 +241,38 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: false
-          tags: label-printer-hub:ci
+          load: true
+          tags: ${{ env.IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.55.0
+
+      # The embedded CycloneDX document (frontend.cdx.json) is only read with the SBOM cataloger.
+      # If it is missing from the image, or the packages below are not in it, the build fails here.
+      - name: Check the embedded SBOM
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          "$SYFT" "$IMAGE" --select-catalogers +sbom-cataloger -o json \
+            | jq -e '[.artifacts[].name] as $n | ($n|index("react")) and ($n|index("react-dom")) and ($n|index("brother-ql")) and ($n|index("tini"))'
+
+      - name: Check the licence files in the image
+        run: |
+          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py'
+
+      # Informational only, never a gate: what the default catalogues find without the SBOM cataloger.
+      - name: Default catalogue (informational)
+        continue-on-error: true
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          found=$("$SYFT" "$IMAGE" -o json | jq '[.artifacts[].name] | index("react") != null')
+          echo "Default catalogue finds react: ${found}" >> "$GITHUB_STEP_SUMMARY"
 
   privacy-scan:
     name: Privacy / secret scan

@@ -252,7 +252,7 @@ jobs:
           # don't trash each other's caches.
           cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ matrix.arch }}
-          provenance: true
+          provenance: mode=max
           sbom: true
 
       # Each leg writes its digest into a per-leg file (no name collisions),

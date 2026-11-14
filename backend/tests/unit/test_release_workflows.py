@@ -292,3 +292,37 @@ def test_release_tools_steps_gate_on_the_scope_check() -> None:
             if str(st.get("uses", "")).startswith("actions/setup-node")
         )["with"]["node-version"]
     )
+
+
+def _publish_build_step() -> dict[str, Any]:
+    steps = _load("docker-publish.yml")["jobs"]["build"]["steps"]
+    found = [s for s in steps if str(s.get("uses", "")).startswith("docker/build-push-action@")]
+    assert len(found) == 1
+    return found[0]
+
+
+def test_provenance_max() -> None:
+    with_ = _publish_build_step()["with"]
+    # Explicit, not the default: mode=max records the build arguments, which here are only
+    # VERSION, REVISION and BUILD_DATE.
+    assert with_["provenance"] == "mode=max"
+    assert with_["sbom"] is True
+
+
+def test_ci_image_check() -> None:
+    job = _load("ci.yml")["jobs"]["docker-build"]
+    # A required status check in the main ruleset: the display name must not change.
+    assert job["name"] == "Docker — build smoke test"
+    assert job["env"]["IMAGE"] == "labelyard:ci"
+    steps = job["steps"]
+    build = [s for s in steps if str(s.get("uses", "")).startswith("docker/build-push-action@")]
+    assert len(build) == 1
+    assert build[0]["with"]["load"] is True
+    assert build[0]["with"]["tags"] == "${{ env.IMAGE }}"
+    syft = [s for s in steps if "download-syft" in str(s.get("uses", ""))]
+    assert len(syft) == 1
+    assert re.match(r"^[^@\s]+@[0-9a-f]{40}$", syft[0]["uses"]), syft[0]["uses"]
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "+sbom-cataloger" in runs
+    for needle in ("backend.json", "frontend.json", "frontend.cdx.json", "agpl-3.0.txt"):
+        assert needle in runs, needle
