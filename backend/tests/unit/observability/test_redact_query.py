@@ -140,6 +140,48 @@ def test_key_shaped_value_is_redacted_anywhere(target: str) -> None:
     assert "Q" * 20 not in message
 
 
+# A key with "-" and "_" inside its body, so encoded separators can be tested.
+DASH_KEY = "lh_pat_" + "R" * 20 + "-" + "R" * 10 + "_" + "R" * 11
+
+
+def _enc(key: str, upper: bool = False, double: bool = False) -> str:
+    """Percent-encode every "_" and "-" of a key, as an over-eager encoder would."""
+    pct = "%25" if double else "%"
+    under, dash = ("5F", "2D") if upper else ("5f", "2d")
+    return key.replace("_", f"{pct}{under}").replace("-", f"{pct}{dash}")
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        f"/hook?k={_enc(DASH_KEY)}",
+        f"/hook?k={_enc(DASH_KEY, upper=True)}",
+        f"/hook?k={_enc(DASH_KEY, double=True)}",
+        f"/hook?k=lh_pat_{'R' * 20}%2D{'R' * 10}_{'R' * 11}",
+        f"/hook?%54oken={_enc(DASH_KEY)}",
+        f"/hook?%2574oken={_enc(DASH_KEY, double=True)}",
+        f"/hook?%54%4F%4B%45%4E={_enc(DASH_KEY, upper=True)}",
+        f"/api/v1/things/{_enc(DASH_KEY)}/more",
+    ],
+    ids=[
+        "enc-lower",
+        "enc-upper",
+        "double-enc",
+        "dash-only",
+        "name-%54",
+        "name-double",
+        "name-all-upper-hex",
+        "in-path",
+    ],
+)
+def test_percent_encoded_key_is_redacted(target: str) -> None:
+    record = _access_record(target)
+    QueryTokenRedactor().filter(record)
+    message = record.getMessage()
+    assert "R" * 10 not in message, message
+    assert "***" in message
+
+
 def test_key_shaped_value_in_plain_message_is_redacted() -> None:
     record = logging.LogRecord(
         "uvicorn.error", logging.ERROR, __file__, 1, f"boom near {LIVE_KEY}.", None, None

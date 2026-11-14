@@ -21,14 +21,29 @@ from collections.abc import Mapping
 from typing import Any
 
 # A superset of what require_print_token accepts: the reader takes only a literal
-# "token=", but an operator may mistype the name (TOKEN=, %74oken=) or use ";" as a
-# separator. The key is live either way, so every look-alike is hidden too.
+# "token=", but an operator may mistype the name (TOKEN=, %74oken=, %54oken=) or use ";"
+# as a separator. The key is live either way, so every look-alike is hidden too.
+
+
+def _letter(ch: str) -> str:
+    """One name letter: itself or its percent code, lower or upper case, once or twice
+    encoded (``t`` -> ``t``, ``%74``, ``%54``, ``%2574``, ``%2554``; hex in any case)."""
+    lower, upper = ord(ch.lower()), ord(ch.upper())
+    hexes = "|".join(sorted({f"{lower:02x}", f"{upper:02x}"}))
+    return f"(?:{ch}|%(?:25)?(?:{hexes}))"
+
+
 _TOKEN_VALUE = re.compile(
-    r"(?<=[?&;])(?:t|%74)(?:o|%6f)(?:k|%6b)(?:e|%65)(?:n|%6e)=[^&;\s\"]*",
+    r"(?<=[?&;])" + "".join(_letter(c) for c in "token") + r"=[^&;\s\"]*",
     re.IGNORECASE,
 )
-# Any value in the shape of a hub API key, wherever it appears in the line.
-_KEY_SHAPE = re.compile(r"lh_pat_[A-Za-z0-9_-]{8,}")
+# Any value in the shape of a hub API key, wherever it appears in the line, also with
+# percent-encoded characters inside (lh%5Fpat%5F..., %2D, double-encoded %255F).
+_PCT = r"%(?:25)?[0-9a-f]{2}"
+_KEY_SHAPE = re.compile(
+    rf"lh(?:_|%(?:25)?5f)pat(?:_|%(?:25)?5f)(?:[A-Za-z0-9_-]|{_PCT}){{8,}}",
+    re.IGNORECASE,
+)
 _LOGGERS = ("uvicorn.access", "uvicorn.error")
 
 
