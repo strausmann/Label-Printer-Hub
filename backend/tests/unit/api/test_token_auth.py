@@ -47,6 +47,7 @@ EXPIRED_KEY = _key("expired", "E")
 LIMITED_KEY = _key("limited", "F")
 NOSCOPE_KEY = _key("noscope", "H")
 UNKNOWN_KEY = _key("unknown", "G")
+ADMIN_LIMITED_KEY = _key("adminlimited", "J")
 # Same 16-character prefix as PRINT_KEY, wrong secret.
 WRONG_SECRET = PRINT_KEY[:16] + "Z" * (len(PRINT_KEY) - 16)
 
@@ -92,6 +93,7 @@ async def client() -> AsyncIterator[AsyncClient]:
         s.add(_row(EXPIRED_KEY, ["print"], expires_at=datetime.now(UTC) - timedelta(days=1)))
         s.add(_row(LIMITED_KEY, ["print"], rate_limit_per_minute=1))
         s.add(_row(NOSCOPE_KEY, []))
+        s.add(_row(ADMIN_LIMITED_KEY, ["admin"], rate_limit_per_minute=1))
         await s.commit()
 
     app = FastAPI()
@@ -110,6 +112,7 @@ async def client() -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_session] = _session
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://hub.example.invalid") as c:
+        c.session_factory = factory  # type: ignore[attr-defined]
         yield c
     await eng.dispose()
     _rate_limiter.clear()
@@ -258,3 +261,36 @@ async def test_rate_limit_applies(client: AsyncClient) -> None:
     assert second.json()["detail"]["error_code"] == "rate_limit_exceeded"
     assert second.headers["Retry-After"]
     assert LIMITED_KEY not in second.text
+
+
+async def _last_used(client: AsyncClient, plaintext: str) -> tuple[Any, Any]:
+    async with client.session_factory() as s:  # type: ignore[attr-defined]
+        row = await api_keys_repo.get_by_prefix(s, plaintext[:16])
+        assert row is not None
+        return row.last_used_at, row.last_used_ip
+
+
+@pytest.mark.asyncio
+async def test_refused_admin_key_uses_no_rate_limit_slot(client: AsyncClient) -> None:
+    # Over its limit an admin key must still be refused for its scope, not answered with a
+    # 429 that names the key to Grocy's user.
+    for _ in range(3):
+        r = await client.post(f"/hook?token={ADMIN_LIMITED_KEY}")
+        assert r.status_code == 403, r.text
+        assert r.json()["detail"]["error_code"] == "token_scope_too_wide"
+
+
+@pytest.mark.asyncio
+async def test_refused_admin_key_is_not_marked_as_used(client: AsyncClient) -> None:
+    r = await client.post(f"/hook?token={ADMIN_KEY}")
+    assert r.status_code == 403
+    assert await _last_used(client, ADMIN_KEY) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_accepted_print_key_is_marked_as_used(client: AsyncClient) -> None:
+    # Positive control for the test above: an accepted key does get its timestamp.
+    r = await client.post(f"/hook?token={PRINT_KEY}")
+    assert r.status_code == 200
+    used_at, _ip = await _last_used(client, PRINT_KEY)
+    assert used_at is not None

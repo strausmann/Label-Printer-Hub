@@ -24,13 +24,14 @@ from urllib.parse import unquote
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext, _validate_api_key
+from app.auth.dependencies import AuthContext, ScopeRefusedError, _validate_api_key
 from app.db.session import get_session
 
 TOKEN_QUERY_PARAM = "token"
 MAX_TOKEN_LENGTH = 128
 
 _TOKEN_NAME = TOKEN_QUERY_PARAM.encode("ascii")
+_REFUSED_SCOPES = frozenset({"admin"})
 
 
 def _invalid_token() -> HTTPException:
@@ -67,21 +68,22 @@ async def require_print_token(
 
     client_ip = request.client.host if request.client else "unknown"
     try:
-        auth = await _validate_api_key(session, token, "print", client_ip)
+        return await _validate_api_key(
+            session, token, "print", client_ip, refuse_scopes=_REFUSED_SCOPES
+        )
     except HTTPException as exc:
         if exc.status_code == status.HTTP_401_UNAUTHORIZED:
             raise _invalid_token() from None
         raise  # 403 insufficient_scope, 429 rate_limit_exceeded
-    except ValueError:
-        # bcrypt refuses a token of 73..128 bytes with a real prefix: no key is that long.
-        raise _invalid_token() from None
-
-    if auth.scope == "admin":
+    except ScopeRefusedError:
+        # An admin key must never live in Grocy's config and log.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "error_code": "token_scope_too_wide",
                 "error_message": "Use a key with the print scope for a URL token.",
             },
-        )
-    return auth
+        ) from None
+    except ValueError:
+        # bcrypt refuses a token of 73..128 bytes with a real prefix: no key is that long.
+        raise _invalid_token() from None

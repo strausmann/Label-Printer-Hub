@@ -182,11 +182,21 @@ def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: st
         )
 
 
+class ScopeRefusedError(Exception):
+    """A valid key whose effective scope the caller refuses (``refuse_scopes``)."""
+
+    def __init__(self, scope: str) -> None:
+        super().__init__(scope)
+        self.scope = scope
+
+
 async def _validate_api_key(
     session: AsyncSession,
     key_header: str,
     required_scope: str,
     client_ip: str,
+    *,
+    refuse_scopes: frozenset[str] = frozenset(),
 ) -> AuthContext:
     """Validate the X-Label-Hub-Key header.
 
@@ -196,9 +206,14 @@ async def _validate_api_key(
     4. Check the key's scopes satisfy ``required_scope``.
     5. Update last_used_at asynchronously (best-effort, no transaction wait).
 
+    ``refuse_scopes`` lists effective scopes the caller refuses (the URL token refuses
+    ``admin``). Such a key raises :class:`ScopeRefusedError` before it uses a rate-limit
+    slot or is marked as used, so a refused key never looks used in the key list.
+
     Raises:
         HTTPException 401: key not found / bcrypt mismatch / disabled
         HTTPException 403: key valid but insufficient scope
+        ScopeRefusedError: key valid but its effective scope is in ``refuse_scopes``
     """
     if len(key_header) < 16:
         raise HTTPException(
@@ -284,6 +299,10 @@ async def _validate_api_key(
                 ),
             },
         )
+
+    # #281: refused before the rate-limit slot and the last-used write.
+    if effective_scope in refuse_scopes:
+        raise ScopeRefusedError(effective_scope)
 
     # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
     enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
