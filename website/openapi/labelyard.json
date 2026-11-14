@@ -1305,7 +1305,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional stock quantity delta. Accepted, not printed yet (see #284)",
+            "description": "Optional stock change, -1000000 to 1000000. Printed as the label's third line in the hub's language (for example 'Stock change: +2'); out of range, nothing is printed. Never a copy count",
             "title": "Quantity"
           },
           "type": {
@@ -3838,6 +3838,38 @@
         "title": "ReprintResponse",
         "type": "object"
       },
+      "ResolveAllRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_count": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The number of unconfirmed cells the caller saw. When the sheet has a different number now, nothing is settled (409 unconfirmed_count_changed).",
+            "title": "Expected Count"
+          },
+          "outcome": {
+            "enum": [
+              "printed",
+              "not_printed"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "title": "ResolveAllRequest",
+        "type": "object"
+      },
       "ResolveRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3994,7 +4026,7 @@
         "type": "object"
       },
       "SNMPConfig": {
-        "description": "Verschachtelt — konsistent mit altem YAML-Schema.",
+        "description": "SNMP status discovery of a tape printer. The community is write-only (#296).",
         "properties": {
           "community": {
             "anyOf": [
@@ -4006,7 +4038,7 @@
                 "type": "null"
               }
             ],
-            "default": "public",
+            "description": "Write-only (#296). Omitted or null keeps the stored community (``public`` on create), but only while host and port stay the same: an update that changes either must send the community again (422 ``snmp_community_required``), so a stored community is never sent to a new host. A non-empty string replaces it. Responses never carry it; they report ``connection.snmp.community_set`` instead.",
             "title": "Community"
           },
           "discover": {
@@ -5534,7 +5566,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional remaining filament in grams. Accepted, not printed yet (see #284)",
+            "description": "Optional remaining filament in grams, 0 to 1000000. Printed as the label's third line in the hub's language (for example '851g remaining'); out of range, nothing is printed. Never a copy count",
             "title": "Quantity"
           },
           "spool_id": {
@@ -6392,6 +6424,7 @@
           },
           "connection": {
             "additionalProperties": true,
+            "description": "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).",
             "title": "Connection",
             "type": "object"
           },
@@ -6542,6 +6575,7 @@
           },
           "connection": {
             "additionalProperties": true,
+            "description": "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).",
             "title": "Connection",
             "type": "object"
           },
@@ -6723,7 +6757,7 @@
         ]
       },
       "post": {
-        "description": "Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix.",
+        "description": "Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix. A key with the admin scope always acts on every printer: a non-empty ``allowed_printer_ids`` on it is 422 ``admin_key_not_restrictable``.",
         "operationId": "create_api_key_api_v1_admin_api_keys_post",
         "requestBody": {
           "content": {
@@ -6857,7 +6891,7 @@
         ]
       },
       "patch": {
-        "description": "Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that.",
+        "description": "Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that. A key with the admin scope refuses a non-empty ``allowed_printer_ids`` (422 ``admin_key_not_restrictable``).",
         "operationId": "update_api_key_api_v1_admin_api_keys__key_id__patch",
         "parameters": [
           {
@@ -7166,7 +7200,7 @@
         ]
       },
       "put": {
-        "description": "Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.",
+        "description": "Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). ``connection.snmp.community`` is write-only: omitted or null keeps the stored one while host and port stay the same; a new host or port without a community, or discovery without any community, is 422 ``snmp_community_required``. An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.",
         "operationId": "update_printer_api_v1_admin_printers__slug__put",
         "parameters": [
           {
@@ -11323,6 +11357,87 @@
         ]
       }
     },
+    "/api/v1/sheets/{code}/cells/resolve-all": {
+      "post": {
+        "operationId": "resolve_all_cells_api_v1_sheets__code__cells_resolve_all_post",
+        "parameters": [
+          {
+            "description": "Sheet code, e.g. `L4736-0002`.",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "Sheet code, e.g. `L4736-0002`.",
+              "maxLength": 24,
+              "pattern": "^[A-Z][A-Z0-9]{1,9}-[0-9]{4,}$",
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolveAllRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Sheet not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Sheet is discarded, nothing is waiting for confirmation (no_unconfirmed_cells), or the count differs from expected_count (unconfirmed_count_changed, error_detail.unconfirmed holds the current number)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "The request body is invalid."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Settle every cell waiting for confirmation as printed or not printed",
+        "tags": [
+          "sheets"
+        ]
+      }
+    },
     "/api/v1/sheets/{code}/cells/unmark": {
       "post": {
         "operationId": "unmark_cells_api_v1_sheets__code__cells_unmark_post",
@@ -11542,7 +11657,7 @@
     },
     "/api/v1/webhook/grocy": {
       "post": {
-        "description": "Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.",
+        "description": "Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; a ``quantity`` in range is printed as the label's third line, in the hub's language, and never counts copies.",
         "operationId": "grocy_webhook_api_v1_webhook_grocy_post",
         "parameters": [
           {
@@ -11595,7 +11710,7 @@
     },
     "/api/v1/webhook/spoolman": {
       "post": {
-        "description": "Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.",
+        "description": "Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; a ``quantity`` in range is printed as the label's third line, in the hub's language, and never counts copies.",
         "operationId": "spoolman_webhook_api_v1_webhook_spoolman_post",
         "parameters": [
           {
