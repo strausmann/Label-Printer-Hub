@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """An over-long API key is an invalid key, not a server error (#321).
 
 bcrypt 5 raises ``ValueError`` for more than 72 bytes. A header value that starts with a

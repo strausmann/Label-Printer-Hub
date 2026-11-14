@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for the log filter that hides the URL ``token`` (#281, R-281-2).
 
 Grocy calls the label webhook with the key in the query string; uvicorn writes that URL

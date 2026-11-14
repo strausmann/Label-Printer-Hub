@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hide the URL ``token`` in uvicorn's log records (#281, R-281-2, ADR 0027).
 
 Grocy's label printer webhook carries a print-scope API key as ``?token=…`` in the URL,

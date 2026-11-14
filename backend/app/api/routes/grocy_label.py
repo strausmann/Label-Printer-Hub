@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Grocy's label printer webhook: ``POST /api/v1/webhook/grocy/label`` (#281, spec section 6).
 
 Grocy calls one fixed URL from its ``config.php`` (``LABEL_PRINTER_WEBHOOK``) with a 2.0 s

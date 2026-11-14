@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``resolve_grocy_target``: the printer a Grocy label goes to (#281, maintainer ruling 2026-11-14).
 
 The type's printer when set, else the default target, else ``None`` (the first enabled tape

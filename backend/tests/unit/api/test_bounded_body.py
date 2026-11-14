@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for ``read_bounded``: a request body is read at most up to its limit (#281, R-281-3)."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The body of Grocy's label printer webhook and the label it becomes (#281, spec section 6).
 
 The bodies are the ones Grocy's ``controllers/Api/*ApiController.php`` build (spec section 6,

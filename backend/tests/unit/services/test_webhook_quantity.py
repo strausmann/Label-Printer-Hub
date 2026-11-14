@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The webhook quantity line: wording, rounding, range and language (#284)."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Grocy's label printer webhook: ``POST /api/v1/webhook/grocy/label`` (#281, R-281-1 to R-281-11).
 
 The real app and lifespan run against a temp database with one tape printer. Its backend is a

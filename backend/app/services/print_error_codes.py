@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The status and ``error_code`` of every error ``PrintService`` raises before a label is queued.
 
 ``POST /api/v1/print`` and the webhooks answer with them (``app/api/print_errors.py``); a

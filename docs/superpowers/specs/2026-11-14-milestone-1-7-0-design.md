@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Milestone 1.7.0 — Design
 
 **Date:** 2026-11-14

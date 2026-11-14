@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The body of Grocy's label printer webhook (#281, spec section 6, R-281-3 to R-281-5).
 
 Grocy (``helpers/WebhookRunner.php``, commit ``146f73af``) POSTs one JSON object per label: a

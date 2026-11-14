@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The two store writes of a deferred job (#281): ``set_queued_payload`` and
 ``mark_queued_failed_restart``, in the memory and the SQLite store.
 

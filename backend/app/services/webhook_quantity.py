@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The event quantity of a Spoolman or Grocy webhook as the label's third line (#284).
 
 The line follows the hub's language (``general.language``), not the caller's. A value that is

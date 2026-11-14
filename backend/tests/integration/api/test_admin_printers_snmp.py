@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The SNMP community is write-only (#296, R-296-5).
 
 No printer response (admin or read routes) carries ``connection.snmp.community``; it reports

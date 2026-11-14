@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guardrail: no route declares a FastAPI parameter that takes a URL ``token`` (#281).
 
 The URL token (``require_print_token``) is read from the raw query string on purpose. A

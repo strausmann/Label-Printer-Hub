@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Read a request body without ever buffering more than a limit (#281, R-281-3).
 
 The app has no global body limit, so ``Request.body()`` would buffer anything a client

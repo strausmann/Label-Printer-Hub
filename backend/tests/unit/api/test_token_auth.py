@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for ``require_print_token``: a print-scope API key passed as the URL ``token`` (#281).
 
 Grocy's label printer webhook sends no headers of its own, so the key travels in the

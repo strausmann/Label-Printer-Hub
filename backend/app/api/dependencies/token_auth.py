@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A print-scope API key passed as the URL ``token`` (#281, ADR 0027).
 
 Grocy's label printer webhook calls a fixed URL and sends no headers of its own, so the

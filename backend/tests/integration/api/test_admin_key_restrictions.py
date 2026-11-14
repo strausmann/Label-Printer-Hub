@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """An admin key acts on every printer and refuses a printer list (#283).
 
 All keys below are obviously fake test values. Legacy rows (scope ``admin`` together with a

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The print preflight asks with the printer's stored SNMP community (#296, R-296-6).
 
 ``PrintService`` calls ``preflight_check()`` without a community, so the backend the router
