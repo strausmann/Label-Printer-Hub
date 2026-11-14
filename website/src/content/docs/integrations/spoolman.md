@@ -15,4 +15,4 @@ Scan or type a spool ID on the lookup page, or a label link the hub printed earl
 
 ## Printing when a spool changes
 
-Spoolman events can call the hub, which prints the spool's label, with the remaining filament in grams when the event carries it. See [webhooks](/integrations/webhooks/).
+Spoolman events can call the hub, which prints the spool's label, with the remaining filament as a third line (for example `851g remaining`) when the event carries it. See [webhooks](/integrations/webhooks/).

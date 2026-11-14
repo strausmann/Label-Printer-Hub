@@ -214,6 +214,84 @@ async def test_webhook_quantity_is_not_copies(hub: Hub) -> None:
     assert len(hub.backend.printed_images) == 1
 
 
+async def _set_language(app: Any, language: str) -> None:
+    import app.db.engine as eng
+
+    async with eng.async_session() as s:
+        await app.state.settings_store.set_many(s, {"general.language": language})
+
+
+async def _quantity_job(client: AsyncClient, path: str, body: dict[str, Any]) -> DbJob:
+    r = await client.post(path, json=body, headers=_headers())
+    assert r.status_code == 202, r.text
+    await _done(r.json()["job_id"])
+    return await _row(r.json()["job_id"])
+
+
+async def test_spoolman_quantity_prints_three_lines(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        row = await _quantity_job(client, SPOOLMAN, {**SPOOL_BODY, "quantity": 850.5})
+        assert row.payload["content_type"] == "qr_three_lines"
+        assert row.payload["label_data"]["secondary"][0] == "851g remaining"
+    assert len(hub.backend.printed_images) == 1
+
+
+async def test_quantity_line_follows_hub_language(hub: Hub) -> None:
+    async with hub.running() as (client, app):
+        await _set_language(app, "de")
+        row = await _quantity_job(client, SPOOLMAN, {**SPOOL_BODY, "quantity": 850.5})
+        assert row.payload["label_data"]["secondary"][0] == "851 g übrig"
+
+
+async def test_grocy_quantity_prints_three_lines(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        row = await _quantity_job(client, GROCY, {**GROCY_BODY, "quantity": -2})
+        assert row.payload["content_type"] == "qr_three_lines"
+        assert row.payload["label_data"]["secondary"][0] == "Stock change: -2"
+    assert len(hub.backend.printed_images) == 1
+
+
+async def test_webhook_without_quantity_is_unchanged(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        for path, body in ((SPOOLMAN, SPOOL_BODY), (GROCY, GROCY_BODY)):
+            row = await _quantity_job(client, path, body)
+            assert row.payload["content_type"] == "qr_two_lines"
+            assert row.payload["label_data"]["secondary"] == []
+
+
+async def test_webhook_out_of_range_quantity_is_absent(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        for path, body in (
+            (SPOOLMAN, {**SPOOL_BODY, "quantity": -1}),
+            (SPOOLMAN, {**SPOOL_BODY, "quantity": 1_000_001}),
+            (GROCY, {**GROCY_BODY, "quantity": 1_000_001}),
+        ):
+            row = await _quantity_job(client, path, body)
+            assert row.payload["content_type"] == "qr_two_lines"
+            assert row.payload["label_data"]["secondary"] == []
+
+
+async def test_quantity_job_survives_restart(hub: Hub) -> None:
+    import app.db.engine as eng
+
+    async with eng.async_session() as s:
+        await printer_state_repo.set_paused(s, hub.printer_id, True)
+    async with hub.running() as (client, _app):
+        r = await client.post(SPOOLMAN, json={**SPOOL_BODY, "quantity": 850.5}, headers=_headers())
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+        await asyncio.sleep(0.2)
+        assert (await _row(job_id)).state == "queued"
+    async with eng.async_session() as s:
+        await printer_state_repo.set_paused(s, hub.printer_id, False)
+    async with hub.running():
+        await _done(job_id)
+        row = await _row(job_id)
+        assert row.error is None
+        assert row.payload["label_data"]["secondary"] == ["851g remaining"]
+    assert len(hub.backend.printed_images) == 1
+
+
 async def test_webhook_job_survives_restart(hub: Hub) -> None:
     import app.db.engine as eng
 

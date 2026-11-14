@@ -15,4 +15,4 @@ Scanne oder tippe auf der Suchseite eine Spulen-ID, oder einen Etikettenlink, de
 
 ## Drucken, wenn sich eine Spule ändert
 
-Ereignisse aus Spoolman können den Hub aufrufen, der dann das Etikett der Spule druckt, mit dem restlichen Filament in Gramm, wenn das Ereignis es mitbringt. Siehe [Webhooks](/de/integrations/webhooks/).
+Ereignisse aus Spoolman können den Hub aufrufen, der dann das Etikett der Spule druckt, mit dem restlichen Filament als dritter Zeile (zum Beispiel `851 g übrig`), wenn das Ereignis es mitbringt. Siehe [Webhooks](/de/integrations/webhooks/).

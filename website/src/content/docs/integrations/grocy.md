@@ -16,4 +16,4 @@ Scan or type a product ID or a product barcode on the lookup page, or a label li
 
 ## Printing when stock changes
 
-Grocy can call the hub when stock is added or removed, and the hub prints a label for the product, with the quantity when the event carries one. See [webhooks](/integrations/webhooks/).
+Grocy can call the hub when stock is added or removed, and the hub prints a label for the product, with the stock change as a third line (for example `Stock change: +2`) when the event carries one. See [webhooks](/integrations/webhooks/).

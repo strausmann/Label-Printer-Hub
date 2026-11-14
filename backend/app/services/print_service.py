@@ -99,10 +99,15 @@ class PrintService:
         *,
         api_key_id: UUID | None = None,
         source_ip: str | None = None,
+        label_transform: Callable[[LabelData], LabelData] | None = None,
+        source_app: str = "manual",
     ) -> UUID:
         """Submit a print job: preflight → render → persist → queue.
 
         ``api_key_id`` / ``source_ip`` are stored on the job: the key owns it (#294).
+        ``label_transform`` adjusts the resolved label data before it is rendered and stored
+        (the webhook adds the quantity line, #284); ``source_app`` tags label data that the
+        request carries itself.
 
         Raises:
             PrinterDisabledError (409): Drucker ist deaktiviert (enabled=False).
@@ -112,7 +117,8 @@ class PrintService:
         """
 
         async def resolve(_tape_mm: int) -> LabelData:
-            return await self._resolve_label_data(request)
+            label_data = await self._resolve_label_data(request, source_app=source_app)
+            return label_transform(label_data) if label_transform else label_data
 
         return await self._submit_label(
             resolve,
@@ -226,12 +232,14 @@ class PrintService:
         )
         return job_id
 
-    async def _resolve_label_data(self, request: PrintRequest) -> LabelData:
+    async def _resolve_label_data(
+        self, request: PrintRequest, *, source_app: str = "manual"
+    ) -> LabelData:
         """Resolve label data from raw request data or lookup service."""
         if request.data is not None:
             raw = request.data
             return LabelData(
-                source_app="manual",
+                source_app=source_app,
                 title=raw.title,
                 primary_id=raw.primary_id,
                 qr_payload=raw.qr_payload,

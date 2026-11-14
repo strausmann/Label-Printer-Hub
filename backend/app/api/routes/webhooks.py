@@ -22,14 +22,16 @@ On a valid request the handler:
    type.
 2. Looks up the first enabled tape printer from the DB (a webhook names no printer) and
    its ``PrintService``.
-3. Submits a ``qr_two_lines`` label for the spool or product through
+3. Submits a label for the spool or product through
    ``PrintService.submit_print_job`` — the same path as ``POST /api/v1/print``: preflight,
-   lookup, render, persist, queue.
+   lookup, render, persist, queue. A ``quantity`` in range is printed as the third line
+   (``qr_three_lines``) in the hub's language (``general.language``); without one, or out of
+   range, the label stays ``qr_two_lines`` (#284).
 4. Returns 202 ``WebhookAcceptedResponse`` with the new job's UUID; the queue worker prints.
 
 Errors before anything is queued (no tape, printer disabled or offline, unknown app, failed
 lookup, ...) are answered exactly like ``POST /api/v1/print`` (409/422/502/503) and leave no
-job row behind.  One copy is printed: ``quantity`` is accepted but not printed (#284).
+job row behind.  One copy is printed: ``quantity`` is a line of text, never a copy count.
 
 Webhook jobs have no owner (the webhook key is not an API key), so only an admin or SSO caller
 sees them.
@@ -40,6 +42,7 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -51,12 +54,14 @@ from app.api.print_errors import SYNC_ERROR_TYPES, print_error_response
 from app.db.session import get_session
 from app.repositories import printers as printers_repo
 from app.schemas.content_type import ContentType
+from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintLookupRequest, PrintOptions, PrintRequest
 from app.schemas.webhook import (
     GrocyWebhookPayload,
     SpoolmanWebhookPayload,
     WebhookAcceptedResponse,
 )
+from app.services.webhook_quantity import grocy_quantity_line, spoolman_quantity_line
 
 router = APIRouter(prefix="/api/v1/webhook", tags=["webhooks"])
 
@@ -83,10 +88,33 @@ async def _resolve_default_printer_id(session: AsyncSession) -> str:
     return str(enabled[0].id)
 
 
+_QUANTITY_LINES: dict[str, Callable[[float | None, str], str | None]] = {
+    "spoolman": spoolman_quantity_line,
+    "grocy": grocy_quantity_line,
+}
+
+
+def _third_line(line: str) -> Callable[[LabelData], LabelData]:
+    """A transform that sets the label's third line (``secondary[0]``) to ``line``."""
+
+    def transform(label: LabelData) -> LabelData:
+        return label.model_copy(update={"secondary": (line,)})
+
+    return transform
+
+
 async def _print_label(
-    request: Request, session: AsyncSession, *, app: str, identifier: str
+    request: Request,
+    session: AsyncSession,
+    *,
+    app: str,
+    identifier: str,
+    quantity: float | None = None,
 ) -> Any:
-    """Submit the label of ``app``/``identifier`` to the default tape printer's queue."""
+    """Submit the label of ``app``/``identifier`` to the default tape printer's queue.
+
+    A ``quantity`` in range becomes the third line, in the hub's language (#284).
+    """
     printer_id = UUID(await _resolve_default_printer_id(session))
     service = request.app.state.printer_runtime.print_service_for(printer_id)
     if service is None:
@@ -94,15 +122,18 @@ async def _print_label(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The tape printer is not attached to the print queue — cannot accept webhook",
         )
+    language = str(request.app.state.settings_store.get("general.language"))
+    line = _QUANTITY_LINES[app](quantity, language)
     try:
         job_id = await service.submit_print_job(
             PrintRequest(
-                content_type=ContentType.QR_TWO_LINES,
+                content_type=ContentType.QR_THREE_LINES if line else ContentType.QR_TWO_LINES,
                 lookup=PrintLookupRequest(app=app, identifier=identifier),
                 options=PrintOptions(),
             ),
             # No API key owns a webhook job, but the audit trail still names the peer.
             source_ip=request.client.host if request.client else None,
+            label_transform=_third_line(line) if line else None,
         )
     except SYNC_ERROR_TYPES as exc:
         return print_error_response(exc)
@@ -126,7 +157,8 @@ async def _print_label(
         "503 ``integration_not_configured`` (both in the problem-detail body shape). "
         "Nothing is queued.  On success "
         "returns 202 with the new job's UUID; the queue worker prints it.  One label is "
-        "printed; ``quantity`` is accepted but not printed."
+        "printed; a ``quantity`` in range is printed as the label's third line, in the hub's "
+        "language, and never counts copies."
     ),
     dependencies=_WEBHOOK_DEPENDENCIES,
 )
@@ -136,7 +168,13 @@ async def spoolman_webhook(
     session: SessionDep,
 ) -> Any:
     """Print a Spoolman spool label from the incoming event."""
-    return await _print_label(request, session, app="spoolman", identifier=payload.spool_id)
+    return await _print_label(
+        request,
+        session,
+        app="spoolman",
+        identifier=payload.spool_id,
+        quantity=payload.quantity,
+    )
 
 
 @router.post(
@@ -156,7 +194,8 @@ async def spoolman_webhook(
         "503 ``integration_not_configured`` (both in the problem-detail body shape). "
         "Nothing is queued.  On success "
         "returns 202 with the new job's UUID; the queue worker prints it.  One label is "
-        "printed; ``quantity`` is accepted but not printed."
+        "printed; a ``quantity`` in range is printed as the label's third line, in the hub's "
+        "language, and never counts copies."
     ),
     dependencies=_WEBHOOK_DEPENDENCIES,
 )
@@ -166,4 +205,10 @@ async def grocy_webhook(
     session: SessionDep,
 ) -> Any:
     """Print a Grocy product label from the incoming event."""
-    return await _print_label(request, session, app="grocy", identifier=payload.product_id)
+    return await _print_label(
+        request,
+        session,
+        app="grocy",
+        identifier=payload.product_id,
+        quantity=payload.quantity,
+    )

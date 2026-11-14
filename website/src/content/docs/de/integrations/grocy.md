@@ -16,4 +16,4 @@ Scanne oder tippe auf der Suchseite eine Produkt-ID oder einen Produkt-Barcode, 
 
 ## Drucken, wenn sich der Bestand ändert
 
-Grocy kann den Hub aufrufen, wenn Bestand hinzukommt oder entnommen wird, und der Hub druckt ein Etikett für das Produkt, mit der Menge, wenn das Ereignis eine mitbringt. Siehe [Webhooks](/de/integrations/webhooks/).
+Grocy kann den Hub aufrufen, wenn Bestand hinzukommt oder entnommen wird, und der Hub druckt ein Etikett für das Produkt, mit der Bestandsänderung als dritter Zeile (zum Beispiel `Bestandsänderung: +2`), wenn das Ereignis eine mitbringt. Siehe [Webhooks](/de/integrations/webhooks/).

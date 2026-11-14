@@ -10,11 +10,11 @@ Payload designs follow each upstream's documented webhook format:
 
 - **Spoolman** — https://github.com/Donkie/Spoolman — events include a
   ``spool_id`` (the numeric spool identifier) and an event ``type`` string.
-  ``quantity`` (filament remaining in grams) is accepted but not printed yet (#284).
+  ``quantity`` (filament remaining in grams) is printed as the label's third line.
 
 - **Grocy** — https://grocy.info/api — webhook events include a
   ``product_id`` and an event ``type``.  ``quantity`` is the stock-level delta
-  (optional; accepted but not printed yet, #284).
+  (optional; printed as the label's third line).
 
 Both payloads use ``model_config = ConfigDict(strict=True, extra="ignore")``
 so unknown upstream fields are silently dropped (forward-compatible) while
@@ -44,7 +44,11 @@ class SpoolmanWebhookPayload(BaseModel):
     quantity: float | None = Field(
         default=None,
         allow_inf_nan=False,
-        description="Optional remaining filament in grams. Accepted, not printed yet (see #284)",
+        description=(
+            "Optional remaining filament in grams, 0 to 1000000. Printed as the label's third "
+            "line in the hub's language (for example '851g remaining'); out of range, nothing "
+            "is printed. Never a copy count"
+        ),
     )
 
 
@@ -62,7 +66,11 @@ class GrocyWebhookPayload(BaseModel):
     quantity: float | None = Field(
         default=None,
         allow_inf_nan=False,
-        description="Optional stock quantity delta. Accepted, not printed yet (see #284)",
+        description=(
+            "Optional stock change, -1000000 to 1000000. Printed as the label's third line in "
+            "the hub's language (for example 'Stock change: +2'); out of range, nothing is "
+            "printed. Never a copy count"
+        ),
     )
 
 

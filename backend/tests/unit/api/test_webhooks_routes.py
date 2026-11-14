@@ -446,14 +446,14 @@ def _submitted(service: AsyncMock) -> PrintRequest:
 @pytest.mark.parametrize(
     ("route", "body", "app_name", "identifier"),
     [
-        ("spoolman", {"spool_id": "42", "type": "updated", "quantity": 850.0}, "spoolman", "42"),
-        ("grocy", {"product_id": "17", "type": "consumed", "quantity": 3.0}, "grocy", "17"),
+        ("spoolman", {"spool_id": "42", "type": "updated"}, "spoolman", "42"),
+        ("grocy", {"product_id": "17", "type": "consumed"}, "grocy", "17"),
     ],
 )
 async def test_webhook_submits_a_two_line_qr_label_for_one_copy(
     session, route: str, body: dict, app_name: str, identifier: str
 ) -> None:
-    """The handler hands a lookup request to the print service; ``quantity`` changes nothing."""
+    """Without a ``quantity`` the handler hands a plain lookup request to the print service."""
     await _seed_printer(session)
     service = _service()
 
@@ -469,7 +469,51 @@ async def test_webhook_submits_a_two_line_qr_label_for_one_copy(
     assert request.options.copies == 1
     assert r.json()["job_id"] == str(service.submit_print_job.return_value)
     # no owner key is invented; the audit trail records the peer address only (263-79)
-    assert service.submit_print_job.await_args.kwargs == {"source_ip": "testclient"}
+    assert service.submit_print_job.await_args.kwargs == {
+        "source_ip": "testclient",
+        "label_transform": None,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("route", "body", "app_name", "line"),
+    [
+        (
+            "spoolman",
+            {"spool_id": "42", "type": "updated", "quantity": 850.0},
+            "spoolman",
+            "850g remaining",
+        ),
+        (
+            "grocy",
+            {"product_id": "17", "type": "consumed", "quantity": 3.0},
+            "grocy",
+            "Stock change: +3",
+        ),
+    ],
+)
+async def test_webhook_quantity_becomes_the_third_line_and_not_a_copy_count(
+    session, route: str, body: dict, app_name: str, line: str
+) -> None:
+    """A ``quantity`` in range asks for ``qr_three_lines`` and sets ``secondary`` to its line."""
+    from app.schemas.label_data import LabelData
+
+    await _seed_printer(session)
+    service = _service()
+
+    r = TestClient(_build_app(session, service=service)).post(
+        f"/api/v1/webhook/{route}", json=body, headers={"X-API-Key": _VALID_KEY}
+    )
+
+    assert r.status_code == 202, r.text
+    request = _submitted(service)
+    assert request.content_type == ContentType.QR_THREE_LINES
+    assert request.lookup is not None and request.lookup.app == app_name
+    assert request.options.copies == 1
+    transform = service.submit_print_job.await_args.kwargs["label_transform"]
+    out = transform(LabelData(source_app=app_name, title="T", primary_id="1"))
+    assert out.secondary == (line,)
 
 
 @pytest.mark.asyncio

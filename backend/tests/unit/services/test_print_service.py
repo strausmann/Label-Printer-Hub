@@ -77,6 +77,39 @@ def make_service():
 
 class TestSubmitPrintJob:
     @pytest.mark.asyncio
+    async def test_label_transform_and_source_app_reach_the_stored_payload(
+        self, make_service
+    ) -> None:
+        """The transform runs on the resolved data before it is rendered and stored (#284)."""
+        svc, _queue, store, _backend = make_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_THREE_LINES,
+            data=RawLabelData(
+                primary_id="K02", title="Workshop", qr_payload="https://example.com/x"
+            ),
+        )
+        await svc.submit_print_job(
+            request,
+            source_app="spoolman",
+            label_transform=lambda label: label.model_copy(update={"secondary": ("851g",)}),
+        )
+        label = store.save_queued.await_args.args[0].payload["label_data"]
+        assert (label["source_app"], label["secondary"]) == ("spoolman", ("851g",))
+
+    @pytest.mark.asyncio
+    async def test_without_a_transform_the_data_is_unchanged_and_manual(self, make_service) -> None:
+        svc, _queue, store, _backend = make_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            data=RawLabelData(
+                primary_id="K02", title="Workshop", qr_payload="https://example.com/x"
+            ),
+        )
+        await svc.submit_print_job(request)
+        label = store.save_queued.await_args.args[0].payload["label_data"]
+        assert (label["source_app"], label["secondary"]) == ("manual", ())
+
+    @pytest.mark.asyncio
     async def test_renders_on_loaded_tape_mm_18(self, make_service) -> None:
         """Happy path: 18mm tape, QR_TWO_LINES — returns UUID, queue.submit called."""
         svc, queue, _store, _backend = make_service(loaded_tape_mm=18)

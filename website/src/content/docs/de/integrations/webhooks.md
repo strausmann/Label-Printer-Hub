@@ -17,6 +17,17 @@ Zwei Endpunkte nehmen Ereignisse an und drucken daraufhin ein Etikett.
 { "product_id": "42", "type": "stock_added", "quantity": 2 }
 ```
 
+## Die Menge auf dem Etikett
+
+Eine `quantity` im gültigen Bereich wird als dritte Zeile des Etiketts gedruckt, in der Sprache, die unter **Einstellungen > Allgemein** gewählt ist, nicht in der Sprache des Absenders. Ohne `quantity` oder mit einer außerhalb des Bereichs behält das Etikett seine zwei Zeilen. Sie ist nie eine Anzahl Kopien: Pro Ereignis wird ein Etikett gedruckt.
+
+| Quelle | `quantity` | Englisch | Deutsch |
+|---|---|---|---|
+| Spoolman | 0 bis 1000000, kaufmännisch auf ganze Gramm gerundet | `851g remaining` | `851 g übrig` |
+| Grocy | -1000000 bis 1000000, kaufmännisch auf zwei Nachkommastellen gerundet, mit Vorzeichen | `Stock change: +2` | `Bestandsänderung: +2` (mit Dezimalkomma: `-1,5`) |
+
+Eine dritte Sprache fällt auf Englisch zurück.
+
 Jeder Aufruf antwortet mit `202` und der ID des neuen Auftrags, der an den ersten eingeschalteten Banddrucker geht. Die Etikettendaten kommen vom Plugin für [Spoolman](/de/integrations/spoolman/) oder [Grocy](/de/integrations/grocy/), die Integration muss also verbunden sein.
 
 ## Der Webhook-Schlüssel

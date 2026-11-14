@@ -17,6 +17,17 @@ Two endpoints accept events and print a label in response.
 { "product_id": "42", "type": "stock_added", "quantity": 2 }
 ```
 
+## The quantity on the label
+
+A `quantity` in range prints as the label's third line, in the language set under **Settings > General**, not the language of the sender. Without a `quantity`, or with one out of range, the label keeps its two lines. It is never a number of copies: one label prints per event.
+
+| Source | `quantity` | English | German |
+|---|---|---|---|
+| Spoolman | 0 to 1000000, rounded half up to whole grams | `851g remaining` | `851 g übrig` |
+| Grocy | -1000000 to 1000000, rounded half up to two decimals, with a sign | `Stock change: +2` | `Bestandsänderung: +2` (a decimal comma: `-1,5`) |
+
+A third language falls back to English.
+
 Each call answers `202` with the ID of the new job, which goes to the first enabled tape printer. The label data comes from the [Spoolman](/integrations/spoolman/) or [Grocy](/integrations/grocy/) plugin, so the integration must be connected.
 
 ## The webhook key
