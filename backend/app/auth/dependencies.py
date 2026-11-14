@@ -381,6 +381,7 @@ async def _validate_api_key(
 
     # Read before the update: a rollback expires the row's attributes.
     key_id = key_row.id
+    key_rate_limit = key_row.rate_limit_per_minute
     # #283: an admin key acts on every printer; a list stored by an older version is ignored.
     allowed_printer_ids = [] if effective_scope == "admin" else key_row.allowed_printer_ids or []
 
@@ -397,7 +398,7 @@ async def _validate_api_key(
         api_key_id=key_id,
         ip=client_ip,
         allowed_printer_ids=allowed_printer_ids,
-        rate_limit_per_minute=key_row.rate_limit_per_minute,
+        rate_limit_per_minute=key_rate_limit,
     )
 
 
