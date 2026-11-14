@@ -134,6 +134,7 @@ from app.db.lifespan import (
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import install_log_buffer
+from app.observability.redact_query import install_query_token_redaction
 from app.page_render.pdf import register_pdf_font
 from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
@@ -599,6 +600,8 @@ def _may_name_default_printer(auth: AuthContext | None, state: Any) -> bool:
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     install_log_buffer()
+    # #281: a print key may arrive as ?token=… (Grocy's webhook); uvicorn logs the URL.
+    install_query_token_redaction()
     # aiosqlite logs every statement and bound parameter at DEBUG; with the root logger at
     # DEBUG that would put device serials and key hashes into the log buffer (263-50).
     logging.getLogger("aiosqlite").setLevel(logging.INFO)

@@ -80,7 +80,9 @@ _PUBLIC_BY_DESIGN: dict[tuple[str, str], str] = {
 # by qualname substring so both the named singletons (require_read etc.,
 # scope_deps.py) and the webhook key dependency are recognised regardless of
 # how they're wired (function param vs. router-level `dependencies=[...]`).
-_RECOGNISED_AUTH_MARKERS = ("require_scope", "require_webhook_key")
+# ``require_print_token`` (token_auth.py, #281, ADR 0027) authenticates a print-scope API
+# key from the header or the URL ``token`` and refuses read and admin keys.
+_RECOGNISED_AUTH_MARKERS = ("require_scope", "require_webhook_key", "require_print_token")
 
 
 def _collect_dependency_qualnames(dependant: Any) -> set[str]:

@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.bounded_body import read_bounded
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_read
@@ -150,7 +151,7 @@ async def import_sheet_type(
     new_prefix: Annotated[str | None, Query(max_length=10, pattern=r"^[A-Z][A-Z0-9]{1,9}$")] = None,
 ) -> ImportResponse:
     with mapped():
-        raw = await _read_bounded(request)
+        raw = await read_bounded(request, exchange.MAX_IMPORT_BYTES, ImportTooLargeError)
         doc = exchange.parse_import(raw)
         result = await exchange.import_type(
             session, doc, mode=mode, new_key=new_key, new_prefix=new_prefix, actor=actor(auth)
@@ -158,24 +159,6 @@ async def import_sheet_type(
     if result.outcome == "unchanged":
         response.status_code = status.HTTP_200_OK
     return ImportResponse(outcome=result.outcome, key=result.key, version=result.version)
-
-
-async def _read_bounded(request: Request) -> bytes:
-    """Read the body, never more than the limit plus one chunk.
-
-    The app has no global body limit, so ``Request.body()`` would buffer anything. A declared
-    length above the limit is refused before a byte is read; without one, reading stops as
-    soon as more than the limit has arrived.
-    """
-    declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > exchange.MAX_IMPORT_BYTES:
-        raise ImportTooLargeError()
-    buffer = bytearray()
-    async for chunk in request.stream():
-        buffer.extend(chunk)
-        if len(buffer) > exchange.MAX_IMPORT_BYTES:
-            raise ImportTooLargeError()
-    return bytes(buffer)
 
 
 @router.post(
