@@ -128,6 +128,12 @@ class RateLimiter:
             return True, 0
         return False, int((needed - bucket.tokens) / rate_per_second) + 1
 
+    def refund(self, key_id: Hashable, tokens: int) -> None:
+        """Give ``tokens`` back (at most up to the bucket's capacity); a missing bucket is full."""
+        bucket = self._buckets.get(key_id)
+        if bucket is not None and tokens > 0:
+            bucket.tokens = min(float(bucket.capacity), bucket.tokens + tokens)
+
     def reset(self, key_id: Hashable) -> None:
         """Remove the bucket for a key (e.g. after key revocation)."""
         self._buckets.pop(key_id, None)

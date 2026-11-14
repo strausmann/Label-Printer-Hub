@@ -203,16 +203,19 @@ def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: st
         )
 
 
-def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> None:
+def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> int:
     """Charge the key's bucket for the integration lookups one request fans out into.
 
     The request's own token (taken by the auth dependency) pays for the first lookup, so
-    ``lookups - 1`` more are taken: N lookups cost what N single GET lookups cost. All or
-    nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover it,
-    raised before any lookup starts. Contexts without a key limit (SSO, bypass) are not charged.
+    ``lookups - 1`` more are taken, but never more than a full bucket holds (``limit - 1``):
+    a request costs at most one whole bucket and is retryable once it has refilled; it is never
+    refused outright, so for N above the limit N lookups cost less than N single GET lookups.
+    All or nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover
+    it, raised before any lookup starts. Contexts without a key limit (SSO, bypass) are not
+    charged. Returns the tokens taken, for :func:`refund_lookup_fan_out`.
     """
     if auth.api_key_id is None or auth.rate_limit_per_minute is None:
-        return
+        return 0
     allowed, retry_after = _rate_limiter.try_consume(
         auth.api_key_id, lookups - 1, limit_per_minute=auth.rate_limit_per_minute
     )
@@ -229,6 +232,14 @@ def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> None:
             },
             headers={"Retry-After": str(retry_after)},
         )
+    return max(0, min(lookups - 1, auth.rate_limit_per_minute - 1))
+
+
+def refund_lookup_fan_out(auth: AuthContext, charged: int) -> None:
+    """Give back what :func:`charge_lookup_fan_out` took when the request ended before any
+    lookup ran, so a client that retries does not pay twice."""
+    if auth.api_key_id is not None and charged > 0:
+        _rate_limiter.refund(auth.api_key_id, charged)
 
 
 class ScopeRefusedError(Exception):

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -885,23 +884,27 @@ async def test_a_cancelled_preview_keeps_its_key_slot_until_the_render_ends(
 async def test_reserve_does_not_block_loop(
     async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``plan`` runs in a thread under the write lock. The stand-in plan takes ``STALL`` of CPU
-    time; on the loop that is a lag of at least ``STALL``. The bound is half of it, relative to
-    the stall instead of an absolute 50 ms so a loaded runner does not fail it spuriously."""
+    """``plan`` runs in a thread under the write lock. Event-based, no clock: the stand-in plan
+    blocks on a threading event until the loop has ticked several times while the plan is
+    running. If ``plan`` ran on the loop, the loop could not tick and the wait below times out."""
+    import threading
+
     from app.sheets import reservation
     from app.sheets import sheet_service as ss
     from app.sheets import type_service as ts
 
     from tests.unit.sheets.test_reservation import G48, MARGIN, _fields, existing, meta
 
-    stall = 0.6
     real_plan = reservation.plan
+    in_plan = threading.Event()
+    release = threading.Event()
 
-    def slow_plan(*args: Any, **kwargs: Any) -> Any:
-        time.sleep(stall)  # stands in for the CPU work of a large plan
+    def blocked_plan(*args: Any, **kwargs: Any) -> Any:
+        in_plan.set()
+        release.wait(timeout=10)  # the loop must release us; the timeout only ends a hung test
         return real_plan(*args, **kwargs)
 
-    monkeypatch.setattr(reservation, "plan", slow_plan)
+    monkeypatch.setattr(reservation, "plan", blocked_plan)
     async with async_session_factory() as session:
         await ts.create_type(session, _fields(), G48, actor="t")
         sheet = await ss.create_sheet(
@@ -913,20 +916,19 @@ async def test_reserve_does_not_block_loop(
             note=None,
             actor="t",
         )
-        lags: list[float] = []
+        ticks = 0
         done = asyncio.Event()
 
         async def probe() -> None:
-            last = time.monotonic()
+            nonlocal ticks
             while not done.is_set():
-                await asyncio.sleep(0.005)
-                now = time.monotonic()
-                lags.append(now - last)
-                last = now
+                await asyncio.sleep(0.001)
+                if in_plan.is_set() and not release.is_set():
+                    ticks += 1
 
         ticker = asyncio.create_task(probe())
-        try:
-            pages = await reservation.reserve(
+        job = asyncio.create_task(
+            reservation.reserve(
                 session,
                 placements=[existing(sheet.code)],
                 items=meta(3),
@@ -936,11 +938,21 @@ async def test_reserve_does_not_block_loop(
                 required_type_key=None,
                 actor="t",
             )
+        )
+        try:
+
+            async def _loop_ticks_while_plan_runs() -> None:
+                while ticks < 5:
+                    await asyncio.sleep(0.005)
+
+            await asyncio.wait_for(_loop_ticks_while_plan_runs(), timeout=5)
         finally:
+            release.set()
+            pages = await job
             done.set()
             await ticker
     assert len(pages) == 1
-    assert max(lags) < stall / 2, max(lags)
+    assert ticks >= 5
 
 
 def test_the_pdf_font_is_registered_up_front() -> None:

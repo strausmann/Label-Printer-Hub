@@ -51,6 +51,8 @@ A key in an address is seen by more than the hub. Grocy writes the address to it
 
 The default is 60 requests per minute and key, adjustable from 1 to 10,000. Above it the hub answers `429` with a `Retry-After` header and the error code `rate_limit_exceeded`.
 
+A request that looks up several items counts for more than one request: the request itself pays for the first lookup, every further lookup takes one more request from the budget (never more than a full minute's budget). This applies to tape batches (`POST /api/v1/print/{printer}/batch`, items with a `lookup`) and to `POST /api/v1/render/check` (every distinct item). If the remaining budget cannot cover them, the hub answers `429` with `rate_limit_exceeded` before any lookup; a batch refused before its first lookup gives the budget back.
+
 ## Sheets
 
 Sheets are shared physical material: the sheet routes are not limited by a key's printers, and every key sees every sheet.

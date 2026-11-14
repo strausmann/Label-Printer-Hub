@@ -12,7 +12,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext, charge_lookup_fan_out, check_printer_access
+from app.auth.dependencies import (
+    AuthContext,
+    charge_lookup_fan_out,
+    check_printer_access,
+    refund_lookup_fan_out,
+)
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
@@ -55,6 +60,18 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
 }
 
 
+# What dispatch_batch raises before it looks anything up: the queue claim and the preflight.
+_NO_LOOKUP_RAN = (
+    TooManyQueuedRunsError,
+    PrinterCoverOpenError,
+    TapeMismatchError,
+    PrinterOfflineError,
+    SnmpQueryError,
+    NoTapeLoadedError,
+    ConflictingOrientationError,
+)
+
+
 @router.post(
     "/print/{printer_key}/batch",
     status_code=status.HTTP_202_ACCEPTED,
@@ -77,7 +94,11 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
         "`LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most "
         "`LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. "
         "A run that waits for `/continue` or a reprint counts against its key only. Over a "
-        "cap the batch answers 429 too-many-queued-runs."
+        "cap the batch answers 429 too-many-queued-runs. Items that carry a `lookup` also "
+        "count against the key's rate limit: the request's own token pays for the first lookup, "
+        "each further one takes another token (never more than a full bucket), and a batch the "
+        "remaining budget cannot cover answers 429 `rate_limit_exceeded` before any lookup; a "
+        "batch refused before the first lookup gives the tokens back."
     ),
 )
 async def create_batch(
@@ -148,23 +169,28 @@ async def create_batch(
 
     # Every item with a lookup is one integration call; the request's token pays for the first.
     # 429 here, before the printer is asked and before any lookup.
-    charge_lookup_fan_out(auth, sum(1 for item in body.items if item.lookup is not None))
+    charged = charge_lookup_fan_out(auth, sum(1 for item in body.items if item.lookup is not None))
 
     # #277: the queue's tape run carries the batch id, so continue/reprint find it.
     run_id = uuid4()
     label_ids: list[UUID] = []
     try:
-        job_ids = await dispatch_batch(
-            service=service,
-            items=body.items,
-            half_cut=use_half_cut,
-            run_id=run_id,
-            label_ids=label_ids,
-            queue=getattr(http.app.state, "print_queue", None),
-            printer_id=printer.id,
-            api_key_id=auth.api_key_id,
-            source_ip=auth.ip,
-        )
+        try:
+            job_ids = await dispatch_batch(
+                service=service,
+                items=body.items,
+                half_cut=use_half_cut,
+                run_id=run_id,
+                label_ids=label_ids,
+                queue=getattr(http.app.state, "print_queue", None),
+                printer_id=printer.id,
+                api_key_id=auth.api_key_id,
+                source_ip=auth.ip,
+            )
+        except _NO_LOOKUP_RAN:
+            # Refused before the first lookup (queue claim, preflight): the client retries.
+            refund_lookup_fan_out(auth, charged)
+            raise
     except TooManyQueuedRunsError as exc:
         # 263-76: the rate-limit answer's shape; nothing was looked up, drawn or stored.
         raise HTTPException(

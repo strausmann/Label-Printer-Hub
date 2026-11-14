@@ -168,3 +168,16 @@ def test_try_consume_of_nothing_is_free():
     rl = RateLimiter()
     assert rl.try_consume("k", 0, limit_per_minute=5) == (True, 0)
     assert rl.try_consume("k", -1, limit_per_minute=5) == (True, 0)
+
+
+def test_refund_gives_tokens_back_up_to_capacity():
+    from app.services.rate_limiter import RateLimiter
+
+    rl = RateLimiter()
+    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0)  # 1 left
+    rl.refund("k", 4)
+    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0)  # all 4 back, none lost
+    rl.refund("k", 100)  # never above the capacity
+    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0)
+    assert rl.try_consume("k", 4, limit_per_minute=5)[0] is False
+    rl.refund("missing", 3)  # no bucket, nothing to do

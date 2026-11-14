@@ -51,6 +51,8 @@ Einen Schlüssel in einer Adresse sieht mehr als nur der Hub. Grocy schreibt die
 
 Standard sind 60 Anfragen pro Minute und Schlüssel, einstellbar von 1 bis 10.000. Darüber antwortet der Hub mit `429`, einem Header `Retry-After` und dem Fehlercode `rate_limit_exceeded`.
 
+Eine Anfrage, die mehrere Objekte nachschlägt, zählt mehr als eine Anfrage: Die Anfrage selbst bezahlt das erste Nachschlagen, jedes weitere nimmt eine weitere Anfrage vom Kontingent (nie mehr als das Kontingent einer vollen Minute). Das gilt für Band-Stapel (`POST /api/v1/print/{printer}/batch`, Einträge mit `lookup`) und für `POST /api/v1/render/check` (jedes verschiedene Objekt). Reicht das übrige Kontingent dafür nicht, antwortet der Hub vor dem ersten Nachschlagen mit `429` und `rate_limit_exceeded`; ein Stapel, der vor dem ersten Nachschlagen abgelehnt wird, gibt das Kontingent zurück.
+
 ## Bögen
 
 Bögen sind gemeinsames, greifbares Material: Die Routen für Bögen sind nicht durch die Drucker eines Schlüssels beschränkt, und jeder Schlüssel sieht jeden Bogen.

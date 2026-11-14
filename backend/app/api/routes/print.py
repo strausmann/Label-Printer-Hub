@@ -285,9 +285,10 @@ async def render_preview(
         "``integration_unknown_app``, ``integration_lookup_failed``, "
         "``integration_not_configured``) and, where it helps, ``error_detail``.  "
         "Returns 409 (``unsupported_tape``) before any lookup when the tape width or the "
-        "orientation is not available.  Each distinct item is charged against the key's "
-        "rate limit like a single lookup; a request the remaining budget cannot cover is "
-        "refused with 429 ``rate_limit_exceeded`` before any lookup.  "
+        "orientation is not available.  Rate limit: the request's own token pays for the first "
+        "distinct lookup, each further one takes another token from the key's bucket (never "
+        "more than a full bucket); a request the remaining budget cannot cover is refused with "
+        "429 ``rate_limit_exceeded`` before any lookup.  "
         "Nothing is printed and no job is created."
     ),
     response_model=RenderCheckResponse,
