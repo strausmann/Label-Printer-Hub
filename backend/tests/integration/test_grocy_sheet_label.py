@@ -28,6 +28,7 @@ from app.config import get_settings
 from app.models.job import Job
 from app.models.printer import Printer
 from app.models.sheet import Sheet, SheetCell
+from app.printer_backends.ipp.attributes import Margins
 from app.printer_backends.mock_backend import MockPrinterBackend
 from app.schemas.grocy_label import GROCY_LABEL_BUDGET_S
 from app.services.backend_router import BackendRouter
@@ -741,3 +742,72 @@ async def test_cancel_racing_the_hand_off_is_not_lost(
         row = await _job(job_id)
     assert (code, row.state) == (code, "cancelled")
     assert rig.print_jobs() == 0
+
+
+# ---------------------------------------------------------------------------- review fix round 1
+
+
+async def test_refused_sheet_is_skipped_on_the_re_choice(_tape_backend: MockPrinterBackend) -> None:
+    """Review I-2: a sheet the planner refuses (its ID goes in a cell that is still due, and only
+    one cell is free) does not stop the type: the re-choice skips it, for this label and the
+    next."""
+    seeded = await _seed_base()
+    refused = await _sheet(used=47)
+    async with _factory()() as s:  # an ID placed in a cell, not printed yet (the API offers it
+        sheet = await _sheet_row_in(s, refused)  # for new sheets of a print only)
+        sheet.id_placement = "cell"
+        await s.commit()
+    async with running(_tape_backend, seeded=seeded) as rig:
+        for _ in range(2):
+            resp = await rig.post()
+            assert resp.status_code == 202, resp.text
+            await _ends(resp.json()["job_id"], "done")
+        await _until(lambda: _settled(2))
+    (new,) = [c for c in await _sheet_codes() if c != refused]
+    assert sorted(await _grocy_cells()) == [(new, 1, "used"), (new, 2, "used")]
+
+
+async def _set_page_margins(app: Any, printer_id: UUID, margins: Margins) -> None:
+    """The page printer's status with these hardware margins (after the producer's first poll)."""
+    from app.models.printer_status_cache import PrinterStatusCache
+
+    from tests.integration.api.test_sheet_print_api import _record
+
+    async with asyncio.timeout(WAIT_S):
+        while True:
+            async with _factory()() as s:
+                row = await s.get(PrinterStatusCache, printer_id)
+                summary = ((row.parsed if row else None) or {}).get("summary") or {}
+                if row is not None and summary.get("margins_hmm") is not None:
+                    row.parsed = _record(margins).model_dump(mode="json")
+                    await s.commit()
+                    return
+            await asyncio.sleep(0.02)
+
+
+async def test_label_avoids_the_hardware_margin(_tape_backend: MockPrinterBackend) -> None:
+    """Review M-1: the webhook has no preview, so a cell that reaches into the printer's
+    hardware margin is not used. A top margin of 30 mm covers the first row of the 4 x 12 type
+    (it starts 21.3 mm down): the label lands in cell 5 of a new sheet, and a started sheet
+    whose only free cell is in the margin counts as full."""
+    seeded = await _seed_base()
+    edge = await _sheet(used=0)
+    async with _factory()() as s:
+        sheet = await _sheet_row_in(s, edge)
+        s.add_all(
+            SheetCell(sheet_id=sheet.id, cell_no=n, state="used", source="api")
+            for n in range(5, 49)
+        )
+        await s.commit()
+    async with running(_tape_backend, seeded=seeded) as rig:
+        await _set_page_margins(rig.app, rig.page_id, Margins(top=3000, left=0, bottom=0, right=0))
+        resp = await rig.post()
+        assert resp.status_code == 202, resp.text
+        await _ends(resp.json()["job_id"], "done")
+        await _until(lambda: _settled(1))
+    (new,) = [c for c in await _sheet_codes() if c != edge]
+    assert await _grocy_cells() == [(new, 5, "used")]
+
+
+async def _sheet_row_in(session: Any, code: str) -> Sheet:
+    return (await session.execute(select(Sheet).where(Sheet.code == code))).scalar_one()
