@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Regression tests for issue #254: every QL print crashed with ``Image.ANTIALIAS``.
 
 Root cause: the hub's LayoutEngine renders landscape (PT convention: height == print-head

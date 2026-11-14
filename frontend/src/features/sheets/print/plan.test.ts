@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { describe, expect, it } from "vitest";
 import { sheetSummary } from "../../test-api";
 import type { CartItem } from "../../lookup/cart";

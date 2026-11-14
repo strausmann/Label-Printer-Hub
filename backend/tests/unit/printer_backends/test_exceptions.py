@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # backend/tests/unit/printer_backends/test_exceptions.py
 from __future__ import annotations
 

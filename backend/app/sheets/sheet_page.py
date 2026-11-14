@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The ``sheet_page`` payload and its renderers (spec 10.2, 11.4, 12.4 and 13).
 
 The margin ID sits in one of four bands (top, bottom, right or left of the grid); the planner

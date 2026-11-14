@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hardware-in-the-loop smoke test. Skipped by default — opt in with --hardware."""
 
 from __future__ import annotations

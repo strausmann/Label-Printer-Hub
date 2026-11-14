@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Sheet archive, numbered sheets and IPP page printers (Part A)
 
 - **Date:** 2026-11-05

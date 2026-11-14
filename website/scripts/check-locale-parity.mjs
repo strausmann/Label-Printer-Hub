@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Locale parity gate (`website / locale parity`): the site is maintained in English and German
 // together, so every page under src/content/docs/ must exist at the root (English) and under de/
 // (German) with the same slug, and every screenshot in four variants (en|de x light|dark).

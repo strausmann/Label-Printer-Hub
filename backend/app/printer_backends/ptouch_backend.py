@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PTouchBackend — wraps the `ptouch` Python library for Brother PT-Series.
 
 Status queries go through query_status_over_socket (the library does not

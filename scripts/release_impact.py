@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Release impact of pull requests and the release guard.
 
 The project releases from ``main`` only (semantic-release, ``.releaserc.json``).

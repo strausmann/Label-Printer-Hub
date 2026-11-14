@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Request schemas for POST /api/v1/print + supporting models.
 
 Phase 1k.1a: template_id and on_tape_mismatch removed; content_type added.

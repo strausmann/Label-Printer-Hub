@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Admin changes take effect live (#224): no hub restart between a save and its effect.
 
 Runs the real lifespan (``lifespan_context``, so the runtime stops cleanly after each test)

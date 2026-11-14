@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Layout options on POST /api/v1/print and POST /api/v1/render/preview (#258)."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1e — /readiness deep-check endpoint.
 
 Phase 1k.1a (Task 25): template_seed removed from required checks

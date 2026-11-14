@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet archive: types, versions, counters, sheets, cells and the write-lock row.
 
 Revision ID: 20261105a1

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Plain-text cleaning for the free text of the sheet archive (purposes, notes, names).
 
 Line breaks (CRLF, CR, LF) become ``\\n``. A ``multiline`` field (notes, descriptions, change

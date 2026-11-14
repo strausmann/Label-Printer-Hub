@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """printers_audit_and_backfill
 
 Issue #124: Schema-Erweiterung der printers-Tabelle um queue_timeout_s und

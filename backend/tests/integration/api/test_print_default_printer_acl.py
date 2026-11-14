@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Per-printer access on the routes that act on the default printer.
 
 POST /api/v1/print and POST /api/v1/printer/resume use the default printer (the first by

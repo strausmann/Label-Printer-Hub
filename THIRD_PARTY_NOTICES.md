@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Third-party notices
 
 Labelyard is licensed under AGPL-3.0-or-later (see [LICENSE](LICENSE)). This file lists the runtime

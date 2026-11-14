@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /// <reference lib="webworker" />
 import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 // Bundled by Vite and served from this origin: no CDN, and the CSP stays at worker-src 'self'.

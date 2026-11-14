@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for require_scope() FastAPI dependency — Phase 7c Step 3.
 
 Tests all three auth paths:

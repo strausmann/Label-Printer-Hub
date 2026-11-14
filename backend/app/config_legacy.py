@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Environment prefix handling for the ``PRINTER_HUB_`` -> ``LABELYARD_`` rename.
 
 The project is now called Labelyard and reads ``LABELYARD_*`` settings. Deployments that

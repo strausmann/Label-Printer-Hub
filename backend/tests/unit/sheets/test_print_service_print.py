@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet print: reserve, one page payload per page, queue submission, release (Plan 3, Task 7).
 
 The queue is a recording double; the database, the planner, the reservation and the outcome

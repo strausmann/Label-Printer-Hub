@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Default batch-print loop for Backends without native batch support.
 
 Phase 1k.2: PTouchBackend overrides print_images() to use ptouch.print_multi()

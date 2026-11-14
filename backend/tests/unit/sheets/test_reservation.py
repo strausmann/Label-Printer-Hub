@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Atomic reservation: rows, new sheets, plan_changed, events, margin in flight (Task 3)."""
 
 from __future__ import annotations

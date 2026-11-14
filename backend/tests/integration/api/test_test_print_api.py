@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of ``POST /api/v1/printers/{id}/test-print`` (#228).
 
 Two apps. The *small* app wires the real router, a real ``PrintQueue`` (a fake tape printer and

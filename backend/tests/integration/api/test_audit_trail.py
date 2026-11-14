@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integration tests for API key audit trail on jobs — Phase 7c Step 7.
 
 Tests that POST /api/v1/print with a key sets api_key_id and source_ip on the Job row.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7c — api_keys table + audit columns on jobs.
 
 D7: this migration used to seed an enabled ``bootstrap-admin`` key and print its

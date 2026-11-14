@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integration tests for the /healthz endpoint.
 
 The healthz endpoint is the container's liveness probe — Docker, Kubernetes,

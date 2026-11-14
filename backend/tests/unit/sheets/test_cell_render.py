@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Cell renderer for sheet labels (Plan 3, Task 1; spec 12.1, 12.3, 12.5)."""
 
 from __future__ import annotations

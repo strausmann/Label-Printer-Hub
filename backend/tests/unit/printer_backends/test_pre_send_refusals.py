@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#277: failures before anything is sent carry ``PrinterError.nothing_sent``.
 
 The tape-run queue reads the flag: a flagged group did not print (its real error code), an

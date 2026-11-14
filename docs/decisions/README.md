@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Architecture Decision Records (ADRs)
 
 This directory holds the binding architecture decisions for this project. Each decision is one file. Each file stays once written — to revise, write a new ADR that supersedes the old one and update the old one's status.

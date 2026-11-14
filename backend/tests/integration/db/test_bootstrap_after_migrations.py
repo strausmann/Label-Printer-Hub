@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """D7 end to end on a schema built by the real alembic migrations (not create_all).
 
 Proves a fresh install has no API key, the migrations print no key, and the

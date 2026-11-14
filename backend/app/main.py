@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """FastAPI application entry point.
 
 This module exposes the ASGI app that uvicorn runs in the container. It owns:

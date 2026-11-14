@@ -1,4 +1,9 @@
 /*
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+*/
+
+/*
  * Design tokens (D3), values from the web-UI spec section 5.2.
  * Three layers: primitive values -> semantic roles -> use in components.
  * `tokens.ts` mirrors these values; `tokens.test.ts` keeps both in step.

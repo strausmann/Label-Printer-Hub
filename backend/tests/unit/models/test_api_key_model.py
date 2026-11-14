@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for ApiKey model and Job model extensions (Phase 7c)."""
 
 from __future__ import annotations

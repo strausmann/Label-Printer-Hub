@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The shipped ``examples/compose*.yml`` files must start a hub that boots.
 
 Since Task 1 the backend refuses to start without ``LABELYARD_SECRET_KEY`` and

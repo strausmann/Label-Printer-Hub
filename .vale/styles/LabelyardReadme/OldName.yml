@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # README.md only (own section in .vale.ini; the general OldName rule is off there). Like OldName,
 # and in addition the README's tagline line and its "Formerly *...*." sentence may name the former
 # product, as in the brand guard. Only that sentence: the rest of a "Formerly" line is checked.

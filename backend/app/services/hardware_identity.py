@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hardware identity of the device behind a printer's address (#231).
 
 A status probe reports every identity candidate it saw (``ObservedIdentity``). This module picks

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Install the pinned Vale release and its two style packages into .vale/ (git-ignored), each
 # verified against a SHA-256 taken from the release. No `curl | sh`, no unverified `vale sync`.
 # Linux x86-64 only; elsewhere install Vale from https://github.com/errata-ai/vale/releases and

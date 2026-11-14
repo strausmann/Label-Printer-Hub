@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet writes under contention on a real SQLite file in WAL mode (Review Focus 3, 4).
 
 In-memory SQLite has no WAL and no second connection, so it cannot show ``database is

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Helpers for datetime serialisation in Pydantic schemas.
 
 The Go frontend's oapi-codegen client uses strict RFC3339 parsing which

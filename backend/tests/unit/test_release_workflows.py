@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guard tests for the release and image-publish workflows (#183).
 
 These tests check the TEXT of the workflow files, not their run: they parse
@@ -768,3 +771,13 @@ def test_signing_only_on_publishing_refs() -> None:
     assert identities
     for identity in identities:
         assert identity.endswith("docker-publish\\.yml@" + SIGNED_REFS[1:]), identity
+
+
+def test_reuse_job() -> None:
+    job = _load("ci.yml")["jobs"]["reuse"]
+    assert not job.get("continue-on-error")
+    reuse = [s for s in job["steps"] if str(s.get("uses", "")).startswith("fsfe/reuse-action@")]
+    assert len(reuse) == 1
+    assert reuse[0]["uses"] == "fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5"
+    assert not reuse[0].get("continue-on-error")
+    assert "# v6.0.0" in _text("ci.yml")

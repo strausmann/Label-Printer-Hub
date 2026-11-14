@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for /api/v1/admin/api-keys CRUD endpoints — Phase 7c Step 8."""
 
 from __future__ import annotations

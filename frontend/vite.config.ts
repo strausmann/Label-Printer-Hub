@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { lingui } from "@lingui/vite-plugin";

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The roll record of a printer: read it, and give its tape colour (#229).
 
 The printer reports no tape colour over the network. The hub detects a roll change from the

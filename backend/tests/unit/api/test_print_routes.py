@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for app.api.routes.print.
 
 Phase 1k.1a (Task 25): TemplateNotFoundError and template_loader removed.

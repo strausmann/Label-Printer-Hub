@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sends, tracks and cancels one page job at an IPP printer (spec 11.3-11.5, OC-21, OC-23).
 
 ``PageJobRunner.run`` is awaited by the queue worker for one page job at a time (one hub job

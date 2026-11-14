@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#293: a render past its time limit is reported to its caller and shown as stuck.
 
 A hung render is simulated with a ``threading.Event`` the test controls; the time limit is

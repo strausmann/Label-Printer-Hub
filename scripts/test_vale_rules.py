@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Counter-tests of the Vale rules: a planted rejected term must fail, a planted warning must not.
 
 Runs the pinned Vale from .vale/bin/vale (scripts/vale_setup.sh); skipped when it is not installed.

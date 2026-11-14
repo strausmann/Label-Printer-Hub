@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A stale or unpolled cached status is reported as unknown, with its age (#227)."""
 
 from __future__ import annotations

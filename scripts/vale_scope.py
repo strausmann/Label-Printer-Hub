@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print the files Vale lints, one per line.
 
 Scope: README.md, CONTRIBUTING.md, docs/**/*.md and website/src/content/docs/**/*.{md,mdx},

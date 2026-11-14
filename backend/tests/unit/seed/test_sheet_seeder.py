@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The sheet type seeder (Plan 1, Task 5; OC-14)."""
 
 from __future__ import annotations

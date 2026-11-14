@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PDF font override: LABELYARD_PDF_FONT wins, PRINTHUB_PDF_FONT is the deprecated fallback."""
 
 from __future__ import annotations

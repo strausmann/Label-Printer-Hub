@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The OpenAPI document describes the 422 envelope the sheet APIs really return."""
 
 from __future__ import annotations

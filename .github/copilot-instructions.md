@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # GitHub Copilot Instructions
 
 These instructions apply to GitHub Copilot Chat and inline suggestions in this repository.

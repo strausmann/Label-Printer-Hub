@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0007 — Docker image tag scheme
 
 - **Status:** Accepted (amended by ADR-0015: a single image `label-printer-hub-backend` is published; the frontend image no longer exists)

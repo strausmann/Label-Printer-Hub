@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Verifiziert dass das Printer-Modell ein `slug`-Feld hat und Default leer ist."""
 
 from __future__ import annotations

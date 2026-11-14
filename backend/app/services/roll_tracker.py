@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Detects a roll (tape cassette) change from the probe and keeps the roll record (#229).
 
 The printer reports no tape colour over the network, so the colour is asked of the operator

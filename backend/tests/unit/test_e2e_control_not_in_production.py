@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The browser-test control paths exist in the e2e app only (Plan 4, Task 1, C5).
 
 ``/__e2e/`` switches a fake printer's state without authentication. It is served by the ASGI

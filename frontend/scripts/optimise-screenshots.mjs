@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Turns the website screenshots (lossless PNGs written by e2e/readme-screenshots.spec.ts into
 // e2e/.tmp/site-shots/) into WebP files in website/src/assets/screens/, named
 // <shot>.<en|de>.<light|dark>.webp, and fails when one is over budget. The encoder is the WebP

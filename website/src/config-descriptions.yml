@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Descriptions of every LABELYARD_* variable for the configuration reference, in English and
 # German. scripts/gen-config-reference.py fails when a variable of app/config.py has no entry
 # here, or an entry lacks one of the two languages.

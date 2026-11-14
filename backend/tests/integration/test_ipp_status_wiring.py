@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Startup wiring of IPP page printers: one status producer each, no tape wiring.
 
 Runs the real lifespan against a stored ``ipp`` printer whose transport is the fake printer.

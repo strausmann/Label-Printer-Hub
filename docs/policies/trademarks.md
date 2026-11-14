@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Trademark policy
 
 > **Brother**, **P-touch**, **PT-Series**, and **QL-Series** are trademarks of **Brother Industries, Ltd.** All other trademarks are the property of their respective owners.

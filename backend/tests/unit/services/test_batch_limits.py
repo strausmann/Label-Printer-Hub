@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """263-76 / 263-78 / 266-07 / 266-14: bounded memory, lookups, render threads and loop time.
 
 A tape batch keeps one PNG per distinct item (its copies share it); a printer holds at most

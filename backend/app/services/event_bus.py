@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """In-process asyncio pub/sub EventBus.
 
 All publishers and the SSE endpoint run in the same asyncio event loop, so

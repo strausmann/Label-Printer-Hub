@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, resetPagePrinter, setPagePrinter, signInWith, test } from "./fixtures";

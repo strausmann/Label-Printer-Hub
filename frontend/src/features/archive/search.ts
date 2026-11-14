@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /** The address of the archive page: filters of the list, and the type that is open. */
 export interface ArchiveSearch {
   q?: string | undefined;

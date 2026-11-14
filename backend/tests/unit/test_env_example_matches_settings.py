@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """backend/.env.example must only name real Settings fields and show the required ones."""
 
 from __future__ import annotations

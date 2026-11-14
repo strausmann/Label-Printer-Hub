@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Batch-Dispatcher: orchestriert POST /api/v1/print/{slug}/batch.
 
 Phase 1k.1a Task 17: tape-consistency-Check entfernt, weil tape-unabhängige

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print onto sheets (spec 12.6, 15): the read-only preview and the print.
 
 ``POST /api/v1/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.

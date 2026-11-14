@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit-Tests für den Batch-Dispatcher.
 
 Phase 1k.1a Task 17: MixedTapeSizesError + tape-consistency-Check entfernt.

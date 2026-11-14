@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The backend serves the web UI (web UI foundation, Task 7).
 
 Every test builds the full app against a temporary ``dist`` directory (or none),

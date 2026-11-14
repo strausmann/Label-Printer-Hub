@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of ``POST /api/v1/jobs/{id}/retry`` for a sheet page (Task 9, spec 11.4, OC-42).
 
 The full app with its lifespan, like ``test_sheet_print_api``: the real print queue and

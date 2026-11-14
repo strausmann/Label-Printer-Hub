@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Brand guard: list every remaining old project name outside an allow-list.
 
 The project was renamed to Labelyard. Some old identifiers must stay (they live

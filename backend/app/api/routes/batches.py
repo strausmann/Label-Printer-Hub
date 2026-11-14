@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """GET /api/v1/batches/{id}, and the tape run actions continue and reprint (#277)."""
 
 from __future__ import annotations

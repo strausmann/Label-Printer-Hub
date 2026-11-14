@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineConfig } from "@playwright/test";
 import { FIXTURE_TIME, SHOTS } from "./e2e/env";
 

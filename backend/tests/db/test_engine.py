@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests that SQLite pragmas are applied via the engine connect hook.
 
 WAL journal_mode requires a file-based database (not supported on :memory:),

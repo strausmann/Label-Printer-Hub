@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The hub's own IPP client over httpx (spec 11.2): five operations plus Validate-Job.
 
 One ``httpx.AsyncClient`` per ``IppClient``. The printer is a device the admin

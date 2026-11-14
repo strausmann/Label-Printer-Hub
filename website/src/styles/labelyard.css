@@ -1,4 +1,9 @@
 /*
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+*/
+
+/*
  * Labelyard site theme. The colours are the web app's own design tokens
  * (frontend/src/design/tokens.css); this file only maps Starlight's variables onto them.
  * Accent = the app's amber; the brand blue appears only in the logo files.

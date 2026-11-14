@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pure label sheet geometry: units, validation, canonical hash, cell positions.
 
 All lengths are integer hundredths of a millimetre (``hmm``).

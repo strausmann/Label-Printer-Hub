@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Webhook API-key authentication dependency.
 
 Protects the webhook routes (``/api/v1/webhook/spoolman``,

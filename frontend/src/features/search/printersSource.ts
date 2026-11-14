@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { msg } from "@lingui/core/macro";
 import { i18n } from "@lingui/core";
 import { printersKey, type Printer } from "../printers/api";

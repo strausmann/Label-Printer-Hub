@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guard: the status in the ADR index equals the status in the ADR's own header.
 
 The index (``docs/decisions/README.md``) and each ADR carry a status. They are written by hand in

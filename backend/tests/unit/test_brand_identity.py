@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Labelyard identity of the backend, and the identifiers that deliberately did not change.
 
 The renamed values are what a user sees (command, API title, default display name, source

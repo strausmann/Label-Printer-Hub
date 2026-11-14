@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Redaction-Helper fuer printers_audit (Issue #124).
 
 Vor dem Schreiben von before_json/after_json werden bekannte Secret-Pfade

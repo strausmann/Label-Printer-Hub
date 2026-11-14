@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hand assembly of the synthetic IPP fixtures in this directory.
 
 Run ``python assemble.py`` from this directory to rewrite the ``.bin`` files.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineRouteMiddleware } from "@astrojs/starlight/route-data";
 
 const SOCIAL_CARD = "https://labelyard.app/social-card.png";

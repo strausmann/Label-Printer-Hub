@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """GET /api/v1/info (public) and GET /api/v1/system/logs (admin)."""
 
 from __future__ import annotations

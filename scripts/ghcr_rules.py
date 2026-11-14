@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Keep rule and preview tag logic for the Labelyard image on GHCR and Docker Hub.
 
 Used by .github/workflows/registry-cleanup.yml and .github/workflows/preview-image.yml

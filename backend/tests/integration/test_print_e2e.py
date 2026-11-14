@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """End-to-end integration tests for POST /api/v1/print → GET /api/v1/jobs/{id}.
 
 Phase 1k.1a (Task 25): Adapted from template_id-based to content_type-based API.

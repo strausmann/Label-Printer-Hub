@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """One terminology source for the docs, the prose linter and the UI catalogues.
 
 ``docs/glossary.toml`` lists every concept once, in English and German. This script

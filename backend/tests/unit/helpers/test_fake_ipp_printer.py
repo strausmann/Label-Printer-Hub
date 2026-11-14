@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The scriptable fake IPP printer used by client, runner and browser tests.
 
 Some requests here are hand-assembled bytes (``fixtures/assemble.py``, which does

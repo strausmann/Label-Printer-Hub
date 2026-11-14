@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 2: neue jobs_repo Helper fuer JobStore Adapter."""
 
 from __future__ import annotations

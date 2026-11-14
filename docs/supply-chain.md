@@ -235,10 +235,14 @@ default. See `CONTRIBUTING.md` for the steps.
 
 ## SPDX headers
 
+<!-- REUSE-IgnoreStart -->
+
 Every file the project owns carries an SPDX header (`SPDX-FileCopyrightText` and `SPDX-License-Identifier:
 AGPL-3.0-or-later`), checked in CI with `reuse lint`. Files that cannot carry a comment (data files, binaries,
 generated files) are covered by `REUSE.toml`. This lands with the header sweep (B9) at the end of milestone 1.6.0;
 until then not every file has a header.
+
+<!-- REUSE-IgnoreEnd -->
 
 ## What is not provided
 

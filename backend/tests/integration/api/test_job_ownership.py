@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#294: a job belongs to the API key that submitted it.
 
 A plain API key (no ``admin`` scope) sees and acts on its own jobs only. Another key of the

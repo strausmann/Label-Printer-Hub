@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The interactive API reference at ``/docs``, rendered by Scalar and served by the hub.
 
 Issue #171: FastAPI's default Swagger UI and ReDoc load their scripts from a CDN.

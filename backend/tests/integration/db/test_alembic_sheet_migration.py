@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Migration 20261105a1 creates and removes the sheet archive tables."""
 
 from __future__ import annotations

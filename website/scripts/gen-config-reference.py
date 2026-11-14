@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Write the configuration reference pages (English and German) from the backend settings.
 
 Sources: ``backend/app/config.py`` (every ``LABELYARD_*`` variable, type and default),

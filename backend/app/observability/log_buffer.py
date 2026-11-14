@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """In-memory ring buffer of recent WARNING+ log records for the System page."""
 
 from __future__ import annotations

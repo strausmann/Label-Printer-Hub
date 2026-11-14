@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Global JSON event stream GET /api/v1/events (web UI foundation, Task 6).
 
 All keys and tokens are obviously fake test values. The stream never ends on its

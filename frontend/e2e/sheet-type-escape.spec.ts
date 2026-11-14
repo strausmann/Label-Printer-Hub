@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Locator, Page } from "@playwright/test";
 import { expect, mainKey, signInWith, test } from "./fixtures";
 

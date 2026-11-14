@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of the sheet ID on creation (``id_placement="cell"``) and the margin check (Task 8).
 
 The full app with its lifespan, like ``test_sheet_print_api``: the real print queue and

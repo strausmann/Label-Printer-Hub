@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print-Job attributes from the probe summary, the tray and the paper (spec 11.2, OC-19). Pure.
 
 Only what the printer lists is sent: ``media-col`` when it accepts the attribute, with

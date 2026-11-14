@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Thin fetch wrapper for the backend API (D1: same origin, so the session cookie is enough).
  * Types come from `schema.gen.ts`, generated from the backend's OpenAPI (`pnpm gen:api`).

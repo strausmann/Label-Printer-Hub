@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integration tests for auth dependency wiring on all routes — Phase 7c Step 4.
 
 Tests that each category of endpoint:

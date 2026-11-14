@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Calibration values as the API sees them, and their conversion to the integer ``Deviation``.
 
 The stored row and ``Deviation`` use integers (hundredths of a millimetre, parts per million,

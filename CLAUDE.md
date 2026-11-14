@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # CLAUDE.md — AI Assistant Configuration
 
 This file configures **Claude Code** (and other LLM-based tools that read it) for this repository. It is intentionally short — the actual project knowledge lives in [`docs/`](docs/).

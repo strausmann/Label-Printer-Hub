@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet type API (spec 15): catalogue, own types, versions, export and import.
 
 Reads need ``read`` scope and are not limited by a key's printer restriction (OC-37); every

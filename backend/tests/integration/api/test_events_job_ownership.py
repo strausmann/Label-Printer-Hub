@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#294: the event stream of a plain API key carries job events of its own jobs only.
 
 ``job.state_changed`` and ``run.state_changed`` (and the job frames of the snapshot) reach a

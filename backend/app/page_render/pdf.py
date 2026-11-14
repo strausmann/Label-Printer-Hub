@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """One-page, DeviceGray-only PDFs for page printers.
 
 Everything printed is gray: true 1-bit images, gray strokes, gray text. There is deliberately no
