@@ -550,3 +550,35 @@ class TestPrinterDisabledCheck:
         job_id = await svc.submit_print_job(request)
         assert isinstance(job_id, UUID)
         queue.submit_with_id.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Deferred jobs (#281): a failing end-of-job write must not break a stop
+# ---------------------------------------------------------------------------
+
+
+class TestCancelDeferred:
+    async def test_a_store_error_while_ending_the_job_does_not_raise(self, make_service) -> None:
+        import asyncio
+
+        svc, queue, store, backend = make_service()
+        started = asyncio.Event()
+
+        async def slow_preflight() -> PreflightStatus:
+            started.set()
+            await asyncio.sleep(10)
+            return _preflight()
+
+        backend.preflight_check = slow_preflight
+        store.mark_queued_failed_restart = AsyncMock(side_effect=RuntimeError("database is locked"))
+        job_id = await svc.accept_deferred_job(
+            RawLabelData(title="Oat milk", primary_id="12", qr_payload="grcy:p:12"),
+            content_type=ContentType.QR_TWO_LINES,
+            source_app="grocy",
+            api_key_id=None,
+            source_ip=None,
+        )
+        await asyncio.wait_for(started.wait(), 2)
+        await svc.cancel_deferred()  # must not raise: the recovery ends the row later
+        store.mark_queued_failed_restart.assert_awaited_once_with(job_id, "deferred_interrupted")
+        queue.submit_with_id.assert_not_called()

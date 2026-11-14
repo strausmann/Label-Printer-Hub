@@ -366,8 +366,18 @@ class PrintService:
         if jobs:
             await asyncio.gather(*jobs, return_exceptions=True)
         for job_id in jobs.values():
-            if job_id in self._unhanded:
+            if job_id not in self._unhanded:
+                continue
+            try:
                 await self._store.mark_queued_failed_restart(job_id, DEFERRED_INTERRUPTED)
+            except Exception as exc:
+                # A cancelled write can still hold the SQLite lock: the stop or detach must go
+                # on, and the queue's recovery ends the row at the next start.
+                _log.warning(
+                    "Deferred job %s left queued for the recovery (%s)",
+                    job_id,
+                    exc.__class__.__name__,
+                )
         self._unhanded.difference_update(jobs.values())
 
     async def _complete_deferred(
