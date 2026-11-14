@@ -201,7 +201,9 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
     <ComboBox
       className="group flex min-w-0 flex-col gap-1.5"
       items={shown}
-      selectedKey={chosen ? value : null}
+      // The "none" entry is not a selection: with its key selected, Escape stored its label as the combobox's last value while
+      // the field shows an empty text, and react-stately reopened the focused field's list in the same render (#322).
+      selectedKey={chosen && !isNone ? value : null}
       inputValue={typed ?? shownText}
       isDisabled={disabled}
       menuTrigger="focus"
