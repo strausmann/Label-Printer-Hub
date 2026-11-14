@@ -112,7 +112,7 @@ class SheetTypeCreate(_Body):
     product_codes: Annotated[list[_Code], Field(max_length=_PRODUCT_CODES_MAX)] = []
     description: Annotated[str, Field(max_length=200)] | None = None
     allow_qr: bool | None = Field(
-        default=None, description="Left out: true when the shorter label side is at least 15 mm."
+        default=None, description="Left out: true when the shorter label side is at least 10 mm."
     )
     verified: bool = False
     source_name: Annotated[str, Field(max_length=200)] | None = None

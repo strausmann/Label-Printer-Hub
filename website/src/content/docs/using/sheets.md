@@ -11,6 +11,8 @@ A **sheet type** describes a product: page size, the number of rows and columns 
 
 You can export a sheet type to a file and import it in this or another hub, so a product only has to be measured once.
 
+Every sheet type has its own switch **QR codes on labels**, in the details of the type in the **Sheet archive**. A new type starts with it on when the shorter side of a label is at least 10 mm: on 25.4 × 10 mm labels a QR code with a short number beside it prints and scans. With the switch off, the labels on that type are printed without their QR code, the sheet ID label included, and the print preview marks those cells with "Code only on this sheet type". Types that already exist keep the setting they have.
+
 ## Sheets and their ID label
 
 Each physical sheet gets its own code. When you add a sheet, you can print an ID label for it right away, so you can scan it later. A sheet knows which of its cells are free and which are used.
@@ -27,4 +29,4 @@ If another device used cells of the same sheet while you were looking, the hub t
 
 ## Layouts
 
-A layout decides what a label shows: a QR code, a code, a title and a detail line, in combinations from "code only" to "QR code, code, title and detail". Layouts that need a field the item does not have are refused before printing, with the missing field named. On labels too small to scan, the QR code can be switched off.
+A layout decides what a label shows: a QR code, a code, a title and a detail line, in combinations from "code only" to "QR code, code, title and detail". Layouts that need a field the item does not have are refused before printing, with the missing field named. On a sheet type with QR codes switched off, a QR layout prints its text only (see [Sheet types](#sheet-types)).

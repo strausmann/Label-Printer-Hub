@@ -2954,6 +2954,10 @@ msgstr "QR-Code, Code und Titel"
 msgid "QR code, code, title and detail"
 msgstr "QR-Code, Code, Titel und Detail"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "QR codes are switched off for this sheet type, so the ID is printed as text only. Switch on “QR codes on labels” in the details of <0>this type in the sheet archive</0>."
+msgstr "QR-Codes sind für diesen Bogentyp ausgeschaltet, deshalb wird die ID nur als Text gedruckt. Schalte „QR-Codes auf Etiketten“ in den Details <0>dieses Typs im Bogenarchiv</0> ein."
+
 #: src/features/archive/TypeForm.tsx
 msgid "QR codes on labels"
 msgstr "QR-Codes auf Etiketten"
@@ -4270,10 +4274,6 @@ msgstr "Die Etiketten konnten nicht auf den Bogen gelegt werden."
 #: src/features/lookup/PrinterPicker.tsx
 msgid "The labels could not be sent."
 msgstr "Die Etiketten konnten nicht gesendet werden."
-
-#: src/features/sheets/AddSheetDialog.tsx
-msgid "The labels of this type are too small for a QR code, so the ID is printed as text only."
-msgstr "Die Etiketten dieses Typs sind zu klein für einen QR-Code, deshalb wird die ID nur als Text gedruckt."
 
 #: src/features/settings/System.tsx
 msgid "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."

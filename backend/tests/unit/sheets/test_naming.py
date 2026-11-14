@@ -41,5 +41,22 @@ def test_derive_key() -> None:
 
 def test_default_allow_qr() -> None:
     assert default_allow_qr(L4736) is True
-    assert default_allow_qr(L4731) is False
+    # 25.4 x 10 mm: a QR code with a short number beside it prints and scans (issue #330).
+    assert default_allow_qr(L4731) is True
     assert default_allow_qr(replace(L4736, label_w=1500, label_h=3000)) is True
+
+
+@pytest.mark.parametrize(
+    ("label_w", "label_h", "expected"),
+    [
+        (2540, 990, False),  # 9.9 mm: below the threshold
+        (2540, 1000, True),  # 10 mm: the threshold itself
+        (990, 2540, False),  # the shorter side counts, whichever it is
+        (1000, 2540, True),
+        (2540, 1270, True),  # 12.7 mm (Avery 5167): off under the former 15 mm rule
+        (2540, 1499, True),  # just below the former 15 mm threshold
+    ],
+)
+def test_default_allow_qr_threshold_is_10_mm(label_w: int, label_h: int, expected: bool) -> None:
+    g = replace(L4731, label_w=label_w, label_h=label_h)
+    assert default_allow_qr(g) is expected

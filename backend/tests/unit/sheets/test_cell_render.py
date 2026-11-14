@@ -493,3 +493,71 @@ def test_the_renderer_refuses_an_empty_or_negative_box_instead_of_drawing_one(
     with pytest.raises(ContentTypeDataMismatchError) as err:
         _render(ContentType.TEXT_ONE_LINE, LabelData(source_app="x", primary_id="A"), w_mm=w_mm)
     assert err.value.missing_fields == ("label_size",)
+
+
+# ---------------------------------------------------------------------------- 25.4 x 10 mm (#330)
+
+L4731_SEED = _geometry(radius=150, label_w=2540, label_h=1000)  # the seeded L4731REV
+
+
+def _l4731_cell(ct: ContentType, data: LabelData, *, allow_qr: bool = True):  # type: ignore[no-untyped-def]
+    """A cell of the seeded 25.4 x 10 mm type at the job's 600 dpi, mapped as the job maps it."""
+    box = content_box(L4731_SEED, 1)
+    drawn, _ = map_content_type(ct, allow_qr)
+    cell = DEFAULT_CELL_RENDERER.render(
+        box_w_mm=box.w / 100, box_h_mm=box.h / 100, dpi=600, content_type=drawn, data=data
+    )
+    return box, cell
+
+
+def _module_px(payload: str, edge: int) -> int:
+    from app.sheets.cell_render import qr_version
+
+    version = qr_version(payload)
+    assert version is not None
+    return edge // (17 + 4 * version + 8)  # symbol plus the four-module quiet zone per side
+
+
+@pytest.mark.parametrize(
+    ("ct", "data"),
+    [
+        # a Paperless ASN: the number beside the QR (the maintainer's test print)
+        (ContentType.QR_ONE_LINE, _data(qr_payload="ASN00123", primary_id="ASN00123")),
+        # the sheet ID label: the code beside the QR, the type as a second line
+        (
+            ContentType.QR_TWO_LINES,
+            _data(qr_payload="sheet:L4731-0001", primary_id="L4731-0001", title="L4731REV-25"),
+        ),
+    ],
+)
+def test_a_25_by_10_mm_cell_with_qr_draws_the_qr_and_the_number_beside_it(
+    ct: ContentType, data: LabelData
+) -> None:
+    box, cell = _l4731_cell(ct, data)
+    edge = min(cell.image.size)
+    assert (box.w, box.h) == (2250, 710)  # the content box of the cell: 22.5 x 7.1 mm
+    payload = data.qr_payload or ""
+    expected = build_qr(payload, edge)
+    assert expected is not None
+    square = cell.image.crop((0, 0, edge, edge))
+    assert square.tobytes() == expected.tobytes()  # the QR, as build_qr makes it
+    assert _qr_flaws(square) == []  # whole-pixel modules, four-module quiet zone
+    # Modules are whole pixels of at least one: 5 px (0.21 mm) at 600 dpi for these payloads.
+    # That is below the planner's 0.25 mm floor for the margin QR (MIN_QR_MODULE_HMM), which
+    # cell QRs do not apply; the maintainer's test print scanned at this size (#330).
+    module = _module_px(payload, edge)
+    assert module == 5
+    # the number (or short text) is printed to the right of the QR, not truncated
+    beside = cell.image.crop((edge, 0, cell.image.width, cell.image.height))
+    assert Image.eval(beside.convert("L"), lambda v: 255 - v).getbbox() is not None
+    assert cell.truncated is False
+
+
+def test_a_25_by_10_mm_cell_without_qr_prints_text_only() -> None:
+    """Counter-test: the same cell with the type's QR switch off has no QR square."""
+    data = _data(qr_payload="ASN00123", primary_id="ASN00123")
+    _, cell = _l4731_cell(ContentType.QR_ONE_LINE, data, allow_qr=False)
+    edge = min(cell.image.size)
+    square = cell.image.crop((0, 0, edge, edge))
+    expected = build_qr("ASN00123", edge)
+    assert expected is not None and square.tobytes() != expected.tobytes()

@@ -100,6 +100,13 @@ RUN mkdir -p app && touch app/__init__.py \
 COPY backend/app/ ./app/
 RUN pip install --no-deps --force-reinstall .
 
+# The runtime venv needs no installer. pip ships a vendored copy of setuptools/pkg_resources
+# 70.3.0 (and its bom.cdx.json lists it), which image scanners report as CVE-2025-47273 (#332).
+# Nothing at runtime imports pip, setuptools or wheel (entry points are read with the standard
+# importlib.metadata). Removing them here, before the licence report below, keeps backend.json
+# and the image SBOM consistent with what the venv really holds.
+RUN pip uninstall -y pip setuptools wheel
+
 # Licence check of what the image actually ships. Python has no lockfile, so the only
 # deterministic place to judge the backend's licences is here, against the packages that
 # were just installed. A violation fails the build. The policy is the repository's single
@@ -190,6 +197,18 @@ RUN apt-get update \
         fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# The base image's own pip (and setuptools/wheel, if the tag ships them) is not used at runtime:
+# the app runs from /opt/venv and installs nothing. Removing it takes its vendored
+# setuptools/pkg_resources and the pip CVE findings out of the image (#332). The interpreter
+# is called by absolute path because /opt/venv/bin is first on PATH.
+RUN /usr/local/bin/python -m pip uninstall -y pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.12/site-packages/pip* \
+              /usr/local/lib/python3.12/site-packages/setuptools* \
+              /usr/local/lib/python3.12/site-packages/wheel* \
+              /usr/local/lib/python3.12/site-packages/pkg_resources \
+              /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12 \
+    && ! /usr/local/bin/python -c "import pip" 2>/dev/null
 
 # Non-root user — UID/GID 1000 per CLAUDE.md hard rule. The data volume
 # will be writable by this user.
