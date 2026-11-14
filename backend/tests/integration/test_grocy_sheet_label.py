@@ -768,3 +768,21 @@ async def test_refused_sheet_is_skipped_on_the_re_choice(_tape_backend: MockPrin
 
 async def _sheet_row_in(session: Any, code: str) -> Sheet:
     return (await session.execute(select(Sheet).where(Sheet.code == code))).scalar_one()
+
+
+async def test_two_refused_sheets_are_skipped(_tape_backend: MockPrinterBackend) -> None:
+    """Review N-3: the refused sheets add up; the label goes to the next sheet that takes it or
+    a new one, however many started sheets refuse it."""
+    seeded = await _seed_base()
+    refused = [await _sheet(used=47), await _sheet(used=47)]
+    async with _factory()() as s:
+        for code in refused:
+            (await _sheet_row_in(s, code)).id_placement = "cell"
+        await s.commit()
+    async with running(_tape_backend, seeded=seeded) as rig:
+        resp = await rig.post()
+        assert resp.status_code == 202, resp.text
+        await _ends(resp.json()["job_id"], "done")
+        await _until(lambda: _settled(1))
+    (new,) = [c for c in await _sheet_codes() if c not in refused]
+    assert await _grocy_cells() == [(new, 1, "used")]

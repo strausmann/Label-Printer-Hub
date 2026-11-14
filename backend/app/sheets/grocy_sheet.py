@@ -254,8 +254,10 @@ class GrocySheetLabels:
             )
             language = self._settings.get("general.language")
             async with self._lock(sheet_type):
-                tried: list[str] = []
-                for attempt in (1, 2):
+                # Every sheet that could not take the label stays out of the next choice. Each
+                # round leaves one more out, so the loop ends at a new sheet at the latest.
+                tried: set[str] = set()
+                while True:
                     async with self._factory() as session:
                         code = await choose_grocy_sheet(session, sheet_type, exclude=tried)
                         await session.commit()
@@ -283,10 +285,11 @@ class GrocySheetLabels:
                         return
                     except _SHEET_GONE:
                         # Filled or discarded between the choice and the lock, or refused by
-                        # the planner (R-281-16): choose once more, without that sheet.
-                        if code is None or attempt == 2:
+                        # the planner (R-281-16): choose again without that sheet. A new sheet
+                        # that does not take it either ends the job with the error.
+                        if code is None:
                             raise
-                        tried.append(code)
+                        tried.add(code)
         except asyncio.CancelledError:
             raise
         except JobNoLongerQueuedError:
