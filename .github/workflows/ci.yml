@@ -149,6 +149,24 @@ jobs:
       - name: Run the script tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
+  brand-guard:
+    name: Brand guard — old product name
+    # Fails on any leftover of the old product name outside the documented
+    # allowances in scripts/brand_guard.py. The guard's own tests run first so a
+    # broken guard cannot pass silently.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Test the guard
+        run: python3 -m unittest scripts/test_brand_guard.py
+
+      - name: Run the guard
+        run: python3 scripts/brand_guard.py
+
   web:
     name: Web — typecheck, lint, test, build
     runs-on: ubuntu-24.04
