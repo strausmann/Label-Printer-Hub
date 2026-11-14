@@ -215,6 +215,11 @@ def test_release_jobs_declare_minimal_permissions() -> None:
         "packages": "write",
         "id-token": "write",
     }
+    assert wf["jobs"]["release-sbom"]["permissions"] == {"contents": "write"}
+    assert _load("docker-publish.yml")["jobs"]["sbom"]["permissions"] == {
+        "contents": "read",
+        "packages": "read",
+    }
 
 
 def test_release_toolchain_is_locked_to_exact_versions() -> None:
@@ -326,3 +331,66 @@ def test_ci_image_check() -> None:
     assert "+sbom-cataloger" in runs
     for needle in ("backend.json", "frontend.json", "frontend.cdx.json", "agpl-3.0.txt"):
         assert needle in runs, needle
+
+
+def test_sbom_job_is_read_only() -> None:
+    wf = _load("docker-publish.yml")
+    job = wf["jobs"]["sbom"]
+    assert job["permissions"] == {"contents": "read", "packages": "read"}
+    assert job["needs"] == "merge"
+    assert job["if"] == "inputs.tag != ''"
+    # The image build never writes to a release; only release.yml attaches the asset.
+    assert "gh release" not in _text("docker-publish.yml")
+    assert job["outputs"]["asset"]
+
+
+def test_sbom_uses_merge_image_ref() -> None:
+    wf = _load("docker-publish.yml")
+    merge = wf["jobs"]["merge"]
+    assert merge["outputs"]["image-ref"] == "${{ steps.image.outputs.ref }}"
+    assert merge["outputs"]["tag"] == "${{ steps.tag.outputs.tag }}"
+    assert any(s.get("id") == "image" for s in merge["steps"])
+    assert any(s.get("id") == "tag" for s in merge["steps"])
+    sbom = json.dumps(wf["jobs"]["sbom"])
+    assert "needs.merge.outputs.image-ref" in sbom
+    assert "ghcr.io/" not in sbom
+    assert "docker.io/" not in sbom
+    steps = wf["jobs"]["sbom"]["steps"]
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "${{" not in runs, "expressions reach run: only through env:"
+    assert "--select-catalogers +sbom-cataloger" in runs
+    assert "--platform linux/amd64" in runs
+    assert "jq -e" in runs
+    for name in ("react", "brother-ql", "tini"):
+        assert f'index("{name}")' in runs, name
+    upload = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
+    assert len(upload) == 1
+    assert upload[0]["with"]["name"] == "release-sbom"
+    assert upload[0]["with"]["retention-days"] == 30
+
+
+def test_release_sbom_job() -> None:
+    wf = _load("release.yml")
+    job = wf["jobs"]["release-sbom"]
+    images = wf["jobs"]["images"]
+    assert {"release", "images"} <= set(job["needs"])
+    assert job["if"] == images["if"]
+    assert job["permissions"] == {"contents": "write"}
+    steps = job["steps"]
+    assert not _checkout_steps(job), "the job needs no repository contents"
+    for step in steps:
+        assert "${{ inputs." not in str(step.get("run", ""))
+        assert "${{ needs." not in str(step.get("run", ""))
+    text = json.dumps(job)
+    assert "secrets." not in text
+    env = {k: v for s in steps for k, v in (s.get("env") or {}).items()}
+    assert env["GH_REPO"] == "${{ github.repository }}"
+    assert env["GH_TOKEN"] == "${{ github.token }}"
+    assert env["VERSION"] == "${{ needs.release.outputs.new-release-version }}"
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "grep -Eq '^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$'" in runs
+    assert 'gh release upload "v${VERSION}" ./*.cdx.json --clobber' in runs
+    assert "gh release view" in runs
+    download = [s for s in steps if str(s.get("uses", "")).startswith("actions/download-artifact@")]
+    assert len(download) == 1
+    assert download[0]["with"]["name"] == "release-sbom"

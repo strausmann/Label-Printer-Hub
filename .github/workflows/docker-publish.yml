@@ -282,6 +282,11 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     runs-on: ubuntu-24.04
     needs: build
+    # Read by the sbom job (one matrix entry today). The tag is the validated,
+    # v-stripped release version; the ref is the lowercase GHCR repository.
+    outputs:
+      image-ref: ${{ steps.image.outputs.ref }}
+      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -478,3 +483,57 @@ jobs:
             fi
           done <<< "$TAGS"
           exit "$fail"
+
+  # ---------------------------------------------------------------------------
+  # Phase 3: a CycloneDX SBOM of the published image, handed to release.yml.
+  # Read-only: this workflow never writes to a release (release.yml attaches
+  # the asset). Previews run it too, so the live check does not need a release.
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-24.04
+    needs: merge
+    if: inputs.tag != ''
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      asset: ${{ steps.sbom.outputs.asset }}
+    steps:
+      # A new package may still be private, so the read goes through a login.
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.55.0
+
+      # The embedded CycloneDX document is only read with the SBOM cataloger.
+      # The asset is useless without the frontend and OS packages, so the job
+      # fails when they are missing.
+      - name: Generate the CycloneDX SBOM
+        id: sbom
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          IMAGE_REF: ${{ needs.merge.outputs.image-ref }}
+          TAG: ${{ needs.merge.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset="${IMAGE_REF##*/}-${TAG}.cdx.json"
+          "$SYFT" "${IMAGE_REF}:${TAG}" --platform linux/amd64 --select-catalogers +sbom-cataloger -o "cyclonedx-json=${asset}"
+          jq -e '.components | map(.name) | (index("react") and index("brother-ql") and index("tini"))' "$asset"
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-sbom
+          path: ${{ steps.sbom.outputs.asset }}
+          if-no-files-found: error
+          retention-days: 30
