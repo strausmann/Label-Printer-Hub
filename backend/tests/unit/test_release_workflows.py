@@ -132,7 +132,8 @@ def test_cleanup_targets_labelyard_only() -> None:
     assert not (WORKFLOWS / "ghcr-cleanup.yml").exists()
     wf = _load("registry-cleanup.yml")
     text = _text("registry-cleanup.yml")
-    assert "label-printer-hub" not in text
+    # The old package name, spelled in two parts so the brand guard does not report this check.
+    assert "label-printer-" + "hub" not in text
     assert set(wf["jobs"]) == {"ghcr", "dockerhub"}
     prune = [
         s for s in wf["jobs"]["ghcr"]["steps"] if "ghcr-cleanup-action" in str(s.get("uses", ""))

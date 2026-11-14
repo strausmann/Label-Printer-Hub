@@ -220,6 +220,32 @@ class BrandGuardTest(unittest.TestCase):
         self.add("backend/app/config_legacy.py", f'P = "{ENV_PREFIX}"\n')
         self.assertEqual(self.rules(), [])
 
+    def test_env_prefix_allowed_in_the_fallback_files_and_their_tests(self) -> None:
+        paths = (
+            "backend/app/config.py",
+            "backend/app/main.py",
+            "backend/.env.example",
+            "backend/Dockerfile",
+            "backend/tests/conftest.py",
+            "backend/tests/db/test_engine.py",
+            "backend/tests/integration/test_legacy_env_startup_warning.py",
+            "backend/tests/unit/test_brand_identity.py",
+            "backend/tests/unit/test_startup_error.py",
+        )
+        for path in paths:
+            self.add(path, f"{ENV_PREFIX}X {ENV_OTHER}Y\n")
+        for path in paths:
+            self.assertEqual(self.rules(path), [], path)
+
+    def test_env_allowance_is_limited_to_the_exact_paths(self) -> None:
+        # counter-test: a sibling of an allowed file, or the same name elsewhere, is still a hit
+        self.add("backend/app/config_other.py", f"{ENV_PREFIX}X\n")
+        self.add("backend/tests/unit/conftest.py", f"{ENV_PREFIX}X\n")
+        self.add("examples/.env.example", f"{ENV_PREFIX}X\n")
+        self.assertEqual(self.rules("backend/app/config_other.py"), ["env-prefix"])
+        self.assertEqual(self.rules("backend/tests/unit/conftest.py"), ["env-prefix"])
+        self.assertEqual(self.rules("examples/.env.example"), ["env-prefix"])
+
     def test_env_prefix_allowed_in_rename_adr_by_glob(self) -> None:
         self.add("docs/decisions/0031-rename-to-labelyard.md", f"{ENV_PREFIX}X\n")
         self.assertEqual(self.rules(), [])

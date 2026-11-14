@@ -221,7 +221,7 @@ test.describe.serial("sheet archive", () => {
       page.evaluate(async (p) => ((await (await fetch(p)).json()) as { verified: boolean }).verified, `/api/v1/sheet-types/${k}`);
     const REPORT = "Report a problem with the dimensions";
     const CONFIRM = "Confirm the dimensions";
-    const BASE = "https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml";
+    const BASE = "https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml";
     await setLanguage(page, "en");
     await page.emulateMedia({ colorScheme: "light" });
     await page.setViewportSize({ width: 1280, height: 800 });

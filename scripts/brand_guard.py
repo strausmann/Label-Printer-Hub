@@ -81,6 +81,19 @@ LEGACY_ENV_FILES: tuple[str, ...] = (
     "backend/app/page_render/pdf.py",
     "backend/tests/unit/test_config_legacy_prefix.py",
     "backend/tests/unit/test_pdf_font_env.py",
+    # The settings model, the log-level lookup and the example env file describe the
+    # fallback; the image reads the old port variable as a fallback too.
+    "backend/app/config.py",
+    "backend/app/main.py",
+    "backend/.env.example",
+    "backend/Dockerfile",
+    # Tests that set or clear the old names to check the fallback (and that an older,
+    # never-read variable stays ignored).
+    "backend/tests/conftest.py",
+    "backend/tests/db/test_engine.py",
+    "backend/tests/integration/test_legacy_env_startup_warning.py",
+    "backend/tests/unit/test_brand_identity.py",
+    "backend/tests/unit/test_startup_error.py",
     "docs/decisions/*-rename-to-labelyard.md",
     "scripts/brand_guard.py",
     "scripts/test_brand_guard.py",

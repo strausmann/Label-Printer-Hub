@@ -181,11 +181,11 @@ def test_check_lists_offenders_sorted() -> None:
         _record("zeta", classifier="Other/Proprietary License"),
         _record("fine", expression="MIT"),
         _record("Alpha"),
-        _record("label-printer-hub-backend"),
+        _record("labelyard"),
     ]
     assert check(entries, _policy()) == [
         "Alpha (UNKNOWN)",
-        "label-printer-hub-backend (UNKNOWN)",
+        "labelyard (UNKNOWN)",
         "zeta (Proprietary)",
     ]
 

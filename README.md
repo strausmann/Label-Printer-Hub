@@ -191,7 +191,7 @@ Other Brother PT and QL models that share the command reference will likely work
 
 ## Supported label sheets
 
-The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
+The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
 
 <details>
 <summary>36 sheet types (A4 and US Letter)</summary>

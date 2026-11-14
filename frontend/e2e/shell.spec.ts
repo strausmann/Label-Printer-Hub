@@ -193,7 +193,7 @@ test.describe("bootstrap", () => {
 
     const field = page.getByLabel("Your new admin key");
     await expect(field).toHaveValue(/^lh_pat_/);
-    await expect(page.getByText("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY")).toBeVisible();
+    await expect(page.getByText("LABELYARD_BOOTSTRAP_ADMIN_KEY")).toBeVisible();
     await expect(page.getByText("shown only once")).toBeVisible();
     const key = await field.inputValue();
 
