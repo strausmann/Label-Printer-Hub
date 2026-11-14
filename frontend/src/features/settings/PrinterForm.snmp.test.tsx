@@ -16,6 +16,8 @@ async function enter(name: string, value: string) {
   await userEvent.click(field);
   await userEvent.paste(value);
 }
+/** The hint a sighted person reads: the live region (screen readers only) repeats the same words. */
+const visibleHint = () => screen.queryAllByText(/stored community is not reused/).filter((el) => !el.closest("[aria-live]"));
 const sentConnection = (calls: Call[]) => (JSON.parse(calls.filter((c) => c.method === "PUT").at(-1)!.body!) as { connection: Record<string, unknown> }).connection;
 
 async function openEdit(printer: unknown, routes: Record<string, unknown> = {}) {
@@ -88,9 +90,9 @@ describe("SNMP fields in the printer form", () => {
 
   it("a changed host of a printer with a stored community asks for the community before the submit", async () => {
     const { calls } = await openEdit(ADMIN_PRINTER, { [PUT]: ADMIN_PRINTER });
-    expect(screen.queryByText(/stored community is not reused/)).toBeNull();
+    expect(visibleHint()).toHaveLength(0);
     await enter("Host", "198.51.100.7");
-    expect(screen.getByText("The address changed, so the stored community is not reused. Enter it again.")).toBeVisible();
+    expect(visibleHint()).toHaveLength(1);
     expect(screen.getByLabelText("SNMP community")).toBeInvalid();
     await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Enter the SNMP community again");
@@ -106,15 +108,15 @@ describe("SNMP fields in the printer form", () => {
   it("a changed port asks for the community too, and changing it back takes the hint away", async () => {
     await openEdit(ADMIN_PRINTER);
     await enter("Port", "9101");
-    expect(screen.getByText(/stored community is not reused/)).toBeVisible();
+    expect(visibleHint()).toHaveLength(1);
     await enter("Port", "9100");
-    expect(screen.queryByText(/stored community is not reused/)).toBeNull();
+    expect(visibleHint()).toHaveLength(0);
   });
 
   it("a new host on a printer with no stored community needs no community", async () => {
     const { calls } = await openEdit(NOT_SET, { [PUT]: NOT_SET });
     await enter("Host", "198.51.100.7");
-    expect(screen.queryByText(/stored community is not reused/)).toBeNull();
+    expect(visibleHint()).toHaveLength(0);
     await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
     await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
     expect(sentConnection(calls).snmp).toEqual({ discover: false });
@@ -135,6 +137,76 @@ describe("SNMP fields in the printer form", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("That name is already used by another printer.");
     expect(screen.getByLabelText("SNMP community")).toBeValid();
+  });
+
+  it("a field of blanks counts as not entered", async () => {
+    const { calls } = await openEdit(NOT_SET, { [PUT]: NOT_SET });
+    await userEvent.click(screen.getByRole("switch", { name: "Status discovery" }));
+    await enter("SNMP community", "   ");
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter the SNMP community, or turn status discovery off.");
+    expect(calls.some((c) => c.method === "PUT")).toBe(false);
+  });
+
+  it("blanks around a typed community are not sent", async () => {
+    const { calls } = await openEdit(NOT_SET, { [PUT]: NOT_SET });
+    await enter("SNMP community", " bench \n");
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
+    expect(sentConnection(calls).snmp).toEqual({ discover: false, community: "bench" });
+  });
+
+  it.each([
+    ["the host is changed", async () => enter("Host", "198.51.100.7")],
+    ["the port is changed", async () => enter("Port", "9101")],
+    ["the community is typed", async () => enter("SNMP community", "bench")],
+  ])("after a server 422 the stale error clears when %s", async (_name, edit) => {
+    await openEdit(ADMIN_PRINTER, { [PUT]: () => respond(422, apiErrorBody("snmp_community_required", "raw text")) });
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter the SNMP community.");
+    expect(screen.getByLabelText("SNMP community")).toBeInvalid();
+    await edit();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    // Host and port are now different from what the hub refused; only the typed community leaves the field valid.
+    if (_name === "the community is typed") expect(screen.getByLabelText("SNMP community")).toBeValid();
+  });
+
+  it("restoring the old host after a hub 422 takes the stale error away", async () => {
+    // The form sees a new host and a community; the hub still refuses (it saw another target).
+    await openEdit(ADMIN_PRINTER, { [PUT]: () => respond(422, apiErrorBody("snmp_community_required", "raw text")) });
+    await enter("Host", "198.51.100.7");
+    await enter("SNMP community", "bench");
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter the SNMP community.");
+    await enter("Host", "192.0.2.10");
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("restoring the old host after the form's own refusal takes that message away", async () => {
+    await openEdit(ADMIN_PRINTER);
+    await enter("Host", "198.51.100.7");
+    await userEvent.click(screen.getByRole("button", { name: "Save printer" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter the SNMP community again");
+    await enter("Host", "192.0.2.10");
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByLabelText("SNMP community")).toBeValid();
+  });
+
+  it("the hint is announced once, in a polite live region that does not change while typing", async () => {
+    await openEdit(ADMIN_PRINTER);
+    const region = document.querySelector('[aria-live="polite"]') as HTMLElement;
+    expect(region).not.toBeNull();
+    expect(region).toHaveTextContent("");
+    await enter("Host", "198.51.100.7");
+    const hint = "The address changed, so the stored community is not reused. Enter it again.";
+    expect(region).toHaveTextContent(hint);
+    // More typing in the host, and a second field, leave the text as it is: nothing to announce again.
+    await enter("Host", "198.51.100.77");
+    await enter("Queue timeout (seconds)", "45");
+    expect(region.textContent).toBe(hint);
+    // Entering the community removes the need; the region empties.
+    await enter("SNMP community", "bench");
+    expect(region.textContent).toBe("");
   });
 
   it("a new printer sends the community it was given", async () => {

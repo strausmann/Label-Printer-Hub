@@ -69,7 +69,18 @@ export function PrinterForm({
   const showSnmp = supportsDiscovery(backend);
   // A stored community is kept only for the host and port it was stored for (R-296-5a): say so before the submit.
   const communityAgain = editing && stored.communitySet && targetChanged(conn, host, port);
-  const communityMissing = community === "" && (communityAgain || isCommunityRequired(serverError));
+  const communityEmpty = community.trim() === "";
+  const communityMissing = communityEmpty && (communityAgain || isCommunityRequired(serverError));
+  // The hub's 422 belongs to the address and community the form held when it was sent: once either changes, it is stale.
+  const againText = t`The host or port changed. Enter the SNMP community again, or restore the old address.`;
+  const clearStaleCommunityError = () => {
+    // The form's own refusal says the same thing as the hub's 422; both go once the person edits what they were about.
+    if (formError === againText) setFormError(null);
+    if (!isCommunityRequired(serverError)) return;
+    admin.create.reset();
+    admin.update.reset();
+  };
+  const hintText = t`The address changed, so the stored community is not reused. Enter it again.`;
 
   function submitIpp() {
     const timeoutNumber = Number(timeout);
@@ -104,7 +115,7 @@ export function PrinterForm({
     if (!editing && !SLUG.test(slug)) return setFormError(t`The slug uses lowercase letters, digits and dashes, 3 to 64 characters.`);
     const snmp = showSnmp ? snmpPayload(stored.communitySet, { discover, community }) : null;
     if (snmp && "problem" in snmp) return setFormError(snmpText(snmp.problem));
-    if (communityAgain && community === "") return setFormError(t`The host or port changed. Enter the SNMP community again, or restore the old address.`);
+    if (communityAgain && communityEmpty) return setFormError(againText);
     setFormError(null);
     // Rebuilt, not spread from the stored connection: the stored `snmp` carries `community_set`, never the community.
     const connection = { host: host.trim(), port: portNumber, ...(snmp ? snmp : {}) } as PrinterCreate["connection"];
@@ -166,8 +177,25 @@ export function PrinterForm({
         <IppPrinterFields draft={ipp} />
       ) : (
         <div className="grid gap-5 sm:grid-cols-[1fr_8rem]">
-          <TextInput label={t`Host`} value={host} onChange={setHost} mono />
-          <TextInput label={t`Port`} value={port} onChange={setPort} mono inputMode="numeric" />
+          <TextInput
+            label={t`Host`}
+            value={host}
+            onChange={(next) => {
+              clearStaleCommunityError();
+              setHost(next);
+            }}
+            mono
+          />
+          <TextInput
+            label={t`Port`}
+            value={port}
+            onChange={(next) => {
+              clearStaleCommunityError();
+              setPort(next);
+            }}
+            mono
+            inputMode="numeric"
+          />
         </div>
       )}
       {showSnmp ? (
@@ -183,18 +211,25 @@ export function PrinterForm({
             type="password"
             autoComplete="off"
             value={community}
-            onChange={setCommunity}
+            onChange={(next) => {
+              clearStaleCommunityError();
+              setCommunity(next);
+            }}
             mono
             invalid={communityMissing}
             validationBehavior="aria"
             description={
               communityMissing ? (
-                <span className="font-bold text-bad">{t`The address changed, so the stored community is not reused. Enter it again.`}</span>
+                <span className="font-bold text-bad">{hintText}</span>
               ) : stored.communitySet
                   ? t`A community is stored. Leave the field empty to keep it.`
                   : t`Usually public.`
             }
           />
+          {/* One announcement when the hint appears (the text only changes then, so typing repeats nothing); the submit has its own alert. */}
+          <p aria-live="polite" className="sr-only">
+            {communityMissing ? hintText : ""}
+          </p>
         </div>
       ) : null}
       <TextInput label={t`Queue timeout (seconds)`} value={timeout} onChange={setTimeoutValue} inputMode="numeric" />

@@ -28,6 +28,23 @@ describe("snmpPayload", () => {
   });
 });
 
+describe("snmpPayload trims the community", () => {
+  it("a blank-only field counts as empty", () => {
+    expect(snmpPayload(true, { discover: true, community: "   \n" })).toEqual({ snmp: { discover: true } });
+    expect(snmpPayload(false, { discover: true, community: "  " })).toEqual({ problem: "community_required" });
+    expect(snmpPayload(false, { discover: false, community: "\t" })).toEqual({ snmp: { discover: false } });
+  });
+
+  it("surrounding blanks are removed and inner spaces stay", () => {
+    expect(snmpPayload(true, { discover: true, community: " work shop\n" })).toEqual({ snmp: { discover: true, community: "work shop" } });
+  });
+
+  it("the length limit counts the trimmed value", () => {
+    expect(snmpPayload(true, { discover: true, community: ` ${"x".repeat(64)} ` })).toEqual({ snmp: { discover: true, community: "x".repeat(64) } });
+    expect(snmpPayload(true, { discover: true, community: ` ${"x".repeat(65)} ` })).toEqual({ problem: "community_too_long" });
+  });
+});
+
 describe("supportsDiscovery", () => {
   it.each([
     ["ptouch", true],

@@ -18,13 +18,15 @@ export function snmpPayload(
   storedSet: boolean,
   draft: { discover: boolean; community: string },
 ): { snmp: { discover: boolean; community?: string } } | { problem: SnmpProblem } {
-  if (draft.community.length > SNMP_COMMUNITY_MAX) return { problem: "community_too_long" };
-  if (draft.community === "") {
+  // A paste from a password manager often carries a blank or a newline; a field of blanks is "not entered". Inner spaces stay.
+  const community = draft.community.trim();
+  if (community.length > SNMP_COMMUNITY_MAX) return { problem: "community_too_long" };
+  if (community === "") {
     if (draft.discover && !storedSet) return { problem: "community_required" };
     // No `community` key at all: the hub keeps the stored one (`public` for a new printer).
     return { snmp: { discover: draft.discover } };
   }
-  return { snmp: { discover: draft.discover, community: draft.community } };
+  return { snmp: { discover: draft.discover, community } };
 }
 
 /**

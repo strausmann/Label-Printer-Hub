@@ -230,7 +230,10 @@ test.describe.serial("settings", () => {
       await expect(edit.getByText("A community is stored. Leave the field empty to keep it.")).toBeVisible();
       await expect(edit.getByRole("switch", { name: "Status discovery" })).toBeChecked();
       await edit.getByRole("textbox", { name: "Host" }).fill("192.0.2.32");
-      await expect(edit.getByText("The address changed, so the stored community is not reused. Enter it again.")).toBeVisible();
+      const hint = "The address changed, so the stored community is not reused. Enter it again.";
+      // The same words sit in a screen-reader-only live region after the visible hint.
+      await expect(edit.getByText(hint).first()).toBeVisible();
+      await expect(edit.locator('[aria-live="polite"]')).toHaveText(hint);
       await shot(page, "task-2-snmp-form-new-host-desktop.png", true);
       await edit.getByRole("button", { name: "Save printer" }).click();
       await expect(edit.getByRole("alert")).toContainText("Enter the SNMP community again");
