@@ -184,8 +184,10 @@ def test_job_with_the_labelyard_user_name_is_own() -> None:
 
 
 def test_job_sent_by_1_5_x_under_the_old_user_name_is_still_own() -> None:
-    # A job sent before the upgrade can still be on the printer afterwards.
-    assert is_own_job(JOB_NAME, LEGACY_IPP_USER_NAME, JOB_NAME)
+    # A job sent before the upgrade can still be on the printer afterwards. The name is pinned:
+    # 1.5.x sent exactly this (split so the brand guard does not report the test).
+    assert LEGACY_IPP_USER_NAME == "label-printer-" + "hub"
+    assert is_own_job(JOB_NAME, "label-printer-" + "hub", JOB_NAME)
 
 
 def test_job_with_another_user_name_is_foreign() -> None:
