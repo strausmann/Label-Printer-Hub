@@ -921,6 +921,7 @@ msgstr "Clients"
 
 #: src/features/archive/ImportDialog.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Close"
 msgstr "Close"

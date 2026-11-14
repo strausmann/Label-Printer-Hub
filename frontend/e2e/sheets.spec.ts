@@ -87,7 +87,8 @@ test.describe.serial("sheets", () => {
     const added = dialog.getByRole("status").filter({ hasText: /^Sheet L4736-\d{4} was added\.$/ });
     await expect(added).toBeVisible();
     const code = /L4736-\d{4}/.exec((await added.textContent())!)![0];
-    await dialog.getByRole("button", { name: "Close" }).click();
+    // The written Close button at the end, not the × in the corner (both are named Close).
+    await dialog.getByRole("button", { name: "Close" }).filter({ hasText: "Close" }).click();
 
     const row = page.getByRole("row").filter({ has: page.getByRole("link", { name: code }) });
     await expect(row).toContainText("3 of 48 used");
