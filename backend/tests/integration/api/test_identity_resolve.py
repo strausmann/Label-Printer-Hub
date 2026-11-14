@@ -536,20 +536,21 @@ async def test_a_failure_after_the_commit_does_not_leave_a_stuck_hold(
         assert not rig.app.state.print_queue.is_identity_held(rig.printer_id)
 
 
-async def test_a_restricted_admin_key_cannot_resolve_another_printer() -> None:
+async def test_an_admin_key_resolves_on_any_printer_whatever_list_it_stores() -> None:
+    """#283: resolving needs the admin scope, and an admin key is never restricted to printers.
+
+    A key an older version stored with a list for another printer resolves just the same.
+    """
     async with running() as rig:
         await _seed_calibrations(rig.printer_id, "auto")
         await _flag_swap(rig)
         other = {"X-Label-Hub-Key": await _insert_key(["admin"], [str(uuid4())])}
-        own = {"X-Label-Hub-Key": await _insert_key(["admin"], [str(rig.printer_id)])}
 
-        denied = await _resolve(rig, "replaced", other)
+        resolved = await _resolve(rig, "replaced", other)
 
-        assert denied.status_code == 403, denied.text
-        assert denied.json()["detail"]["error_code"] == "printer_not_allowed"
-        assert await _calibration_trays(rig.printer_id) == ["auto"]
-        assert rig.app.state.print_queue.is_identity_held(rig.printer_id)
-        assert (await _resolve(rig, "replaced", own)).status_code == 200
+        assert resolved.status_code == 200, resolved.text
+        assert await _calibration_trays(rig.printer_id) == []
+        assert not rig.app.state.print_queue.is_identity_held(rig.printer_id)
 
 
 async def test_409_does_not_delete_before_the_check(monkeypatch: pytest.MonkeyPatch) -> None:
