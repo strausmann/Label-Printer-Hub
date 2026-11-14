@@ -44,6 +44,18 @@ from app.services.rate_limiter import _rate_limiter
 
 _log = logging.getLogger(__name__)
 
+
+def _loggable(value: str) -> str:
+    """Make a client-supplied value safe for a log line.
+
+    ``unicode_escape`` turns every non-printable character (CR, LF, ANSI escapes, U+2028 …) into
+    its backslash form. The final replaces are no-ops after that, but they are the sanitiser
+    CodeQL's ``py/log-injection`` query recognises.
+    """
+    escaped = value.encode("unicode_escape").decode("ascii")
+    return escaped.replace("\r", "").replace("\n", "")
+
+
 # Header schema — auto_error=False so we can fall through to other paths
 _api_key_header = APIKeyHeader(name="X-Label-Hub-Key", auto_error=False)
 
@@ -210,7 +222,7 @@ async def _validate_api_key(
     key_row = await api_keys_repo.get_by_prefix(session, prefix)
 
     if key_row is None:
-        _log.debug("API key not found for prefix %s", prefix)
+        _log.debug("API key not found for prefix %s", _loggable(prefix))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
@@ -235,7 +247,7 @@ async def _validate_api_key(
             )
 
     if not await verify_api_key_async(key_header, key_row.key_hash):
-        _log.debug("bcrypt mismatch for prefix %s", prefix)
+        _log.debug("bcrypt mismatch for prefix %s", _loggable(prefix))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},

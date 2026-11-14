@@ -1,20 +1,48 @@
-# CODEOWNERS — automatic review requests
+# CODEOWNERS — who must approve a change
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# The ruleset on main and milestone/** requires a code owner's approval, so every
+# owned path below cannot be merged without the maintainer. The last matching
+# pattern wins.
 
-# Default: maintainer owns everything
-*                                @strausmann
+# Default: the maintainer owns everything.
+*                                   @strausmann
 
-# Architecture and process docs require maintainer review
-CLAUDE.md                        @strausmann
-CONTRIBUTING.md                  @strausmann
-CODE_OF_CONDUCT.md               @strausmann
-SECURITY.md                      @strausmann
-README.md                        @strausmann
-LICENSE                          @strausmann
-.github/                         @strausmann
-.gemini/                         @strausmann
-.releaserc*                      @strausmann
-docs/architecture.md             @strausmann
-docs/plugin-development.md       @strausmann
-website/src/content/docs/developers/     @strausmann
-website/src/content/docs/de/developers/  @strausmann
+# Security-relevant code and configuration (listed explicitly so they stay owned
+# even if the default above is ever narrowed).
+/backend/app/auth/                  @strausmann
+/backend/app/api/                   @strausmann
+/backend/app/config.py              @strausmann
+/backend/Dockerfile                 @strausmann
+/.github/                           @strausmann
+/.well-known/                       @strausmann
+/SECURITY.md                        @strausmann
+/LICENSE                            @strausmann
+/licence-policy.yml                 @strausmann
+/.releaserc.json                    @strausmann
+/commitlint.config.cjs              @strausmann
+/scripts/release_impact.py          @strausmann
+/scripts/ghcr_rules.py              @strausmann
+
+# Architecture and process docs require maintainer review (listed explicitly for
+# the same reason).
+/CLAUDE.md                          @strausmann
+/CONTRIBUTING.md                    @strausmann
+/CODE_OF_CONDUCT.md                 @strausmann
+/README.md                          @strausmann
+/.gemini/                           @strausmann
+/.releaserc*                        @strausmann
+/docs/architecture.md               @strausmann
+/docs/plugin-development.md         @strausmann
+/website/src/content/docs/developers/     @strausmann
+/website/src/content/docs/de/developers/  @strausmann
+
+# Dependency manifests and lockfiles have no code owner: Dependabot patch and
+# minor updates are approved and auto-merged by dependabot-auto-merge.yml after
+# CI (incl. the licence gate) is green. Major updates are never auto-merged.
+# Dependabot updates to workflows (.github/) and to the Dockerfile base image
+# stay owned and need the maintainer.
+/package.json
+/backend/pyproject.toml
+/frontend/package.json
+/frontend/pnpm-lock.yaml

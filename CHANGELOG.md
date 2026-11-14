@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.5.2](https://github.com/strausmann/Label-Printer-Hub/compare/v1.5.1...v1.5.2) (2026-11-14)
+
+### Bug Fixes
+
+* **auth:** log the prefix of a rejected API key escaped ([#309](https://github.com/strausmann/Label-Printer-Hub/issues/309)) ([e025aa2](https://github.com/strausmann/Label-Printer-Hub/commit/e025aa22a5809c95ef595a9e50cf32798f680afc)), closes [#308](https://github.com/strausmann/Label-Printer-Hub/issues/308)
+
 ## [1.5.1](https://github.com/strausmann/Label-Printer-Hub/compare/v1.5.0...v1.5.1) (2026-11-13)
 
 ### Bug Fixes
