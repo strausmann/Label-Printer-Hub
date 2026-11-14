@@ -104,8 +104,10 @@ def _label(name: str) -> str:
 def test_image_labels() -> None:
     assert _label("org.opencontainers.image.title") == "Labelyard"
     assert _label("org.opencontainers.image.description").startswith("Labelyard — the self-hosted")
-    for name in ("url", "source", "documentation"):
-        assert _label(f"org.opencontainers.image.{name}") == REPO_URL
+    # The website is the project URL and documentation; the source stays the repository.
+    assert _label("org.opencontainers.image.url") == "https://labelyard.app"
+    assert _label("org.opencontainers.image.documentation") == "https://labelyard.app/"
+    assert _label("org.opencontainers.image.source") == REPO_URL
     assert _label("org.opencontainers.image.authors") == "Björn Strausmann <projects@strausmann.ch>"
     assert 'HUB_REPO_URL="https://github.com/strausmann/labelyard"' in _dockerfile_text()
 
