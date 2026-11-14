@@ -95,13 +95,16 @@ function LabelTarget({
           options={typeOptions}
           onChange={onSheetTypeChange}
           isDisabled={sheetTypeDisabled}
-          isInvalid={issue === "sheet_type_required"}
-          errorMessage={t`Choose a sheet type for this page printer.`}
+          // Both problems belong to the field: shown below it and announced with it. Only a missing
+          // type blocks the save; an archived or gone one is a warning the hub enforces (503).
+          isInvalid={issue !== undefined}
+          errorMessage={
+            issue === "sheet_type_unavailable"
+              ? t`This sheet type is archived or no longer exists. Grocy labels for it are refused.`
+              : t`Choose a sheet type for this page printer.`
+          }
           placeholder={t`Choose a sheet type`}
         />
-      ) : null}
-      {page && issue === "sheet_type_unavailable" ? (
-        <p className="text-small font-bold text-bad">{t`This sheet type is archived or no longer exists. Grocy labels for it are refused.`}</p>
       ) : null}
     </div>
   );

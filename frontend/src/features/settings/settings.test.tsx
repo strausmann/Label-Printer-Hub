@@ -266,7 +266,10 @@ describe("Grocy labels", { timeout: 15_000 }, () => {
     await renderApp({ path: "/settings/integrations" });
     const grocy = await panel();
     expect(await within(grocy).findByText("This sheet type is archived or no longer exists. Grocy labels for it are refused.")).toBeVisible();
-    expect(within(grocy).getByRole("button", { name: /Sheet type$/ })).toHaveTextContent(ARCHIVED_TYPE.key);
+    const field = within(grocy).getByRole("button", { name: /Sheet type$/ });
+    expect(field).toHaveTextContent(ARCHIVED_TYPE.key);
+    // The warning is tied to the field, so a screen reader announces it with the field.
+    expect(field).toHaveAccessibleDescription(/archived or no longer exists/);
   });
 
   it("saving sends only changed label keys", async () => {
