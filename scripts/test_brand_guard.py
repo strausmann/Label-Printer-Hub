@@ -142,6 +142,39 @@ class BrandGuardTest(unittest.TestCase):
         self.add("README.md", f"# Labelyard\n{DISPLAY}\n")
         self.assertEqual(self.rules(), ["display"])
 
+    def test_subtitle_phrases_allowed(self) -> None:
+        lines = [
+            f"tagline: msg`The self-hosted {DISPLAY} for all your labels`,",
+            f'msgid "the self-hosted {DISPLAY} for all your labels"',
+            f'msgstr "Der selbst gehostete {DISPLAY} für all deine Etiketten"',
+            f"und der selbst gehostete {DISPLAY} für all deine Etiketten",
+            f'"description": "{DISPLAY} — print labels, scan codes and watch your label printers.",',
+        ]
+        self.add("frontend/x.ts", "\n".join(lines) + "\n")
+        self.assertEqual(self.rules(), [])
+
+    def test_changed_subtitle_phrase_is_hit(self) -> None:
+        for i, line in enumerate(
+            (
+                f"The self-hosted {DISPLAY} for labels",
+                f"A self-hosted {DISPLAY} for all your labels",
+                f"Der selbst gehostete {DISPLAY} für alle Etiketten",
+                f'"description": "{DISPLAY} — print labels and scan codes.",',
+                f"{DISPLAY} — print labels, scan codes and watch your label printers",
+            )
+        ):
+            with self.subTest(line=line):
+                self.add(f"frontend/changed{i}.ts", line + "\n")
+                self.assertEqual(self.rules(f"frontend/changed{i}.ts"), ["display"])
+
+    def test_subtitle_phrase_outside_the_web_app_is_hit(self) -> None:
+        self.add("docs/x.md", f"The self-hosted {DISPLAY} for all your labels\n")
+        self.assertEqual(self.rules(), ["display"])
+
+    def test_bare_name_next_to_subtitle_phrase_is_hit(self) -> None:
+        self.add("frontend/x.ts", f"{DISPLAY}: The self-hosted {DISPLAY} for all your labels\n")
+        self.assertEqual(self.rules(), ["display"])
+
     # --- nickname ---------------------------------------------------------
 
     def test_nicknames_are_hits(self) -> None:

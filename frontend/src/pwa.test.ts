@@ -90,7 +90,7 @@ describe("pwa", () => {
     expect(manifest.short_name).toBe("Labelyard");
     // Longer short names are cut off under the home-screen icon.
     expect(manifest.short_name.length).toBeLessThanOrEqual(12);
-    expect(manifest.description).toContain("Label Printer Hub");
+    expect(manifest.description).toBe("Label Printer Hub — print labels, scan codes and watch your label printers.");
     expect(manifest.id).toBe("/");
   });
 
