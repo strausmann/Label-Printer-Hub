@@ -262,23 +262,29 @@ never carry `str(exc)` of an upstream or integration error (CWE-209). A job reco
 | `integrations.grocy.label.chore.content_type` | enum | `qr_two_lines` |
 | `integrations.grocy.label.battery.content_type` | enum | `qr_two_lines` |
 | `integrations.grocy.label.recipe.content_type` | enum | `qr_two_lines` |
-| `integrations.grocy.label.<type>.printer` | str (printer slug) | `""` = the first enabled tape printer |
+| `integrations.grocy.label.printer` | str (printer slug) | `""` = the first enabled tape printer |
+| `integrations.grocy.label.<type>.printer` | str (printer slug) | `""` = the default target |
+| `integrations.grocy.label.sheet_type` | str (sheet type key) | `""` |
+| `integrations.grocy.label.<type>.sheet_type` | str (sheet type key) | `""` |
+
+  A page printer target also needs a sheet type (R-281-13).
 
   Enum choices: `qr_only`, `qr_one_line`, `qr_two_lines`, `qr_three_lines`. `qr_three_lines` requires a secondary line
   (`REQUIRED_FIELDS`, `layout_engine.py:39`): a label mapped to `qr_three_lines` without one (every type but a stock
   entry with `due_date`) is printed as `qr_two_lines`; the stored job records the content type actually printed.
 - **R-281-8 (order and outcome, controller ruling on the time budget):**
   1. token → rate limit → `label.enabled` (503 `grocy_label_disabled`) → content type (415) → bounded read (413);
-  2. the target printer: from the mapping of the code's type (the `product` mapping when the code is unreadable),
+  2. the target printer: from the code type's target, else the default target (R-281-13) (the `product` mapping when the code is unreadable),
      resolved to an id (unknown slug: 503 `grocy_label_printer_unavailable`; no enabled tape printer: the existing
      503) → `check_printer_access(auth, id, default_printer=True)` (403 `printer_not_allowed` with the fixed message,
-     mapped or not: Grocy forwards the message to its user) → disabled or page printer: 503
-     `grocy_label_printer_unavailable`;
+     mapped or not: Grocy forwards the message to its user) → disabled printer: 503
+     `grocy_label_printer_unavailable`; enabled page printer without a usable sheet type: 503
+     `grocy_label_sheet_type_unavailable` (R-281-14);
   3. **content errors** (unparseable JSON, a schema failure, a code outside `GROCYCODE_PATTERN`, a text over 512:
      `grocy_label_invalid`; a name field that does not match the type: `grocy_label_mismatch`) answer **202
      with a job in state `failed`** on the target printer, with the error code as the job error: the request was
      accepted, the label could not be built, and the failure belongs where the operator looks (job page, #255);
-  4. otherwise a job is accepted for deferred printing and the route answers 202.
+  4. otherwise a job is accepted for deferred printing (a page target: R-281-16) and the route answers 202.
 - **R-281-11 (time budget, controller ruling):** the route answers within **1.5 s**. It validates, records the job and
   returns 202; the preflight (SNMP, up to 3 s per try on PT/QL), render and queue hand-off run after the response.
   A later failure (offline, no tape, unsupported tape, QR too long) sets the job to `failed` with the same error code
@@ -319,6 +325,111 @@ Setting('LABEL_PRINTER_HOOK_JSON', true);
     `<grocy url>/chore/<id>`, Grocy `routes.php:119,128` at `146f73af`) when the Grocy address is known, else names
     the code only.
   - Anything else (`grcy:r:…`, an unknown entity, a non-numeric id) is not claimed by this resolver.
+
+### Design: targets (maintainer 2026-11-14)
+
+- **R-281-13 (target model).** A Grocy label goes to a **target**: the default target for all label types plus an
+  optional override per type (`product`, `stock_entry`, `chore`, `battery`, `recipe`). A target is a printer with its
+  settings. New runtime settings, beside `integrations.grocy.label.printer` and `integrations.grocy.label.<type>.printer`:
+
+| Key | Kind | Default |
+|---|---|---|
+| `integrations.grocy.label.sheet_type` | str (sheet type key) | `""` |
+| `integrations.grocy.label.<type>.sheet_type` | str (sheet type key) | `""` |
+
+  - Resolution is **per target as a unit** (planner's call): a type whose `…<type>.printer` is set uses its own
+    `…<type>.sheet_type`; a type whose printer is `""` uses the default target, printer **and** sheet type. The two
+    sheet-type keys are never mixed. The printer resolves exactly as `resolve_grocy_target`
+    (`api/routes/grocy_label.py:121-132`).
+  - A sheet-type key is read only when its target's printer is a page printer (`backend == "ipp"`).
+  - **Layout on a sheet:** the per-type `content_type` (R-281-7) applies to page targets too — a sheet item has a
+    content type (`SheetItem.content_type`, `schemas/sheet_print.py:80-88`), mapped for a sheet type without QR by
+    `map_content_type` (`sheets/cell_render.py:163`), with the same `qr_three_lines` → `qr_two_lines` fallback. The
+    **cell geometry of the sheet type** governs size; tape width, orientation and QL presets do not apply. No R-281-7
+    setting is tape-only.
+  - Room for 1.8.0 (#27, print inbox): a later enum key per target (`…label.target` / `…label.<type>.target`:
+    `printer` | `inbox`, default `printer`). These keys keep their meaning; no migration (planner's call).
+- **R-281-14 (validation).** The sheet type of a page target must exist and must not be archived. Checked **at
+  request time**: the settings store has no cross-entity validation (`SettingDef` carries kind, default, env and
+  choices only, `settings_store/registry.py:11-17`), and the printer slug is checked the same way. In R-281-8 step 2,
+  after `check_printer_access`: an **enabled** page printer whose sheet type is `""`, unknown or archived answers
+  **503 `grocy_label_sheet_type_unavailable`** ("The sheet type for Grocy labels is not set, unknown or archived in
+  Labelyard."; no key in the message). A disabled page printer still answers 503 `grocy_label_printer_unavailable`.
+  The settings UI offers only active types (R-281-18).
+- **R-281-15 (which sheet).** One Grocy label takes **one cell**. Among the target type's sheets with state `active`
+  and at least one free cell (free = not used, reserved or unconfirmed, `sheets/sheet_service.py:75-77`), all versions
+  counted, the hub takes the one with the **fewest free cells**, ties by `(len(code), code)` — the same rule as the
+  print page: `fittingFirst` sorts fitting sheets by fewest free (`frontend/src/features/sheets/print/plan.ts:68-73`)
+  and keeps the server's code order for equal counts (`sheets/sheet_service.py:623-626`). The cell is the lowest free
+  one (`cells: "first_free"`, `schemas/sheet_print.py:128-131`). No sheet with room → a **new sheet** of the type's
+  current version with `id_placement: "margin"`, the default of `NewSheetModel` (`schemas/sheet_print.py:114`) and of
+  the print page (`plan.ts:48`); the planner decides the margin ID (or `id_not_printed`). The cell is recorded with
+  `source = "grocy"`, `ref` = the Grocycode cut to entity and id (`grcy:p:12`, ≤ 17 characters; `ref` max 120,
+  `schemas/sheet_print.py:93`), purpose = default (title, else id); `label_data.source_app = "grocy"` as on tape
+  (R-281-5). Default tray; calibration snapshot as for any sheet print (`sheets/print_service.py:1479-1481`).
+- **R-281-16 (deferred printing on a page target).** Fits R-281-11: the request does **one insert and no
+  reservation**, then answers 202. It stores a `queued` job on the page printer with payload `{"deferred": true,
+  "deferred_kind": "sheet_page", "label_data", "content_type", "sheet_type"}` (no `kind`). Jobs and sheets share one
+  SQLite file, so that insert waits behind an open write transaction (`busy_timeout = 5000`, `db/engine.py:26`) like
+  Task 8's tape insert; the budget holds against everything the hub does after the insert (sheet choice, the sheet
+  write lock, planning, the hand-off). A tracked background task then: printer enabled and not held (#231, checked
+  with the queue's `is_identity_held`, `api/identity_hold.py:36-38`, raising `PrinterIdentityMismatchError`) → choose
+  the sheet (R-281-15) → `print_sheets` with the job's own id (reserve under the sheet write lock, payload, hand-off of
+  the stored row). Cells turn `used` only when the page job completes (D15, `sheets/outcome.py:161-162`).
+  - **Failure** sets the job `failed`; the job error is the `error_code` of any `SheetApiError` (`sheets/errors.py`),
+    else `internal_error`; `job.state_changed` is published, as on Task 8's tape path. A job **cancelled** meanwhile
+    is not a failure: the task returns quietly, with no failed mark and no `failed` event, as Task 8's tape path returns
+    on `completed is False` (`services/print_service.py:396-398`).
+  - **Cells after a failure:** the existing undo keeps the failing page's cells when its `jobs` row exists (ruling
+    T7-1, `sheets/print_service.py:1323-1340`), and the stored row always exists. On the stored-row path the undo
+    therefore **reads the row** (the exception type cannot tell whether the swap committed, e.g. a `CancelledError`
+    from `cancel_for` during `set_queued_payload`): it **releases the job's reserved cells at once**
+    (`reservation.release`, `sheets/reservation.py:620`) when the row is gone, no longer `queued`, or still carries
+    `payload.deferred`; a `queued` row with a page payload keeps its cells (T7-1: the next recovery prints it onto them
+    via `may_recover`); a failed lookup keeps the cells for the sweep, as `_job_row_exists` does
+    (`sheets/print_service.py:1294-1302`). T7-1 stays unchanged for every other caller.
+  - **Sheet filled meanwhile:** the sheet is chosen outside the lock and `reserve` plans `first_free` again under it
+    (`sheets/reservation.py:387-461`). If that existing sheet has no free cell any more (`insufficient_cells`,
+    `sheet_discarded`, `sheet_not_found`), the task chooses once more; a second failure is the job's error.
+  - **Margin ID and feed mark in flight (C26):** between `reserve` and the hand-off the reservation has a `jobs` row
+    without a `sheet_page` detail, so neither `unattached_reservation_sheets` (`repositories/sheets.py:147-161`) nor
+    `_active_sheet_page_carries` (`sheets/reservation.py:157-170`) counts it. A `reserved` cell whose job is `queued`
+    with `payload.deferred` true counts as unattached.
+  - **Restart, re-wire or shutdown before the hand-off:** recovery ends the row **`failed` with
+    `deferred_interrupted`** (not `failed_restart` as R-281-11 says for tape: the sweep maps `failed_restart` to
+    `unconfirmed`, `sheets/outcome.py:233-234`, and this page was never sent) and calls the `sheet_page` outcome
+    handler with `started=False`, which frees the cells (`sheets/outcome.py:164-175`). The deferred branch comes before
+    the payload validation that today ends such a row `recovery_invalid_page_payload` (`services/print_queue.py:936`).
+    A re-attach of the printer cancels and awaits its running Grocy sheet tasks before recovery runs, like
+    `cancel_deferred` for tape (`services/printer_runtime.py:630-641`). After the hand-off the row has a valid page
+    payload and `may_recover` (`sheets/outcome.py:180-195`) recovers it: printed once, never twice.
+  - **Cancelled before the hand-off:** the hand-off registers the job in the queue's memory first (as
+    `submit_with_id`, audit R3-1, `services/print_queue.py:1187-1198`), then swaps the payload only while the row is
+    `queued` (`set_queued_payload`, `repositories/jobs.py:155`); a cancelled row raises, the registration is dropped and
+    the cell is released. After the swap it checks `job.state != QUEUED` before `put`, as `submit_with_id` and
+    `submit_page_job` do (`services/print_queue.py:1204-1205`, `:1865-1872`): a cancel between swap and `put` is settled
+    by `cancel()` itself and nothing is enqueued.
+  - The periodic sweep leaves the cells alone while the row is `queued` (`_decide` → `None`, `sheets/outcome.py:229-239`).
+- **R-281-17 (concurrency).** Two webhooks never take the same cell: `reserve` plans and inserts under the sheet write
+  lock, the transaction's first statement (`sheets/locking.py:44-69`), with the composite key as the last guard
+  (`sheets/reservation.py:458-465`). Choosing and reserving run under an in-process `asyncio.Lock` per sheet type key,
+  so two simultaneous labels do not open **two** new sheets; the hub is one process (ADR 0015; `uvicorn` without
+  `--workers`, `backend/Dockerfile:245`). A UI print in parallel is handled by the re-plan under the lock and the one
+  re-choice; a UI print that sent `expected_cells` may get `plan_changed` (existing behaviour, documented).
+- **R-281-18 (settings UI).** Settings > Integrations > Grocy, label section:
+  - **Default target:** printer select with "First enabled tape printer", then enabled printers grouped "Tape
+    printers" / "Page printers". With a page printer chosen, a **sheet type** select appears (active types, by name,
+    key as description) and is required: save is disabled with the field error "Choose a sheet type for this page
+    printer."
+  - **Per type:** the printer select starts with "Same as default"; a page printer shows its own required sheet type
+    select. "Same as default" hides it.
+  - Choosing a tape printer or "Same as default" also clears that target's sheet type (sends `""`).
+  - A stored sheet type that is archived or gone shows the warning "This sheet type is archived or no longer exists.
+    Grocy labels for it are refused." (no silent fallback).
+  - The content-type selects stay per type and apply to tape and page targets alike.
+- **R-281-19 (out of scope).** The print inbox target (#27, 1.8.0); choosing a specific sheet or cells; `cell` or
+  `manual` ID placement for Grocy sheets; save-time validation of slugs and sheet types; a tray per target; more than
+  one cell per label.
 
 ## 7. #282 — Resolve all unconfirmed cells of a sheet
 
@@ -469,7 +580,7 @@ acceptance. Screenshots light and dark at 1280 px and 390 px.
 | R-296-1…6 | Discovery switch for tape drivers; write-only community; client validation; one payload function; `community_set` on every printer response with keep-on-omit; preflight uses the stored community |
 | R-285-1…3 | Up to 4 previews; `POST /api/v1/render/check` with bounded identifiers and tape checked first; inline flags, button enabled |
 | R-284-1…5 | `qr_three_lines` with a quantity line; Spoolman grams; Grocy signed delta; out-of-range treated as absent; de/en from `general.language` |
-| R-281-1…12 | Print-scope key as literal `token=`; log filter; JSON, 1 MiB bounded read; type from Grocycode; data from the body; mapping with `qr_three_lines` fallback; check order, content errors as 202 + failed job; config block and warning; ADR; 1.5 s budget with deferred printing; Grocycode scan resolver |
+| R-281-1…19 | Print-scope key as literal `token=`; log filter; JSON, 1 MiB bounded read; type from Grocycode; data from the body; mapping with `qr_three_lines` fallback; check order, content errors as 202 + failed job; config block and warning; ADR; 1.5 s budget with deferred printing; Grocycode scan resolver; default and per-type targets; page targets print onto the fullest started sheet of a sheet type, else a new one, deferred, under the sheet lock |
 | R-282-1…3 | `expected_count` guard; 409 when nothing is unconfirmed; one settle helper |
 | R-283-1…2 | 422 for a restricted admin key; admin auth contexts carry no printer list |
 | R-255-1…2 | Entries derived client-side, jobs newest first; `retry_of` on every retry path |
