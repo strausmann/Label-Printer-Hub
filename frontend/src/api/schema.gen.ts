@@ -945,6 +945,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/render/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check cart items against the layout before printing
+         * @description Looks up every distinct item once (at most eight lookups at a time), draws it for ``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one verdict per item in request order.  A failing item does not fail the request: its result carries ``error_code`` (``qr_payload_too_long``, ``content_type_data_mismatch``, ``integration_item_not_found``, ``integration_unknown_app``, ``integration_lookup_failed``, ``integration_not_configured``) and, where it helps, ``error_detail``.  Returns 409 (``unsupported_tape``) before any lookup when the tape width or the orientation is not available.  Nothing is printed and no job is created.
+         */
+        post: operations["render_check_api_v1_render_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/render/preview": {
         parameters: {
             query?: never;
@@ -3175,6 +3195,62 @@ export interface components {
              * @enum {string}
              */
             severity: "report" | "warning" | "error";
+        };
+        /**
+         * RenderCheckItem
+         * @description One cart item: how it is drawn and which integration item feeds it.
+         */
+        RenderCheckItem: {
+            content_type: components["schemas"]["ContentType"];
+            lookup: components["schemas"]["RenderCheckLookup"];
+        };
+        /**
+         * RenderCheckLookup
+         * @description The integration item a label is drawn from.
+         */
+        RenderCheckLookup: {
+            /** App */
+            app: string;
+            /** Identifier */
+            identifier: string;
+        };
+        /**
+         * RenderCheckRequest
+         * @description Cart items to check against one tape width and layout.
+         */
+        RenderCheckRequest: {
+            /** Items */
+            items: components["schemas"]["RenderCheckItem"][];
+            layout_preset?: components["schemas"]["QlLayoutPreset"] | null;
+            orientation?: components["schemas"]["LabelOrientation"] | null;
+            /** Tape Mm */
+            tape_mm: number;
+        };
+        /**
+         * RenderCheckResponse
+         * @description One result per request item, in request order.
+         */
+        RenderCheckResponse: {
+            /** Results */
+            results: components["schemas"]["RenderCheckResult"][];
+        };
+        /**
+         * RenderCheckResult
+         * @description Verdict for the item at ``index`` of the request.
+         */
+        RenderCheckResult: {
+            /** Error Code */
+            error_code?: string | null;
+            /** Error Detail */
+            error_detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Index */
+            index: number;
+            /** Ok */
+            ok: boolean;
         };
         /** ReprintHint */
         ReprintHint: {
@@ -6335,6 +6411,44 @@ export interface operations {
                 content?: never;
             };
             /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    render_check_api_v1_render_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderCheckResponse"];
+                };
+            };
+            /** @description Unsupported tape width or orientation (`unsupported_tape`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid body: no items, more than 50, or an identifier too long */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -3900,6 +3900,162 @@
         "title": "ReasonRead",
         "type": "object"
       },
+      "RenderCheckItem": {
+        "additionalProperties": false,
+        "description": "One cart item: how it is drawn and which integration item feeds it.",
+        "properties": {
+          "content_type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "lookup": {
+            "$ref": "#/components/schemas/RenderCheckLookup"
+          }
+        },
+        "required": [
+          "content_type",
+          "lookup"
+        ],
+        "title": "RenderCheckItem",
+        "type": "object"
+      },
+      "RenderCheckLookup": {
+        "additionalProperties": false,
+        "description": "The integration item a label is drawn from.",
+        "properties": {
+          "app": {
+            "maxLength": 32,
+            "title": "App",
+            "type": "string"
+          },
+          "identifier": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Identifier",
+            "type": "string"
+          }
+        },
+        "required": [
+          "app",
+          "identifier"
+        ],
+        "title": "RenderCheckLookup",
+        "type": "object"
+      },
+      "RenderCheckRequest": {
+        "additionalProperties": false,
+        "description": "Cart items to check against one tape width and layout.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RenderCheckItem"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "layout_preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QlLayoutPreset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orientation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LabelOrientation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tape_mm": {
+            "title": "Tape Mm",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tape_mm",
+          "items"
+        ],
+        "title": "RenderCheckRequest",
+        "type": "object"
+      },
+      "RenderCheckResponse": {
+        "description": "One result per request item, in request order.",
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/RenderCheckResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "RenderCheckResponse",
+        "type": "object"
+      },
+      "RenderCheckResult": {
+        "description": "Verdict for the item at ``index`` of the request.",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_detail": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Detail"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "ok"
+        ],
+        "title": "RenderCheckResult",
+        "type": "object"
+      },
       "ReprintHint": {
         "properties": {
           "cell": {
@@ -9917,6 +10073,49 @@
         "summary": "Print a test label (tape) or a test page (page printer)",
         "tags": [
           "printers"
+        ]
+      }
+    },
+    "/api/v1/render/check": {
+      "post": {
+        "description": "Looks up every distinct item once (at most eight lookups at a time), draws it for ``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one verdict per item in request order.  A failing item does not fail the request: its result carries ``error_code`` (``qr_payload_too_long``, ``content_type_data_mismatch``, ``integration_item_not_found``, ``integration_unknown_app``, ``integration_lookup_failed``, ``integration_not_configured``) and, where it helps, ``error_detail``.  Returns 409 (``unsupported_tape``) before any lookup when the tape width or the orientation is not available.  Nothing is printed and no job is created.",
+        "operationId": "render_check_api_v1_render_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Unsupported tape width or orientation (`unsupported_tape`)"
+          },
+          "422": {
+            "description": "Invalid body: no items, more than 50, or an identifier too long"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Check cart items against the layout before printing",
+        "tags": [
+          "print"
         ]
       }
     },

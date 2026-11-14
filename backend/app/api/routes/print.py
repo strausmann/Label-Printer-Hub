@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""POST /api/v1/print, POST /api/v1/printer/resume and POST /api/v1/render/preview."""
+"""Print, printer resume, and the render routes (preview PNG and the cart check)."""
 
 from __future__ import annotations
 
@@ -31,8 +31,11 @@ from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.print_request import PrintRequest, RawLabelData
 from app.schemas.print_response import PrintJobResponse
+from app.schemas.render_check import RenderCheckRequest, RenderCheckResponse
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_service import AppLookupService
 from app.services.print_queue import PrinterAlreadyActiveError
+from app.services.render_check import check_items
 
 _log = logging.getLogger(__name__)
 
@@ -40,6 +43,9 @@ router = APIRouter()
 # `router` spells the full path in each decorator (/api/v1/print, /api/v1/printer/resume);
 # `render_router` carries the prefix for POST /api/v1/render/preview.
 render_router = APIRouter(prefix="/api/v1")
+
+# Stateless (reads the settings at construction), like the lookup routes' instance.
+_lookup_service = AppLookupService()
 
 
 def _check_default_printer(http: Request, auth: AuthContext) -> None:
@@ -264,6 +270,49 @@ async def render_preview(
         )
 
     return Response(content=png_bytes, media_type="image/png")
+
+
+@render_router.post(
+    "/render/check",
+    tags=["print"],
+    summary="Check cart items against the layout before printing",
+    description=(
+        "Looks up every distinct item once (at most eight lookups at a time), draws it for "
+        "``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one "
+        "verdict per item in request order.  A failing item does not fail the request: "
+        "its result carries ``error_code`` (``qr_payload_too_long``, "
+        "``content_type_data_mismatch``, ``integration_item_not_found``, "
+        "``integration_unknown_app``, ``integration_lookup_failed``, "
+        "``integration_not_configured``) and, where it helps, ``error_detail``.  "
+        "Returns 409 (``unsupported_tape``) before any lookup when the tape width or the "
+        "orientation is not available.  Nothing is printed and no job is created."
+    ),
+    response_model=RenderCheckResponse,
+    responses={
+        409: {"description": "Unsupported tape width or orientation (`unsupported_tape`)"},
+        422: {"description": "Invalid body: no items, more than 50, or an identifier too long"},
+    },
+)
+async def render_check(
+    body: RenderCheckRequest,
+    _auth: Annotated[AuthContext, Depends(require_read)],
+) -> RenderCheckResponse | JSONResponse:
+    """Per-item verdicts for a cart; the tape is checked before the first lookup."""
+    try:
+        return await check_items(body, _lookup_service)
+    except UnsupportedTapeError as exc:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "error_code": "unsupported_tape",
+                "error_message": (
+                    "The selected tape width is not supported by the layout engine."
+                    if exc.orientation is None
+                    else "The selected orientation is not available for this tape width."
+                ),
+                "error_detail": {"tape_mm": exc.tape_mm},
+            },
+        )
 
 
 def _qr_too_long_body(exc: QrPayloadTooLongError) -> dict[str, object]:
