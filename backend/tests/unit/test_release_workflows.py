@@ -9,7 +9,9 @@ image workflow against a throw-away pre-release tag does that.
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -53,19 +55,157 @@ def test_release_concurrency_is_separate() -> None:
     assert "github.ref" in group  # dev/branch builds keep their per-ref group
 
 
-def test_prerelease_never_floats_or_reaches_docker_hub() -> None:
+def test_prerelease_never_floats() -> None:
     text = _text("docker-publish.yml")
     guard = "!contains(steps.tag.outputs.tag, '-')"
     lines = text.splitlines()
-
-    hub = [ln for ln in lines if re.search(r"docker\.io/", ln) and "format(" in ln]
-    assert hub, "Docker Hub image line not found"
-    assert all(guard in ln for ln in hub)
-
     for needle in ("pattern={{major}}.{{minor}}", "pattern={{major}},", "value=latest"):
         matched = [ln for ln in lines if needle in ln]
         assert matched, f"tag line {needle!r} not found"
         assert all(guard in ln for ln in matched), f"{needle!r} not guarded against pre-releases"
+
+
+def test_docker_hub_gets_every_flavor_but_branch() -> None:
+    lines = _text("docker-publish.yml").splitlines()
+    hub = [ln for ln in lines if re.search(r"docker\.io/", ln) and "format(" in ln]
+    assert len(hub) == 1, "exactly one Docker Hub image line"
+    line = hub[0]
+    assert "format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME)" in line
+    assert "&& secrets.DOCKERHUB_USERNAME)" in line
+    assert "steps.tag.outputs.flavor != 'branch'" in line
+    # Pre-releases (previews) reach Docker Hub too; only their floating tags are refused.
+    assert "contains(steps.tag.outputs.tag, '-')" not in line
+    assert "flavor == 'release'" not in line
+
+
+TAGLINE = "Labelyard — the self-hosted Label Printer Hub for all your labels"
+
+
+def _image_steps(wf: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    found = {}
+    for job_name in ("build", "merge"):
+        steps = [s for s in wf["jobs"][job_name]["steps"] if s.get("id") == "image"]
+        assert len(steps) == 1, f"{job_name}: exactly one step with id image"
+        found[job_name] = steps[0]
+    return found
+
+
+def test_image_ref_is_explicit() -> None:
+    wf = _load("docker-publish.yml")
+    assert wf["env"]["IMAGE_NAME"] == "labelyard"
+    for job_name, step in _image_steps(wf).items():
+        run = step["run"]
+        assert "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" in run, job_name
+        blob = json.dumps(step)
+        assert "github.repository" not in blob, job_name
+        assert "REPO" not in blob, job_name
+        assert ",," not in run, job_name
+    # No image address anywhere is derived from the repository name.
+    for line in _text("docker-publish.yml").splitlines():
+        if not line.lstrip().startswith("#"):
+            assert "github.repository" not in line, line
+
+
+def test_preview_passes_docker_hub_secrets() -> None:
+    job = _load("preview-image.yml")["jobs"]["publish"]
+    assert job["uses"] == "./.github/workflows/docker-publish.yml"
+    assert job["secrets"] == {
+        "DOCKERHUB_USERNAME": "${{ secrets.DOCKERHUB_USERNAME }}",
+        "DOCKERHUB_TOKEN": "${{ secrets.DOCKERHUB_TOKEN }}",
+    }
+    assert "secrets: inherit" not in _text("preview-image.yml")
+    assert "DOCKERHUB_ADMIN_TOKEN" not in _text("preview-image.yml")
+
+
+def test_preview_reads_the_labelyard_package() -> None:
+    steps = _load("preview-image.yml")["jobs"]["next-tag"]["steps"]
+    envs = {k: v for s in steps for k, v in (s.get("env") or {}).items()}
+    assert envs["IMAGE_PATH"] == "strausmann/labelyard"
+
+
+def test_cleanup_targets_labelyard_only() -> None:
+    assert not (WORKFLOWS / "ghcr-cleanup.yml").exists()
+    wf = _load("registry-cleanup.yml")
+    text = _text("registry-cleanup.yml")
+    assert "label-printer-hub" not in text
+    assert set(wf["jobs"]) == {"ghcr", "dockerhub"}
+    prune = [
+        s for s in wf["jobs"]["ghcr"]["steps"] if "ghcr-cleanup-action" in str(s.get("uses", ""))
+    ]
+    assert len(prune) == 1
+    assert prune[0]["with"]["package"] == "labelyard"
+    triggers = wf.get("on", wf.get(True))
+    assert "dry-run" in triggers["workflow_dispatch"]["inputs"]
+    for job in wf["jobs"].values():
+        envs = {k: v for s in job["steps"] for k, v in (s.get("env") or {}).items()}
+        assert envs["IMAGE_PATH"] == "strausmann/labelyard"
+    assert wf["jobs"]["dockerhub"]["steps"][-1]["env"]["HUB_REPOSITORY"] == "labelyard"
+    # The admin token reaches only the Docker Hub job.
+    assert "DOCKERHUB_ADMIN_TOKEN" not in json.dumps(wf["jobs"]["ghcr"])
+    assert "DOCKERHUB_ADMIN_TOKEN" in json.dumps(wf["jobs"]["dockerhub"])
+
+
+def _oci_values(block: str) -> dict[str, str]:
+    values = {}
+    for line in block.splitlines():
+        key, sep, value = line.strip().partition("=")
+        if sep and key.startswith("org.opencontainers.image."):
+            values[key.removeprefix("org.opencontainers.image.")] = value
+    return values
+
+
+def test_oci_title_matches_dockerfile() -> None:
+    dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
+    labels = dict(re.findall(r'org\.opencontainers\.image\.([a-z.]+)="([^"]*)"', dockerfile))
+    wf = _load("docker-publish.yml")
+    build_meta = next(s for s in wf["jobs"]["build"]["steps"] if s.get("id") == "meta")
+    merge_meta = next(s for s in wf["jobs"]["merge"]["steps"] if s.get("id") == "meta")
+    blocks = {
+        "labels": _oci_values(build_meta["with"]["labels"]),
+        "annotations": _oci_values(merge_meta["with"]["annotations"]),
+    }
+    assert labels["title"] == "Labelyard"
+    for name, values in blocks.items():
+        for key in ("title", "description", "url", "documentation", "source"):
+            assert values[key] == labels[key], f"{name}: {key}"
+    assert labels["description"] == TAGLINE
+    assert labels["url"] == "https://labelyard.app"
+    assert labels["documentation"] == "https://labelyard.app/"
+    assert labels["source"] == "https://github.com/strausmann/labelyard"
+
+
+def test_dockerhub_description_workflow() -> None:
+    wf = _load("dockerhub-description.yml")
+    triggers = wf.get("on", wf.get(True))
+    assert "workflow_dispatch" in triggers
+    assert triggers["push"]["branches"] == ["main"]
+    assert triggers["push"]["paths"] == [".github/dockerhub/README.md"]
+    steps = [s for j in wf["jobs"].values() for s in j["steps"]]
+    action = [
+        s for s in steps if str(s.get("uses", "")).startswith("peter-evans/dockerhub-description@")
+    ]
+    assert len(action) == 1
+    with_ = action[0]["with"]
+    assert with_["password"] == "${{ secrets.DOCKERHUB_ADMIN_TOKEN }}"
+    assert with_["repository"] == "${{ secrets.DOCKERHUB_USERNAME }}/labelyard"
+    assert with_["readme-filepath"] == ".github/dockerhub/README.md"
+    assert with_["short-description"] == TAGLINE
+    assert len(with_["short-description"].encode()) <= 100
+    readme = REPO_ROOT / ".github" / "dockerhub" / "README.md"
+    assert len(readme.read_bytes()) <= 25_000
+    text = readme.read_text(encoding="utf-8")
+    for needle in (
+        "docker pull ghcr.io/strausmann/labelyard",
+        "docker pull docker.io/",
+        "https://labelyard.app",
+    ):
+        assert needle in text, needle
+    # Docker Hub resolves no relative paths: every image is an absolute URL.
+    images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
+    images += re.findall(r'<img[^>]+src="([^"]+)"', text)
+    assert images
+    for target in images:
+        assert target.startswith("https://raw.githubusercontent.com/"), target
 
 
 def test_images_job_skips_dry_run() -> None:
@@ -136,6 +276,9 @@ def test_actions_are_pinned_to_full_commit_shas() -> None:
         "licence-backend.yml",
         "website.yml",
         "prose.yml",
+        "registry-cleanup.yml",
+        "preview-image.yml",
+        "dockerhub-description.yml",
     ):
         for job_name, job in _load(name)["jobs"].items():
             for step in job.get("steps", []):
@@ -196,6 +339,22 @@ def test_release_version_output_chain_is_wired() -> None:
     assert "release" in str(images["needs"])
 
 
+# The semver check as a whole-string bash match: `printf | grep -Eq` tests every
+# line on its own and accepts "1.1.0\nx" (F-B6-2).
+_SEMVER_CHECK = "semver='^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$'"
+
+
+def _run_bash(script: str, **env: str) -> int:
+    """Run a workflow step script with only PATH and ``env`` set."""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin"), **env},
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode
+
+
 def test_release_tag_regex_accepts_only_semver() -> None:
     wf = _load("docker-publish.yml")
     for job_name in ("build", "merge"):
@@ -204,15 +363,24 @@ def test_release_tag_regex_accepts_only_semver() -> None:
         validate = names.index("Validate release tag input")
         checkout = next(i for i, s in enumerate(steps) if "actions/checkout" in str(s.get("uses")))
         assert validate < checkout, f"{job_name}: tag must be validated before the checkout"
-        match = re.search(r"grep -Eq '([^']+)'", steps[validate]["run"])
-        assert match
-        pattern = re.compile(match.group(1))
-        for ok in ("1.1.0", "v1.1.0", "0.0.0-ci.1", "2.0.0-rc.1"):
-            assert pattern.match(ok), ok
-        for bad in ("", "1.1", "latest", "1.1.0;rm", "1.1.0 ", "../1.1.0", "v1.1.0\nx", "1.1.0-"):
-            if bad == "":
-                continue  # empty means "not a release build" and is handled before the grep
-            assert not pattern.match(bad), repr(bad)
+        run = steps[validate]["run"]
+        assert "grep -E" not in run, f"{job_name}: a line-based grep accepts a value with a newline"
+        assert _SEMVER_CHECK in run, job_name
+        # Empty means "not a release build" and passes.
+        for ok in ("", "1.1.0", "v1.1.0", "0.0.0-ci.1", "2.0.0-rc.1"):
+            assert _run_bash(run, INPUT_TAG=ok) == 0, repr(ok)
+        bad_tags = (
+            "1.1",
+            "latest",
+            "1.1.0;rm",
+            "1.1.0 ",
+            "../1.1.0",
+            "v1.1.0\nx",
+            "1.1.0\n",
+            "1.1.0-",
+        )
+        for bad in bad_tags:
+            assert _run_bash(run, INPUT_TAG=bad) != 0, repr(bad)
 
 
 def test_dependabot_covers_release_toolchain() -> None:
@@ -417,9 +585,16 @@ def test_release_sbom_job() -> None:
     assert env["GH_TOKEN"] == "${{ github.token }}"
     assert env["VERSION"] == "${{ needs.release.outputs.new-release-version }}"
     runs = "\n".join(str(s.get("run", "")) for s in steps)
-    assert "grep -Eq '^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$'" in runs
+    assert _SEMVER_CHECK in runs
+    assert "grep -E" not in runs
+    check = runs[: runs.index('VERSION="${VERSION#v}"')]
+    assert _run_bash(check, VERSION="1.6.0") == 0
+    for bad in ("1.6.0\nx", "1.6", "latest"):
+        assert _run_bash(check, VERSION=bad) != 0, repr(bad)
     assert 'gh release upload "v${VERSION}" ./*.cdx.json --clobber' in runs
-    assert "gh release view" in runs
+    # The release carries exactly one SBOM afterwards (F-B6-1).
+    assert 'select(endswith(".cdx.json"))] | length' in runs
+    assert 'test "$count" -eq 1' in runs
     download = [s for s in steps if str(s.get("uses", "")).startswith("actions/download-artifact@")]
     assert len(download) == 1
     assert download[0]["with"]["name"] == "release-sbom"

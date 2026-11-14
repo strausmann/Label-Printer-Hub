@@ -167,7 +167,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! printf '%s' "$VERSION" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          # A whole-string match: `printf | grep` would accept a value with an
+          # embedded newline (each line is checked on its own).
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
             echo "::error::Invalid release version: not a semantic version"
             exit 1
           fi

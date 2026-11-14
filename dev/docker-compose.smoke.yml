@@ -16,6 +16,8 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
+    # Local name only; this stack never pushes (the published image is labelyard).
+    image: labelyard:smoke
     container_name: labelyard-smoke-backend
     user: "1000:1000"
     networks:

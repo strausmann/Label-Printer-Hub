@@ -137,10 +137,10 @@ ARG BUILD_DATE=1970-01-01T00:00:00Z
 # OCI Image Spec labels — see https://specs.opencontainers.org/image-spec/annotations/
 # Visible via `docker inspect ghcr.io/strausmann/labelyard:VERSION`.
 LABEL org.opencontainers.image.title="Labelyard" \
-      org.opencontainers.image.description="Labelyard — the self-hosted Label Printer Hub for Brother PT/QL and office printers" \
-      org.opencontainers.image.url="https://github.com/strausmann/labelyard" \
+      org.opencontainers.image.description="Labelyard — the self-hosted Label Printer Hub for all your labels" \
+      org.opencontainers.image.url="https://labelyard.app" \
       org.opencontainers.image.source="https://github.com/strausmann/labelyard" \
-      org.opencontainers.image.documentation="https://github.com/strausmann/labelyard" \
+      org.opencontainers.image.documentation="https://labelyard.app/" \
       org.opencontainers.image.authors="Björn Strausmann <projects@strausmann.ch>" \
       org.opencontainers.image.vendor="strausmann (independent open-source project; not affiliated with Brother Industries, Ltd.)" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \

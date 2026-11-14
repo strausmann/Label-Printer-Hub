@@ -24,7 +24,7 @@ on:
   push:
     # Only main publishes (rolling `dev` tag). Feature branches are built
     # without pushing by ci.yml on their pull request; branch tags in GHCR
-    # were never kept and only had to be cleaned up (ghcr-cleanup.yml).
+    # were never kept and only had to be cleaned up (registry-cleanup.yml).
     branches: [main]
     # Only rebuild when something that affects an image actually changes —
     # avoids tying up runners on docs-only pushes.
@@ -77,6 +77,10 @@ concurrency:
 
 env:
   REGISTRY_GHCR: ghcr.io
+  # The image name, written out: the GHCR address is ghcr.io/strausmann/labelyard
+  # and the Docker Hub address docker.io/<DOCKERHUB_USERNAME>/labelyard. Neither is
+  # derived from github.repository, which changes when the repository is renamed.
+  IMAGE_NAME: labelyard
   # Annotate both per-platform manifests AND the index. GHCR's package UI
   # reads the package description from the index annotation; without this
   # the page shows "No description provided".
@@ -115,7 +119,10 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          if [ -n "$INPUT_TAG" ] && ! printf '%s' "$INPUT_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          # A whole-string match: `printf | grep` checks each line on its own and
+          # would accept a value with an embedded newline.
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [ -n "$INPUT_TAG" ] && ! [[ "$INPUT_TAG" =~ $semver ]]; then
             echo "::error::Invalid release tag input: not a semantic version"
             exit 1
           fi
@@ -137,19 +144,15 @@ jobs:
       - name: Verify Dockerfile exists for ${{ matrix.service }}
         run: test -f "${{ matrix.service }}/Dockerfile"
 
-      # GitHub's repo path retains the user's original capitalisation
-      # (`strausmann/Label-Printer-Hub`), but Docker/OCI registry refs MUST
-      # be all-lowercase. `docker/metadata-action` does this implicitly for
-      # its own outputs, but `build-push-action`'s `outputs: name=…` is a
-      # raw passthrough — we have to lowercase the path ourselves before
-      # using it in the digest-push reference and in the merge step.
-      - name: Compute lowercase image ref
+      # The GHCR image ref, used for the digest push here and by the merge
+      # job. The name is fixed (and already lowercase, as OCI refs must be)
+      # instead of derived from github.repository: the repository is renamed
+      # after the milestone merge, and the image address must not move with it.
+      # Step id `image` and output `ref` are read by the merge job's outputs
+      # (image-ref, used by the sbom job).
+      - name: Compute image ref
         id: image
-        env:
-          REPO: ${{ github.repository }}
-        run: |
-          repo_lc="${REPO,,}"
-          echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+        run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -178,8 +181,8 @@ jobs:
       #   release  a non-empty `tag` input (called by the release workflow
       #            or dispatched by hand) — image is tagged {{version}},
       #            {{major.minor}}, {{major}} and latest. Pre-releases
-      #            (a `-` in the version) get only the exact tag and stay
-      #            off Docker Hub.
+      #            (a `-` in the version, e.g. previews x.y.z-rc.N) get only
+      #            the exact tag, on both registries.
       #   dev      push to the default branch — image is tagged "dev".
       #   branch   push to any other branch — image is tagged with the
       #            sanitised branch slug ('/' replaced with '-').
@@ -213,11 +216,15 @@ jobs:
         with:
           images: |
             ${{ steps.image.outputs.ref }}
+          # Same title, description and URLs as the LABELs in backend/Dockerfile
+          # (test_oci_title_matches_dockerfile). The title is the display name;
+          # the image name stays lowercase `labelyard`.
           labels: |
-            org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
-            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
-            org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
-            org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
+            org.opencontainers.image.title=Labelyard
+            org.opencontainers.image.description=Labelyard — the self-hosted Label Printer Hub for all your labels
+            org.opencontainers.image.url=https://labelyard.app
+            org.opencontainers.image.documentation=https://labelyard.app/
+            org.opencontainers.image.source=https://github.com/strausmann/labelyard
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
@@ -241,8 +248,7 @@ jobs:
           # `push-by-digest=true` skips the tag write and returns digest in
           # `steps.build.outputs.digest`. `name-canonical=true` makes the
           # registry reference the image by its canonical name. The image
-          # ref MUST be lowercase — see the `Compute lowercase image ref`
-          # step above.
+          # ref MUST be lowercase — see the `Compute image ref` step above.
           outputs: type=image,name=${{ steps.image.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.tag.outputs.tag }}
@@ -299,7 +305,10 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          if [ -n "$INPUT_TAG" ] && ! printf '%s' "$INPUT_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          # A whole-string match: `printf | grep` checks each line on its own and
+          # would accept a value with an embedded newline.
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [ -n "$INPUT_TAG" ] && ! [[ "$INPUT_TAG" =~ $semver ]]; then
             echo "::error::Invalid release tag input: not a semantic version"
             exit 1
           fi
@@ -326,14 +335,11 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
-      # Mirror of the build-phase lowercase step (see comment there).
-      - name: Compute lowercase image ref
+      # Mirror of the build-phase step (see the comment there): a fixed name,
+      # never github.repository. Keep id `image` / output `ref` (merge.outputs).
+      - name: Compute image ref
         id: image
-        env:
-          REPO: ${{ github.repository }}
-        run: |
-          repo_lc="${REPO,,}"
-          echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+        run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -360,8 +366,8 @@ jobs:
       #   release  a non-empty `tag` input (called by the release workflow
       #            or dispatched by hand) — image is tagged {{version}},
       #            {{major.minor}}, {{major}} and latest. Pre-releases
-      #            (a `-` in the version) get only the exact tag and stay
-      #            off Docker Hub.
+      #            (a `-` in the version, e.g. previews x.y.z-rc.N) get only
+      #            the exact tag, on both registries.
       #   dev      push to the default branch — image is tagged "dev".
       #   branch   push to any other branch — image is tagged with the
       #            sanitised branch slug ('/' replaced with '-').
@@ -394,13 +400,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
-          # GHCR is always a target. Docker Hub is only published for stable release
-          # flavors (never pre-releases) so branch/dev builds don't pollute the public namespace.
+          # GHCR is always a target. Docker Hub receives exactly the tags GHCR
+          # receives (releases, previews, dev) whenever the Docker Hub secrets are
+          # set; only a manual branch build stays off it.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ (steps.tag.outputs.flavor == 'release' && !contains(steps.tag.outputs.tag, '-') && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
-          # Tag scheme by flavor:
-          #   branch   <branch-slug>                       feature-branch push
+            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}
+          # Tag scheme by flavor (identical on GHCR and Docker Hub):
+          #   branch   <branch-slug>                       manual dispatch, GHCR only
           #   dev      dev                                 main-branch push
           #   release  {{version}}, {{major.minor}},       semver release
           #            {{major}}, latest (stable only)
@@ -415,10 +422,11 @@ jobs:
           # at workflow root). For a manifest-list-create operation only the
           # index level applies — the merge step filters them.
           annotations: |
-            org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
-            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
-            org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
-            org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
+            org.opencontainers.image.title=Labelyard
+            org.opencontainers.image.description=Labelyard — the self-hosted Label Printer Hub for all your labels
+            org.opencontainers.image.url=https://labelyard.app
+            org.opencontainers.image.documentation=https://labelyard.app/
+            org.opencontainers.image.source=https://github.com/strausmann/labelyard
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}

@@ -1,0 +1,174 @@
+# Prune the Labelyard image on both registries with one retention rule
+# (scripts/ghcr_rules.py): ghcr.io/strausmann/labelyard and
+# docker.io/<DOCKERHUB_USERNAME>/labelyard.
+#
+# Kept: release images from 1.4.0 on (x.y.z), their floating tags (x.y, x,
+# latest), the rolling `dev` tag from main, and preview tags (x.y.z-rc.N
+# from preview-image.yml) whose release x.y.z does not exist yet. Closed
+# previews (their release exists) go on both registries.
+#
+# GHCR (job `ghcr`): every other tag goes as well (branch tags, CI test tags,
+# pre-1.4.0 releases), and so do untagged images. Platform children and
+# attestations of kept multi-arch images are never touched; the action follows
+# manifest lists and referrers.
+#
+# Docker Hub (job `dockerhub`): tags the rule does not know (branch slugs, CI
+# tags) are listed in the run summary, not deleted. Docker Hub's API offers no
+# deletion of untagged manifests; untagged images there age out by Docker Hub's
+# own retention policy. That is accepted, not worked around.
+#
+# The image under the name before Labelyard (GHCR and Docker Hub) is frozen
+# since the rename and is not pruned any more; there is no job for it.
+#
+# Safety:
+# - A manual run defaults to dry-run: both jobs list what would be deleted.
+# - The weekly run only deletes when the repository variable
+#   GHCR_CLEANUP_ENABLED is "true", so nothing is removed before a dry-run
+#   was reviewed. The variable covers both registries.
+# - The GHCR package grants this repository the Admin role ("Manage Actions
+#   access"), which GITHUB_TOKEN needs to delete versions.
+# - The Docker Hub job uses DOCKERHUB_ADMIN_TOKEN (a personal access token
+#   with Read, Write, Delete); no other job sees it.
+
+name: Registry cleanup
+
+on:
+  schedule:
+    - cron: "30 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "List only, delete nothing"
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  # One group with preview-image.yml: a cleanup never runs while a preview is
+  # being published, and the keep rule is never built from a stale tag list.
+  # A newer queued run replaces an older *pending* one; re-dispatch if needed.
+  group: ghcr-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  ghcr:
+    name: GHCR
+    if: github.event_name == 'workflow_dispatch' || vars.GHCR_CLEANUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      # Previews (x.y.z-rc.N) are kept until x.y.z is released. The registry
+      # tag list decides which ones are still open; they join the keep rule.
+      # A package that does not exist yet has an empty tag list (the script
+      # treats 403/404 on the tag list that way; any other error fails).
+      - name: Build the keep rule
+        id: keep
+        env:
+          ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PATH: strausmann/labelyard
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+        run: |
+          set -euo pipefail
+          # An empty tag list may be a false 403/404 for an existing package, and
+          # the cleanup would then delete open previews: abort a real run, only
+          # warn in a dry run.
+          on_empty=fail
+          [ "$DRY_RUN" = "true" ] && on_empty=warn
+          python3 scripts/ghcr_rules.py fetch-tags --on-empty="$on_empty" > tags.txt
+          regex=$(python3 scripts/ghcr_rules.py keep-regex < tags.txt)
+          echo "regex=$regex" >> "$GITHUB_OUTPUT"
+          echo "Keep rule: \`$regex\`" >> "$GITHUB_STEP_SUMMARY"
+          # The tags the rule removes, for comparison with the Docker Hub job.
+          python3 scripts/ghcr_rules.py released < tags.txt > released.txt
+          {
+            echo "Tags to delete by the shared rule (GHCR also removes foreign and untagged versions):"
+            echo '```'
+            python3 scripts/ghcr_rules.py select-deletions --released released.txt < tags.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prune labelyard
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          package: labelyard
+          use-regex: true
+          # Every tag is a candidate ...
+          delete-tags: "^.+$"
+          # ... except these, which take priority over every other rule:
+          # dev, latest, releases >= 1.4.0 with their floating tags and open
+          # previews (built in the previous step).
+          exclude-tags: ${{ steps.keep.outputs.regex }}
+          delete-untagged: true
+          delete-orphaned-images: true
+          delete-ghost-images: true
+          # Nothing younger than a day is a candidate: a publish in flight
+          # (platform manifests pushed, tag not set yet) is never deleted.
+          older-than: 1 day
+          validate: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+
+  dockerhub:
+    name: Docker Hub
+    if: github.event_name == 'workflow_dispatch' || vars.GHCR_CLEANUP_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      # Released versions come from both registries, so a preview is closed on
+      # Docker Hub exactly when it is closed on GHCR. Deletion only removes
+      # closed previews (and pre-1.4.0 releases, of which labelyard has none);
+      # the GHCR job above protects anything published in the last day, here a
+      # closed preview is by definition older than its release.
+      - name: Prune labelyard
+        env:
+          ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PATH: strausmann/labelyard
+          HUB_REPOSITORY: labelyard
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_ADMIN_TOKEN: ${{ secrets.DOCKERHUB_ADMIN_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run || false }}
+        run: |
+          set -euo pipefail
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_ADMIN_TOKEN" ]; then
+            echo "Docker Hub is not configured (DOCKERHUB_USERNAME / DOCKERHUB_ADMIN_TOKEN); nothing to do." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 scripts/ghcr_rules.py fetch-tags > ghcr-tags.txt
+          python3 scripts/ghcr_rules.py dockerhub-tags > hub-tags.txt
+          cat ghcr-tags.txt hub-tags.txt | python3 scripts/ghcr_rules.py released > released.txt
+          python3 scripts/ghcr_rules.py select-deletions --released released.txt < hub-tags.txt > delete.txt 2> foreign.txt
+          {
+            echo "Docker Hub tags: $(wc -l < hub-tags.txt); to delete: $(wc -l < delete.txt) (dry run: $DRY_RUN)"
+            echo '```'
+            cat delete.txt
+            echo '```'
+            if [ -s foreign.txt ]; then
+              echo "Foreign tags, kept for a maintainer to decide:"
+              echo '```'
+              sed 's/^::notice:://' foreign.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat foreign.txt >&2
+          if [ "$DRY_RUN" = "true" ]; then
+            exit 0
+          fi
+          python3 scripts/ghcr_rules.py dockerhub-delete < delete.txt
