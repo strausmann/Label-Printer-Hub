@@ -134,6 +134,8 @@ def test_cleanup_targets_labelyard_only() -> None:
     ]
     assert len(prune) == 1
     assert prune[0]["with"]["package"] == "labelyard"
+    # The action fails on a package that does not exist yet; only a dry run reaches it then.
+    assert prune[0]["if"] == "steps.keep.outputs.empty != 'true'"
     triggers = wf.get("on", wf.get(True))
     assert "dry-run" in triggers["workflow_dispatch"]["inputs"]
     for job in wf["jobs"].values():

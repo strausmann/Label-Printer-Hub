@@ -88,16 +88,21 @@ jobs:
           regex=$(python3 scripts/ghcr_rules.py keep-regex < tags.txt)
           echo "regex=$regex" >> "$GITHUB_OUTPUT"
           echo "Keep rule: \`$regex\`" >> "$GITHUB_STEP_SUMMARY"
+          # Only a dry run gets here with an empty list (a real run aborted
+          # above). The cleanup action fails on a package that does not exist
+          # yet (before the first preview), so the prune step is skipped then.
+          if [ -s tags.txt ]; then echo "empty=false" >> "$GITHUB_OUTPUT"; else echo "empty=true" >> "$GITHUB_OUTPUT"; fi
           # The tags the rule removes, for comparison with the Docker Hub job.
           python3 scripts/ghcr_rules.py released < tags.txt > released.txt
           {
-            echo "Tags to delete by the shared rule (GHCR also removes foreign and untagged versions):"
+            echo "GHCR tags: $(wc -l < tags.txt). Tags to delete by the shared rule (GHCR also removes foreign and untagged versions):"
             echo '```'
             python3 scripts/ghcr_rules.py select-deletions --released released.txt < tags.txt
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Prune labelyard
+        if: steps.keep.outputs.empty != 'true'
         uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
         with:
           package: labelyard
@@ -166,8 +171,7 @@ jobs:
               sed 's/^::notice:://' foreign.txt
               echo '```'
             fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          cat foreign.txt >&2
+          } | tee -a "$GITHUB_STEP_SUMMARY"
           if [ "$DRY_RUN" = "true" ]; then
             exit 0
           fi
