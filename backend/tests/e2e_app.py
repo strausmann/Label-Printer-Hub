@@ -135,6 +135,35 @@ class _FakeIntegration:
         return True
 
 
+class _FakeGrocy(_FakeIntegration):
+    """The Grocy fake, which also reads batteries and chores (the scan page's Grocycode view)."""
+
+    async def battery(self, battery_id: str) -> Any:
+        from app.schemas.grocy_object import GrocyBatteryResult
+
+        if battery_id == "404":
+            from app.integrations.grocy.plugin import GrocyNotFoundError
+
+            raise GrocyNotFoundError("Battery not found")
+        return GrocyBatteryResult(
+            id=battery_id,
+            name="Remote AAA",
+            description="Warranty ends 2027",
+            url=f"https://grocy.example.invalid/battery/{battery_id}",
+            charge_cycles=4,
+        )
+
+    async def chore(self, chore_id: str) -> Any:
+        from app.schemas.grocy_object import GrocyChoreResult
+
+        return GrocyChoreResult(
+            id=chore_id,
+            name="Water the plants",
+            url=f"https://grocy.example.invalid/chore/{chore_id}",
+            assigned_to="Anna B.",
+        )
+
+
 def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
     """Fill the settings ``app.main`` reads at import time. Returns (bootstrap, key_file)."""
     bootstrap = os.environ.get("E2E_BOOTSTRAP") == "1"
@@ -622,7 +651,8 @@ def build_e2e_app() -> ASGIApp:
     status_probe_producer.query_identity = _fake_identity  # type: ignore[assignment]
     IntegrationRegistry.clear()  # importing app.main discovered the real plugins
     for name, display in (("snipeit", "Snipe-IT"), ("grocy", "Grocy"), ("spoolman", "Spoolman")):
-        IntegrationRegistry.register(_FakeIntegration(name, display))  # type: ignore[arg-type]
+        fake = _FakeGrocy(name, display) if name == "grocy" else _FakeIntegration(name, display)
+        IntegrationRegistry.register(fake)  # type: ignore[arg-type]
 
     if key_file is not None:
         key = os.environ["LABELYARD_BOOTSTRAP_ADMIN_KEY"] if bootstrap else admin_key

@@ -648,6 +648,10 @@ msgstr "Gerät"
 msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
 msgstr "Inventarnummer (zum Beispiel AT-0042), numerische ID (42) oder ein gedruckter Etikettenlink. Standorte brauchen das Präfix loc:, zum Beispiel loc:17."
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Assigned to"
+msgstr "Zugewiesen an"
+
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
 msgstr "An jeder Kreuzung sitzt eine kleine Skala: ±2 mm, ein Strich alle 0,2 mm."
@@ -869,6 +873,10 @@ msgstr "Zertifikatsprüfung"
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Change colour"
 msgstr "Farbe ändern"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Charge cycles"
+msgstr "Ladezyklen"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check page"
@@ -1615,6 +1623,18 @@ msgstr "Grocy kann seine eigenen Etiketten an diesen Hub schicken: Produkte, Bes
 msgid "Grocy chore {id}"
 msgstr "Grocy-Hausarbeit {id}"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy has no battery with the ID {id}."
+msgstr "Grocy kennt keine Batterie mit der ID {id}."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy has no chore with the ID {id}."
+msgstr "Grocy kennt keine Hausarbeit mit der ID {id}."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy is not set up yet, so this cannot be shown."
+msgstr "Grocy ist noch nicht eingerichtet, daher lässt sich das nicht anzeigen."
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy labels"
 msgstr "Grocy-Etiketten"
@@ -1857,6 +1877,14 @@ msgstr "Sprache"
 msgid "Last changed"
 msgstr "Zuletzt geändert"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Last charged"
+msgstr "Zuletzt geladen"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Last done"
+msgstr "Zuletzt erledigt"
+
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
@@ -1968,6 +1996,7 @@ msgstr "Einlegehinweis"
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/printers/PrinterGrid.tsx
 #: src/features/printers/RollColourPrompt.tsx
+#: src/features/scan/GrocycodePage.tsx
 #: src/features/settings/AccessKeys.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/Printers.tsx
@@ -2102,6 +2131,10 @@ msgstr "Name und Host sind erforderlich."
 msgid "Needs attention"
 msgstr "Braucht Aufmerksamkeit"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Never"
+msgstr "Nie"
+
 #: src/features/settings/LastUsed.tsx
 msgid "Never used"
 msgstr "Nie benutzt"
@@ -2147,6 +2180,14 @@ msgstr "Neuer Typ"
 #: src/shell/UpdatePrompt.tsx
 msgid "New version available"
 msgstr "Neue Version verfügbar"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Next charge"
+msgstr "Nächste Ladung"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Next due"
+msgstr "Nächste Fälligkeit"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "no"
@@ -2317,6 +2358,10 @@ msgstr "Nicht gefunden"
 #: src/features/lookup/ItemView.tsx
 msgid "Not found in {name}"
 msgstr "Nicht gefunden in {name}"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Not found in Grocy"
+msgstr "In Grocy nicht gefunden"
 
 #: src/features/printers/model.ts
 msgid "Not monitored"
@@ -2537,6 +2582,7 @@ msgstr "In Grocy öffnen"
 
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
+#: src/features/scan/GrocycodePage.tsx
 msgid "Open Settings › Integrations"
 msgstr "Einstellungen › Integrationen öffnen"
 
@@ -3980,14 +4026,6 @@ msgstr "Die Markierung der Zellen konnte nicht aufgehoben werden."
 msgid "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 msgstr "Die Kontrollseite ist gedruckt. Miss die Kreuzungen noch einmal: Jede sollte innerhalb von 0,5 mm liegen."
 
-#: src/features/scan/GrocycodePage.tsx
-msgid "The code on this label names a battery in Grocy."
-msgstr "Der Code auf diesem Etikett bezeichnet eine Batterie in Grocy."
-
-#: src/features/scan/GrocycodePage.tsx
-msgid "The code on this label names a chore in Grocy."
-msgstr "Der Code auf diesem Etikett bezeichnet eine Hausarbeit in Grocy."
-
 #: src/features/archive/errors.ts
 msgid "The code prefix"
 msgstr "Das Code-Präfix"
@@ -4032,6 +4070,10 @@ msgstr "Das Standardfach muss eines der eingeschalteten Fächer sein."
 #: src/features/archive/errors.ts
 msgid "The description"
 msgstr "Die Beschreibung"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "The details could not be loaded."
+msgstr "Die Details konnten nicht geladen werden."
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The device at this address changed while you were looking. Check the values shown now before you decide."
@@ -4096,10 +4138,6 @@ msgstr "Der Hub kennt keinen Bogen {code}."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "Der Hub kennt keinen Bogen {preselectedSheet}."
-
-#: src/features/scan/GrocycodePage.tsx
-msgid "The hub does not know the Grocy address yet. Open a product from Grocy once, or open it in Grocy yourself."
-msgstr "Der Hub kennt die Grocy-Adresse noch nicht. Öffne einmal ein Produkt aus Grocy oder öffne den Eintrag selbst in Grocy."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The hub restarted while this label waited for the next part. Print it again."
@@ -4966,6 +5004,7 @@ msgstr "Die Fächer erscheinen, sobald der Drucker geantwortet hat."
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/scan/GrocycodePage.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Erneut versuchen"

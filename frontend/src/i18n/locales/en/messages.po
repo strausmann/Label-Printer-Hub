@@ -648,6 +648,10 @@ msgstr "Asset"
 msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
 msgstr "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Assigned to"
+msgstr "Assigned to"
+
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
 msgstr "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
@@ -869,6 +873,10 @@ msgstr "Certificate check"
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Change colour"
 msgstr "Change colour"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Charge cycles"
+msgstr "Charge cycles"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check page"
@@ -1615,6 +1623,18 @@ msgstr "Grocy can send its own labels to this hub: products, stock entries, chor
 msgid "Grocy chore {id}"
 msgstr "Grocy chore {id}"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy has no battery with the ID {id}."
+msgstr "Grocy has no battery with the ID {id}."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy has no chore with the ID {id}."
+msgstr "Grocy has no chore with the ID {id}."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy is not set up yet, so this cannot be shown."
+msgstr "Grocy is not set up yet, so this cannot be shown."
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy labels"
 msgstr "Grocy labels"
@@ -1857,6 +1877,14 @@ msgstr "Language"
 msgid "Last changed"
 msgstr "Last changed"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Last charged"
+msgstr "Last charged"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Last done"
+msgstr "Last done"
+
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
@@ -1968,6 +1996,7 @@ msgstr "Load hint"
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/printers/PrinterGrid.tsx
 #: src/features/printers/RollColourPrompt.tsx
+#: src/features/scan/GrocycodePage.tsx
 #: src/features/settings/AccessKeys.tsx
 #: src/features/settings/Integrations.tsx
 #: src/features/settings/Printers.tsx
@@ -2102,6 +2131,10 @@ msgstr "Name and host are required."
 msgid "Needs attention"
 msgstr "Needs attention"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Never"
+msgstr "Never"
+
 #: src/features/settings/LastUsed.tsx
 msgid "Never used"
 msgstr "Never used"
@@ -2147,6 +2180,14 @@ msgstr "New type"
 #: src/shell/UpdatePrompt.tsx
 msgid "New version available"
 msgstr "New version available"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Next charge"
+msgstr "Next charge"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Next due"
+msgstr "Next due"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "no"
@@ -2317,6 +2358,10 @@ msgstr "Not found"
 #: src/features/lookup/ItemView.tsx
 msgid "Not found in {name}"
 msgstr "Not found in {name}"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Not found in Grocy"
+msgstr "Not found in Grocy"
 
 #: src/features/printers/model.ts
 msgid "Not monitored"
@@ -2537,6 +2582,7 @@ msgstr "Open in Grocy"
 
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
+#: src/features/scan/GrocycodePage.tsx
 msgid "Open Settings › Integrations"
 msgstr "Open Settings › Integrations"
 
@@ -3980,14 +4026,6 @@ msgstr "The cells could not be un-marked."
 msgid "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 msgstr "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 
-#: src/features/scan/GrocycodePage.tsx
-msgid "The code on this label names a battery in Grocy."
-msgstr "The code on this label names a battery in Grocy."
-
-#: src/features/scan/GrocycodePage.tsx
-msgid "The code on this label names a chore in Grocy."
-msgstr "The code on this label names a chore in Grocy."
-
 #: src/features/archive/errors.ts
 msgid "The code prefix"
 msgstr "The code prefix"
@@ -4032,6 +4070,10 @@ msgstr "The default tray must be one of the enabled trays."
 #: src/features/archive/errors.ts
 msgid "The description"
 msgstr "The description"
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "The details could not be loaded."
+msgstr "The details could not be loaded."
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The device at this address changed while you were looking. Check the values shown now before you decide."
@@ -4096,10 +4138,6 @@ msgstr "The hub does not know a sheet {code}."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "The hub does not know a sheet {preselectedSheet}."
-
-#: src/features/scan/GrocycodePage.tsx
-msgid "The hub does not know the Grocy address yet. Open a product from Grocy once, or open it in Grocy yourself."
-msgstr "The hub does not know the Grocy address yet. Open a product from Grocy once, or open it in Grocy yourself."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The hub restarted while this label waited for the next part. Print it again."
@@ -4966,6 +5004,7 @@ msgstr "Trays are listed once the printer has answered."
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/scan/GrocycodePage.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Try again"

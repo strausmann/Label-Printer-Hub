@@ -180,6 +180,20 @@ test.describe.serial("scan", () => {
     await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
   });
 
+  test("@grocy-battery a scanned battery code shows the battery's name and facts", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Scan" }).click();
+    await expect(page).toHaveURL(/\/grocycode\/b\/4$/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Remote AAA" })).toBeVisible();
+    await expect(page.getByText("Warranty ends 2027")).toBeVisible();
+    await expect(page.getByText("Charge cycles")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open in Grocy/ })).toHaveAttribute("href", "https://grocy.example.invalid/battery/4");
+    await expect(page.getByRole("link", { name: "Scan again" })).toBeVisible();
+    expect(await noSideScroll(page)).toBe(true);
+    await shot(page, "task-10b-scan-grocy-battery.png");
+  });
+
   test("@data-matrix zxing worker decodes a data-matrix image under the production CSP", async () => {
     const problems = await watch(page);
     // Make sure the browser's own detector cannot be the one reading this.

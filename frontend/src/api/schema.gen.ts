@@ -475,6 +475,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/lookup/grocy/batteries/{battery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a Grocy battery
+         * @description Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up.
+         */
+        get: operations["grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/grocy/chores/{chore_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a Grocy chore
+         * @description Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up.
+         */
+        get: operations["grocy_chore_api_v1_lookup_grocy_chores__chore_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/lookup/{app}/{entity_id}": {
         parameters: {
             query?: never;
@@ -1922,6 +1962,89 @@ export interface components {
              * @enum {string}
              */
             shape: "rectangle" | "round";
+        };
+        /**
+         * GrocyBatteryResult
+         * @description What Grocy knows about one battery.
+         */
+        GrocyBatteryResult: {
+            /**
+             * Charge Cycles
+             * @description How often it was charged so far
+             * @default 0
+             */
+            charge_cycles: number;
+            /**
+             * Description
+             * @description The description, when one is set
+             */
+            description?: string | null;
+            /**
+             * Id
+             * @description The battery id
+             */
+            id: string;
+            /**
+             * Last Charged
+             * @description When it was last charged. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            last_charged?: string | null;
+            /**
+             * Name
+             * @description The battery's name
+             */
+            name: string;
+            /**
+             * Next Estimated Charge
+             * @description When it is estimated to need charging next; null without interval. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            next_estimated_charge?: string | null;
+            /**
+             * Url
+             * @description The battery's page in Grocy's web UI
+             */
+            url?: string | null;
+        };
+        /**
+         * GrocyChoreResult
+         * @description What Grocy knows about one chore.
+         */
+        GrocyChoreResult: {
+            /**
+             * Assigned To
+             * @description Display name of the user assigned to the next run, if Grocy returns one
+             */
+            assigned_to?: string | null;
+            /**
+             * Description
+             * @description The description, when one is set
+             */
+            description?: string | null;
+            /**
+             * Id
+             * @description The chore id
+             */
+            id: string;
+            /**
+             * Last Tracked
+             * @description When it was last done. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            last_tracked?: string | null;
+            /**
+             * Name
+             * @description The chore's name
+             */
+            name: string;
+            /**
+             * Next Estimated Execution
+             * @description When it is estimated to be done next; null when it is not scheduled. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            next_estimated_execution?: string | null;
+            /**
+             * Url
+             * @description The chore's page in Grocy's web UI
+             */
+            url?: string | null;
         };
         /**
          * GrocyWebhookPayload
@@ -5179,6 +5302,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric Grocy id */
+                battery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrocyBatteryResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grocy_chore_api_v1_lookup_grocy_chores__chore_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric Grocy id */
+                chore_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrocyChoreResult"];
                 };
             };
             /** @description Validation Error */

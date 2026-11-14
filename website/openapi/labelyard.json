@@ -1288,6 +1288,167 @@
         "title": "GeometryMm",
         "type": "object"
       },
+      "GrocyBatteryResult": {
+        "description": "What Grocy knows about one battery.",
+        "properties": {
+          "charge_cycles": {
+            "default": 0,
+            "description": "How often it was charged so far",
+            "minimum": 0.0,
+            "title": "Charge Cycles",
+            "type": "integer"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The description, when one is set",
+            "title": "Description"
+          },
+          "id": {
+            "description": "The battery id",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_charged": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was last charged. Grocy's local time, without a time zone offset; null when Grocy has no such date.",
+            "title": "Last Charged"
+          },
+          "name": {
+            "description": "The battery's name",
+            "title": "Name",
+            "type": "string"
+          },
+          "next_estimated_charge": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it is estimated to need charging next; null without interval. Grocy's local time, without a time zone offset; null when Grocy has no such date.",
+            "title": "Next Estimated Charge"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The battery's page in Grocy's web UI",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "GrocyBatteryResult",
+        "type": "object"
+      },
+      "GrocyChoreResult": {
+        "description": "What Grocy knows about one chore.",
+        "properties": {
+          "assigned_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name of the user assigned to the next run, if Grocy returns one",
+            "title": "Assigned To"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The description, when one is set",
+            "title": "Description"
+          },
+          "id": {
+            "description": "The chore id",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_tracked": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was last done. Grocy's local time, without a time zone offset; null when Grocy has no such date.",
+            "title": "Last Tracked"
+          },
+          "name": {
+            "description": "The chore's name",
+            "title": "Name",
+            "type": "string"
+          },
+          "next_estimated_execution": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it is estimated to be done next; null when it is not scheduled. Grocy's local time, without a time zone offset; null when Grocy has no such date.",
+            "title": "Next Estimated Execution"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The chore's page in Grocy's web UI",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "GrocyChoreResult",
+        "type": "object"
+      },
       "GrocyWebhookPayload": {
         "description": "Event payload emitted by Grocy when a product stock event occurs.",
         "properties": {
@@ -8159,6 +8320,108 @@
         "summary": "Retry a failed job",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/v1/lookup/grocy/batteries/{battery_id}": {
+      "get": {
+        "description": "Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up.",
+        "operationId": "grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get",
+        "parameters": [
+          {
+            "description": "The numeric Grocy id",
+            "in": "path",
+            "name": "battery_id",
+            "required": true,
+            "schema": {
+              "description": "The numeric Grocy id",
+              "pattern": "^[0-9]{1,18}$",
+              "title": "Battery Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrocyBatteryResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Read a Grocy battery",
+        "tags": [
+          "lookup"
+        ]
+      }
+    },
+    "/api/v1/lookup/grocy/chores/{chore_id}": {
+      "get": {
+        "description": "Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up.",
+        "operationId": "grocy_chore_api_v1_lookup_grocy_chores__chore_id__get",
+        "parameters": [
+          {
+            "description": "The numeric Grocy id",
+            "in": "path",
+            "name": "chore_id",
+            "required": true,
+            "schema": {
+              "description": "The numeric Grocy id",
+              "pattern": "^[0-9]{1,18}$",
+              "title": "Chore Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrocyChoreResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Read a Grocy chore",
+        "tags": [
+          "lookup"
         ]
       }
     },

@@ -10,4 +10,5 @@ export default async function globalSetup(): Promise<void> {
   await writeFakeCameraFile(FAKE_CAMERA.dataMatrix, FAKE_CAMERA.dataMatrixText, "DataMatrix");
   await writeFakeCameraFile(FAKE_CAMERA.sheet, FAKE_CAMERA.sheetText, "QRCode");
   await writeFakeCameraFile(FAKE_CAMERA.grocycode, FAKE_CAMERA.grocycodeText, "QRCode");
+  await writeFakeCameraFile(FAKE_CAMERA.grocyBattery, FAKE_CAMERA.grocyBatteryText, "QRCode");
 }

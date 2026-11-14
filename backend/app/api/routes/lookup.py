@@ -6,6 +6,8 @@
 Routes
 ------
 GET /api/v1/lookup/{app}/{id} — resolve an integration entity and return LookupResult
+GET /api/v1/lookup/grocy/batteries/{id} — a few facts about one Grocy battery
+GET /api/v1/lookup/grocy/chores/{id} — a few facts about one Grocy chore
 
 Design notes
 ------------
@@ -40,10 +42,11 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
+from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
 from app.schemas.lookup import LookupResult
 from app.services.lookup_service import AppLookupService
@@ -56,6 +59,9 @@ ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 # AppLookupService is stateless (reads settings once at construction);
 # constructing it at module level avoids per-request overhead.
 _lookup_service = AppLookupService()
+
+# A Grocy object id goes into an upstream URL path: digits only, so nothing else can reach it.
+GrocyIdPath = Annotated[str, Path(pattern=r"^[0-9]{1,18}$", description="The numeric Grocy id")]
 
 # Shared type alias for the app path parameter
 AppLiteral = Literal["snipeit", "grocy", "spoolman"]
@@ -99,3 +105,31 @@ async def lookup(
     # All other errors (network, 5xx) propagate as HTTP 500.
     data = await _lookup_service.lookup(app, entity_id)
     return _label_data_to_result(app, entity_id, data)
+
+
+@router.get(
+    "/grocy/batteries/{battery_id}",
+    response_model=GrocyBatteryResult,
+    summary="Read a Grocy battery",
+    description=(
+        "Name, description, last and next charging and the number of charge cycles of one Grocy "
+        "battery, for the page a scanned battery code opens.  Same access and errors as the "
+        "product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up."
+    ),
+)
+async def grocy_battery(battery_id: GrocyIdPath, _auth: ReadAuthDep) -> GrocyBatteryResult:
+    return await _lookup_service.grocy_battery(battery_id)
+
+
+@router.get(
+    "/grocy/chores/{chore_id}",
+    response_model=GrocyChoreResult,
+    summary="Read a Grocy chore",
+    description=(
+        "Name, description, last and next execution and the assigned user of one Grocy chore, "
+        "for the page a scanned chore code opens.  Same access and errors as the product lookup: "
+        "404 when Grocy has no such chore, 503 when Grocy is not set up."
+    ),
+)
+async def grocy_chore(chore_id: GrocyIdPath, _auth: ReadAuthDep) -> GrocyChoreResult:
+    return await _lookup_service.grocy_chore(chore_id)

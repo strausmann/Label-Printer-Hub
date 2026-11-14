@@ -39,6 +39,7 @@ export default defineConfig({
     { name: "scan-data-matrix", testMatch: /scan\.spec\.ts/, grep: /@data-matrix/, use: camera(FAKE_CAMERA.dataMatrix) },
     { name: "scan-sheet", testMatch: /scan\.spec\.ts/, grep: /@sheet/, use: camera(FAKE_CAMERA.sheet) },
     { name: "scan-grocycode", testMatch: /scan\.spec\.ts/, grep: /@grocycode/, use: camera(FAKE_CAMERA.grocycode) },
+    { name: "scan-grocy-battery", testMatch: /scan\.spec\.ts/, grep: /@grocy-battery/, use: camera(FAKE_CAMERA.grocyBattery) },
   ],
   webServer: [
     {
