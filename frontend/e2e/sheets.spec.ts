@@ -199,6 +199,9 @@ test.describe.serial("sheets", () => {
     await expect(page.getByRole("list", { name: "Cells in use" })).not.toContainText("e2e probe");
   });
 
+  // This test leaves L4736-0004 resolved: there is no way to un-resolve cells, so no restore step. The sheet has its own
+  // seeded copy for short-viewport.spec.ts. A retry after a late failure finds no unconfirmed cells and fails at the
+  // first expectation; that only hides nothing, the first failure is the one to read.
   test("resolve all unconfirmed cells as printed", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });

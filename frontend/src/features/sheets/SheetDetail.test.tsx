@@ -399,6 +399,60 @@ describe("resolving all unconfirmed cells at once (#282)", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
+  it("a network error is said in words, outside the closed dialog", async () => {
+    await open(three(), {
+      [`POST ${ALL}`]: () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server cannot be reached.");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("while the request is out Cancel, Escape and the confirm button do nothing; the title keeps its count and never says 0", async () => {
+    let release: (r: Response) => void = () => undefined;
+    const { calls } = await open(three(), {
+      [`POST ${ALL}`]: () => new Promise<Response>((resolve) => (release = resolve)),
+    });
+    const seen: string[] = [];
+    const watcher = new MutationObserver(() => seen.push(document.body.textContent ?? ""));
+    watcher.observe(document.body, { childList: true, subtree: true, characterData: true });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Resolve 3 cells as printed?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Resolve as printed" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Resolve as printed" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog", { name: "Resolve 3 cells as printed?" })).toBeVisible();
+    release(new Response(JSON.stringify(sheetRead(CODE, { used: [1, 5, 6, 7] })), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    watcher.disconnect();
+    expect(seen.some((text) => /Resolve 0 cell/.test(text))).toBe(false);
+    expect(posts(calls)).toHaveLength(1);
+  });
+
+  it("moves the focus to the sheet heading after the cells are settled", async () => {
+    await open(three(), { [`POST ${ALL}`]: sheetRead(CODE, { used: [1, 5, 6, 7] }) });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1, name: CODE })).toHaveFocus());
+  });
+
+  it("a count-change message goes away with the next successful write", async () => {
+    await open(three(), {
+      [`POST ${ALL}`]: () => respond(409, apiErrorBody("unconfirmed_count_changed", "The count changed.", { unconfirmed: 4 })),
+      [`POST ${PATH}/cells/resolve`]: sheetRead(CODE, { used: [1, 5], unconfirmed: [6, 7] }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The number of unconfirmed cells changed.");
+    await userEvent.click(screen.getByRole("button", { name: "Printed, cell 5" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
   it("nothing left to resolve is said in words", async () => {
     await open(three(), { [`POST ${ALL}`]: () => respond(409, apiErrorBody("no_unconfirmed_cells", "None.")) });
     await userEvent.click(screen.getByRole("button", { name: "Resolve all as not printed" }));

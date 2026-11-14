@@ -96,6 +96,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const [inspected, setInspected] = useState<number | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const unconfirmedHeading = useRef<HTMLHeadingElement>(null);
+  const sheetHeading = useRef<HTMLHeadingElement>(null);
 
   const discarded = sheet.state === "discarded";
   const byNumber = useMemo(() => new Map(sheet.cells.map((c) => [c.cell, c])), [sheet.cells]);
@@ -121,6 +122,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const selectable = (c: GridCell) => (mode === "mark" ? !byNumber.has(c.cell) : mode === "unmark" ? handMarked.has(c.cell) : false);
 
   function enter(next: Mode) {
+    resolveAll.reset();
     mark.reset();
     unmark.reset();
     setPicked(new Set());
@@ -150,7 +152,11 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
     resolveAll.mutate(
       { code, outcome, expectedCount: count },
       {
-        onSuccess: () => setResolvingAll(null),
+        onSuccess: () => {
+          setResolvingAll(null);
+          // The button that was pressed is gone with its section: focus the page's own heading instead of dropping to the body.
+          setTimeout(() => sheetHeading.current?.focus(), 0);
+        },
         onError: () => {
           setResolvingAll(null);
           reload();
@@ -190,7 +196,9 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
     <div className="flex min-w-0 flex-col gap-6">
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="min-w-0 font-mono text-title font-bold [overflow-wrap:anywhere]">{code}</h1>
+          <h1 ref={sheetHeading} tabIndex={-1} className="min-w-0 font-mono text-title font-bold outline-none [overflow-wrap:anywhere]">
+            {code}
+          </h1>
           {discarded ? <Badge tone="warn">{t({ message: "discarded", context: "sheet state" })}</Badge> : null}
         </div>
         <p className="text-ink-2 [overflow-wrap:anywhere]">
@@ -287,7 +295,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
                         <Button
                           isDisabled={resolve.isPending || resolveAll.isPending}
                           aria-label={t`Printed, cell ${n}`}
-                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "printed" }, { onError: reload })}
+                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "printed" }, { onSuccess: () => resolveAll.reset(), onError: reload })}
                           className={SECONDARY_BUTTON}
                         >
                           {t({ message: "Printed", context: "resolve an unconfirmed cell" })}
@@ -295,7 +303,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
                         <Button
                           isDisabled={resolve.isPending || resolveAll.isPending}
                           aria-label={t`Not printed, cell ${n}`}
-                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "not_printed" }, { onError: reload })}
+                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "not_printed" }, { onSuccess: () => resolveAll.reset(), onError: reload })}
                           className={SECONDARY_BUTTON}
                         >
                           {t({ message: "Not printed", context: "resolve an unconfirmed cell" })}
@@ -411,12 +419,17 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
       {canEdit ? (
         <ModalDialog
           title={
-            resolvingAll?.outcome === "not_printed"
-              ? plural(resolvingAll.count, { one: "Resolve # cell as not printed?", other: "Resolve # cells as not printed?" })
-              : plural(resolvingAll?.count ?? 0, { one: "Resolve # cell as printed?", other: "Resolve # cells as printed?" })
+            !resolvingAll
+              ? ""
+              : resolvingAll.outcome === "not_printed"
+                ? plural(resolvingAll.count, { one: "Resolve # cell as not printed?", other: "Resolve # cells as not printed?" })
+                : plural(resolvingAll.count, { one: "Resolve # cell as printed?", other: "Resolve # cells as printed?" })
           }
           isOpen={resolvingAll !== null}
-          onClose={() => setResolvingAll(null)}
+          // A request in flight is not taken back by closing the question: it stays until the answer is in.
+          onClose={() => {
+            if (!resolveAll.isPending) setResolvingAll(null);
+          }}
           alert
         >
           <p>
@@ -428,7 +441,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             <Button isDisabled={resolveAll.isPending} onPress={confirmResolveAll} className={PRIMARY_BUTTON}>
               {resolvingAll?.outcome === "not_printed" ? t`Resolve as not printed` : t`Resolve as printed`}
             </Button>
-            <Button onPress={() => setResolvingAll(null)} className={SECONDARY_BUTTON}>
+            <Button isDisabled={resolveAll.isPending} onPress={() => setResolvingAll(null)} className={SECONDARY_BUTTON}>
               {t`Cancel`}
             </Button>
           </div>
