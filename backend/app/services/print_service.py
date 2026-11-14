@@ -38,7 +38,7 @@ from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
 from app.services.event_bus import BusEvent
 from app.services.layout_engine import LayoutEngine
 from app.services.print_error_codes import print_error_code
-from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
+from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_JOB
 from app.services.ql_layout import resolve_layout
 
 _log = logging.getLogger(__name__)
@@ -91,7 +91,9 @@ class PrintService:
         self._layout_defaults: dict[int, LayoutDefault] = dict(layout_defaults or {})
         self._event_bus = event_bus
         # #281: the completions of deferred jobs that still run (cancelled on a stop/re-wire).
-        self._deferred: set[asyncio.Task[None]] = set()
+        # Task -> its job id; a job id leaves ``_unhanded`` once its payload is complete.
+        self._deferred: dict[asyncio.Task[None], UUID] = {}
+        self._unhanded: set[UUID] = set()
 
     @property
     def layout_defaults(self) -> dict[int, LayoutDefault]:
@@ -304,8 +306,15 @@ class PrintService:
             self._complete_deferred(job_id, label, content_type),
             name=f"deferred-job-{job_id}",
         )
-        self._deferred.add(task)
-        task.add_done_callback(self._deferred.discard)
+        self._deferred[task] = job_id
+        self._unhanded.add(job_id)
+
+        def _done(done: asyncio.Task[None]) -> None:
+            self._deferred.pop(done, None)
+            if not done.cancelled():  # a cancelled one is settled by ``cancel_deferred``
+                self._unhanded.discard(job_id)
+
+        task.add_done_callback(_done)
         return job_id
 
     async def record_failed_job(
@@ -343,16 +352,23 @@ class PrintService:
         return job_id
 
     async def cancel_deferred(self) -> None:
-        """Cancel the deferred completions that still run (a stop or a re-wire).
+        """Cancel the deferred completions that still run (a stop, a re-wire or a detach).
 
-        Their rows stay ``queued`` without tape fields; the queue's recovery ends them
-        ``failed_restart``.
+        A job whose payload was not completed yet ends ``failed_restart``
+        (``deferred_interrupted``) right away, so a printer that is disabled or removed does
+        not leave it ``queued`` until a later attach (review F4). A job already completed
+        stays ``queued``: the queue holds it, or its recovery prints it once. A crash, where
+        this never runs, is caught by the queue's recovery.
         """
-        tasks = list(self._deferred)
-        for task in tasks:
+        jobs = dict(self._deferred)
+        for task in jobs:
             task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        if jobs:
+            await asyncio.gather(*jobs, return_exceptions=True)
+        for job_id in jobs.values():
+            if job_id in self._unhanded:
+                await self._store.mark_queued_failed_restart(job_id, DEFERRED_INTERRUPTED)
+        self._unhanded.difference_update(jobs.values())
 
     async def _complete_deferred(
         self, job_id: UUID, label: LabelData, requested: ContentType
@@ -394,6 +410,7 @@ class PrintService:
                     "options": options.model_dump(mode="json"),
                 },
             )
+            self._unhanded.discard(job_id)
             if not completed:
                 # Cancelled (or otherwise ended) while it was prepared: nothing to print.
                 return

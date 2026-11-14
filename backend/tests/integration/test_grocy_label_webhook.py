@@ -661,8 +661,10 @@ async def test_deferred_job_interrupted_by_restart_fails_once(hub: Hub) -> None:
         r = await _post(client)
         assert r.status_code == 202, r.text
         job_id = r.json()["job_id"]
-    # The app stopped while the preflight slept: the label was never handed to the queue.
-    assert (await _row(job_id)).state == "queued"
+    # The app stopped while the preflight slept: the label was never handed to the queue,
+    # and the stop ended it at once (review F4; a crash is the recovery's case, below).
+    stopped = await _row(job_id)
+    assert (stopped.state, stopped.error) == ("failed_restart", "deferred_interrupted")
     async with hub.running() as (_client, _app):
         row = await _ends(job_id, "failed_restart")
         await asyncio.sleep(3.5)  # past the old preflight: nothing comes back to life
@@ -794,3 +796,51 @@ async def test_cancel_between_payload_and_queue_hand_off_never_prints(
     assert hub.backend.printed_images == []
     events = _job_events(hub, job_id)
     assert not any(to in ("printing", "failed") for _from, to in events), events
+
+
+# --- detach and crash (review F4) ------------------------------------------------------------
+
+
+async def test_detach_ends_an_interrupted_deferred_job_at_once(hub: Hub) -> None:
+    hub.slow_preflight(3.0)
+    async with hub.running() as (client, app):
+        r = await _post(client)
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+        await app.state.printer_runtime.detach(hub.printer_id)  # disabled or removed
+        row = await _row(job_id)  # no re-attach: nothing else would end it
+        await asyncio.sleep(3.5)  # past the old preflight
+        later = await _row(job_id)
+    assert (row.state, row.error) == ("failed_restart", "deferred_interrupted")
+    assert later.state == "failed_restart"
+    assert hub.backend.printed_images == []
+
+
+async def test_deferred_row_left_by_a_crash_ends_failed_restart(hub: Hub) -> None:
+    """No graceful stop ran (a crash): the queue's recovery ends the row at the next start."""
+    import app.db.engine as eng
+
+    job = DbJob(
+        printer_id=hub.printer_id,
+        template_key=None,
+        payload={
+            "deferred": True,
+            "content_type": "qr_two_lines",
+            "label_data": {
+                "source_app": "grocy",
+                "title": "Oat milk",
+                "primary_id": "12",
+                "qr_payload": "grcy:p:12",
+                "secondary": [],
+                "items": [],
+            },
+        },
+    )
+    async with eng.async_session() as s:
+        s.add(job)
+        await s.commit()
+        job_id = str(job.id)
+    async with hub.running() as (_client, _app):
+        row = await _ends(job_id, "failed_restart")
+    assert row.error == "deferred_interrupted"
+    assert hub.backend.printed_images == []
