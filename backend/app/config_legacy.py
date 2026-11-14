@@ -160,7 +160,7 @@ def listen_port_warning(environ: Mapping[str, str]) -> str | None:
 
     The port is chosen by the shell in the start command, before the application runs; this
     repeats that choice (first non-empty of the variables above) so a port set by an old
-    ``.env`` line shows up in ``docker logs``. It names the variable and the value, never a
+    ``.env`` line shows up in ``docker logs`` and in the hub's log view. It names the variable and the value, never a
     secret.
     """
     for name in _PORT_VARIABLES:

@@ -42,7 +42,7 @@ Coming from 1.4.x? Upgrade your API clients for 1.5.0 first (`/api/v1` paths, wi
 
 ## Behaviour changes
 
-- **The server port variable now takes effect.** `LABELYARD_SERVER_PORT` (and the old `PRINTER_HUB_SERVER_PORT`) was documented but ignored. The container now listens on the port it names and falls back to `PORT`, then `8000`. A `.env` file copied from an older `.env.example` may still contain `LABELYARD_SERVER_PORT=8090`: delete that line, or set it to the port your compose file maps (`8000` by default). Afterwards `/healthz` on the mapped port must answer. If the port is not `8000`, the hub logs one warning at startup that names the variable.
+- **The server port variable now takes effect.** `LABELYARD_SERVER_PORT` (and the old `PRINTER_HUB_SERVER_PORT`) was documented but ignored. The container now listens on the port it names and falls back to `PORT`, then `8000`. A `.env` file copied from an older `.env.example` may still contain `LABELYARD_SERVER_PORT=8090`: delete that line, or set it to the port your compose file maps (`8000` by default). Afterwards `/healthz` on the mapped port must answer. If the port is not `8000`, the hub logs one warning at startup that names the variable, in the container output (`docker logs`) and in the hub's log view.
 - **Installed web apps keep the old icon for a while.** A home-screen app installed before 1.6.0 shows the old name and icon until the browser refreshes its manifest. On iOS that never happens by itself: remove the app from the home screen and add it again.
 
 ## Environment variables
@@ -51,7 +51,7 @@ Renaming is optional for now. The hub reads `LABELYARD_*`; the former `PRINTER_H
 
 - A `LABELYARD_` variable always wins over its `PRINTER_HUB_` twin.
 - Empty values are ignored on both prefixes, so a compose line such as `PRINTER_HUB_X=${PRINTER_HUB_X:-}` never overrides anything.
-- At startup the hub logs one warning line listing the old names that take effect, so you know what to rename. If an old name is overridden by a `LABELYARD_` twin, a second line lists those ignored names. Both lines carry **names** only, never values.
+- At startup the hub logs one warning line listing the old names that take effect, so you know what to rename. You find it in the container output (`docker logs`) and in the hub's log view on the System page. If an old name is overridden by a `LABELYARD_` twin, a second line lists those ignored names. Both lines carry **names** only, never values.
 - The old names are read until at least 2.0.0.
 - The PDF font override follows the same pattern: `LABELYARD_PDF_FONT` is read first, the old `PRINTHUB_PDF_FONT` when the new one is unset or empty, with a warning that names the variable.
 
