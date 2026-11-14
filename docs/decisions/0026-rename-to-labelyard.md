@@ -29,6 +29,7 @@ We change everything we own and keep everything that users' data or clients depe
 | Database file name | `printer-hub.db` | — | Unchanged, so existing installs find their data |
 | Sheet-type file format name | `<slug>.sheet-type` | — | Unchanged: stored in users' exported files |
 | API paths | `/api/v1/...` | — | Unchanged |
+| IPP user name of print jobs | `labelyard` | `label-printer-hub` | Jobs sent under the old name are still recognised as the hub's own. Print servers with user allow lists or per-user accounting need the new name. A server that lets only a job's owner cancel it may refuse to cancel a job 1.5.x left running: page-printer queues should drain before the upgrade |
 
 A brand guard (`scripts/brand_guard.py`) lists every remaining old name outside an allow-list that mirrors this table, so the rename stays finished.
 
