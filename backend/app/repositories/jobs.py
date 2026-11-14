@@ -227,20 +227,23 @@ def _handed_off() -> Any:
     return page | (deferred & rendered)
 
 
-async def cancel_queued_unhanded(session: AsyncSession, job_id: UUID) -> Job | None:
+async def cancel_queued_unhanded(
+    session: AsyncSession, job_id: UUID, *, unhanded_only: bool = True
+) -> Job | None:
     """QUEUED -> CANCELLED for a job the queue does not hold, in one guarded statement.
 
-    Not written (``None``) when the row is no longer ``queued`` or is a deferred job that was
-    handed to the queue meanwhile (review I-1): the cancel then has to go through the queue,
-    or the in-memory job would print a row that says ``cancelled``.
+    Not written (``None``) when the row is no longer ``queued`` or, with ``unhanded_only``, is
+    a row the queue holds or is about to hold (review I-1): the cancel then has to go through
+    the queue, or the in-memory job would print a row that says ``cancelled``. Without it only
+    the state is checked (the last resort after the wait). Either way the statement is the
+    test and the write at once: of two cancels, one writes.
     """
+    guards = [col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value]
+    if unhanded_only:
+        guards.append(~_handed_off())
     stmt = (
         update(Job)
-        .where(
-            col(Job.id) == job_id,
-            col(Job.state) == JobState.QUEUED.value,
-            ~_handed_off(),
-        )
+        .where(*guards)
         .values(state=JobState.CANCELLED.value, finished_at=datetime.now(UTC))
         .execution_options(synchronize_session=False)
     )

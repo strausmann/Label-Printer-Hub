@@ -258,12 +258,11 @@ async def cancel_job(
     # The queue does not hold the job (a deferred Grocy job before its hand-off, #281). The
     # write is guarded: if the task handed the job to the queue since ``has_job`` above, the
     # row is not touched and the cancel goes through the queue (review I-1). The hand-off
-    # registers the job just before or just after its payload write, so a short wait covers it.
+    # registers the job just before or just after its payload write, so a short, read-only wait
+    # covers it (review N-2); at its end one more guarded write cancels a row nothing took.
+    cancelled = await jobs_repo.cancel_queued_unhanded(session, job_id)
     deadline = asyncio.get_running_loop().time() + _HAND_OFF_WAIT_S
-    while True:
-        cancelled = await jobs_repo.cancel_queued_unhanded(session, job_id)
-        if cancelled is not None:
-            break
+    while cancelled is None:
         if queue is not None and queue.has_job(job_id):
             await session.refresh(job)
             return await _cancel_tracked(session, job, queue, job_id)
@@ -272,8 +271,12 @@ async def cancel_job(
             raise _cancel_conflict(job.state)
         if asyncio.get_running_loop().time() > deadline:
             # A completed payload the queue still does not hold (a hand-off held up, or one
-            # that failed): cancel the row; a later pick-up refuses a row that is not queued.
-            cancelled = await jobs_repo.mark_cancelled(session, job_id)
+            # that failed): cancel the row if it is still queued; a later pick-up refuses a
+            # row that is not. Only the write that wins answers 200 and announces it (N-1).
+            cancelled = await jobs_repo.cancel_queued_unhanded(session, job_id, unhanded_only=False)
+            if cancelled is None:
+                await session.refresh(job)
+                raise _cancel_conflict(job.state)
             break
         await asyncio.sleep(0.01)
     # No worker transition announces it, so a watcher would keep it ``queued`` (review N4).
