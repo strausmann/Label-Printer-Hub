@@ -11,6 +11,7 @@ image workflow against a throw-away pre-release tag does that.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -427,6 +428,54 @@ def test_dependabot_covers_release_toolchain() -> None:
         if u["package-ecosystem"] == "npm" and u["directory"] == "/.github/release-tools"
     ]
     assert entries, "release toolchain pins would never receive updates"
+
+
+def _codeowners_owners(path: str) -> list[str]:
+    """Owners of a repository path: the last matching CODEOWNERS line wins.
+
+    Covers the pattern forms the file uses: `*`, an anchored file, an anchored
+    directory with a trailing slash and an anchored glob.
+    """
+    owners: list[str] = []
+    text = (REPO_ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        pattern, *line_owners = line.split()
+        if pattern == "*":
+            hit = True
+        elif pattern.endswith("/"):
+            hit = path.startswith(pattern)
+        else:
+            hit = fnmatch.fnmatchcase(path, pattern)
+        if hit:
+            owners = line_owners
+    return owners
+
+
+def test_dependabot_npm_and_pip_manifests_have_no_code_owner() -> None:
+    """Dependabot patch/minor PRs on these manifests auto-merge only when ownerless.
+
+    The release toolchain under /.github/ stays owned on purpose.
+    """
+    cfg = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    manifests = {
+        ("pip", "/"): ["/backend/pyproject.toml"],
+        ("npm", "/"): ["/package.json", "/frontend/package.json", "/frontend/pnpm-lock.yaml"],
+        ("npm", "/website"): ["/website/package.json", "/website/pnpm-lock.yaml"],
+    }
+    configured = {(u["package-ecosystem"], u["directory"]) for u in cfg["updates"]}
+    for key, paths in manifests.items():
+        assert key in configured, key
+        for path in paths:
+            assert (REPO_ROOT / path.lstrip("/")).is_file(), path
+            assert _codeowners_owners(path) == [], path
+    assert _codeowners_owners("/.github/release-tools/package.json") == ["@strausmann"]
+    # Every npm/pip directory Dependabot updates outside /.github/ is covered above.
+    for ecosystem, directory in configured:
+        if ecosystem in ("npm", "pip") and not directory.startswith("/.github"):
+            assert (ecosystem, directory) in manifests, (ecosystem, directory)
 
 
 def test_release_jobs_declare_minimal_permissions() -> None:
