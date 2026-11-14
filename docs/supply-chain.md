@@ -25,7 +25,7 @@ receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
 | Web licence list | Every package the web app ships, with licence and text | `/licenses/frontend.json` of the running app; `/opt/app/web/licenses/frontend.json` in the image; About page | in the image from 1.6.0 |
 | Web SBOM | CycloneDX document of the web bundle | `frontend.cdx.json` in the image (`/opt/app/web/frontend.cdx.json`), also served as `/frontend.cdx.json` | in the image from 1.6.0 |
 | Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | in the image from 1.6.0, generated at build time; the About page says the list is missing in builds without it |
-| BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published with every image; see the note on its limits below |
+| BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published with every image; see the notes below |
 | BuildKit provenance | How and where the image was built | registry, read without pulling | published with every image, `mode=max` set explicitly by the image workflow |
 | Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | attached to every release from 1.6.0 on |
 | SPDX headers in every own file | `reuse lint` clean | repository | checked in CI on every pull request |
@@ -63,11 +63,14 @@ The same commands work on Docker Hub with `docker.io/<user>/labelyard:<version>`
 previews (`<version>-rc.N`) are published to both registries. If the platform-indexed command prints `null` or an
 error for a platform that `{{ json .SBOM }}` lists, report it; do not assume the image is clean.
 
-Two limits you should know before relying on the BuildKit SBOM:
+Two things you should know before relying on the BuildKit SBOM:
 
-- It describes what a scan of the final image layers finds. It does **not** list the packages bundled into the
-  web app by the Vite build. Measured on 2026-11-11 on the 1.5.0 image: the SPDX document has no `react`. The
-  web bundle is therefore covered by the embedded document in the next section.
+- Its scanner reads the embedded `frontend.cdx.json` (see below), so the SPDX document lists the packages of the
+  web bundle too. Measured in the live check of the `1.6.0-rc.2` preview (BuildKit scanner Syft 1.51.0): `react`,
+  `react-dom` and `@scalar/api-reference` are in it, with the source "acquired package info from SBOM:
+  /opt/app/web/frontend.cdx.json". The 1.5.0 image of the predecessor name has no web packages in its SPDX
+  document (it has no embedded document). This is a property of BuildKit's scanner, not something the project
+  controls, so use the embedded `frontend.cdx.json` as the authoritative list of the web bundle.
 - The provenance records the build arguments, the build steps and the source of the build. The image workflow
   sets `mode=max`, so it carries `buildkit_metadata` with layer information. It contains no secrets by design (the
   workflow passes none as build arguments), but read it before you share it.
@@ -156,7 +159,7 @@ selection for images. To make it read the document, select it explicitly:
 syft scan ghcr.io/strausmann/labelyard:<version> --select-catalogers +sbom-cataloger -o cyclonedx-json
 ```
 
-Without `+sbom-cataloger` the result lacks the web packages, in line with the BuildKit SBOM above. The image
+Without `+sbom-cataloger` the result lacks the web packages. (BuildKit's own scanner reads the embedded document without this switch; see the note on its limits above.) The image
 workflow runs this command (Syft 1.55.0) for every release and preview build and fails when the result lacks
 `react`, a package that only `frontend.cdx.json` contributes.
 
