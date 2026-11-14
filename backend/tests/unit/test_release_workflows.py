@@ -621,10 +621,7 @@ _COSIGN_INSTALLER = "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e562
 _DIGEST_CHECK = "^sha256:[0-9a-f]{64}$"
 # The refs that are signed; the certificate identity in docs/supply-chain.md ends with the same
 # group (test_licence_metadata.COSIGN_IDENTITY_REGEXP).
-SIGNED_REFS = (
-    r"^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)"
-    r"|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$"
-)
+SIGNED_REFS = r"^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$"
 
 
 def _merge_steps() -> list[dict[str, Any]]:
@@ -664,7 +661,10 @@ def test_merge_signs_index_digest() -> None:
     assert len(creates) == 1
     create_index = creates[0]
     assert "--metadata-file" in str(steps[create_index]["run"])
-    assert create_index < installer_index < sign_index
+    verifies = [i for i, s in enumerate(steps) if s.get("name") == "Verify multi-arch manifest"]
+    assert len(verifies) == 1
+    # Signed only after the index was pushed and checked for both platforms.
+    assert create_index < verifies[0] < installer_index < sign_index
 
 
 def test_signing_is_keyless() -> None:
@@ -694,7 +694,9 @@ def test_cleanup_keeps_signature_children() -> None:
         s for s in steps if str(s.get("uses", "")).startswith("dataaxiom/ghcr-cleanup-action@")
     ]
     assert len(prune) == 1
-    # v1.2.2 treats the signature (referrer or `sha256-<digest>` tag) as a child of its image.
+    # Guards only the pin: the GHCR signature tag `sha256-<digest>` survives because this action
+    # version treats it as a child of its image (src/utils.ts:50-54 parentDigestFromReferrerTag,
+    # src/package-repo.ts:193-203, src/manifest-analyzer.ts:133-151). A new SHA must re-check them.
     assert (
         prune[0]["uses"] == "dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f"
     )
@@ -715,8 +717,6 @@ def test_signing_only_on_publishing_refs() -> None:
         "refs/heads/main",
         "refs/heads/milestone/1.6.0",
         "refs/heads/milestone/1.5.x",
-        "refs/tags/v1.6.0",
-        "refs/tags/v1.6.0-rc.1",
     ):
         result = subprocess.run(
             ["bash", "-c", check + "\necho SIGN"],
@@ -730,6 +730,9 @@ def test_signing_only_on_publishing_refs() -> None:
         "refs/heads/feat/x",
         "refs/heads/main-x",
         "refs/heads/milestone/1.6.1",
+        # Tags are not a publishing ref (no tag ruleset; releases are built on main).
+        "refs/tags/v1.6.0",
+        "refs/tags/v1.6.0-rc.1",
         "refs/tags/v1.6",
         "refs/pull/1/merge",
         "",

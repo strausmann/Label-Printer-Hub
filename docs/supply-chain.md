@@ -92,12 +92,12 @@ Resolve the tag to its digest first, then verify the digest:
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
 
 cosign verify \
-  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$' \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/strausmann/labelyard@<digest>
 
 cosign verify \
-  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$' \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   docker.io/<user>/labelyard@<digest>
 ```
@@ -110,16 +110,25 @@ workflow signs from:
 |---|---|
 | `refs/heads/main` | releases, `dev`, previews built on main |
 | `refs/heads/milestone/<x.y.0>`, `refs/heads/milestone/<x.y.x>` | previews of a milestone |
-| `refs/tags/v<version>` | a manual rebuild started from a release tag |
 
 A release is signed from `refs/heads/main`: the release workflow runs on main and calls the image workflow, and
-the certificate carries the caller's ref. Images from any other branch are published unsigned. The identity
+the certificate carries the caller's ref. Tags are not a publishing ref: images from a tag or from any other
+branch are published unsigned. The identity
 allows the current and the former repository name, because previews built before the rename carry the former
 name in their certificate. `[b]` in the pattern matches the letter b.
 
-To pin one ref exactly, add `--certificate-github-workflow-ref`, for a release
-`--certificate-github-workflow-ref refs/heads/main`. `cosign verify` exits with an error when no valid signature
-matches; a successful run prints the verified signature payload.
+For a release after the rename, you can verify against the exact identity instead of the pattern:
+
+```bash
+cosign verify \
+  --certificate-identity https://github.com/strausmann/labelyard/.github/workflows/docker-publish.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/strausmann/labelyard@<digest>
+```
+
+With the pattern, `--certificate-github-workflow-ref refs/heads/main` also pins the ref, but it reads a deprecated
+certificate extension; the exact identity is the sturdier pin. `cosign verify` exits with an error when no valid
+signature matches; a successful run prints the verified signature payload.
 
 Where the signature is stored differs per registry. Docker Hub keeps it as an OCI referrer of the index, without a
 tag. GHCR has no referrers support, so cosign stores it under a tag `sha256-<index digest>`. That tag is not an

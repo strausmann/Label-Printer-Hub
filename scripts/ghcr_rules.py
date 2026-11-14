@@ -61,7 +61,9 @@ _PREVIEW = re.compile(rf"^(({_NUM})\.({_NUM})\.({_NUM}))-rc\.([0-9]+)$")
 _PATCH_MILESTONE = re.compile(rf"^({_NUM})\.({_NUM})\.x$")
 # Tags the retention rule knows. Anything else is foreign: GHCR's cleanup
 # action deletes it (every tag is a candidate there), the Docker Hub job only
-# reports it and leaves the decision to a maintainer.
+# reports it and leaves the decision to a maintainer. One exception on GHCR:
+# cosign signature tags `sha256-<digest>` are foreign here, but the action keeps
+# them as children of their image and removes them only together with it.
 _KNOWN = re.compile(rf"^(dev|latest|{_NUM}|{_NUM}\.{_NUM}|{_NUM}\.{_NUM}\.{_NUM}(-rc\.[0-9]+)?)$")
 # A Docker tag (the registry's own grammar); used before a tag goes into a URL.
 _DOCKER_TAG = re.compile(r"\A[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")

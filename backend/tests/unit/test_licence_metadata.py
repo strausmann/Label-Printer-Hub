@@ -19,8 +19,11 @@ SUPPLY_CHAIN_DOC = "docs/supply-chain.md"
 # out of the text for scripts/brand_guard.py.
 COSIGN_IDENTITY_REGEXP = (
     r"^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)"
-    r"/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)"
-    r"|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$"
+    r"/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$"
+)
+# The exact identity for releases after the rename (they are signed from main).
+COSIGN_RELEASE_IDENTITY = (
+    "https://github.com/strausmann/labelyard/.github/workflows/docker-publish.yml@refs/heads/main"
 )
 
 
@@ -103,8 +106,6 @@ def test_cosign_identity_regexp() -> None:
         "refs/heads/milestone/1.6.0",
         "refs/heads/milestone/2.0.0",
         "refs/heads/milestone/1.5.x",
-        "refs/tags/v1.6.0",
-        "refs/tags/v1.6.0-rc.1",
     )
     for repo in (old, "labelyard"):
         for ref in signed:
@@ -116,6 +117,9 @@ def test_cosign_identity_regexp() -> None:
         "refs/heads/milestone/1.6.1",
         "refs/heads/milestone/1.6.0/x",
         "refs/heads/mainx",
+        # Tags are not a publishing ref (no tag ruleset; releases are built on main).
+        "refs/tags/v1.6.0",
+        "refs/tags/v1.6.0-rc.1",
         "refs/tags/v1.6",
         "refs/tags/1.6.0",
         "refs/pull/1/merge",
@@ -154,6 +158,10 @@ def test_supply_chain_doc() -> None:
     identities = re.findall(r"--certificate-identity-regexp '([^']*)'", doc)
     assert identities, "no cosign verify identity in the doc"
     assert set(identities) == {COSIGN_IDENTITY_REGEXP}
+    # The exact release identity is offered as well, and it is covered by the regexp.
+    exact = re.findall(r"--certificate-identity (\S+)", doc)
+    assert exact == [COSIGN_RELEASE_IDENTITY] * len(exact) and exact
+    assert re.match(COSIGN_IDENTITY_REGEXP, COSIGN_RELEASE_IDENTITY)
     # On a multi-platform image the short form prints null; it must not be recommended.
     assert "--format '{{ json .SBOM.SPDX }}'" not in doc
     # The README only points here; it does not repeat the text.

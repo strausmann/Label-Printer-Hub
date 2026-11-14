@@ -472,6 +472,30 @@ jobs:
           docker buildx imagetools create --metadata-file "$RUNNER_TEMP/index-meta.json" \
             "${tag_args[@]}" "${ann_args[@]}" "${src_args[@]}"
 
+      - name: Verify multi-arch manifest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "Inspecting $tag …"
+            archs=$(docker buildx imagetools inspect "$tag" --raw \
+              | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"' \
+              | sort -u)
+            echo "  architectures: $(echo "$archs" | tr '\n' ' ')"
+            if ! echo "$archs" | grep -q "linux/amd64"; then
+              echo "::error::Missing linux/amd64 in $tag"
+              fail=1
+            fi
+            if ! echo "$archs" | grep -q "linux/arm64"; then
+              echo "::error::Missing linux/arm64 in $tag"
+              fail=1
+            fi
+          done <<< "$TAGS"
+          exit "$fail"
+
       - name: Install cosign
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
@@ -483,19 +507,21 @@ jobs:
       # repository the index was pushed to (GHCR, and Docker Hub when its tags are
       # in the list); the index carries the platform images and their attestations.
       #
+      # Runs after the multi-arch check, so a defective index is never signed.
       # Only refs the project publishes from are signed, the same list as the
-      # identity in docs/supply-chain.md: main (dev, releases, previews),
-      # milestone/x.y.0 and milestone/x.y.x (previews), and a v<semver> tag
-      # (manual dispatch). A called workflow sees the caller's ref, and Fulcio
-      # writes that ref into the certificate. A build from any other branch is
-      # published unsigned, so its certificate can never match the identity.
+      # identity in docs/supply-chain.md: main (dev, releases, previews) and
+      # milestone/x.y.0 or milestone/x.y.x (previews); both are protected by
+      # the branch ruleset. Tags are not a publishing ref: releases are built
+      # on main. A called workflow sees the caller's ref, and Fulcio writes that
+      # ref into the certificate. A build from any other ref is published
+      # unsigned, so no certificate for it can match the identity.
       - name: Sign the index by digest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
           REF: ${{ github.ref }}
         run: |
           set -euo pipefail
-          signed_refs='^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$'
+          signed_refs='^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$'
           if ! [[ "$REF" =~ $signed_refs ]]; then
             echo "::notice::Not signed: images from this ref are not signed"
             exit 0
@@ -523,30 +549,6 @@ jobs:
             echo "Signing ${repo}@${DIGEST}"
             cosign sign --yes "${repo}@${DIGEST}"
           done
-
-      - name: Verify multi-arch manifest
-        env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-        run: |
-          set -euo pipefail
-          fail=0
-          while IFS= read -r tag; do
-            [ -z "$tag" ] && continue
-            echo "Inspecting $tag …"
-            archs=$(docker buildx imagetools inspect "$tag" --raw \
-              | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"' \
-              | sort -u)
-            echo "  architectures: $(echo "$archs" | tr '\n' ' ')"
-            if ! echo "$archs" | grep -q "linux/amd64"; then
-              echo "::error::Missing linux/amd64 in $tag"
-              fail=1
-            fi
-            if ! echo "$archs" | grep -q "linux/arm64"; then
-              echo "::error::Missing linux/arm64 in $tag"
-              fail=1
-            fi
-          done <<< "$TAGS"
-          exit "$fail"
 
   # ---------------------------------------------------------------------------
   # Phase 3: a CycloneDX SBOM of the published image, handed to release.yml.
