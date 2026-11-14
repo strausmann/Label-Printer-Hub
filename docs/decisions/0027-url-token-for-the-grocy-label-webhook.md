@@ -25,7 +25,7 @@ We accept an **API key with the effective scope `print`** as the value of a lite
 - A `read` key answers 403 `insufficient_scope`; an **`admin` key answers 403 `token_scope_too_wide`**. An admin key must never sit in Grocy's configuration and log.
 - Every failure of the token itself — missing, malformed, longer than 128 characters, unknown, disabled, expired, wrong — answers the same **401 `invalid_token`** with one fixed message, because Grocy forwards the answer to its user. A token over 128 characters is refused before the key is looked up.
 - The key's own rate limit applies (429 with `Retry-After`).
-- A logging filter on `uvicorn.access` and `uvicorn.error` replaces the value of every literal `token=` parameter with `***` in the record's message and arguments before any handler sees it; the app installs it at start. The filter and the token reader use the same shape, so a token the hub accepts is a token it hides.
+- A logging filter on `uvicorn.access` and `uvicorn.error` replaces the value of every `token=` parameter with `***` in the record's message and arguments before any handler sees it; the app installs it at start. The filter covers a superset of what the reader accepts: besides the literal `token=` it hides every look-alike the reader refuses (any case, `;` as separator, a percent-encoded name such as `%74oken=`) and any value in the shape of a hub key (`lh_pat_…`) anywhere in the line. A token the hub accepts is a token it hides, and so is every look-alike it refuses.
 
 The dependency is `require_print_token` (`backend/app/api/dependencies/token_auth.py`), the filter `install_query_token_redaction` (`backend/app/observability/redact_query.py`).
 

@@ -6,8 +6,8 @@ key travels in the query string. The rules:
 - The token is the value of a **literal** ``token=`` parameter of the raw query string
   (``request.scope["query_string"]``). Only the value is percent-decoded; a parameter
   whose *name* is percent-encoded (``to%6Ben=``) is not a token. This is the same shape
-  the log filter in :mod:`app.observability.redact_query` redacts, so a token the hub
-  accepts is always one it hides from its logs.
+  the log filter in :mod:`app.observability.redact_query` redacts; the filter also hides
+  every look-alike this reader refuses (``TOKEN=``, ``;token=``, ``%74oken=``).
 - The ``X-Label-Hub-Key`` header is accepted too and wins over the query.
 - Every failure of the token itself (missing, malformed, longer than
   ``MAX_TOKEN_LENGTH``, unknown, disabled, expired, wrong) answers one and the same 401

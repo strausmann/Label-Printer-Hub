@@ -221,6 +221,21 @@ async def test_encoded_parameter_name_is_not_a_token(client: AsyncClient) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    ["?TOKEN={k}", "?Token={k}", "?a=1;token={k}", "?%74oken={k}"],
+    ids=["upper", "title", "semicolon", "enc-t"],
+)
+async def test_look_alikes_the_filter_hides_are_not_accepted(
+    client: AsyncClient, query: str
+) -> None:
+    # The reader stays literal; the log filter redacts these too (a superset).
+    r = await client.post("/hook" + query.format(k=PRINT_KEY))
+    assert r.status_code == 401
+    assert r.json() == INVALID_TOKEN_BODY
+
+
+@pytest.mark.asyncio
 async def test_percent_encoded_value_is_decoded(client: AsyncClient) -> None:
     encoded = PRINT_KEY.replace("_", "%5F")
     r = await client.post(f"/hook?x=1&token={encoded}&y=2")

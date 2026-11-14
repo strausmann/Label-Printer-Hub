@@ -85,6 +85,69 @@ def test_mapping_args_are_redacted() -> None:
     assert record.getMessage() == "/hook?token=***"
 
 
+# Built at runtime: a literal in the key format would trip the repository's secret scanner.
+LIVE_KEY = "lh_pat_" + "Q" * 43
+
+
+def _access_record(target: str) -> logging.LogRecord:
+    """A record exactly as uvicorn.access emits it."""
+    return logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("192.0.2.1:5000", "POST", target, "1.1", 401),
+        None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        (f"/hook?TOKEN={LIVE_KEY}", "/hook?TOKEN=***"),
+        (f"/hook?Token={LIVE_KEY}&x=1", "/hook?Token=***&x=1"),
+        (f"/hook?a=1;token={LIVE_KEY}", "/hook?a=1;token=***"),
+        (f"/hook?token={LIVE_KEY};b=2", "/hook?token=***;b=2"),
+        (f"/hook?to%6Ben={LIVE_KEY}", "/hook?to%6Ben=***"),
+        (f"/hook?%74oken={LIVE_KEY}", "/hook?%74oken=***"),
+        (f"/hook?%74O%6bE%6E={LIVE_KEY}", "/hook?%74O%6bE%6E=***"),
+    ],
+    ids=["upper", "title", "semicolon-before", "semicolon-after", "enc-k", "enc-t", "enc-mixed"],
+)
+def test_token_look_alikes_are_redacted(target: str, expected: str) -> None:
+    record = _access_record(target)
+    QueryTokenRedactor().filter(record)
+    message = record.getMessage()
+    assert f'"POST {expected} HTTP/1.1" 401' in message
+    assert "Q" * 20 not in message
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        f"/api/v1/things/{LIVE_KEY}",
+        f"/hook?key={LIVE_KEY}",
+        f"/hook?xtoken={LIVE_KEY}",
+    ],
+    ids=["in-path", "other-param", "prefixed-name"],
+)
+def test_key_shaped_value_is_redacted_anywhere(target: str) -> None:
+    record = _access_record(target)
+    QueryTokenRedactor().filter(record)
+    message = record.getMessage()
+    assert "lh_pat_***" in message
+    assert "Q" * 20 not in message
+
+
+def test_key_shaped_value_in_plain_message_is_redacted() -> None:
+    record = logging.LogRecord(
+        "uvicorn.error", logging.ERROR, __file__, 1, f"boom near {LIVE_KEY}.", None, None
+    )
+    QueryTokenRedactor().filter(record)
+    assert record.getMessage() == "boom near lh_pat_***."
+
+
 def test_other_parameters_untouched() -> None:
     url = "/api/v1/jobs?tokenizer=1&page=2&xtoken=3"
     record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, "%s", (url,), None)
