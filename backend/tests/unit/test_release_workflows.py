@@ -255,7 +255,8 @@ def test_dockerhub_description_workflow() -> None:
         "docker pull ghcr.io/strausmann/labelyard:latest",
         "docker pull docker.io/bstrausmann/labelyard:latest",
     }
-    assert "https://labelyard.app" in text
+    links = set(re.findall(r"https://[^\s)<>\"]+", text))
+    assert "https://labelyard.app" in links or "https://labelyard.app/" in links
     # Docker Hub resolves no relative paths: every image is an absolute URL.
     images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
     images += re.findall(r'<img[^>]+src="([^"]+)"', text)
