@@ -1,8 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 blank_issues_enabled: false
 contact_links:
   - name: Question or discussion
-    url: https://github.com/strausmann/label-printer-hub/discussions
+    url: https://github.com/strausmann/labelyard/discussions
     about: Ask questions, share ideas, get help with deployment
   - name: Security vulnerability
-    url: https://github.com/strausmann/label-printer-hub/security/advisories/new
+    url: https://github.com/strausmann/labelyard/security/advisories/new
     about: Report a security issue privately (do NOT open a public issue)

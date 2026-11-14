@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#294: the event stream of a plain API key carries job events of its own jobs only.
 
 ``job.state_changed`` and ``run.state_changed`` (and the job frames of the snapshot) reach a
@@ -258,7 +261,7 @@ async def test_an_admin_key_session_gets_every_job_event(hub_app) -> None:
 
 async def test_an_sso_user_gets_every_job_event(hub_app, monkeypatch) -> None:
     app, _ = hub_app
-    monkeypatch.setenv("PRINTER_HUB_SSO_TRUST_TOKEN", FAKE_TRUST_TOKEN)
+    monkeypatch.setenv("LABELYARD_SSO_TRUST_TOKEN", FAKE_TRUST_TOKEN)
     get_settings.cache_clear()
     printer, _owner, _owner_id, other_id = await _world()
     foreign = await _job(printer, other_id)

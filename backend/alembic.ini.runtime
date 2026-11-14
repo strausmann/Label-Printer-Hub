@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Docker runtime Alembic configuration.
 #
 # This file is COPYed into the container at the path that lifespan.py resolves

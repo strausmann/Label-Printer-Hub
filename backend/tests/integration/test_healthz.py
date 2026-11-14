@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integration tests for the /healthz endpoint.
 
 The healthz endpoint is the container's liveness probe — Docker, Kubernetes,
@@ -50,7 +53,7 @@ class TestHealthz:
             assert body[field], f"healthz {field} is empty"
         # Repo URL points at the public GitHub project — useful for users
         # who curl healthz on an unfamiliar host.
-        assert "github.com/strausmann/label-printer-hub" in body["repository"]
+        assert "github.com/strausmann/labelyard" in body["repository"]
 
     def test_no_authentication_required(self, client: TestClient) -> None:
         """Container orchestrators probe healthz without credentials."""
@@ -78,9 +81,7 @@ class TestAppMetadata:
     def test_openapi_title(self, client: TestClient) -> None:
         response = client.get("/openapi.json")
         data = response.json()
-        # Title can be "Label Printer Hub" or "label-printer-hub" — both fine
-        title_lower = data["info"]["title"].lower()
-        assert "label" in title_lower and "printer" in title_lower and "hub" in title_lower
+        assert data["info"]["title"] == "Labelyard API"
 
     def test_redoc_is_gone(self, client: TestClient) -> None:
         # /docs itself (Scalar) is covered in tests/integration/api/test_api_docs.py.
@@ -99,7 +100,7 @@ class TestHealthzModel:
             version="1.2.3",
             revision="abc1234",
             build_date="2026-05-10T12:00:00Z",
-            repository="https://github.com/strausmann/label-printer-hub",
+            repository="https://github.com/strausmann/labelyard",
         )
         with pytest.raises(ValidationError):
             instance.status = "tampered"  # type: ignore[misc]
@@ -113,4 +114,4 @@ def test_healthz_repository_has_no_credentials(
 
     monkeypatch.setattr(main_module, "HUB_REPO_URL", "https://token@example.invalid/x")
     body = client.get("/healthz").json()
-    assert body["repository"] == "https://github.com/strausmann/label-printer-hub"
+    assert body["repository"] == "https://github.com/strausmann/labelyard"

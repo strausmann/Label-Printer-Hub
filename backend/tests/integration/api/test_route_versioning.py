@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Every API route lives under ``/api/v1`` (#226).
 
 The app is built with the ``dist`` fixture so the SPA catch-all exists and the walk sees the
@@ -83,7 +86,7 @@ async def test_spa_owns_former_legacy_job_path(spa: AsyncClient, accept: str) ->
 async def test_bootstrap_session_creates_first_key_on_v1_path(
     spa: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
+    monkeypatch.setenv("LABELYARD_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
     get_settings.cache_clear()
     signed_in = await spa.post("/api/v1/auth/session", json={"key": FAKE_BOOTSTRAP_KEY})
     assert signed_in.status_code == 204, signed_in.text

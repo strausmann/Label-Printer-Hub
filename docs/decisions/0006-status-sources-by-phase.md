@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0006 — Status sources by phase (ESC i S / passive notifications / SNMP)
 
 - **Status:** Accepted (amended 2026-11-10, see "Amendment" at the end)

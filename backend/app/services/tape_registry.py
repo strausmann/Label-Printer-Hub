@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Lookup of Brother tape specifications by physical width + media type.
 
 Phase 1i Sub-Task G: QL-Series endless (continuous-length) DK tapes added.

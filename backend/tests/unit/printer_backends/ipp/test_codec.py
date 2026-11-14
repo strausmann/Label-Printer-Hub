@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """IPP codec (RFC 8010) — fixtures, round trips and hostile input.
 
 The ``.bin`` fixtures are assembled by hand in ``fixtures/assemble.py`` from the
@@ -144,7 +147,7 @@ def test_print_job_request_with_media_col() -> None:
         request_id=2,
         groups=[
             _op_group(
-                Attr("requesting-user-name", Tag.NAME, ["label-printer-hub"]),
+                Attr("requesting-user-name", Tag.NAME, ["labelyard"]),
                 Attr("job-name", Tag.NAME, ["Calibration page"]),
                 Attr("document-format", Tag.MIME, ["application/pdf"]),
             ),

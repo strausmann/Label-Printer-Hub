@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -41,7 +44,7 @@ export function ReasonLine({ reasons }: { reasons: string[] }) {
 }
 
 /** The getting-started section that shows how an admin turns status discovery on until the form can (#296). */
-export const STATUS_DISCOVERY_DOC = "docs/getting-started.md#turn-on-status-discovery";
+export const STATUS_DISCOVERY_DOC = "website/src/content/docs/install/getting-started.md#turn-on-status-discovery";
 
 const HINT_LINK = "inline-flex min-h-11 items-center font-bold text-link underline underline-offset-2";
 

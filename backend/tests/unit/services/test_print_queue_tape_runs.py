@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#277: tape jobs of at most 50 labels, sent in checked groups of 10.
 
 A tape batch of more than ``MAX_LABELS_PER_TAPE_JOB`` labels is split into sub-jobs; the next one

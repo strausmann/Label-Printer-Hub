@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """REST cancel / queue-clear / retry must act on the live ``PrintQueue`` (issue #184).
 
 Unlike ``test_jobs_routes.py`` (DB-only, no queue on ``app.state``), these tests

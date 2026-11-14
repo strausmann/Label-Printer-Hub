@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const dist = resolve(__dirname, "..", "dist");
+const pkg = JSON.parse(readFileSync(resolve(__dirname, "..", "package.json"), "utf8")) as { name: string; dependencies: Record<string, string> };
 // CI runs this file after `pnpm build` with REQUIRE_DIST=1 so a missing build fails instead of skipping.
 const required = process.env.REQUIRE_DIST === "1";
 
@@ -111,6 +115,43 @@ describe.skipIf(!built)("built output", () => {
     expect(licence).toContain("Scalar");
     // A 5 MB documentation viewer must not be precached for every installed app.
     expect(readFileSync(join(dist, "sw.js"), "utf8")).not.toContain("scalar/standalone.js");
+  });
+
+  it("ships a licence list of everything the web app ships, and none of the tools that build it", () => {
+    const list = JSON.parse(readFileSync(join(dist, "licenses", "frontend.json"), "utf8")) as { name: string; licenseText: string | null }[];
+    const byName = new Map(list.map((record) => [record.name, record]));
+    for (const name of ["react", "react-dom", "@scalar/api-reference", "zxing-wasm", "workbox-precaching", "zxing-cpp"]) {
+      expect(byName.has(name), `${name} is missing from frontend.json`).toBe(true);
+      expect(byName.get(name)!.licenseText, `${name} has no licence text`).toBeTruthy();
+    }
+    // Every production dependency ships, including the two font packages whose CSS the bundler inlines.
+    for (const name of Object.keys(pkg.dependencies)) expect(byName.has(name), `${name} is a dependency but missing from frontend.json`).toBe(true);
+    // `yaml` is left out of this list on purpose: Scalar's standalone bundle contains it, so it ships.
+    for (const tool of ["vite", "vitest", "typescript", "eslint", "@playwright/test", "rollup-license-plugin", "spdx-exceptions", "spdx-expression-validate", pkg.name]) {
+      expect(byName.has(tool), `${tool} must not be listed`).toBe(false);
+    }
+  });
+
+  it("ships a CycloneDX document of the web bundle that names the project", () => {
+    const bom = JSON.parse(readFileSync(join(dist, "frontend.cdx.json"), "utf8")) as {
+      bomFormat: string;
+      specVersion: string;
+      metadata: { component: { name: string } };
+      components: { purl: string }[];
+    };
+    expect(bom).toMatchObject({ bomFormat: "CycloneDX", specVersion: "1.6" });
+    expect(bom.metadata.component.name).toBe(pkg.name);
+    const purls = bom.components.map((component) => component.purl);
+    expect(purls).toContain(`pkg:npm/react@${pkg.dependencies.react}`);
+    expect(purls).toContain(`pkg:npm/%40scalar/api-reference@${pkg.dependencies["@scalar/api-reference"]}`);
+    expect(purls.some((purl) => purl.startsWith("pkg:github/zxing-cpp/zxing-cpp@"))).toBe(true);
+  });
+
+  it("keeps the licence files out of the offline cache", () => {
+    // pwa.config.ts precaches no json; a glob that did would put a 500 KB list into every installed app.
+    const sw = readFileSync(join(dist, "sw.js"), "utf8");
+    expect(sw).not.toContain("frontend.json");
+    expect(sw).not.toContain("frontend.cdx.json");
   });
 
   it("csp: every inline style the bundle can inject is allowed by its hash, and nothing broader", () => {

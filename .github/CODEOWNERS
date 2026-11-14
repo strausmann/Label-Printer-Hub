@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # CODEOWNERS — who must approve a change
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
@@ -23,6 +26,19 @@
 /commitlint.config.cjs              @strausmann
 /scripts/release_impact.py          @strausmann
 /scripts/ghcr_rules.py              @strausmann
+
+# Architecture and process docs require maintainer review (listed explicitly for
+# the same reason).
+/CLAUDE.md                          @strausmann
+/CONTRIBUTING.md                    @strausmann
+/CODE_OF_CONDUCT.md                 @strausmann
+/README.md                          @strausmann
+/.gemini/                           @strausmann
+/.releaserc*                        @strausmann
+/docs/architecture.md               @strausmann
+/docs/plugin-development.md         @strausmann
+/website/src/content/docs/developers/     @strausmann
+/website/src/content/docs/de/developers/  @strausmann
 
 # Dependency manifests and lockfiles have no code owner: Dependabot patch and
 # minor updates are approved and auto-merged by dependabot-auto-merge.yml after

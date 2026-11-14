@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Printer capabilities: what a tape or page printer can do, from cached facts only."""
 
 from __future__ import annotations

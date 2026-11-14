@@ -1,10 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guard: the paths named in the contributor docs exist in the repository.
 
 What it checks, and where it stops:
 
 * every entry of a fenced *tree block* (a root line such as ``backend/app/`` followed by
-  ``├──`` / ``└──`` lines; the fence may be indented, as in a list item) in
-  ``docs/architecture.md`` and ``docs/plugin-development.md``;
+  ``├──`` / ``└──`` lines; the fence may be indented, as in a list item) in the website's
+  architecture and plugin authoring pages, in English and in German (``ARCHITECTURE`` and
+  ``PLUGIN_AUTHORING``);
 * every inline code span in those two files that starts with a known repository root
   (``backend/``, ``frontend/``, ``docs/``, ``examples/``, ``.github/``).
 
@@ -22,7 +26,18 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
+SITE_DOCS = "website/src/content/docs"
+ARCHITECTURE = (
+    f"{SITE_DOCS}/developers/architecture.md",
+    f"{SITE_DOCS}/de/developers/architecture.md",
+)
+PLUGIN_AUTHORING = (
+    f"{SITE_DOCS}/developers/plugin-authoring.md",
+    f"{SITE_DOCS}/de/developers/plugin-authoring.md",
+)
 ROOTS = ("backend/", "frontend/", "docs/", "examples/", ".github/")
 TREE_CHARS = ("├── ", "└── ")
 INLINE_RE = re.compile(r"`([^`\n]+)`")
@@ -140,25 +155,51 @@ def test_indented_fence_is_read_and_failures_name_the_line() -> None:
     assert missing == [(8, "backend/app/gone_nowhere.py")]
 
 
-def test_architecture_names_a_real_tree() -> None:
-    """The guard is not vacuous: architecture.md holds the backend and frontend trees."""
-    text = (REPO / "docs/architecture.md").read_text(encoding="utf-8")
+@pytest.mark.parametrize("doc", ARCHITECTURE)
+def test_architecture_names_a_real_tree(doc: str) -> None:
+    """The guard is not vacuous: each architecture page holds the backend and frontend trees."""
+    text = (REPO / doc).read_text(encoding="utf-8")
     named = [p for _, block in _fenced_blocks(text) for p in tree_paths(block)]
     assert len(named) >= 30
     assert "backend/app/services/layout_engine.py" in named
     assert "frontend/src/features/" in named
 
 
-def test_architecture_paths_exist() -> None:
-    assert _missing("docs/architecture.md", trees=True, inline=True) == []
+@pytest.mark.parametrize("doc", ARCHITECTURE)
+def test_architecture_paths_exist(doc: str) -> None:
+    assert _missing(doc, trees=True, inline=True) == []
 
 
-def test_plugin_development_paths_exist() -> None:
-    missing = _missing("docs/plugin-development.md", trees=True, inline=True)
+@pytest.mark.parametrize("doc", PLUGIN_AUTHORING)
+def test_plugin_development_paths_exist(doc: str) -> None:
+    missing = _missing(doc, trees=True, inline=True)
     assert missing == []
 
 
-def test_plugin_development_cites_code_paths() -> None:
+@pytest.mark.parametrize("doc", PLUGIN_AUTHORING)
+def test_plugin_development_cites_code_paths(doc: str) -> None:
     """The inline-path check is not vacuous for the plugin guide."""
-    text = (REPO / "docs/plugin-development.md").read_text(encoding="utf-8")
+    text = (REPO / doc).read_text(encoding="utf-8")
     assert len(inline_paths(text)) >= 10
+
+
+def _heading_anchors(text: str) -> set[str]:
+    """GitHub-style anchors of the headings: lower case, punctuation dropped, spaces to dashes."""
+    anchors = set()
+    for line in text.splitlines():
+        if line.startswith("#"):
+            title = line.lstrip("#").strip().lower()
+            anchors.add(re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", title)))
+    return anchors
+
+
+def test_status_discovery_link_of_the_web_ui_exists() -> None:
+    """The printer page links a docs file of the running build: that file and its heading exist."""
+    source = (REPO / "frontend/src/features/printers/PageStatus.tsx").read_text(encoding="utf-8")
+    match = re.search(r'STATUS_DISCOVERY_DOC = "([^"#]+)#([^"]+)"', source)
+    assert match, "STATUS_DISCOVERY_DOC not found"
+    path, anchor = match.groups()
+    doc = REPO / path
+    assert doc.is_file(), path
+    anchors = _heading_anchors(doc.read_text(encoding="utf-8"))
+    assert anchor in anchors, f"{path} has no heading #{anchor}"

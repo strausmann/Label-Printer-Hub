@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /** What a camera frame turned out to hold. `format` uses the BarcodeDetector spelling. */
 export interface ScanHit {
   format: string;

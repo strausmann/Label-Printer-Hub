@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintService resolves orientation and preset per job and from the stored default (#258)."""
 
 from __future__ import annotations

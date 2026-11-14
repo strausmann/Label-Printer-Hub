@@ -1,13 +1,31 @@
-# Label Printer Hub
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
 
-[![CI](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/Label-Printer-Hub/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/github/strausmann/Label-Printer-Hub/graph/badge.svg)](https://codecov.io/github/strausmann/Label-Printer-Hub)
-[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/labelyard/lockup-dark.svg">
+    <img src="docs/brand/labelyard/lockup.svg" alt="Labelyard" width="420">
+  </picture>
+</p>
+
+# Labelyard
+
+**The self-hosted Label Printer Hub for all your labels.**
+
+Formerly *Label Printer Hub*. The new name changes no data and no API path; see the [upgrade guide](https://labelyard.app/admin/upgrades/).
+
+Website: <https://labelyard.app>
+
+[![CI](https://github.com/strausmann/labelyard/actions/workflows/ci.yml/badge.svg)](https://github.com/strausmann/labelyard/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/strausmann/labelyard/actions/workflows/codeql.yml/badge.svg)](https://github.com/strausmann/labelyard/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/github/strausmann/labelyard/graph/badge.svg)](https://codecov.io/github/strausmann/labelyard)
+[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/labelyard)](https://cla-assistant.io/strausmann/labelyard)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
 [![semantic-release](https://img.shields.io/badge/%20%20%F0%9F%93%A6%F0%9F%9A%80-semantic--release-e10079.svg)](https://github.com/semantic-release/semantic-release)
-[![GitHub Issues](https://img.shields.io/github/issues/strausmann/label-printer-hub)](https://github.com/strausmann/label-printer-hub/issues)
+[![GitHub Issues](https://img.shields.io/github/issues/strausmann/labelyard)](https://github.com/strausmann/labelyard/issues)
 
 > Self-hosted print server for Brother PT-Series and QL-Series label printers and for page printers over IPP (label sheets). Pull-mode (scan a barcode, print) and push-mode (Spoolman/Grocy webhooks). Integrates with Snipe-IT, Grocy and Spoolman. Plugin-based architecture for additional printer models. Installable as a PWA on a phone.
 
@@ -153,16 +171,16 @@ The same pages adapt to a phone held next to the printer.
 
 ## Roadmap
 
-What comes next, by release. Each release is a [GitHub milestone](https://github.com/strausmann/Label-Printer-Hub/milestones) and ships when all its issues are closed; the order within the list can still change.
+What comes next, by release. Each release is a [GitHub milestone](https://github.com/strausmann/labelyard/milestones) and ships when all its issues are closed; the order within the list can still change.
 
 | Release | Main content |
 |---|---|
-| [1.6.0](https://github.com/strausmann/Label-Printer-Hub/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware |
-| [1.7.0](https://github.com/strausmann/Label-Printer-Hub/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery in the printer form |
-| [1.8.0](https://github.com/strausmann/Label-Printer-Hub/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration |
-| [1.9.0](https://github.com/strausmann/Label-Printer-Hub/milestone/9) | Integrations: free-text search, item details before printing, links into the apps, Snipe-IT locations, **Kept**, **Paperless-ngx** ASN labels on sheets |
-| [1.10.0](https://github.com/strausmann/Label-Printer-Hub/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB), detection by IP address, a printer test kit, job priorities |
-| [1.11.0](https://github.com/strausmann/Label-Printer-Hub/milestone/11) | E-mail notifications, a redesigned tape label layout, a print inbox other apps can fill |
+| [1.6.0](https://github.com/strausmann/labelyard/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware |
+| [1.7.0](https://github.com/strausmann/labelyard/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery in the printer form |
+| [1.8.0](https://github.com/strausmann/labelyard/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration |
+| [1.9.0](https://github.com/strausmann/labelyard/milestone/9) | Integrations: free-text search, item details before printing, links into the apps, Snipe-IT locations, **Kept**, **Paperless-ngx** ASN labels on sheets |
+| [1.10.0](https://github.com/strausmann/labelyard/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB), detection by IP address, a printer test kit, job priorities |
+| [1.11.0](https://github.com/strausmann/labelyard/milestone/11) | E-mail notifications, a redesigned tape label layout, a print inbox other apps can fill |
 
 ## Supported hardware
 
@@ -174,11 +192,11 @@ The printer protocols follow the [Brother PT-E550W/P750W/P710BT Raster Command R
 | Brother QL-820NWB | Label printer (DK rolls) | Driver included; test on the device pending |
 | HP LaserJet CP1525N | Page printer (IPP) | Status over IPP on the device; sheet printing on the device pending |
 
-Other Brother PT and QL models that share the command reference will likely work; other IPP printers should, since the hub uses only standard IPP operations. Tested another device, or one of these further? Please tell us with a [printer compatibility report](https://github.com/strausmann/Label-Printer-Hub/issues/new?template=printer-compatibility.yml) — works, partly works or not at all.
+Other Brother PT and QL models that share the command reference will likely work; other IPP printers should, since the hub uses only standard IPP operations. Tested another device, or one of these further? Please tell us with a [printer compatibility report](https://github.com/strausmann/labelyard/issues/new?template=printer-compatibility.yml) — works, partly works or not at all.
 
 ## Supported label sheets
 
-The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
+The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
 
 <details>
 <summary>36 sheet types (A4 and US Letter)</summary>
@@ -228,7 +246,7 @@ The hub ships with these sheet types. Their measurements come from the [gLabels 
 
 **One container:** a single backend process serves the REST API, the live event stream and the web UI ([ADR 0015](docs/decisions/0015-single-process-deployment.md)). Printers are added in the UI (Settings > Printers), not through environment variables.
 
-- **Backend** (`label-printer-hub-backend`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
+- **Backend** (`labelyard`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
 - **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling; an own IPP client over `httpx` for page printers ([ADR 0020](docs/decisions/0020-backend-kinds-ipp-page-printers.md)), with `reportlab` drawing the PDF pages
 - **Web UI** (built into the backend image from `frontend/`): React + TypeScript, Vite, PWA (manifest + service worker + camera scanning) — [ADR 0016](docs/decisions/0016-react-typescript-web-ui.md)
 - **Container**: Docker (multi-stage, one image), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
@@ -242,7 +260,7 @@ Every stable release publishes to **GitHub Container Registry (GHCR)** and **Doc
 |---|---|---|
 | `1.0.0` | exact version | You want full reproducibility |
 | `1.0` | latest patch in 1.0.x | Auto-update bug fixes |
-| `1` | latest minor.patch in 1.x.x | Stay on major version, get features |
+| `1` | latest 1.x release | Stay on major version, get features |
 | `latest` | most recent stable | You're fine with anything new |
 
 Pre-releases (`1.0.0-rc.1` etc.) publish **only the full version tag** — never `latest`, `<major>`, or `<major>.<minor>` — so a pre-release can never silently become the default.
@@ -251,14 +269,14 @@ Both registries receive identical multi-arch images (`linux/amd64`, `linux/arm64
 
 ## Quick Start
 
-See [`examples/README.md`](examples/README.md) for sample compose files (standalone / Traefik / Pangolin / Caddy).
+The full guide is on the website: [getting started](https://labelyard.app/install/getting-started/), [Docker Compose](https://labelyard.app/install/) and [reverse proxies](https://labelyard.app/install/reverse-proxy/). The sample compose files (standalone / Traefik / Pangolin / Caddy) are in [`examples/`](examples/).
 
 ```bash
-git clone https://github.com/strausmann/Label-Printer-Hub.git
-cd Label-Printer-Hub/examples
+git clone https://github.com/strausmann/labelyard.git
+cd labelyard/examples
 cp .env.example .env
-# Required: PRINTER_HUB_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
-#           PRINTER_HUB_PUBLIC_URL (the address you open the hub at; a local
+# Required: LABELYARD_SECRET_KEY (openssl rand -base64 32 | tr '+/' '-_')
+#           LABELYARD_PUBLIC_URL (the address you open the hub at; a local
 #           address such as http://localhost:8000 is fine)
 $EDITOR .env
 docker compose -f compose.standalone.yml up -d
@@ -266,12 +284,12 @@ docker compose -f compose.standalone.yml up -d
 curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/info
 # Open http://localhost:8000/ and sign in. A fresh install has no admin key:
-# either set PRINTER_HUB_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
-docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
+# either set LABELYARD_BOOTSTRAP_ADMIN_KEY (one-time key, 32+ characters) or run
+docker exec labelyard labelyard admin create-key --scope admin --name first-admin
 # then add your printers under Settings > Printers.
 ```
 
-Other containers in the same stack can call the hub directly with an API key: [using the hub from other services](examples/README.md#using-the-hub-from-other-services-in-the-same-stack).
+Other containers in the same stack can call the hub directly with an API key: [calling Labelyard from another container](https://labelyard.app/integrations/#calling-labelyard-from-another-container).
 
 For the REST API alone, without the web UI, see [`examples/compose.backend-only.yml`](examples/compose.backend-only.yml).
 
@@ -297,7 +315,7 @@ The backend exposes two HTTP probes with different semantics:
 
 `/readiness` returns HTTP 200 with `status` of `ready` (all checks ok) or `degraded` (non-critical checks failing — still routable), and HTTP 503 with `not-ready` when a critical check (database, alembic, template_seed) fails.
 
-The check `render_slots` counts page renders (sheet previews, page jobs) that ran past `PRINTER_HUB_RENDER_TIMEOUT_S` (default 60 s) and whose drawing thread has not ended (`metric.stuck` of `metric.slots`). A thread cannot be stopped, so such a render keeps its slot until it ends; with every slot stuck the check fails and the hub reports `degraded`. `/healthz` does not look at it, so the container healthcheck never restarts the hub for it: restart the hub by hand.
+The check `render_slots` counts page renders (sheet previews, page jobs) that ran past `LABELYARD_RENDER_TIMEOUT_S` (default 60 s) and whose drawing thread has not ended (`metric.stuck` of `metric.slots`). A thread cannot be stopped, so such a render keeps its slot until it ends; with every slot stuck the check fails and the hub reports `degraded`. `/healthz` does not look at it, so the container healthcheck never restarts the hub for it: restart the hub by hand.
 
 Pangolin's `targets[0].healthcheck.path` can use `/readiness` for deep checks instead of `/healthz`; Docker container healthchecks should stay on `/healthz` to avoid restart loops on transient DB failures.
 
@@ -337,47 +355,24 @@ Unknown fields are rejected (`extra="forbid"`). The label is laid out for the lo
 
 ## Environment variables
 
-Full reference lives in [`backend/.env.example`](backend/.env.example). The most-used variables grouped by purpose:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| **`PRINTER_HUB_SECRET_KEY`** | _required_ | Master key for secrets stored in the database (base64url of 32 random bytes; `openssl rand -base64 32 \| tr '+/' '-_'`) |
-| **`PRINTER_HUB_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://printer-hub:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
-| `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
-| `PRINTER_HUB_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
-| `PRINTER_HUB_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
-| `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
-| `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |
-| `PRINTER_HUB_WEBHOOK_API_KEY` | _empty_ | Bearer for inbound integration webhooks (≥ 32 chars; generate with `openssl rand -hex 32`) |
-| `PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE` | `120` | Webhook calls per minute and webhook key (Spoolman and Grocy together); above it the webhook answers `429` with `Retry-After` |
-| `PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` | `5` | Tape runs one printer has queued or printing at once (at least `5`); above it a batch answers `429` `too-many-queued-runs` |
-| `PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` | `20` | Tape runs one API key has at once over all printers, held runs included; above it a batch answers `429` `too-many-queued-runs` |
-| `PRINTER_HUB_RENDER_TIMEOUT_S` | `60` | Seconds one page may take to draw (sheet preview, page job); above it the preview answers `504` `render-timeout` and the page job fails `render_timeout` (max `600`) |
-| `PRINTER_HUB_SNIPEIT_URL` | _empty_ | Snipe-IT base URL |
-| `PRINTER_HUB_SNIPEIT_API_KEY` | _empty_ | Snipe-IT bearer token |
-| `PRINTER_HUB_GROCY_URL` | _empty_ | Grocy base URL |
-| `PRINTER_HUB_GROCY_API_KEY` | _empty_ | Grocy API key |
-| `PRINTER_HUB_SPOOLMAN_URL` | _empty_ | Spoolman base URL (no auth) |
-| `PRINTER_HUB_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. At `DEBUG` the hub's own loggers are verbose, but the database driver stays at `INFO` and SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it |
-
-All variables share the `PRINTER_HUB_` prefix and map 1:1 to the `Settings` model in `backend/app/config.py`. A variable set in the environment wins over the stored value and locks the field in the UI. Printers have no variables: they are managed in Settings > Printers.
+Two variables are required: `LABELYARD_SECRET_KEY` (master key for the secrets stored in the database; `openssl rand -base64 32 | tr '+/' '-_'`) and `LABELYARD_PUBLIC_URL` (the address people open the hub at; a local one such as `http://localhost:8000` is fine). Every other variable, its default and what it does: [configuration reference](https://labelyard.app/reference/configuration/). Printers have no variables: they are managed in Settings > Printers.
 
 ## Documentation
 
-**In this repository (engineering — change with code):**
+**On the website <https://labelyard.app> (user and developer docs, built from [`website/`](website/)) and in this repository:**
 
-- [Architecture overview](docs/architecture.md) — how the pieces fit
+- [Architecture overview](https://labelyard.app/developers/architecture/) — how the pieces fit
 - [Decisions (ADRs)](docs/decisions/) — *why* each architectural choice was made
-- [Getting started](docs/getting-started.md) — from `docker compose up` to the first label, the phone app and webhooks
-- [Plugin development](docs/plugin-development.md) — adding a printer model or a lookup plugin
+- [Getting started](https://labelyard.app/install/getting-started/) — from `docker compose up` to the first label, the phone app and webhooks
+- [Plugin authoring](https://labelyard.app/developers/plugin-authoring/) — adding a printer model or a lookup plugin
 - [Privacy policy](docs/policies/privacy.md), [Trademark policy](docs/policies/trademarks.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — Conventional Commits, TDD, PR workflow
 
 **On the wiki (tutorials and platform recipes — community-friendly):**
 
-- [Snipe-IT integration](https://github.com/strausmann/label-printer-hub/wiki/Snipe-IT-Integration)
-- [Grocy integration](https://github.com/strausmann/label-printer-hub/wiki/Grocy-Integration)
-- [Spoolman integration](https://github.com/strausmann/label-printer-hub/wiki/Spoolman-Integration)
+- [Snipe-IT integration](https://github.com/strausmann/labelyard/wiki/Snipe-IT-Integration)
+- [Grocy integration](https://github.com/strausmann/labelyard/wiki/Grocy-Integration)
+- [Spoolman integration](https://github.com/strausmann/labelyard/wiki/Spoolman-Integration)
 
 **Live API reference** (when running): `/openapi.json` and `/docs` (interactive reference, Scalar, served by the hub itself) — see [ADR 0011](docs/decisions/0011-openapi-as-api-contract.md).
 
@@ -395,7 +390,7 @@ Contributions are welcome — especially **printer model plugins**. See [CONTRIB
 
 ## License
 
-Label Printer Hub is licensed under the **GNU Affero General Public License, version 3 or later** (`AGPL-3.0-or-later`) — see [LICENSE](LICENSE).
+Labelyard is licensed under the **GNU Affero General Public License, version 3 or later** (`AGPL-3.0-or-later`) — see [LICENSE](LICENSE).
 
 Releases up to and including 1.0.3 are MIT; from 1.1.0 on AGPL-3.0-or-later. Anyone who received an earlier release keeps the MIT terms for that release.
 
@@ -405,6 +400,10 @@ Why the change:
 - The hub is a network service. Section 13 of the AGPL gives the people who use a modified version over a network the right to its source.
 
 If you run a modified version for others, set `HUB_REPO_URL` to where its source is published — the About page links there. Unmodified releases link to the exact tag of the running version.
+
+## Supply chain: SBOM and provenance
+
+The container images carry a software bill of materials and a build provenance attestation in the registry, and the About page lists the licences of the third-party packages of the web app (the Python packages follow in 1.6.0). How to read them without pulling the image, what the web bundle's CycloneDX document (`frontend.cdx.json`) covers and the policy behind the lists: [docs/supply-chain.md](docs/supply-chain.md).
 
 ## Acknowledgements
 

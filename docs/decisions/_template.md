@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # NNNN — <short title in present tense>
 
 - **Status:** Proposed | Accepted | Deprecated | Superseded by ADR-MMMM

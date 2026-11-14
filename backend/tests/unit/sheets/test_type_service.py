@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet type service: create, edit, versions, archive, delete (Plan 1, Task 3)."""
 
 from __future__ import annotations

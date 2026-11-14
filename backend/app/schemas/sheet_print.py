@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Request and response models of the sheet print preview (spec 12.6, 15).
 
 Request bodies refuse fields they do not know, so ``options`` (copies, cut) is not accepted:

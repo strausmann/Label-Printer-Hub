@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """QR landing paths: the web app renders the item view (D1).
 
 Routes (no /api/ prefix - these are the URLs printed as QR payloads)

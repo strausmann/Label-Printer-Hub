@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Explicit orientation and the three QL 62 mm presets (#258)."""
 
 from __future__ import annotations

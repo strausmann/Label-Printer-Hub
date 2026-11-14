@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { VitePWAOptions } from "vite-plugin-pwa";
 
 /**
@@ -17,8 +20,10 @@ export const pwaOptions: Partial<VitePWAOptions> = {
   injectRegister: false,
   workbox: {
     globPatterns: ["**/*.{js,css,html,woff2,svg,png,wasm,webmanifest}"],
-    // The API reference viewer (/docs) is a 5 MB developer tool, not part of the installable app.
-    globIgnores: ["scalar/**"],
+    // The API reference viewer (/docs) is a 5 MB developer tool, not part of the installable app. The social
+    // card and the single-colour mark are brand files for other sites and print, and the PNG favicons are for
+    // browsers without SVG favicons; the app itself never shows them.
+    globIgnores: ["scalar/**", "brand/social-card.png", "brand/mark-mono.svg", "favicon-16.png", "favicon-32.png"],
     navigateFallback: "/index.html",
     // /licenses/ holds the licence texts the About page links (AGPL section 13); they are not precached,
     // so the fallback would answer that link with the app shell instead of the text.

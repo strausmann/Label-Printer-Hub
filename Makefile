@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 .PHONY: docs-svg-samples
 
 ## docs-svg-samples — regenerate pure-vector SVG previews for all seed templates

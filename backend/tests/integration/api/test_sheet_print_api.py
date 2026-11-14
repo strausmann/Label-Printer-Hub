@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of POST /api/v1/print/{printer}/sheet: the print through the real queue (Task 7).
 
 The full app with its lifespan: the real print queue and ``SheetCellsOutcome``, the fake IPP

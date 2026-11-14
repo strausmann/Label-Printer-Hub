@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integration tests for auth dependency wiring on all routes — Phase 7c Step 4.
 
 Tests that each category of endpoint:
@@ -122,10 +125,10 @@ async def test_healthz_is_public_no_auth(api_client_with_seed):
 @pytest.mark.asyncio
 async def test_pangolin_sso_header_grants_read(api_client_with_seed, monkeypatch):
     """Legacy Pangolin-SSO header (X-Pangolin-User) grants read access — only with
-    the D10 opt-in PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER (default off)."""
+    the D10 opt-in LABELYARD_TRUST_LEGACY_PANGOLIN_USER (default off)."""
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     resp = await api_client_with_seed.get(
         "/api/v1/printers",

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of ``POST /api/v1/printers/{id}/test-print`` (#228).
 
 Two apps. The *small* app wires the real router, a real ``PrintQueue`` (a fake tape printer and
@@ -232,7 +235,7 @@ def _test_page_renderer() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def _public_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    monkeypatch.setenv("PRINTER_HUB_PUBLIC_URL", PUBLIC)
+    monkeypatch.setenv("LABELYARD_PUBLIC_URL", PUBLIC)
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -622,7 +625,7 @@ async def test_printer_url_has_single_slash(env: Env) -> None:
 async def test_printer_url_drops_credentials_from_the_public_url(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_PUBLIC_URL", "https://admin:pw-leak@hub.example.invalid/base")
+    monkeypatch.setenv("LABELYARD_PUBLIC_URL", "https://admin:pw-leak@hub.example.invalid/base")
     get_settings.cache_clear()
     r = await env.post(env.tape_id)
     await env.done(r.json()["job_id"])

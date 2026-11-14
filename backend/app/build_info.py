@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Project licence and the public source link of the running build (D20).
 
 AGPL-3.0-or-later section 13 obliges a network service to offer the users the
@@ -12,7 +15,7 @@ from typing import Final
 from urllib.parse import urlsplit
 
 PROJECT_LICENSE: Final = "AGPL-3.0-or-later"
-CANONICAL_REPO_URL: Final = "https://github.com/strausmann/label-printer-hub"
+CANONICAL_REPO_URL: Final = "https://github.com/strausmann/labelyard"
 
 _SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?")
 _COMMIT = re.compile(r"[0-9a-f]{7,40}")

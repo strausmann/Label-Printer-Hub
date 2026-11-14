@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The refusal for a printer whose device was flagged as swapped (#231).
 
 Sheet prints and calibration pages are refused at submit and at retry while the flag is set.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Printer-backend layer + plugin registry.
 
 Built-in backends (`ptouch`, `mock`) ship pre-registered via setuptools

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrinterBackend Protocol — transport contract used by drivers.
 
 Three-method surface (print_image, print_images, query_status). A raw

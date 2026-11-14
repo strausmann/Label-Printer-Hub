@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """JobStore additions for page jobs (both stores): set_result, mark_failed_code, cancel from
 printing, and mark_done keeping the stored result."""
 

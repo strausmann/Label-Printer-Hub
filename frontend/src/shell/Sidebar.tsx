@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { useInfo } from "../app/session";
@@ -7,10 +10,11 @@ import { useNavLabels } from "./labels";
 import { StatusBadge } from "./StatusBadge";
 import { SourceLink } from "../features/about/SourceLink";
 import { useConfiguredIntegrations } from "../features/integrations/api";
+import { messages } from "../i18n/messages";
 
 /** Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed. */
 export function Sidebar() {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const info = useInfo();
   const labels = useNavLabels();
   const integrations = useConfiguredIntegrations();
@@ -31,8 +35,11 @@ export function Sidebar() {
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-surface lg:flex">
       <div className="px-6 pt-6 pb-4">
-        <Link to="/" className="press text-section font-bold text-ink">
-          {info.data?.display_name ?? t`Label Printer Hub`}
+        <Link to="/" className="press flex items-center gap-3 text-section font-bold text-ink">
+          {/* One mark per colour scheme (index.css shows the matching one); the name carries the meaning. */}
+          <img src="/brand/mark.svg" alt="" width={32} height={32} className="brand-light size-8 shrink-0" />
+          <img src="/brand/mark-dark.svg" alt="" width={32} height={32} className="brand-dark size-8 shrink-0" />
+          <span className="min-w-0 [overflow-wrap:anywhere]">{info.data?.display_name ?? i18n._(messages.appName)}</span>
         </Link>
       </div>
       <nav aria-label={t`Main`} className="flex-1 overflow-y-auto px-3 pb-4">

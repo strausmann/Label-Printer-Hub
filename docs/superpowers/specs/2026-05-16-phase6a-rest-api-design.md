@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 6a — REST API (DB-backed CRUD + read endpoints) — Design
 
 **Date:** 2026-05-16

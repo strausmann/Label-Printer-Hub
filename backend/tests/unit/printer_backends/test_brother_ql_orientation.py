@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The QL backend orients images on the explicit ``orientation`` flag (#258).
 
 The 1.4.1 size heuristic (rotate when height <= printable width) is ambiguous for images

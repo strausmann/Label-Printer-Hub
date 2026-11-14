@@ -1,15 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # ============================================================================
-# Label Printer Hub — Caddy
+# Labelyard — Caddy
 # One container: the backend serves the API and the web UI (ADR 0015); Caddy
-# proxies to backend:8000 and obtains TLS certificates automatically.
+# proxies to labelyard:8000 and obtains TLS certificates automatically.
 # Assumes a Caddy 2 instance with caddy-docker-proxy is running on a docker
 # network called "caddy". Printers are added in the UI.
 # ============================================================================
 
 services:
-  backend:
-    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-backend
+  labelyard:
+    image: ghcr.io/strausmann/labelyard:${HUB_VERSION:-1.6.0}
+    container_name: labelyard
     user: "1000:1000"
     networks:
       - caddy
@@ -24,11 +27,11 @@ services:
       # uvicorn takes the right-most X-Forwarded-For entry that is not trusted. Caddy replaces any client-supplied X-Forwarded-For with the real peer address by default
       # (reverse_proxy trusted_proxies unset), so the right-most entry is always the real client.
       - "FORWARDED_ALLOW_IPS=${PROXY_IP:?set PROXY_IP to the fixed address of your reverse proxy on this network - e.g. 192.0.2.10}"
-      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
-      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
-      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
-      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
-      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
+      - "LABELYARD_SECRET_KEY=${LABELYARD_SECRET_KEY:?set LABELYARD_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "LABELYARD_PUBLIC_URL=${LABELYARD_PUBLIC_URL:?set LABELYARD_PUBLIC_URL, e.g. https://labelyard.example.invalid}"
+      - LABELYARD_DATABASE_URL=${LABELYARD_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - LABELYARD_WEBHOOK_API_KEY=${LABELYARD_WEBHOOK_API_KEY:-}
+      - LABELYARD_LOG_LEVEL=${LABELYARD_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -39,7 +42,7 @@ services:
       retries: 3
       start_period: 30s
     labels:
-      caddy: ${PRINTERHUB_HOST}
+      caddy: ${LABELYARD_HOST}
       caddy.reverse_proxy: "{{upstreams ${BACKEND_PORT:-8000}}}"
       # SSE: disable response buffering for the live event stream (/api/v1/events)
       caddy.reverse_proxy.flush_interval: "-1"

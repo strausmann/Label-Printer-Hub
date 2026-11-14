@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """app_settings and ui_sessions tables for the web UI foundation.
 
 Revision ID: 20261104a1

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: Docker — publish to GHCR + Docker Hub
 
 # =============================================================================
@@ -24,7 +27,7 @@ on:
   push:
     # Only main publishes (rolling `dev` tag). Feature branches are built
     # without pushing by ci.yml on their pull request; branch tags in GHCR
-    # were never kept and only had to be cleaned up (ghcr-cleanup.yml).
+    # were never kept and only had to be cleaned up (registry-cleanup.yml).
     branches: [main]
     # Only rebuild when something that affects an image actually changes —
     # avoids tying up runners on docs-only pushes.
@@ -77,6 +80,10 @@ concurrency:
 
 env:
   REGISTRY_GHCR: ghcr.io
+  # The image name, written out: the GHCR address is ghcr.io/strausmann/labelyard
+  # and the Docker Hub address docker.io/<DOCKERHUB_USERNAME>/labelyard. Neither is
+  # derived from github.repository, which changes when the repository is renamed.
+  IMAGE_NAME: labelyard
   # Annotate both per-platform manifests AND the index. GHCR's package UI
   # reads the package description from the index annotation; without this
   # the page shows "No description provided".
@@ -115,7 +122,10 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          if [ -n "$INPUT_TAG" ] && ! printf '%s' "$INPUT_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          # A whole-string match: `printf | grep` checks each line on its own and
+          # would accept a value with an embedded newline.
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [ -n "$INPUT_TAG" ] && ! [[ "$INPUT_TAG" =~ $semver ]]; then
             echo "::error::Invalid release tag input: not a semantic version"
             exit 1
           fi
@@ -137,19 +147,15 @@ jobs:
       - name: Verify Dockerfile exists for ${{ matrix.service }}
         run: test -f "${{ matrix.service }}/Dockerfile"
 
-      # GitHub's repo path retains the user's original capitalisation
-      # (`strausmann/Label-Printer-Hub`), but Docker/OCI registry refs MUST
-      # be all-lowercase. `docker/metadata-action` does this implicitly for
-      # its own outputs, but `build-push-action`'s `outputs: name=…` is a
-      # raw passthrough — we have to lowercase the path ourselves before
-      # using it in the digest-push reference and in the merge step.
-      - name: Compute lowercase image ref
+      # The GHCR image ref, used for the digest push here and by the merge
+      # job. The name is fixed (and already lowercase, as OCI refs must be)
+      # instead of derived from github.repository: the repository is renamed
+      # after the milestone merge, and the image address must not move with it.
+      # Step id `image` and output `ref` are read by the merge job's outputs
+      # (image-ref, used by the sbom job).
+      - name: Compute image ref
         id: image
-        env:
-          REPO: ${{ github.repository }}
-        run: |
-          repo_lc="${REPO,,}"
-          echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+        run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -178,8 +184,8 @@ jobs:
       #   release  a non-empty `tag` input (called by the release workflow
       #            or dispatched by hand) — image is tagged {{version}},
       #            {{major.minor}}, {{major}} and latest. Pre-releases
-      #            (a `-` in the version) get only the exact tag and stay
-      #            off Docker Hub.
+      #            (a `-` in the version, e.g. previews x.y.z-rc.N) get only
+      #            the exact tag, on both registries.
       #   dev      push to the default branch — image is tagged "dev".
       #   branch   push to any other branch — image is tagged with the
       #            sanitised branch slug ('/' replaced with '-').
@@ -213,11 +219,15 @@ jobs:
         with:
           images: |
             ${{ steps.image.outputs.ref }}
+          # Same title, description and URLs as the LABELs in backend/Dockerfile
+          # (test_oci_title_matches_dockerfile). The title is the display name;
+          # the image name stays lowercase `labelyard`.
           labels: |
-            org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
-            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
-            org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
-            org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
+            org.opencontainers.image.title=Labelyard
+            org.opencontainers.image.description=Labelyard — the self-hosted Label Printer Hub for all your labels
+            org.opencontainers.image.url=https://labelyard.app
+            org.opencontainers.image.documentation=https://labelyard.app/
+            org.opencontainers.image.source=https://github.com/strausmann/labelyard
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
@@ -241,8 +251,7 @@ jobs:
           # `push-by-digest=true` skips the tag write and returns digest in
           # `steps.build.outputs.digest`. `name-canonical=true` makes the
           # registry reference the image by its canonical name. The image
-          # ref MUST be lowercase — see the `Compute lowercase image ref`
-          # step above.
+          # ref MUST be lowercase — see the `Compute image ref` step above.
           outputs: type=image,name=${{ steps.image.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
           build-args: |
             VERSION=${{ steps.tag.outputs.tag }}
@@ -252,7 +261,7 @@ jobs:
           # don't trash each other's caches.
           cache-from: type=gha,scope=${{ matrix.service }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}-${{ matrix.arch }}
-          provenance: true
+          provenance: mode=max
           sbom: true
 
       # Each leg writes its digest into a per-leg file (no name collisions),
@@ -282,6 +291,11 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     runs-on: ubuntu-24.04
     needs: build
+    # Read by the sbom job (one matrix entry today). The tag is the validated,
+    # v-stripped release version; the ref is the lowercase GHCR repository.
+    outputs:
+      image-ref: ${{ steps.image.outputs.ref }}
+      tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -294,7 +308,10 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -eu
-          if [ -n "$INPUT_TAG" ] && ! printf '%s' "$INPUT_TAG" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+          # A whole-string match: `printf | grep` checks each line on its own and
+          # would accept a value with an embedded newline.
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [ -n "$INPUT_TAG" ] && ! [[ "$INPUT_TAG" =~ $semver ]]; then
             echo "::error::Invalid release tag input: not a semantic version"
             exit 1
           fi
@@ -321,14 +338,11 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
-      # Mirror of the build-phase lowercase step (see comment there).
-      - name: Compute lowercase image ref
+      # Mirror of the build-phase step (see the comment there): a fixed name,
+      # never github.repository. Keep id `image` / output `ref` (merge.outputs).
+      - name: Compute image ref
         id: image
-        env:
-          REPO: ${{ github.repository }}
-        run: |
-          repo_lc="${REPO,,}"
-          echo "ref=${{ env.REGISTRY_GHCR }}/${repo_lc}-${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+        run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -355,8 +369,8 @@ jobs:
       #   release  a non-empty `tag` input (called by the release workflow
       #            or dispatched by hand) — image is tagged {{version}},
       #            {{major.minor}}, {{major}} and latest. Pre-releases
-      #            (a `-` in the version) get only the exact tag and stay
-      #            off Docker Hub.
+      #            (a `-` in the version, e.g. previews x.y.z-rc.N) get only
+      #            the exact tag, on both registries.
       #   dev      push to the default branch — image is tagged "dev".
       #   branch   push to any other branch — image is tagged with the
       #            sanitised branch slug ('/' replaced with '-').
@@ -389,13 +403,15 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
         with:
-          # GHCR is always a target. Docker Hub is only published for stable release
-          # flavors (never pre-releases) so branch/dev builds don't pollute the public namespace.
+          # GHCR is always a target. Docker Hub receives exactly the tags GHCR
+          # receives (releases, previews, dev) whenever the Docker Hub secrets are
+          # set; only a manual branch build stays off it. Both secrets are required,
+          # as for the login step: a username without a token would push unauthenticated.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ (steps.tag.outputs.flavor == 'release' && !contains(steps.tag.outputs.tag, '-') && secrets.DOCKERHUB_USERNAME) && format('docker.io/{0}/label-printer-hub-{1}', secrets.DOCKERHUB_USERNAME, matrix.service) || '' }}
-          # Tag scheme by flavor:
-          #   branch   <branch-slug>                       feature-branch push
+            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN) && format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}
+          # Tag scheme by flavor (identical on GHCR and Docker Hub):
+          #   branch   <branch-slug>                       manual dispatch, GHCR only
           #   dev      dev                                 main-branch push
           #   release  {{version}}, {{major.minor}},       semver release
           #            {{major}}, latest (stable only)
@@ -410,10 +426,11 @@ jobs:
           # at workflow root). For a manifest-list-create operation only the
           # index level applies — the merge step filters them.
           annotations: |
-            org.opencontainers.image.title=label-printer-hub-${{ matrix.service }}
-            org.opencontainers.image.description=Self-hosted label printer hub for Brother PT/QL series — ${{ matrix.service }} container
-            org.opencontainers.image.url=https://github.com/strausmann/label-printer-hub
-            org.opencontainers.image.source=https://github.com/strausmann/label-printer-hub
+            org.opencontainers.image.title=Labelyard
+            org.opencontainers.image.description=Labelyard — the self-hosted Label Printer Hub for all your labels
+            org.opencontainers.image.url=https://labelyard.app
+            org.opencontainers.image.documentation=https://labelyard.app/
+            org.opencontainers.image.source=https://github.com/strausmann/labelyard
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ steps.tag.outputs.tag }}
             org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
@@ -453,7 +470,10 @@ jobs:
             src_args+=( "${DIGEST_REPO}@sha256:${d}" )
           done
 
-          docker buildx imagetools create "${tag_args[@]}" "${ann_args[@]}" "${src_args[@]}"
+          # The metadata file records the digest of the pushed index; the signing
+          # step reads it from there instead of resolving a tag that can move.
+          docker buildx imagetools create --metadata-file "$RUNNER_TEMP/index-meta.json" \
+            "${tag_args[@]}" "${ann_args[@]}" "${src_args[@]}"
 
       - name: Verify multi-arch manifest
         env:
@@ -478,3 +498,111 @@ jobs:
             fi
           done <<< "$TAGS"
           exit "$fail"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      # Keyless signature (#311): Sigstore with this job's GitHub OIDC token
+      # (`id-token: write`), no key and no secret. The certificate names this
+      # workflow file as the identity. Signed is the index digest, once per
+      # repository the index was pushed to (GHCR, and Docker Hub when its tags are
+      # in the list); the index carries the platform images and their attestations.
+      #
+      # Runs after the multi-arch check, so a defective index is never signed.
+      # Only refs the project publishes from are signed, the same list as the
+      # identity in docs/supply-chain.md: main (dev, releases, previews) and
+      # milestone/x.y.0 or milestone/x.y.x (previews); both are protected by
+      # the branch ruleset. Tags are not a publishing ref: releases are built
+      # on main. A called workflow sees the caller's ref, and Fulcio writes that
+      # ref into the certificate. A build from any other ref is published
+      # unsigned, so no certificate for it can match the identity.
+      - name: Sign the index by digest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          signed_refs='^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$'
+          if ! [[ "$REF" =~ $signed_refs ]]; then
+            echo "::notice::Not signed: images from this ref are not signed"
+            exit 0
+          fi
+          DIGEST=$(jq -r '."containerimage.descriptor".digest' "$RUNNER_TEMP/index-meta.json")
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::No valid index digest in the imagetools metadata file"
+            exit 1
+          fi
+          # Repositories from the tag list: strip `:<tag>`, keep each once.
+          repos=()
+          while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            repo="${ref%:*}"
+            case " ${repos[*]-} " in
+              *" $repo "*) ;;
+              *) repos+=( "$repo" ) ;;
+            esac
+          done <<< "$TAGS"
+          if [ "${#repos[@]}" -eq 0 ]; then
+            echo "::error::No repository to sign"
+            exit 1
+          fi
+          for repo in "${repos[@]}"; do
+            echo "Signing ${repo}@${DIGEST}"
+            cosign sign --yes "${repo}@${DIGEST}"
+          done
+
+  # ---------------------------------------------------------------------------
+  # Phase 3: a CycloneDX SBOM of the published image, handed to release.yml.
+  # Read-only: this workflow never writes to a release (release.yml attaches
+  # the asset). Previews run it too, so the live check does not need a release.
+  # ---------------------------------------------------------------------------
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-24.04
+    needs: merge
+    if: inputs.tag != ''
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      asset: ${{ steps.sbom.outputs.asset }}
+    steps:
+      # A new package may still be private, so the read goes through a login.
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Syft
+        id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.55.0
+
+      # The embedded CycloneDX document is only read with the SBOM cataloger.
+      # The asset is useless without the frontend and OS packages, so the job
+      # fails when they are missing.
+      - name: Generate the CycloneDX SBOM
+        id: sbom
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          IMAGE_REF: ${{ needs.merge.outputs.image-ref }}
+          TAG: ${{ needs.merge.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset="${IMAGE_REF##*/}-${TAG}.cdx.json"
+          "$SYFT" "${IMAGE_REF}:${TAG}" --platform linux/amd64 --select-catalogers +sbom-cataloger -o "cyclonedx-json=${asset}"
+          jq -e '.components | map(.name) | (index("react") and index("brother-ql") and index("tini"))' "$asset"
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-sbom
+          path: ${{ steps.sbom.outputs.asset }}
+          if-no-files-found: error
+          retention-days: 30

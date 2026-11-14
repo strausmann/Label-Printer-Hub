@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The readings fit: recovers a known deviation, flags a bad reading, refuses bad input."""
 
 from __future__ import annotations

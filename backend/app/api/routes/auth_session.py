@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Browser sign-in for the web UI (spec 8.1, 8.2; D7, D10).
 
 Routes
@@ -149,7 +152,7 @@ async def sign_in(
             raise _unauthorized(
                 "bootstrap_disabled",
                 "The bootstrap key is disabled because an admin key exists. "
-                "Remove PRINTER_HUB_BOOTSTRAP_ADMIN_KEY.",
+                "Remove LABELYARD_BOOTSTRAP_ADMIN_KEY.",
             )
         row, token = await ui_sessions.create_session(
             db, source="bootstrap", scope="admin", api_key_id=None, allowed_printer_ids=[]

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1i CA-1: Tests für entfernte drucker-spezifische Settings-Felder.
 
 Die 9 Felder (ql820_host, ql820_port, pt750w_host, pt750w_port,
@@ -8,7 +11,7 @@ Diese Datei dokumentiert dass sie NICHT mehr vorhanden sind.
 Hinweis zu extra="forbid" in pydantic-settings:
   extra="forbid" verhindert das direkte Übergeben alter Felder als Kwargs
   (z.B. Settings(pt750w_host="x") → ValidationError). Unbekannte Env-Vars
-  (PRINTER_HUB_PT750W_HOST) werden von pydantic-settings hingegen SILENTLY
+  (LABELYARD_PT750W_HOST) werden von pydantic-settings hingegen SILENTLY
   ignoriert — das ist pydantic-settings v2 Standardverhalten. Die Felder
   existieren einfach nicht mehr auf dem Settings-Objekt.
 """
@@ -44,7 +47,7 @@ def test_removed_fields_not_on_settings_object(monkeypatch: pytest.MonkeyPatch) 
     pydantic-settings ignoriert unbekannte Env-Vars silently (kein Raise).
     Das Feld ist schlicht nicht mehr vorhanden.
     """
-    monkeypatch.setenv("PRINTER_HUB_PT750W_HOST", "192.0.2.1")
+    monkeypatch.setenv("LABELYARD_PT750W_HOST", "192.0.2.1")
     s = Settings(_env_file=None)
     assert not hasattr(s, "pt750w_host"), "pt750w_host darf nicht auf Settings existieren"
     assert not hasattr(s, "printer_backend"), "printer_backend darf nicht auf Settings existieren"

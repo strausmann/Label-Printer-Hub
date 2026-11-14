@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1e — readiness checks: database, alembic,
 printer_runtime, printer_db_sync, snmp_discovery, print_queue, sse_bus.
 

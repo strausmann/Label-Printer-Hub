@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Printer attributes → probe summary and hub status (spec 11.1, 11.3). Pure, no I/O.
 
 Everything here reads an answer from a device on the network, so none of it may

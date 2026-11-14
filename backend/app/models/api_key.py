@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLModel table definition for ApiKey — Phase 7c app-side authentication."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { expect, test, type Page } from "@playwright/test";
 
 // Real-browser layout checks that jsdom cannot make (preflight C3): the tap target size, the absence

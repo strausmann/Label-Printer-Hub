@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for ``scripts.licence_report`` (hand-written records, no network)."""
 
 from __future__ import annotations
@@ -12,14 +15,18 @@ from typing import Any
 import pytest
 from scripts import licence_report
 from scripts.licence_report import (
+    HOLDER_FREE_FALLBACKS,
     LicenceException,
     Policy,
     _collect,
     check,
     classify,
     expression_allowed,
+    load_extra,
     load_policy,
     normalise_purl,
+    own_package_name,
+    to_records,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -177,11 +184,11 @@ def test_check_lists_offenders_sorted() -> None:
         _record("zeta", classifier="Other/Proprietary License"),
         _record("fine", expression="MIT"),
         _record("Alpha"),
-        _record("label-printer-hub-backend"),
+        _record("labelyard"),
     ]
     assert check(entries, _policy()) == [
         "Alpha (UNKNOWN)",
-        "label-printer-hub-backend (UNKNOWN)",
+        "labelyard (UNKNOWN)",
         "zeta (Proprietary)",
     ]
 
@@ -284,48 +291,239 @@ def test_collect_excludes_the_own_package_and_reports_tool_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records = [
-        _record("label-printer-hub-backend", expression="MIT"),
+        _record("Some_App", expression="MIT"),
         _record("a", expression="MIT"),
     ]
 
     def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         assert command[1:3] == ["-m", "piplicenses"]
         assert "--from=all" in command
+        assert "--with-urls" in command
         return subprocess.CompletedProcess(command, 0, json.dumps(records), "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    assert [e["Name"] for e in _collect("python")] == ["a"]
+    assert [e["Name"] for e in _collect("python", own="some-app")] == ["a"]
 
     def failing_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(command, 2, "", "boom")
 
     monkeypatch.setattr(subprocess, "run", failing_run)
     with pytest.raises(RuntimeError, match="boom"):
-        _collect("python")
+        _collect("python", own="some-app")
+
+
+def _pyproject(tmp_path: Path, name: str = "some-app") -> Path:
+    path = tmp_path / "pyproject.toml"
+    path.write_text(f'[project]\nname = "{name}"\n', encoding="utf-8")
+    return path
+
+
+def _policy_file(tmp_path: Path) -> Path:
+    path = tmp_path / "policy.yml"
+    path.write_text(json.dumps({"allow-licenses": ["MIT"]}), encoding="utf-8")
+    return path
+
+
+def _args(tmp_path: Path, *more: str) -> list[str]:
+    return [
+        "--python",
+        "x",
+        "--policy",
+        str(_policy_file(tmp_path)),
+        "--own-project",
+        str(_pyproject(tmp_path)),
+        "--fallback-dir",
+        str(tmp_path / "fallback"),
+        *more,
+    ]
+
+
+def test_own_package_read_from_pyproject(tmp_path: Path) -> None:
+    assert own_package_name(_pyproject(tmp_path)) == "some-app"
+
+
+def test_own_package_without_name_is_refused(tmp_path: Path) -> None:
+    path = tmp_path / "pyproject.toml"
+    path.write_text("[project]\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="name"):
+        own_package_name(path)
+
+
+def test_to_records_shape() -> None:
+    [record] = to_records([_record("a", expression="MIT")], _policy(), Path("none"))
+    assert set(record) == {"name", "version", "license", "licenseText", "repository"}
+
+
+def test_to_records_sorted() -> None:
+    entries = [_record(n, expression="MIT") for n in ("b", "A", "c")]
+    assert [r["name"] for r in to_records(entries, _policy(), Path("none"))] == ["A", "b", "c"]
+
+
+def test_text_fallback_for_brother_ql(tmp_path: Path) -> None:
+    (tmp_path / "GPL-3.0-or-later.txt").write_text("GNU GENERAL PUBLIC LICENSE\n...", "utf-8")
+    entry = _record(
+        "brother-ql",
+        classifier="GNU General Public License v3 or later (GPLv3+)",
+        text="UNKNOWN",
+    )
+    [record] = to_records([entry], _policy(), tmp_path)
+    assert record["license"] == "GPL-3.0-or-later"
+    assert (record["licenseText"] or "").startswith("GNU GENERAL PUBLIC LICENSE")
+
+
+def test_own_text_wins_over_fallback(tmp_path: Path) -> None:
+    (tmp_path / "GPL-3.0-or-later.txt").write_text("canonical", "utf-8")
+    entry = _record("a", expression="GPL-3.0-or-later", text="own")
+    [record] = to_records([entry], _policy(), tmp_path)
+    assert record["licenseText"] == "own"
+
+
+def test_holder_bearing_licence_has_no_borrowed_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "fallback").mkdir()
+    # REUSE-IgnoreStart
+    (tmp_path / "fallback" / "MIT.txt").write_text("Copyright (c) Someone Else", "utf-8")
+    # REUSE-IgnoreEnd
+    entry = _record("holderless", expression="MIT", text="UNKNOWN")
+    [record] = to_records([entry], _policy(), tmp_path / "fallback")
+    assert record["licenseText"] is None
+    monkeypatch.setattr(licence_report, "_collect", lambda *_: [entry])
+    assert licence_report.main(_args(tmp_path, "--require-texts")) == 1
+    assert "holderless (MIT): no licence text" in capsys.readouterr().out
+
+
+def test_per_package_text_wins_over_everything(tmp_path: Path) -> None:
+    (tmp_path / "packages").mkdir()
+    (tmp_path / "packages" / "some-pkg.txt").write_text("package text", "utf-8")
+    (tmp_path / "GPL-3.0-or-later.txt").write_text("canonical", "utf-8")
+    entry = _record("Some_Pkg", expression="GPL-3.0-or-later", text="shipped")
+    [record] = to_records([entry], _policy(), tmp_path)
+    assert record["licenseText"] == "package text"
+
+
+def test_no_fallback_for_compound_expression(tmp_path: Path) -> None:
+    (tmp_path / "MIT OR Apache-2.0.txt").write_text("never", "utf-8")
+    entry = _record("a", expression="MIT OR Apache-2.0", text="UNKNOWN")
+    [record] = to_records([entry], _policy(), tmp_path)
+    assert record["licenseText"] is None
+
+
+def test_repository_only_http() -> None:
+    entries = [
+        {**_record("a", expression="MIT"), "URL": "javascript:x"},
+        {**_record("b", expression="MIT"), "URL": "https://example.org/b"},
+        {**_record("c", expression="MIT"), "URL": "UNKNOWN"},
+    ]
+    repos = {r["name"]: r["repository"] for r in to_records(entries, _policy(), Path("none"))}
+    assert repos == {"a": None, "b": "https://example.org/b", "c": None}
+
+
+def _extra_file(tmp_path: Path) -> Path:
+    (tmp_path / "t.txt").write_text("Vera text", encoding="utf-8")
+    path = tmp_path / "extra.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "name": "DejaVu Sans",
+                    "version": "2.37",
+                    "license": "Bitstream-Vera",
+                    "licenseTextFile": "t.txt",
+                    "repository": "https://example.org/dejavu",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_extra_record_appended_unjudged(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(licence_report, "_collect", lambda *_: [_record("ok", expression="MIT")])
+    out = tmp_path / "out.json"
+    extra = _extra_file(tmp_path)
+    args = _args(tmp_path, "--output", str(out), "--extra", str(extra))
+    assert licence_report.main([*args, "--extra-root", str(tmp_path)]) == 0
+    by_name = {r["name"]: r for r in json.loads(out.read_text("utf-8"))}
+    assert by_name["DejaVu Sans"]["license"] == "Bitstream-Vera"
+    assert by_name["DejaVu Sans"]["licenseText"] == "Vera text"
+
+
+def test_load_extra_missing_file_names_it(tmp_path: Path) -> None:
+    extra = _extra_file(tmp_path)
+    (tmp_path / "t.txt").unlink()
+    with pytest.raises(ValueError, match=r"t\.txt"):
+        load_extra(extra, tmp_path)
+
+
+def test_extra_root_option(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(licence_report, "_collect", lambda *_: [])
+    root = tmp_path / "elsewhere"
+    root.mkdir()
+    extra = _extra_file(root)
+    monkeypatch.chdir(tmp_path)  # the working directory has no t.txt
+    out = tmp_path / "out.json"
+    args = _args(tmp_path, "--extra", str(extra), "--output", str(out))
+    assert licence_report.main([*args, "--extra-root", str(root)]) == 0
+    assert json.loads(out.read_text("utf-8"))[0]["licenseText"] == "Vera text"
+
+
+def test_require_texts_fails_without_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        licence_report,
+        "_collect",
+        lambda *_: [
+            _record("ok", expression="MIT"),
+            _record("empty", expression="MIT", text="UNKNOWN"),
+        ],
+    )
+    assert licence_report.main(_args(tmp_path)) == 0
+    capsys.readouterr()
+    assert licence_report.main(_args(tmp_path, "--require-texts")) == 1
+    out = capsys.readouterr().out.splitlines()
+    assert "empty (MIT): no licence text" in out
+    assert not any(line.startswith("ok") for line in out)
+    assert out[-1] == (
+        'See "Dependencies and licences → A licence text is missing" in CONTRIBUTING.md'
+    )
+
+
+def test_output_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    text = "<script>alert(1)</script> Grüße"
+    monkeypatch.setattr(
+        licence_report, "_collect", lambda *_: [_record("a", expression="MIT", text=text)]
+    )
+    out = tmp_path / "out.json"
+    assert licence_report.main(_args(tmp_path, "--output", str(out))) == 0
+    raw = out.read_text("utf-8")
+    assert "Grüße" in raw  # not escaped to \u00fc
+    assert json.loads(raw)[0]["licenseText"] == text
 
 
 def test_main_exit_codes_and_output(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    policy_file = tmp_path / "policy.yml"
-    policy_file.write_text(json.dumps({"allow-licenses": ["MIT"]}), encoding="utf-8")
     monkeypatch.setattr(
         licence_report,
         "_collect",
-        lambda _: [_record("ok", expression="MIT"), _record("bad", expression="GPL-2.0-only")],
+        lambda *_: [_record("ok", expression="MIT"), _record("bad", expression="GPL-2.0-only")],
     )
     out = tmp_path / "out.json"
-    code = licence_report.main(
-        ["--python", "x", "--policy", str(policy_file), "--output", str(out)]
-    )
+    code = licence_report.main(_args(tmp_path, "--output", str(out)))
     assert code == 1
     assert capsys.readouterr().out == "bad (GPL-2.0-only)\n"
-    assert {r["name"]: r["allowed"] for r in json.loads(out.read_text("utf-8"))} == {
-        "ok": True,
-        "bad": False,
-    }
-    monkeypatch.setattr(licence_report, "_collect", lambda _: [_record("ok", expression="MIT")])
-    assert licence_report.main(["--python", "x", "--policy", str(policy_file)]) == 0
+    records = json.loads(out.read_text("utf-8"))
+    assert {r["name"] for r in records} == {"ok", "bad"}
+    assert all(
+        set(r) == {"name", "version", "license", "licenseText", "repository"} for r in records
+    )
+    monkeypatch.setattr(licence_report, "_collect", lambda *_: [_record("ok", expression="MIT")])
+    assert licence_report.main(_args(tmp_path)) == 0
 
 
 def test_exception_with_changed_licence_text_fails() -> None:
@@ -390,3 +588,36 @@ def test_shipped_policy_pins_the_python_exceptions() -> None:
     } <= set(pypi)
     unpinned = sorted(p for p, e in pypi.items() if not e.licence_text_sha256)
     assert unpinned == [], f"pypi exceptions without licence-text-sha256: {unpinned}"
+
+
+def test_shipped_licence_texts_and_extra_records() -> None:
+    # What THIRD_PARTY_NOTICES.md claims about the image: the canonical GPL text is kept in
+    # backend/licences, and every hand-kept record resolves its text file.
+    backend = REPO_ROOT / "backend"
+    gpl = (backend / "licences" / "GPL-3.0-or-later.txt").read_bytes()
+    assert hashlib.sha256(gpl).hexdigest() == (
+        "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    )
+    records = load_extra(backend / "licences" / "extra-records.json", backend)
+    assert {r["name"] for r in records} == {
+        "DejaVu Sans",
+        "Atkinson Hyperlegible Next",
+        "IBM Plex Mono Bold",
+        "gLabels-qt templates",
+    }
+    assert all(r["licenseText"] for r in records)
+
+
+def test_top_level_fallback_files_are_holder_free() -> None:
+    # A top-level file serves every package with that id, so it must name no holder. Texts that
+    # extra-records.json points at are the project's own records, not fallbacks.
+    licences = REPO_ROOT / "backend" / "licences"
+    extra = json.loads((licences / "extra-records.json").read_text("utf-8"))
+    referenced = {(REPO_ROOT / "backend" / r["licenseTextFile"]).name for r in extra}
+    for path in licences.glob("*.txt"):
+        if path.name in referenced:
+            continue
+        assert path.stem in HOLDER_FREE_FALLBACKS, f"{path.name}: not a holder-free fallback"
+    assert "GPL-3.0-or-later" in HOLDER_FREE_FALLBACKS
+    for path in (licences / "packages").glob("*.txt"):
+        assert "Copyright" in path.read_text("utf-8"), f"{path.name}: expected a holder line"

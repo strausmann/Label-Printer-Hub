@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """REST endpoints for Spoolman and Grocy webhooks.
 
 Routes
@@ -8,11 +11,11 @@ POST /api/v1/webhook/grocy   — accept a Grocy event and print its label
 Both routes are guarded by ``Depends(require_webhook_key)``.  The dependency
 validates the ``X-API-Key`` request header and returns:
 
-- **503** when ``PRINTER_HUB_WEBHOOK_API_KEY`` is not configured.
+- **503** when ``LABELYARD_WEBHOOK_API_KEY`` is not configured.
 - **401** when the supplied key does not match.
 
 A second dependency, ``enforce_webhook_rate_limit``, runs after the key is accepted and answers
-**429** with ``Retry-After`` above ``PRINTER_HUB_WEBHOOK_LIMIT_PER_MINUTE`` calls per minute
+**429** with ``Retry-After`` above ``LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`` calls per minute
 (default 120; one bucket per webhook key, both routes together).
 
 On a valid request the handler:

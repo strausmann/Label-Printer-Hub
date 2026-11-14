@@ -1,5 +1,5 @@
 {
-  "name": "label-printer-hub-web",
+  "name": "labelyard-web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "e2e:harness": "playwright test -c playwright.harness.config.ts",
-    "screenshots": "playwright test -c playwright.screenshots.config.ts && node scripts/check-screenshot-sizes.mjs",
+    "screenshots": "playwright test -c playwright.screenshots.config.ts && node scripts/check-screenshot-sizes.mjs && node scripts/optimise-screenshots.mjs",
     "gen:api": "python ../backend/scripts/export_openapi.py > openapi.json && openapi-typescript openapi.json -o src/api/schema.gen.ts",
     "i18n:extract": "lingui extract",
     "i18n:compile": "lingui compile --strict --typescript"
@@ -57,6 +57,7 @@
     "globals": "17.14.0",
     "jsdom": "30.1.3",
     "openapi-typescript": "7.13.0",
+    "rollup-license-plugin": "3.2.1",
     "tailwindcss": "4.3.4",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.1",

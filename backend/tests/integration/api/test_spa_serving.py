@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The backend serves the web UI (web UI foundation, Task 7).
 
 Every test builds the full app against a temporary ``dist`` directory (or none),
@@ -162,6 +165,16 @@ async def test_known_licence_file_is_served(spa: AsyncClient, dist: Path) -> Non
     assert resp.text == "GNU AFFERO GENERAL PUBLIC LICENSE"
     assert resp.headers["cache-control"] == "no-cache"
     assert "hub-app-shell" not in resp.text
+
+
+async def test_backend_licence_list_served(spa: AsyncClient, dist: Path) -> None:
+    (dist / "licenses").mkdir()
+    body = '[{"name": "x", "licenseText": "Grüße <b>"}]'.encode()
+    (dist / "licenses" / "backend.json").write_bytes(body)
+    resp = await spa.get("/licenses/backend.json")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/json")
+    assert resp.content == body
 
 
 async def test_licences_prefix_does_not_escape_to_other_files(spa: AsyncClient, dist: Path) -> None:

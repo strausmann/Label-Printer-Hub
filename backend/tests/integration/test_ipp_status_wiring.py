@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Startup wiring of IPP page printers: one status producer each, no tape wiring.
 
 Runs the real lifespan against a stored ``ipp`` printer whose transport is the fake printer.
@@ -115,7 +118,7 @@ async def test_ipp_printer_is_a_page_printer_of_the_queue(monkeypatch: pytest.Mo
 
     from tests.helpers.page_jobs import RecordingHandler, payload, registered
 
-    monkeypatch.setenv("PRINTER_HUB_SSE_PROBE_INTERVAL_S", "0.05")
+    monkeypatch.setenv("LABELYARD_SSE_PROBE_INTERVAL_S", "0.05")
     get_settings.cache_clear()
     fake = FakeIppPrinter(job_script=[9])
     async with eng.async_session() as s:

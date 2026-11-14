@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLModel table for browser sessions of the web UI.
 
 Model only; the session behaviour (issue, verify, revoke) is added with the auth work.
@@ -34,7 +37,7 @@ class UiSession(SQLModel, table=True):
         sa_column=Column(JSON, nullable=False),
     )
     user: str | None = Field(default=None, sa_column=Column(String, nullable=True))
-    # pangolin-sso only: HMAC-SHA256 (keyed with PRINTER_HUB_SECRET_KEY) of the trust token
+    # pangolin-sso only: HMAC-SHA256 (keyed with LABELYARD_SECRET_KEY) of the trust token
     # the session was minted with; never the token itself. A rotated or cleared token
     # invalidates the session.
     sso_trust_fingerprint: str | None = Field(default=None, sa_column=Column(String, nullable=True))

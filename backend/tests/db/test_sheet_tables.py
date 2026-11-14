@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet archive tables: constraints and the write-lock helper (spec 7.1)."""
 
 from __future__ import annotations

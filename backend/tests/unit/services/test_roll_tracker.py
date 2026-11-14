@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Roll-change detection: one prompt per changed roll, also across a restart (#229)."""
 
 from __future__ import annotations

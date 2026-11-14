@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { useInfo } from "../../app/session";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { Row } from "../Row";
+import { DependencyLicences } from "./DependencyLicences";
 import { BuildRows } from "./BuildRows";
 import { Section } from "../settings/sections";
 import { SourceLink } from "./SourceLink";
@@ -42,8 +46,9 @@ export function AboutPage() {
         </div>
       </Section>
 
-      {/* B3 lists the bundled dependencies here. */}
-      <section data-section="dependencies" />
+      <div data-section="dependencies">
+        <DependencyLicences />
+      </div>
     </div>
   );
 }

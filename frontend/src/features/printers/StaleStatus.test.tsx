@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
@@ -67,7 +70,7 @@ describe("one age rule for the card and the detail page (263-28)", () => {
   // #296: the printer form has no switch for status discovery yet, so the hint must not send anyone there.
   const TAPE_HINT = "Status discovery is off for this printer. An admin can turn it on through the admin API.";
   const HOW_TO = "How to turn on status discovery";
-  const DOCS = "https://github.com/strausmann/label-printer-hub/blob/main/docs/getting-started.md#turn-on-status-discovery";
+  const DOCS = "https://github.com/strausmann/labelyard/blob/main/website/src/content/docs/install/getting-started.md#turn-on-status-discovery";
 
   it("not monitored names what is true today: text on the card, the admin API how-to for an admin on the detail page", async () => {
     mockApi({ "GET /api/v1/printers": [PRINTER_A], ...detailRoutes({ online: null, polled: false, tape_loaded: null, note: "Not polled" }), "GET /api/v1/jobs": [] });
@@ -96,7 +99,7 @@ describe("one age rule for the card and the detail page (263-28)", () => {
     await renderApp({ path: `/printers/${PRINTER_A.id}`, info: { source_url: "https://example.invalid/fork/tree/v1.5.1" } });
     expect(await screen.findByRole("link", { name: HOW_TO })).toHaveAttribute(
       "href",
-      "https://example.invalid/fork/blob/v1.5.1/docs/getting-started.md#turn-on-status-discovery",
+      "https://example.invalid/fork/blob/v1.5.1/website/src/content/docs/install/getting-started.md#turn-on-status-discovery",
     );
   });
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tape data for Brother PT-Series printers (180 DPI, 128-pin head).
 
 Source: Brother Raster Command Reference (PT-E550W / PT-P710BT / PT-P750W) v1.02.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintQueue muss store.mark_* bei jeder State-Transition aufrufen.
 
 Tests verwenden die echte PrintQueue-Signatur:

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 import pytest
 from app.services.status_block import MediaType
 from app.services.tape_registry import TapeRegistry, UnknownTapeError

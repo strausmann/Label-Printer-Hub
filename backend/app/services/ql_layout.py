@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """QL 62 mm label geometry: across-width presets and the full-width along layout (#258).
 
 Two orientations exist on 62 mm DK endless tape:

@@ -1,0 +1,197 @@
+---
+title: Architecture
+description: "How Labelyard is built: one process, the backend and web UI components, the data flows, the print queue and the event stream."
+sidebar:
+  label: Architecture
+---
+
+Big-picture overview. For the **why** behind every decision, see the [decision records](https://github.com/strausmann/labelyard/tree/main/docs/decisions).
+
+## High-level
+
+```
+┌──────────────────────┐  HTTP/JSON  ┌──────────────────────────────┐  TCP/9100  ┌──────────┐
+│  Browser / PWA       │ ──────────► │ Hub (one Python process)     │ ─────────► │ Printer  │
+│  React + TypeScript  │   + SSE     │ FastAPI, asyncio             │            │ Brother  │
+│  Service Worker      │ ◄────────── │ serves API, /api/v1/events   │ ◄───────── │ PT / QL  │
+│  Camera scanning     │             │ and the built web UI         │  passive   └──────────┘
+└──────────────────────┘             │ Print Queue + state machine  │  status
+                                     │ SQLite, EventBus             │  UDP/161 SNMP
+                                     └──────────────────────────────┘
+```
+
+One container (ADR [0015](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0015-single-process-deployment.md), which supersedes ADR [0001](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0001-two-container-architecture.md)):
+- `labelyard` — Python/FastAPI; talks to printers, owns the print queue, exposes the JSON API, the JSON event stream and the static web UI (with a fallback to `index.html` for client routes)
+
+The web UI is built from `frontend/` at image build time (multi-stage Dockerfile, build context = repository root) and copied into the image; there is no separate frontend process or image. The deployer's reverse proxy (Traefik / Pangolin / Caddy / standalone — see [reverse proxy](/install/reverse-proxy/) and [`examples/`](https://github.com/strausmann/labelyard/tree/main/examples)) points straight at the hub on port 8000. Printers, integrations and keys are managed in the UI and stored in the database (ADR [0017](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0017-settings-in-database-env-locks-encrypted-secrets.md)); secrets are encrypted with `LABELYARD_SECRET_KEY`.
+
+## Component map
+
+### Backend ([ADR 0002](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0002-python-fastapi-backend.md))
+
+```
+backend/app/
+├── main.py                       # FastAPI app instantiation and lifespan
+├── cli.py                        # labelyard command (admin create-key, ...)
+├── config.py                     # environment settings
+├── api/
+│   ├── routes/                   # one router per resource (print, jobs, printers, sheets, webhooks, events, ...)
+│   └── dependencies/             # auth, rate limits, webhook key
+├── auth/                         # API keys, sessions, CSRF
+├── printer_models/               # Plugin per model family (ADR 0004)
+│   ├── base.py                   # PrinterModel Protocol
+│   ├── pt.py                     # Brother PT-Series driver
+│   ├── ql.py                     # Brother QL-Series driver
+│   └── registry.py               # ModelRegistry: entry points, lookup by PJL string / SNMP value
+├── printer_backends/             # How bytes reach a printer (ADR 0020)
+│   ├── base.py                   # backend interface
+│   ├── ptouch_backend.py         # PT-Series over TCP/9100
+│   ├── brother_ql_backend.py     # QL-Series over TCP/9100
+│   ├── mock_backend.py           # fake printer for tests and the smoke compose file
+│   └── ipp/                      # own IPP client for page printers
+├── services/
+│   ├── layout_engine.py          # draws a label from LabelData and a content type
+│   ├── print_service.py          # preflight, lookup, render, persist, queue
+│   ├── print_queue.py            # asyncio queue + worker per printer (ADR 0005)
+│   ├── page_job_runner.py        # page jobs on IPP printers, settled from what the printer reports
+│   ├── printer_runtime.py        # the one code path that wires a printer into the running hub (ADR 0024)
+│   ├── hardware_identity.py      # printer identity from the hardware serial (ADR 0024)
+│   ├── status_block.py           # 32-byte Brother status block parser
+│   ├── status_freshness.py       # how old a cached status may be before it counts as unknown
+│   ├── roll_tracker.py           # roll (tape cassette) change detection
+│   ├── tape_registry.py          # Brother tape spec lookup table
+│   ├── event_bus.py              # in-memory pub/sub for SSE (ADR 0009)
+│   └── producers/                # feed the event bus (queue, status probe, tape change, IPP status)
+├── integrations/
+│   ├── base.py                   # IntegrationPlugin Protocol
+│   ├── registry.py               # IntegrationRegistry: entry points
+│   ├── snipeit/plugin.py
+│   ├── spoolman/plugin.py
+│   └── grocy/plugin.py
+├── sheets/                       # label sheet types, planner, reservations (ADR 0023)
+├── calibration/                  # page printer calibration (fit, model, service)
+├── page_render/                  # PDF pages for page printers
+├── settings_store/               # settings in the database; environment locks fields (ADR 0017)
+├── models/                       # SQLModel persistence (jobs, printers, rolls, sheets, ...)
+├── repositories/                 # database access
+├── schemas/                      # request and response models
+├── db/                           # engine, session, lifespan
+└── seed/                         # sheet types loaded at startup
+```
+
+### Web UI ([ADR 0016](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0016-react-typescript-web-ui.md), supersedes [0003](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0003-go-tailwind-htmx-pwa-frontend.md))
+
+```
+frontend/
+├── src/
+│   ├── app/                 # router, session, query client, update prompt
+│   ├── api/                 # client, event stream, types generated from the OpenAPI contract (ADR 0011)
+│   ├── features/            # overview, printers, jobs, integrations, lookup, scan, search, settings
+│   ├── shell/, pages/       # app shell (sidebar / tab bar) and page frames
+│   ├── design/              # design tokens (spec 5.2)
+│   └── i18n/                # message catalogues (English default)
+├── public/                  # PWA icons, manifest
+└── e2e/                     # Playwright specs against the real backend (mock printers)
+```
+
+Browsers sign in with an API key (or proxy SSO) and receive a session cookie with CSRF protection ([ADR 0019](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0019-proxy-headers-need-trust-token.md) for the trust rules, and [users and SSO](/admin/users-and-sso/)).
+
+## Data flows
+
+### Pull mode — user scans a barcode in the UI
+
+1. User opens `https://labelyard.example.com/` (served by the hub)
+2. Opens an item: searches for it in Snipe-IT, Grocy or Spoolman, scans its barcode, or follows a label link (`/asset/<id>`) → the UI calls `GET /api/v1/lookup/snipeit/<id>`
+3. Backend fetches asset data from Snipe-IT, returns `LabelData`
+4. The print dialog shows a preview rendered by the backend; the user chooses the printer, the layout and the number of copies
+5. User clicks **Print** → `POST /api/v1/print` → backend enqueues job, returns `202` + `job_id`
+6. The UI already holds one SSE connection to `/api/v1/events` for the whole tab
+7. Backend's PrintQueue worker picks up the job, opens TCP/9100 to the printer, sends raster bytes
+8. Backend pushes `job` and `status` events on the EventBus → SSE (JSON frames) → the UI updates its data in place
+9. Job completes; the job's state on the page changes from the SSE event. The hub sends no browser notification (a notification centre is planned in [#255](https://github.com/strausmann/labelyard/issues/255))
+
+### Push mode — Spoolman and Grocy webhooks
+
+The hub takes webhooks for Spoolman spools (`POST /api/v1/webhook/spoolman`) and Grocy products (`POST /api/v1/webhook/grocy`). Grocy can post them itself when `FEATURE_FLAG_LABEL_PRINTING=true` is set in its `data/config.php`; for Spoolman, whatever reacts to the spool event (for example an automation tool) calls the route. Snipe-IT has no webhook route and is pull-only via the hub UI. [Getting started](/install/getting-started/#5-webhooks-print-when-something-happens) and [webhooks](/integrations/webhooks/) list the payloads.
+
+1. Grocy posts to `https://labelyard.example.com/api/v1/webhook/grocy` (a Spoolman event goes to `/api/v1/webhook/spoolman`)
+2. Reverse proxy routes the webhook subroute **without SSO** to the hub
+3. Backend validates `X-API-Key` and the per-key rate limit (`LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`, default 120), then submits a `qr_two_lines` label for the spool or product to the first enabled tape printer through the print service, the same path as `POST /api/v1/print`: preflight, lookup, render, persist, queue. Printer and lookup errors answer 409/422/502/503 like the print route, an unknown spool or product 404 `app-lookup-not-found`, and an integration that is not configured 503 `integration_not_configured` (both in the problem-detail body shape); nothing is queued. One label is printed; `quantity` is accepted but not printed ([#284](https://github.com/strausmann/labelyard/issues/284))
+4. Returns `202` with job ID; webhook caller doesn't wait for print completion (webhook jobs have no owner, so only admin or SSO callers see them)
+5. Backend prints; any active SSE consumer sees the live state changes
+
+### Status by phase ([ADR 0006](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0006-status-sources-by-phase.md))
+
+| Question | Source |
+|---|---|
+| Tape printer: status, tape width, page counter | SNMP, polled by `StatusProbeProducer` (every 30 s by default). `ESC i S` on TCP/9100 gets no answer over the network on the PT and QL families |
+| Tape printer: did the roll change | `roll_tracker` compares the probe with the stored roll record; the printer reports no tape colour, so the operator is asked when the roll changes |
+| Page printer (IPP): status and supplies | `IppStatusProducer`, polled with a failure backoff |
+| Is the cached status still good | `status_freshness`: older than 90 s or three probe intervals (whichever is longer) shows as unknown |
+
+## Print queue ([ADR 0005](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0005-print-queue-is-mandatory.md))
+
+- One `asyncio.Queue` and one worker coroutine **per printer**
+- Persisted in SQLite (jobs survive hub restarts)
+- States: `queued | paused | printing | completed | failed | cancelled`
+- Mid-print cancel **not possible** for tape printers (Brother spec forbids commands during print). IPP page printers can cancel a printing job (`Cancel-Job`, [ADR 0020](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0020-backend-kinds-ipp-page-printers.md))
+- Page jobs (IPP printers) are tracked at the printer until a final state and are settled after a restart from what the printer reports; tape jobs in `printing` become `failed_restart`
+- Operations: pause/resume/cancel/retry/priority on jobs; pause/resume/clear on the printer worker
+
+## API contract ([ADR 0011](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0011-openapi-as-api-contract.md))
+
+The backend's OpenAPI 3.1 spec is canonical:
+
+| Path | Audience |
+|---|---|
+| `GET /openapi.json` | Tooling (codegen, Postman, contract tests) |
+| `GET /docs` | Interactive API reference (Scalar, served by the hub, no CDN) |
+
+The web UI's API types are generated from the backend's OpenAPI document (`pnpm gen:api`), and CI fails when the generated client no longer matches the contract.
+
+## Releases ([ADR 0008](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0008-conventional-commits-and-semantic-release.md))
+
+- Conventional Commits drive version bumps via semantic-release
+- Push to `main` → release pipeline: tag → GitHub Release → Docker image on GHCR + Docker Hub
+- Tag scheme ([ADR 0007](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0007-docker-image-tag-scheme.md)): every stable release publishes `1.0.0`, `1.0`, `1`, and `latest` — pre-releases get only the full version
+- Multi-arch: `linux/amd64` + `linux/arm64`
+
+## SSE EventBus
+
+The backend exposes `GET /api/v1/events[?printer_id=<uuid>]` as a Server-Sent Events
+stream of JSON frames. The `EventBus` singleton (on `app.state.event_bus`) fans out
+`BusEvent` instances from the producers to all connected subscribers:
+
+| Producer | Channel | Event type |
+|---|---|---|
+| `PrintQueueProducer` | `printer:{id}:queue` | `job.state_changed` |
+| `StatusProbeProducer` | `printer:{id}:state` | `printer.status` |
+| `TapeChangeProducer` | `printer:{id}:tape` | `printer.tape_changed` |
+| admin printer API | `hub` | `hub.printers_changed` |
+
+The stream starts with a snapshot per visible printer, authenticates like every
+`read` route, and ends with `auth.expired` when the credentials stop being valid.
+Frame format and reverse-proxy flush configuration for Traefik, Caddy, Nginx and
+Pangolin: [event stream and reverse proxies](/developers/architecture/sse/). The earlier HTML-fragment
+stream `/api/events` (for HTMX) no longer exists.
+
+## Reverse-proxy expectations
+
+The hub listens on port `8000` inside its container and serves the UI and the API on it. SSE requires response buffering disabled at the reverse proxy (see [event stream and reverse proxies](/developers/architecture/sse/) for Traefik/Caddy/Nginx/Pangolin configuration, and [`examples/`](https://github.com/strausmann/labelyard/tree/main/examples) for full compose examples).
+
+For Pangolin specifically, the **Two-Resources pattern** is used:
+
+1. Main UI: SSO-protected, full domain; the resource injects the trust token header the hub requires (`LABELYARD_SSO_TRUST_TOKEN`)
+2. Webhook subroute (`/api/v1/webhook/`): SSO bypass, authenticated by `LABELYARD_WEBHOOK_API_KEY`
+
+## Where things live
+
+| Need | Location |
+|---|---|
+| Why a decision was made | [decision records](https://github.com/strausmann/labelyard/tree/main/docs/decisions) |
+| How to deploy the hub | [getting started](/install/getting-started/) |
+| How to add a printer model or a lookup plugin | [plugin authoring](/developers/plugin-authoring/) |
+| API reference | [API reference](/developers/api/), and `/docs` on a running hub |
+| Research notes (printer protocols, IPP interoperability) | [research notes](https://github.com/strausmann/labelyard/tree/main/docs/research) |
+| Privacy and trademark policy | [policies](https://github.com/strausmann/labelyard/tree/main/docs/policies) |
+| Sample deployments | [`examples/`](https://github.com/strausmann/labelyard/tree/main/examples) |

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Global JSON event stream: ``GET /api/v1/events[?printer_id=<uuid>]`` (web UI).
 
 One ``EventSource`` per browser tab. Authenticates like every ``read`` route
@@ -442,7 +445,7 @@ async def _follow_printer_change(
         "and ``run.state_changed`` (live and in the snapshot) only for the jobs and tape runs "
         "it submitted. Ends with ``auth.expired`` when the "
         "session or key stops being valid. Returns 404 for an unknown ``printer_id``, 403 "
-        "when the credentials exclude it, 429 when ``PRINTER_HUB_SSE_MAX_SUBSCRIBERS`` "
+        "when the credentials exclude it, 429 when ``LABELYARD_SSE_MAX_SUBSCRIBERS`` "
         "connections are open."
     ),
     response_class=StreamingResponse,

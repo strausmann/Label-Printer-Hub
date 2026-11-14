@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pytest configuration shared across all tests.
 
 Hardware tests are skipped by default — pass `--hardware` to opt in.
@@ -20,10 +23,37 @@ from sqlmodel import SQLModel
 # settings must exist before any test module is imported (a fixture is too late).
 # Obviously fake values, derived at runtime from readable text (no high-entropy literal).
 os.environ.setdefault(
-    "PRINTER_HUB_SECRET_KEY",
+    "LABELYARD_SECRET_KEY",
     base64.urlsafe_b64encode(b"test-secret-key-0123456789abcdef").decode(),
 )
-os.environ.setdefault("PRINTER_HUB_PUBLIC_URL", "http://localhost:8000")
+os.environ.setdefault("LABELYARD_PUBLIC_URL", "http://localhost:8000")
+
+
+SETTINGS_ENV_PREFIXES = ("LABELYARD_", "PRINTER_HUB_")
+
+
+def clear_settings_env(monkeypatch: pytest.MonkeyPatch, *prefixes: str) -> None:
+    """Delete every variable with one of the prefixes (both settings prefixes by default).
+
+    Tests that depend on a variable being absent must not depend on what the runner or a
+    developer shell exports, and the old prefix is a valid source since the Labelyard rename.
+    """
+    for name in list(os.environ):
+        if name.upper().startswith(prefixes or SETTINGS_ENV_PREFIXES):
+            monkeypatch.delenv(name)
+
+
+@pytest.fixture
+def clean_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No LABELYARD_* and no PRINTER_HUB_* variable in the environment for this test."""
+    clear_settings_env(monkeypatch)
+
+
+@pytest.fixture
+def clean_legacy_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No PRINTER_HUB_* variable in the environment (the cached settings stay untouched)."""
+    clear_settings_env(monkeypatch, "PRINTER_HUB_")
+
 
 # The test engine factory: every engine a test creates counts its statements, as the app's
 # engine does, so the sheet write lock's order check (264-01) runs in every test. Installed on

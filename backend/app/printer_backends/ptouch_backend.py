@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PTouchBackend — wraps the `ptouch` Python library for Brother PT-Series.
 
 Status queries go through query_status_over_socket (the library does not
@@ -194,7 +197,7 @@ class PTouchBackend:
         if not host:
             raise ValueError(
                 "Empty pt750w_host with printer_backend=ptouch — "
-                "set PRINTER_HUB_PT750W_HOST to the printer's IP/hostname."
+                "set LABELYARD_PT750W_HOST to the printer's IP/hostname."
             )
         return cls(
             host=host,

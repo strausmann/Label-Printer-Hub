@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """API schema for the lookup endpoint (Phase 6a Task 4).
 
 ``LookupResult`` is the JSON-serialisable view of what ``AppLookupService``

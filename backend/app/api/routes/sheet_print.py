@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print onto sheets (spec 12.6, 15): the read-only preview and the print.
 
 ``POST /api/v1/print/{printer_key}/sheet/preview`` needs ``read`` scope and access to the printer.
@@ -87,12 +90,12 @@ _PREVIEW_ONLY_ERRORS: dict[int | str, dict[str, Any]] = {
             "slot became free in time (`render-unavailable`): every slot is held by a stuck "
             "render, the callers without a key have a stuck render, or the wait for the "
             "caller's turn (one slot per key, one for all callers without a key) reached "
-            "`PRINTER_HUB_RENDER_TIMEOUT_S`."
+            "`LABELYARD_RENDER_TIMEOUT_S`."
         )
     },
     504: {
         "description": (
-            "A page took longer than `PRINTER_HUB_RENDER_TIMEOUT_S` to draw (`render-timeout`). "
+            "A page took longer than `LABELYARD_RENDER_TIMEOUT_S` to draw (`render-timeout`). "
             "The drawing goes on: the key's next preview answers 429 `too-many-previews` until "
             "it has ended."
         )

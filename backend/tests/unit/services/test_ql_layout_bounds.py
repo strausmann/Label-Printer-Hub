@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The QL layout bounds its work and its image size, whatever the text (#258 security review).
 
 Label data does not only come from the request schema (which caps lengths): integration

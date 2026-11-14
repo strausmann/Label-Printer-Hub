@@ -1,0 +1,37 @@
+# Generated from docs/glossary.toml — edit that file
+# Rejected terms that Vale.Avoid cannot enforce because they occur inside an exempt string (the
+# product subtitle, a header name). Like OldName: a script over the raw file, line by line, skipping
+# fenced and inline code and every line that contains an exempt string.
+extends: script
+message: "„%s“ ist ein abgelehnter Begriff. Nimm den Glossarbegriff."
+level: error
+scope: raw
+script: |
+  text := import("text")
+  exempt := ["Label Printer Hub", "X-Label-Hub-Key"]
+  matches := []
+  in_fence := false
+  offset := 0
+  for line in text.split(scope, "\n") {
+    trimmed := text.trim_space(line)
+    skip := false
+    for e in exempt {
+      if text.contains(line, e) { skip = true }
+    }
+    if text.has_prefix(trimmed, "```") || text.has_prefix(trimmed, "~~~") {
+      in_fence = !in_fence
+    } else if !in_fence && !skip {
+      found := text.re_find("\\b(?:Label)\\b", line)
+      if found != undefined {
+        for group in found {
+          for m in group {
+            ticks := len(text.split(line[:m.begin], "`")) - 1
+            if ticks % 2 == 0 {
+              matches = append(matches, {begin: offset + m.begin, end: offset + m.end})
+            }
+          }
+        }
+      }
+    }
+    offset += len(line) + 1
+  }

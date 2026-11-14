@@ -1,4 +1,9 @@
-# Contributing to Label Printer Hub
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# Contributing to Labelyard
 
 Thanks for your interest in contributing! This document explains how to participate effectively.
 
@@ -8,7 +13,7 @@ This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By particip
 
 ## Contributor License Agreement
 
-[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/Label-Printer-Hub)](https://cla-assistant.io/strausmann/Label-Printer-Hub)
+[![CLA assistant](https://cla-assistant.io/readme/badge/strausmann/labelyard)](https://cla-assistant.io/strausmann/labelyard)
 
 Contributions need a signed [Contributor License Agreement](CLA.md). You sign it once through [CLA assistant](https://cla-assistant.io/): when you open your first pull request, the bot comments with a link; follow it, sign in with GitHub and accept. The `license/cla` check must pass before a pull request can be merged.
 
@@ -18,7 +23,7 @@ Contributions need a signed [Contributor License Agreement](CLA.md). You sign it
 |---|---|
 | Report a bug | [Issues → Bug report](../../issues/new?template=bug_report.yml) |
 | Suggest a feature | [Issues → Feature request](../../issues/new?template=feature_request.yml) |
-| **Add a new printer model** | [Issues → Plugin request](../../issues/new?template=plugin_request.yml) — see also [`docs/plugin-development.md`](docs/plugin-development.md) |
+| **Add a new printer model** | [Issues → Plugin request](../../issues/new?template=plugin_request.yml) — see also [plugin authoring](https://labelyard.app/developers/plugin-authoring/) |
 | Ask a question | [Discussions](../../discussions) |
 | Improve documentation | PR directly |
 | Security issue | See [SECURITY.md](SECURITY.md) (do **not** open a public issue) |
@@ -28,8 +33,8 @@ Contributions need a signed [Contributor License Agreement](CLA.md). You sign it
 ### 1. Fork & clone
 
 ```bash
-gh repo fork strausmann/label-printer-hub --clone
-cd label-printer-hub
+gh repo fork strausmann/labelyard --clone
+cd labelyard
 ```
 
 ### 2. Set up your environment
@@ -52,7 +57,7 @@ To build and run the whole hub from source without printer hardware, use the smo
 one container, built from the local tree):
 
 ```bash
-export PRINTER_HUB_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
+export LABELYARD_SECRET_KEY="$(openssl rand -base64 32 | tr '+/' '-_')"
 docker compose -f dev/docker-compose.smoke.yml up --build
 # UI and API on http://localhost:8000
 curl http://localhost:8000/healthz
@@ -191,7 +196,7 @@ Issues opened from a form get the labels the form names (for example `area:sheet
 Want to add support for a new Brother model (or even a non-Brother printer)? Excellent.
 
 1. Open a [Plugin request issue](../../issues/new?template=plugin_request.yml) so others know it's in progress
-2. Read [`docs/plugin-development.md`](docs/plugin-development.md)
+2. Read [plugin authoring](https://labelyard.app/developers/plugin-authoring/) (source: `website/src/content/docs/developers/plugin-authoring.md`)
 3. Implement `app/printer_models/<your_model>.py` against the `PrinterModel` protocol
 4. Add tests in `tests/unit/printer_models/test_<your_model>.py`
 5. If you have hardware: add an integration test under `tests/hardware/`
@@ -265,6 +270,26 @@ The files are not recompressed (so regeneration stays byte-identical); `scripts/
 The Screenshots workflow renders them on demand and opens a PR when they changed. It opens that PR with `GITHUB_TOKEN`,
 and GitHub does not start other workflows for it: close and reopen the PR to run the checks.
 
+## Website
+
+The project website <https://labelyard.app> lives in [`website/`](website/) (Astro Starlight). It is the user documentation: install, using, admin, integrations, developers and the configuration reference. Merged changes go live on <https://labelyard.app> from `main`; pull requests only build.
+
+```bash
+pnpm -C website install && pnpm -C website dev
+```
+
+`pnpm -C website build` exports the API document from the backend first, so install the backend in the active Python (`pip install -e ./backend`) or set `PYTHON` to an interpreter that has it. The configuration reference is generated: edit `website/src/config-descriptions.yml` and run `website/scripts/gen-config-reference.py`.
+
+The website is maintained in English and German together. A change to any page under `website/src/content/docs/` is complete only when the English and the German page change in the same pull request. The `website / locale parity` check fails when a page exists in one language only.
+
+## Writing
+
+Write for the reader: what they want to do, then how. Short sentences, one idea each. German is written natively, not translated word for word, and addresses the reader as „du“. Use the glossary term for every concept, in both languages. A change to the docs is complete only with English and German in the same pull request.
+
+- The terms live in [`docs/glossary.toml`](docs/glossary.toml). Edit it, then run `python3 scripts/glossary.py write`; the website glossary, the Vale rules and the check of the interface texts are generated from it.
+- The `prose` check runs [Vale](https://vale.sh/) on the docs. A rejected term or the former product name is an error and fails the check; filler words and long sentences are warnings that are only reported. Run it locally with `scripts/vale_setup.sh`, then `python3 scripts/vale_scope.py | xargs .vale/bin/vale`.
+- Details and the reasons: [Writing docs](https://labelyard.app/developers/writing-docs/).
+
 ## Dependencies and licences
 
 Every dependency that ships in the container image has to carry a licence the project can redistribute. One file decides: [`licence-policy.yml`](licence-policy.yml) (JSON, which is valid YAML). It holds the allow list (`allow-licenses`) and the reviewed exceptions (`x-licence-exceptions`). Every check reads this file.
@@ -281,7 +306,7 @@ To run the backend check locally:
 python -m venv /tmp/rt && /tmp/rt/bin/pip install ./backend
 python -m venv /tmp/tool && /tmp/tool/bin/pip install pip-licenses==5.5.5
 cd backend && /tmp/tool/bin/python -m scripts.licence_report \
-  --python /tmp/rt/bin/python --policy ../licence-policy.yml
+  --python /tmp/rt/bin/python --policy ../licence-policy.yml --own-project pyproject.toml
 ```
 
 It prints every package the policy refuses as `name (licence)` and exits 1.
@@ -297,6 +322,92 @@ It prints every package the policy refuses as `name (licence)` and exits 1.
 - For an npm package that the dependency graph mis-reports, or reports with no licence at all, also add the purl to `allow-dependencies-licenses`. A test requires an exception with a reason for every purl there. `Dependency review` fails on a dependency whose licence cannot be detected, so such a package is never let through unread.
 
 A licence that is **not** on the allow list is not an exception to add quietly: it is a decision about what the project may redistribute. Open an issue first. `GPL-2.0-only` and `LGPL-2.0-only` are left out on purpose (incompatible with AGPL-3.0), as is anything non-free.
+
+### A licence text is missing
+
+The image build runs `licence_report.py` with `--require-texts`. It stops on purpose when a package of the
+backend list has no licence text, because the image must not ship a licence list with holes. The output names each
+package and its licence expression. Decide by the expression:
+
+- **A single SPDX id:** the rule depends on the licence text.
+  - Licences whose canonical text names no copyright holder (listed in `HOLDER_FREE_FALLBACKS` in
+    `licence_report.py`, today only `GPL-3.0-or-later`) get the verbatim canonical text as
+    `backend/licences/<SPDX-id>.txt`, one file for every package. Put the source URL and the sha256 in the
+    commit body.
+  - MIT, BSD and every other licence with a holder line get a text of the package itself, as
+    `backend/licences/packages/<normalised-name>.txt`. Take the holder from the package's own source: its
+    licence file in the repository or tag, otherwise its metadata. Name that source in the commit body.
+    Never reuse another package's holder.
+- **A compound or wrong expression** (for example `MIT OR Apache-2.0`, or metadata that is not an SPDX id): add an
+  `x-licence-exceptions` entry to `licence-policy.yml` whose `licence` is the single id the package really carries,
+  then add that id's text as above. Never guess a text.
+- **No usable licence at all:** open an issue, as described below for licences that are not allowed.
+
+To reproduce the check locally, run the builder-stage command against a local venv:
+
+```bash
+python -m venv /tmp/rt && /tmp/rt/bin/pip install ./backend
+python -m venv /tmp/tool && /tmp/tool/bin/pip install pip-licenses==5.5.5
+cd backend && /tmp/tool/bin/python -m scripts.licence_report \
+  --python /tmp/rt/bin/python --policy ../licence-policy.yml \
+  --own-project pyproject.toml --extra licences/extra-records.json --require-texts
+```
+
+## Licence headers
+
+<!-- REUSE-IgnoreStart -->
+
+Every file the project owns starts with two SPDX lines in its own comment syntax:
+
+```text
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+Put them at the top, after a shebang (`#!`) or a `<!doctype html>` line if the file has one, and before the
+module docstring:
+
+```python
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+The same `#` form applies to shell, YAML, TOML, INI, `Dockerfile`, `Makefile`, `.gitignore` and `.env.example`.
+
+```ts
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+The same `//` form applies to `.tsx`, `.js`, `.mjs`, `.cjs` and the front matter of an `.astro` component.
+
+```css
+/*
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+*/
+```
+
+```markdown
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+```
+
+The Markdown form also applies to HTML.
+
+- The year is the year the file was created. It is not bumped when the file changes.
+- You may add your own line `SPDX-FileCopyrightText: <year> <your name>` below the first one. This is voluntary;
+  the [CLA](CLA.md) stays as it is.
+- Files that cannot carry a comment (JSON, lockfiles, images, binary fixtures, generated files, the website pages
+  with front matter) and third-party files are covered by [`REUSE.toml`](REUSE.toml). A new path there needs a
+  comment that says why. Third-party files keep their own licence and copyright.
+- `reuse lint` must pass (CI job `reuse`, locally `pipx run reuse lint` from the repository root). The backend test
+  `tests/unit/test_spdx_headers.py` also checks that the header is in the file itself wherever a comment is
+  possible.
+
+<!-- REUSE-IgnoreEnd -->
 
 ## Milestones, branches and releases
 
@@ -322,15 +433,16 @@ Patch releases come from `main`. Minor and major releases come from a **mileston
 
 **Fixes while a milestone is open.** Fixes go to `main` and ship as nightly patch releases. When `main` moves, the [Milestone sync](.github/workflows/milestone-sync.yml) workflow opens a PR `main` → `milestone/x.y.0` (`chore: sync main into milestone/x.y.0`) for every milestone branch that does not contain `main` yet. Merge it with a merge commit. The workflow opens these PRs with `GITHUB_TOKEN`, and GitHub does not start other workflows for them: close and reopen the PR to run the checks.
 
-**Preview images.** Before a milestone is released, a maintainer can build a preview image from the milestone branch with the **Preview image** workflow (Actions → Preview image → Run workflow, branch `milestone/x.y.0`, version `x.y.0`). Each run publishes the next tag `x.y.0-rc.N` to GHCR only:
+**Preview images.** Before a milestone is released, a maintainer can build a preview image from the milestone branch with the **Preview image** workflow (Actions → Preview image → Run workflow, branch `milestone/x.y.0`, version `x.y.0`). Each run publishes the next tag `x.y.0-rc.N` to GHCR and Docker Hub (the same tag on both; the rc number is counted from the GHCR tags):
 
 ```bash
-docker pull ghcr.io/strausmann/label-printer-hub-backend:1.5.0-rc.1
+docker pull ghcr.io/strausmann/labelyard:1.6.0-rc.1
+docker pull docker.io/strausmann/labelyard:1.6.0-rc.1
 ```
 
-A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags and nothing on Docker Hub. Previews are removed from GHCR once their release exists.
+A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags. Previews are removed from both registries once their release exists.
 
-For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<next free patch>-rc.N`. A weekly **GHCR cleanup** run prunes the package to the releases from 1.4.0, their floating tags, `dev` and open previews, and never touches anything younger than a day. It only deletes when the repository variable `GHCR_CLEANUP_ENABLED` is `true`; a manual run defaults to dry-run. Cleanup and preview runs share one concurrency group, so they never overlap, and a newer queued run replaces an older *pending* one: a skipped cleanup or preview run is expected, so re-dispatch it if needed. The rules live in `scripts/ghcr_rules.py` (tests: `scripts/test_ghcr_rules.py`).
+For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<next free patch>-rc.N`. A weekly **Registry cleanup** run prunes `labelyard` on both registries with one rule: it keeps the releases from 1.4.0, their floating tags, `dev` and open previews. On GHCR it also removes every other tag and untagged images, and never touches anything younger than a day; on Docker Hub it deletes closed previews and only lists tags the rule does not know (untagged images there age out by Docker Hub's own policy). It only deletes when the repository variable `GHCR_CLEANUP_ENABLED` is `true`; a manual run defaults to dry-run. Cleanup and preview runs share one concurrency group, so they never overlap, and a newer queued run replaces an older *pending* one: a skipped cleanup or preview run is expected, so re-dispatch it if needed. The rules live in `scripts/ghcr_rules.py` (tests: `scripts/test_ghcr_rules.py`).
 
 **Two guards keep the numbering honest.**
 

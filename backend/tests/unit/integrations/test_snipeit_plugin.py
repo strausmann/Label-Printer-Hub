@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 from unittest.mock import patch
 
 import httpx
@@ -15,9 +18,9 @@ from tests.unit.integrations._bound import bound
 @pytest.fixture(autouse=True)
 def _stub_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Point the plugin at a fake host. respx mocks the actual HTTP."""
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example")
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "test-key")
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_TIMEOUT", "5.0")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://snipe-it.example")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_API_KEY", "test-key")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_TIMEOUT", "5.0")
     # Clear the lru_cache so the plugin picks up the patched env vars.
     from app.config import get_settings
 
@@ -103,7 +106,7 @@ async def test_lookup_strips_trailing_slash_from_base_url(monkeypatch: pytest.Mo
     # Trailing slash is injected via env var — the plugin must strip it.
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example/")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://snipe-it.example/")
     get_settings.cache_clear()
     client = bound(SnipeITPlugin)
     data = await client.lookup("A-1")
@@ -161,7 +164,7 @@ async def test_lookup_sends_bearer_auth_header(monkeypatch: pytest.MonkeyPatch) 
     """lookup() must send Authorization: Bearer … and Accept: application/json."""
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "secret-key-42")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_API_KEY", "secret-key-42")
     get_settings.cache_clear()
 
     route = respx.get("https://snipe-it.example/api/v1/hardware/bytag/A-1").mock(

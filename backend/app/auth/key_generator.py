@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """API key generation for Phase 7c — generates bcrypt-hashed keys with prefix.
 
 Key format: ``lh_pat_<43-char-urlsafe-base64>``
-  - ``lh_pat_`` — Label Hub Personal Access Token infix, unambiguously
+  - ``lh_pat_`` — personal access token infix (kept from before the rename), unambiguously
     identifies token type for both humans and secret-scanning tools
   - 43-char body — secrets.token_urlsafe(32) produces ~43 URL-safe chars
     from 256 bits of entropy (no padding)

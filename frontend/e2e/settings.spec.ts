@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
@@ -81,7 +84,7 @@ test.describe.serial("settings", () => {
     await expect.poll(() => noSideScroll(page)).toBe(true);
     await shot(page, "task-13-general-phone.png", true);
     // Put it back so later tests see the default.
-    await page.getByRole("textbox", { name: "Display name" }).fill("Label Printer Hub");
+    await page.getByRole("textbox", { name: "Display name" }).fill("Labelyard");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   });

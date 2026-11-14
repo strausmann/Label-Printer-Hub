@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { PRIMARY_BUTTON } from "../features/ui";
 import { useLingui } from "@lingui/react/macro";
 import { useState, type FormEvent } from "react";
 import { Button, Input, Label, TextField } from "react-aria-components";
 import { ApiError } from "../api/client";
 import { SourceLink } from "../features/about/SourceLink";
+import { messages } from "../i18n/messages";
 
 // Defined with the other button styles in `features/ui`; re-exported because the screens import it from here.
 export { PRIMARY_BUTTON };
@@ -33,7 +37,7 @@ function useSignInMessage() {
  * the moment it is sent and never stored in the browser.
  */
 export function SignIn({ onSignIn }: { onSignIn: (key: string) => Promise<void> }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const messageFor = useSignInMessage();
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -62,8 +66,13 @@ export function SignIn({ onSignIn }: { onSignIn: (key: string) => Promise<void> 
         className="flex w-full max-w-sm flex-col gap-5 rounded-r3 border border-line bg-surface p-6"
       >
         <div>
-          <h1 className="text-title font-bold">{t`Label Printer Hub`}</h1>
-          <p className="mt-1 text-ink-2">{t`Sign in with an API key that has print or admin scope.`}</p>
+          <h1>
+            {/* The wordmark file draws in currentColor, which an <img> cannot inherit; as a mask it takes the
+                ink colour of the active theme (light, dark or forced colours). */}
+            <span role="img" aria-label={i18n._(messages.appName)} className="brand-wordmark block h-8 w-[125px]" />
+          </h1>
+          <p className="mt-2 text-ink-2">{i18n._(messages.tagline)}</p>
+          <p className="mt-4">{t`Sign in with an API key that has print or admin scope.`}</p>
         </div>
         <TextField value={key} onChange={setKey} name="api-key" type="password" autoComplete="off" className="flex flex-col gap-1.5">
           <Label className="font-bold">{t`API key`}</Label>

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """GET /api/v1/printers/{id}/status for IPP page printers (cache written by IppStatusProducer)
 and the regression for tape printers (new fields stay null)."""
 
@@ -31,7 +34,7 @@ def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
     """The reads authenticate with the legacy X-Pangolin-User header (D10 opt-in)."""
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

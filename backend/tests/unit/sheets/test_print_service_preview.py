@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet print preview: item resolution, planning, PNGs, hints, bounds (Plan 3, Task 6)."""
 
 from __future__ import annotations

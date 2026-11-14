@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The printable calibration page (spec 13.2): a test grid the user measures.
 
 The page shows the sheet type's cut lines with a ruler and a millimetre scale at every crossing

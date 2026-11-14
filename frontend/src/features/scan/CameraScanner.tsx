@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { Button } from "react-aria-components";

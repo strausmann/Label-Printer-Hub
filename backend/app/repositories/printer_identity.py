@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Repository for the stored hardware identity of a printer (#231).
 
 Every write is a compare-and-swap on the identity the caller read, so two probes racing on one

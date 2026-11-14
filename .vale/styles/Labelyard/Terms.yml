@@ -1,0 +1,7 @@
+# Generated from docs/glossary.toml — edit that file
+extends: substitution
+message: "Use '%s' instead of '%s'."
+level: warning
+ignorecase: false
+swap:
+  "API-Key": "API key"

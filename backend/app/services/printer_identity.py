@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Deterministischer Drucker-UUIDv5 aus Umgebungskonfiguration.
 
 Phase 7b Cluster 1b: Der Lifespan berechnet eine stabile Kennung aus

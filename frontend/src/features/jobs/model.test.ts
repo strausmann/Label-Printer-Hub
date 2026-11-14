@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { initI18n } from "../../i18n";
 import { job } from "../test-api";

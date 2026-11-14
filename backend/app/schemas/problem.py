@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """RFC 7807 Problem Details schema.
 
 Used for consistent error responses across all Phase 6a REST routes.

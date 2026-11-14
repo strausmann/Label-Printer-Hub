@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-"""GHCR keep rule and preview tag logic for the Label Printer Hub backend image.
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
-Used by .github/workflows/ghcr-cleanup.yml and .github/workflows/preview-image.yml
-so that the workflows and the tests share one implementation.
+"""Keep rule and preview tag logic for the Labelyard image on GHCR and Docker Hub.
+
+Used by .github/workflows/registry-cleanup.yml and .github/workflows/preview-image.yml
+so that the workflows and the tests share one implementation. Both registries
+follow the same rule: keep_regex() for GHCR (the cleanup action takes a regex),
+select_deletions() for Docker Hub (a list of tags), which agree by construction.
 
 CLI (tags are read from stdin, one per line):
 
     python3 scripts/ghcr_rules.py fetch-tags            # env: ACTOR, GHCR_TOKEN, IMAGE_PATH
     python3 scripts/ghcr_rules.py keep-regex
     python3 scripts/ghcr_rules.py next-preview <version-or-milestone>
+    python3 scripts/ghcr_rules.py released               # the x.y.z tags among stdin
+    python3 scripts/ghcr_rules.py select-deletions --released <file>
+    python3 scripts/ghcr_rules.py dockerhub-tags        # env: DOCKERHUB_USERNAME, DOCKERHUB_ADMIN_TOKEN, HUB_REPOSITORY
+    python3 scripts/ghcr_rules.py dockerhub-delete      # same env; deletes the tags on stdin
 
 Standard library only.
 """
@@ -23,7 +32,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 # dev, latest, releases >= 1.4.0 with their floating tags (x.y and x).
@@ -53,6 +62,16 @@ _NUM = r"(?:0|[1-9][0-9]*)"
 _RELEASE = re.compile(rf"^({_NUM})\.({_NUM})\.({_NUM})$")
 _PREVIEW = re.compile(rf"^(({_NUM})\.({_NUM})\.({_NUM}))-rc\.([0-9]+)$")
 _PATCH_MILESTONE = re.compile(rf"^({_NUM})\.({_NUM})\.x$")
+# Tags the retention rule knows. Anything else is foreign: GHCR's cleanup
+# action deletes it (every tag is a candidate there), the Docker Hub job only
+# reports it and leaves the decision to a maintainer. One exception on GHCR:
+# cosign signature tags `sha256-<digest>` are foreign here, but the action keeps
+# them as children of their image and removes them only together with it.
+_KNOWN = re.compile(rf"^(dev|latest|{_NUM}|{_NUM}\.{_NUM}|{_NUM}\.{_NUM}\.{_NUM}(-rc\.[0-9]+)?)$")
+# A Docker tag (the registry's own grammar); used before a tag goes into a URL.
+_DOCKER_TAG = re.compile(r"\A[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
+
+DOCKERHUB_API = "https://hub.docker.com/v2"
 
 # A package that has never been pushed answers the tag list with one of these.
 MISSING_PACKAGE_STATUSES = frozenset({403, 404})
@@ -127,6 +146,23 @@ def released_versions(tags: list[str]) -> list[str]:
     return [t for t in tags if _RELEASE.match(t)]
 
 
+def foreign_tags(tags: Iterable[str]) -> list[str]:
+    """Tags the retention rule does not know (branch slugs, CI tags, ...)."""
+    return list(dict.fromkeys(t for t in tags if not _KNOWN.match(t)))
+
+
+def select_deletions(tags: Iterable[str], released: set[str]) -> list[str]:
+    """Return the tags to delete, in input order, by the same rule as keep_regex().
+
+    ``released`` are the x.y.z versions that exist (on either registry); a
+    preview x.y.z-rc.N whose version is released is closed and deleted. Foreign
+    tags are never returned (see foreign_tags()).
+    """
+    tags = list(dict.fromkeys(tags))
+    rule = re.compile(keep_regex(tags + sorted(released)))
+    return [t for t in tags if _KNOWN.match(t) and not rule.match(t)]
+
+
 def fetch_tags(
     image: str, actor: str, token: str, opener: Opener = urllib.request.urlopen
 ) -> list[str]:
@@ -162,6 +198,89 @@ def fetch_tags(
     return list(payload.get("tags") or [])
 
 
+def _hub_request(
+    method: str, url: str, opener: Opener, token: str | None = None, body: dict[str, str] | None = None
+) -> tuple[int, Any]:
+    headers = {"Accept": "application/json"}
+    if token is not None:
+        headers["Authorization"] = f"Bearer {token}"
+    data = None
+    if body is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(body).encode()
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
+    with opener(request) as response:
+        raw = response.read()
+        return getattr(response, "status", 200), (json.loads(raw) if raw else None)
+
+
+def dockerhub_token(username: str, secret: str, opener: Opener = urllib.request.urlopen) -> str:
+    """Exchange a Docker Hub personal access token for a bearer token.
+
+    The secret travels in the request body, never in a URL or a command line.
+    """
+    _, payload = _hub_request(
+        "POST", f"{DOCKERHUB_API}/auth/token", opener, body={"identifier": username, "secret": secret}
+    )
+    return str(payload["access_token"])
+
+
+def fetch_dockerhub_tags(
+    namespace: str, repository: str, token: str, opener: Opener = urllib.request.urlopen
+) -> list[str]:
+    """Read every tag of ``namespace/repository`` (follows ``next``).
+
+    A 404 on the first page is an empty list, as for GHCR, with a warning on
+    stderr: a repository without tags answers 200 with no results, so a 404
+    means the namespace or repository does not exist (for example a
+    DOCKERHUB_USERNAME that is not the namespace images are pushed to), and the
+    cleanup would otherwise stay green without ever pruning. A 404 on a later
+    page and every other error are raised.
+    """
+    url: str | None = f"{DOCKERHUB_API}/namespaces/{namespace}/repositories/{repository}/tags?page_size=100"
+    tags: list[str] = []
+    while url:
+        if not url.startswith(f"{DOCKERHUB_API}/"):
+            raise RuntimeError(f"refusing to follow a next page outside {DOCKERHUB_API}")
+        try:
+            _, page = _hub_request("GET", url, opener, token=token)
+        except urllib.error.HTTPError as err:
+            if err.code == 404 and not tags:
+                print(
+                    f"::warning::Docker Hub repository {namespace}/{repository} not found; nothing to prune",
+                    file=sys.stderr,
+                )
+                return []
+            raise
+        tags += [str(item["name"]) for item in page.get("results") or []]
+        url = page.get("next")
+    return tags
+
+
+def delete_dockerhub_tag(
+    namespace: str, repository: str, tag: str, token: str, opener: Opener = urllib.request.urlopen
+) -> None:
+    """Delete one tag. A 404 means it is gone already; every other error is raised.
+
+    The endpoint is not in Docker Hub's current API reference; it was confirmed
+    in the Labelyard Task 4 spike (204, tag gone from the list afterwards).
+    """
+    if not _DOCKER_TAG.match(tag):
+        raise ValueError(f"not a tag: {tag!r}")
+    url = f"{DOCKERHUB_API}/repositories/{namespace}/{repository}/tags/{tag}/"
+    try:
+        _hub_request("DELETE", url, opener, token=token)
+    except urllib.error.HTTPError as err:
+        if err.code != 404:
+            raise
+
+
+def _hub_env() -> tuple[str, str, str]:
+    username = os.environ["DOCKERHUB_USERNAME"]
+    token = dockerhub_token(username, os.environ["DOCKERHUB_ADMIN_TOKEN"])
+    return username.lower(), os.environ["HUB_REPOSITORY"], token
+
+
 def _read_tags(stream: Any) -> list[str]:
     return [line.strip() for line in stream.read().splitlines() if line.strip()]
 
@@ -192,6 +311,29 @@ def main(argv: list[str], stdin: Any = None, stdout: Any = None) -> int:
         except ValueError as err:
             print(f"::error::{err}", file=sys.stderr)
             return 1
+        return 0
+    if argv == ["released"]:
+        stdout.write("".join(f"{t}\n" for t in dict.fromkeys(released_versions(_read_tags(stdin)))))
+        return 0
+    if len(argv) == 3 and argv[:2] == ["select-deletions", "--released"]:
+        with open(argv[2], encoding="utf-8") as released_file:
+            released = set(_read_tags(released_file))
+        tags = _read_tags(stdin)
+        for tag in foreign_tags(tags):
+            print(f"::notice::foreign tag, not deleted: {tag}", file=sys.stderr)
+        stdout.write("".join(f"{t}\n" for t in select_deletions(tags, released)))
+        return 0
+    if argv == ["dockerhub-tags"]:
+        namespace, repository, token = _hub_env()
+        stdout.write("".join(f"{t}\n" for t in fetch_dockerhub_tags(namespace, repository, token)))
+        return 0
+    if argv == ["dockerhub-delete"]:
+        tags = _read_tags(stdin)
+        if tags:
+            namespace, repository, token = _hub_env()
+            for tag in tags:
+                delete_dockerhub_tag(namespace, repository, tag, token)
+                stdout.write(f"deleted {tag}\n")
         return 0
     print(__doc__, file=sys.stderr)
     return 2

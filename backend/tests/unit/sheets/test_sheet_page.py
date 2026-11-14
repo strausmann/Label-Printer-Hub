@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The ``sheet_page`` payload and its renderer (Plan 3, Task 4; spec 10.2, 11.4, 12, 13)."""
 
 from __future__ import annotations

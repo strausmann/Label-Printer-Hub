@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit-Tests für /api/v1/admin/printers CRUD-Endpoints (Issue #124, Task 3.1).
 
 TDD: Tests wurden vor der Implementation geschrieben.

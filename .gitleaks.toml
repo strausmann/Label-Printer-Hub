@@ -1,4 +1,7 @@
-title = "label-printer-hub gitleaks config"
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+title = "labelyard gitleaks config"
 
 [extend]
 # Use default rules plus our custom one
@@ -6,7 +9,7 @@ useDefault = true
 
 [[rules]]
 id = "labelhub-pat"
-description = "Label-Printer-Hub Personal Access Token"
+description = "Labelyard Personal Access Token"
 regex = '''lh_pat_[A-Za-z0-9_-]{43}'''
 keywords = ["lh_pat_"]
 tags = ["key", "label-hub", "pat"]

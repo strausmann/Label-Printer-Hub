@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Browser sessions, CSRF, bootstrap key and proxy-header trust (spec 8.1, 8.2; D7, D10).
 
 All keys and tokens below are obviously fake test values.
@@ -40,7 +43,7 @@ def _fresh_sign_in_limiter():
 
 def _set_env(monkeypatch: pytest.MonkeyPatch, **values: str) -> None:
     for name, value in values.items():
-        monkeypatch.setenv(f"PRINTER_HUB_{name.upper()}", value)
+        monkeypatch.setenv(f"LABELYARD_{name.upper()}", value)
     get_settings.cache_clear()
 
 

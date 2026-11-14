@@ -1,0 +1,114 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Descriptions of every LABELYARD_* variable for the configuration reference, in English and
+# German. scripts/gen-config-reference.py fails when a variable of app/config.py has no entry
+# here, or an entry lacks one of the two languages.
+database_url:
+  en: 'Database connection. The default keeps the SQLite file in the `/data` volume; existing installs keep finding their data under this name.'
+  de: 'Datenbankverbindung. Der Standard legt die SQLite-Datei im Volume `/data` ab; bestehende Installationen finden ihre Daten weiter unter diesem Namen.'
+secret_key:
+  en: "Master key for the secrets stored in the database: base64url text of exactly 32 bytes. Generate it with `openssl rand -base64 32 | tr '+/' '-_'` and keep it, without it stored secrets cannot be read."
+  de: "Hauptschlüssel für die in der Datenbank gespeicherten Geheimnisse: base64url-Text aus genau 32 Bytes. Erzeuge ihn mit `openssl rand -base64 32 | tr '+/' '-_'` und bewahre ihn auf, ohne ihn lassen sich gespeicherte Geheimnisse nicht mehr lesen."
+public_url:
+  en: 'Any `http(s)` address, local ones included. Set it to the address people open the web UI at. With `https` the session cookies are `Secure` and `__Host-` prefixed; it is also the allowed `Origin` of state-changing requests.'
+  de: 'Jede `http(s)`-Adresse, auch eine lokale. Trag die Adresse ein, unter der die Weboberfläche geöffnet wird. Bei `https` sind die Sitzungs-Cookies `Secure` und tragen das Präfix `__Host-`; außerdem ist sie der erlaubte `Origin` für ändernde Anfragen.'
+bootstrap_admin_key:
+  en: 'One-time key (32 characters or more) that signs you in while no admin key exists, so you can create the first one. Empty disables it; it is rejected as soon as an enabled admin key exists.'
+  de: 'Einmalschlüssel (mindestens 32 Zeichen), mit dem du dich anmeldest, solange es noch keinen Admin-Schlüssel gibt, um den ersten anzulegen. Leer schaltet ihn ab; sobald ein aktiver Admin-Schlüssel existiert, wird er abgelehnt.'
+web_dist_dir:
+  en: 'Directory of the built web UI that the backend serves. The image sets it; change it only for a custom build.'
+  de: 'Verzeichnis der gebauten Weboberfläche, die das Backend ausliefert. Das Image setzt es; ändere es nur für einen eigenen Build.'
+paperless_url:
+  en: 'Paperless-ngx base address for the connection test under Settings > Integrations.'
+  de: 'Basisadresse von Paperless-ngx für den Verbindungstest unter Einstellungen > Integrationen.'
+paperless_token:
+  en: 'Paperless-ngx API token.'
+  de: 'API-Token von Paperless-ngx.'
+paperless_timeout:
+  en: 'Seconds to wait for Paperless-ngx.'
+  de: 'Sekunden, die auf Paperless-ngx gewartet wird.'
+webhook_api_key:
+  en: 'Shared key for the inbound Spoolman and Grocy webhooks, sent as the `X-API-Key` header. At least 32 characters (`openssl rand -hex 32`). Empty answers every webhook call with 503.'
+  de: 'Gemeinsamer Schlüssel für die eingehenden Webhooks von Spoolman und Grocy, gesendet im Header `X-API-Key`. Mindestens 32 Zeichen (`openssl rand -hex 32`). Leer beantwortet jeden Webhook-Aufruf mit 503.'
+webhook_limit_per_minute:
+  en: 'Webhook calls per minute and webhook key, Spoolman and Grocy together. Above it the webhook answers `429` with `Retry-After`; neither app retries a refused call, so a bulk event must fit.'
+  de: 'Webhook-Aufrufe pro Minute und Webhook-Schlüssel, Spoolman und Grocy zusammen. Darüber antwortet der Webhook mit `429` und `Retry-After`; keine der beiden Apps wiederholt einen abgewiesenen Aufruf, also muss ein Sammelereignis hineinpassen.'
+snipeit_url:
+  en: 'Snipe-IT base address.'
+  de: 'Basisadresse von Snipe-IT.'
+snipeit_api_key:
+  en: 'Snipe-IT API token (bearer).'
+  de: 'API-Token von Snipe-IT (Bearer).'
+snipeit_timeout:
+  en: 'Seconds to wait for Snipe-IT.'
+  de: 'Sekunden, die auf Snipe-IT gewartet wird.'
+grocy_url:
+  en: 'Grocy base address.'
+  de: 'Basisadresse von Grocy.'
+grocy_api_key:
+  en: 'Grocy API key.'
+  de: 'API-Schlüssel von Grocy.'
+grocy_timeout:
+  en: 'Seconds to wait for Grocy.'
+  de: 'Sekunden, die auf Grocy gewartet wird.'
+spoolman_url:
+  en: 'Spoolman base address. Spoolman needs no key.'
+  de: 'Basisadresse von Spoolman. Spoolman braucht keinen Schlüssel.'
+spoolman_timeout:
+  en: 'Seconds to wait for Spoolman.'
+  de: 'Sekunden, die auf Spoolman gewartet wird.'
+server_port:
+  en: 'The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT` (or its name from earlier releases, see [upgrades](/admin/upgrades/)), then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.'
+  de: 'Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT` (oder den Namen aus früheren Versionen, siehe [Aktualisieren](/de/admin/upgrades/)), dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.'
+log_level:
+  en: 'One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error. At `DEBUG` the hub''s own loggers are verbose, but the database driver stays at `INFO`, so SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it.'
+  de: 'Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab. Bei `DEBUG` sind die eigenen Logger des Hubs ausführlich, der Datenbanktreiber bleibt aber auf `INFO`, SQL-Anweisungen und ihre Werte landen also nicht im Log. Bibliotheken von Dritten protokollieren bei `DEBUG` sehr wohl: Lies ein Debug-Log, bevor du es weitergibst.'
+sign_in_limit_per_minute:
+  en: 'Browser sign-in attempts per minute and client address. Behind a proxy all clients share the proxy''s address unless the proxy is trusted (`FORWARDED_ALLOW_IPS`).'
+  de: 'Anmeldeversuche im Browser pro Minute und Client-Adresse. Hinter einem Proxy teilen sich alle Clients dessen Adresse, solange der Proxy nicht als vertrauenswürdig eingetragen ist (`FORWARDED_ALLOW_IPS`).'
+sse_queue_size:
+  en: 'Events buffered per live-update subscriber; the oldest is dropped when it is full.'
+  de: 'Gepufferte Ereignisse je Abonnent der Live-Aktualisierung; ist der Puffer voll, fällt das älteste weg.'
+sse_idle_timeout_s:
+  en: 'Seconds without activity before the server closes a live-update connection.'
+  de: 'Sekunden ohne Aktivität, nach denen der Server eine Live-Verbindung schließt.'
+sse_max_subscribers:
+  en: 'Concurrent live-update connections per printer; more are answered with 429.'
+  de: 'Gleichzeitige Live-Verbindungen je Drucker; weitere werden mit 429 beantwortet.'
+sse_heartbeat_s:
+  en: 'Seconds between keep-alive frames when no events flow.'
+  de: 'Sekunden zwischen Keep-alive-Rahmen, wenn keine Ereignisse fließen.'
+sse_probe_interval_s:
+  en: 'Seconds between two status queries (SNMP) of each printer.'
+  de: 'Sekunden zwischen zwei Statusabfragen (SNMP) je Drucker.'
+max_queued_runs_per_printer:
+  en: 'Tape runs (batches) one printer has queued or printing at once; at least `5`, the runs a printer may hold. Above it a batch answers `429` `too-many-queued-runs`.'
+  de: 'Bandläufe (Stapel), die ein Drucker gleichzeitig in der Warteschlange hat oder druckt; mindestens `5`, so viele Läufe darf ein Drucker zurückhalten. Darüber antwortet ein Stapel mit `429` `too-many-queued-runs`.'
+max_queued_runs_per_key:
+  en: 'Tape runs one API key has at once over all printers, held runs included. Above it a batch answers `429` `too-many-queued-runs`.'
+  de: 'Bandläufe, die ein API-Schlüssel gleichzeitig über alle Drucker hat, zurückgehaltene Läufe eingeschlossen. Darüber antwortet ein Stapel mit `429` `too-many-queued-runs`.'
+render_timeout_s:
+  en: 'Seconds one page may take to draw (sheet preview, page job), at most `600`. Past it the preview answers `504` `render-timeout` and the page job fails with `render_timeout`. The drawing thread cannot be stopped and keeps its render slot until it ends (readiness check `render_slots`).'
+  de: 'Sekunden, die eine Seite zum Zeichnen brauchen darf (Bogenvorschau, Seitenauftrag), höchstens `600`. Danach antwortet die Vorschau mit `504` `render-timeout`, und der Seitenauftrag scheitert mit `render_timeout`. Der Zeichen-Thread lässt sich nicht anhalten und behält seinen Platz, bis er endet (Bereitschaftsprüfung `render_slots`).'
+trust_legacy_pangolin_user:
+  en: 'Opt in to the legacy `X-Pangolin-User` header without a trust token. Off by default; it never creates a browser session.'
+  de: 'Schaltet den alten Header `X-Pangolin-User` ohne Vertrauens-Token frei. Standardmäßig aus; er erzeugt nie eine Browsersitzung.'
+trust_pangolin_basic_bypass:
+  en: 'Opt in to the Pangolin `Authorization: Basic` bypass credential. Off by default; its state-changing requests need an `Origin` equal to the public address.'
+  de: 'Schaltet die Basic-Umgehung von Pangolin (`Authorization: Basic`) frei. Standardmäßig aus; ändernde Anfragen damit brauchen einen `Origin`, der der öffentlichen Adresse entspricht.'
+pangolin_bypass_scope_downgrade:
+  en: 'Limits the Basic bypass, if it is enabled at all, to `read` scope.'
+  de: 'Beschränkt die Basic-Umgehung, falls sie überhaupt aktiv ist, auf den Bereich `read`.'
+sso_user_header:
+  en: 'Header that carries the signed-in user from the SSO proxy.'
+  de: 'Header, in dem der SSO-Proxy den angemeldeten Benutzer mitschickt.'
+sso_trust_header:
+  en: 'Header that carries the trust token from the SSO proxy.'
+  de: 'Header, in dem der SSO-Proxy das Vertrauens-Token mitschickt.'
+sso_trust_token:
+  en: 'Shared secret the proxy sends in the trust header. Only with it does the user header count, so a neighbouring container cannot pose as a user. Empty disables sign-in through the proxy.'
+  de: 'Gemeinsames Geheimnis, das der Proxy im Vertrauens-Header schickt. Nur damit zählt der Benutzer-Header, sodass sich kein Nachbarcontainer als Benutzer ausgeben kann. Leer schaltet die Anmeldung über den Proxy ab.'
+job_retention_days:
+  en: 'Days after which finished jobs (done, failed, cancelled) are deleted.'
+  de: 'Tage, nach denen abgeschlossene Aufträge (fertig, fehlgeschlagen, abgebrochen) gelöscht werden.'

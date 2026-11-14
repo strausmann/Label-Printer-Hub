@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The former product name is an error unless the line also names Labelyard (the subtitle rule of
+# scripts/brand_guard.py). Vale has no per-line exception for a plain existence rule, so this is
+# a script over the raw file: it looks line by line and skips fenced and inline code.
+extends: script
+message: "'%s' is the former product name. Write Labelyard."
+level: error
+scope: raw
+script: |
+  text := import("text")
+  old := "Label Printer Hub"
+  matches := []
+  in_fence := false
+  offset := 0
+  for line in text.split(scope, "\n") {
+    trimmed := text.trim_space(line)
+    if text.has_prefix(trimmed, "```") || text.has_prefix(trimmed, "~~~") {
+      in_fence = !in_fence
+    } else if !in_fence && !text.contains(line, "Labelyard") {
+      start := 0
+      for {
+        if start >= len(line) { break }
+        rel := text.index(line[start:], old)
+        if rel < 0 { break }
+        begin := start + rel
+        ticks := len(text.split(line[:begin], "`")) - 1
+        if ticks % 2 == 0 {
+          matches = append(matches, {begin: offset + begin, end: offset + begin + len(old)})
+        }
+        start = begin + len(old)
+      }
+    }
+    offset += len(line) + 1
+  }

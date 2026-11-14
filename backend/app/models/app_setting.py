@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLModel table for runtime settings (D4/D5).
 
 Non-secret values live JSON-encoded in ``value_json``. A secret is stored only as the

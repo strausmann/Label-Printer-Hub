@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """What the hub knows about a page printer, read the one way every caller reads it.
 
 The status cache holds the printer's last answer. A printer that never answered carries the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { msg } from "@lingui/core/macro";
 
 /**
@@ -5,7 +8,8 @@ import { msg } from "@lingui/core/macro";
  * (or `useLingui()._`) so a language switch takes effect without a reload.
  */
 export const messages = {
-  appName: msg`Label Printer Hub`,
+  appName: msg`Labelyard`,
+  tagline: msg`The self-hosted Label Printer Hub for all your labels`,
   loading: msg`Loading…`,
   retry: msg`Try again`,
   somethingWentWrong: msg`Something went wrong.`,

@@ -1,9 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7c — api_keys table + audit columns on jobs.
 
 D7: this migration used to seed an enabled ``bootstrap-admin`` key and print its
 plaintext to stdout. That is removed: the first admin key now comes from the
-one-time ``PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`` sign-in or from
-``printer-hub admin create-key``. Existing installs keep their rows.
+one-time ``LABELYARD_BOOTSTRAP_ADMIN_KEY`` sign-in or from
+``labelyard admin create-key``. Existing installs keep their rows.
 
 Revision ID: 20260517_phase7c_api_keys
 Revises: 20260517_phase7b_datetime_tz

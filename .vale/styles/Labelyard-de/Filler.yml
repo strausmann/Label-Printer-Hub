@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+extends: existence
+message: "Streiche das Füllwort „%s“."
+level: warning
+ignorecase: true
+tokens:
+    - einfach
+    - eigentlich
+    - halt
+    - natürlich

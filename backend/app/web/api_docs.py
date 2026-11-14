@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The interactive API reference at ``/docs``, rendered by Scalar and served by the hub.
 
 Issue #171: FastAPI's default Swagger UI and ReDoc load their scripts from a CDN.
@@ -32,7 +35,7 @@ logger = logging.getLogger(__name__)
 BUNDLE_URL = "/docs/scalar.js"
 # Relative to the web app's dist directory (see frontend/vite.config.ts).
 BUNDLE_RELATIVE_PATH = Path("scalar") / "standalone.js"
-TITLE = "Label Printer Hub API"
+TITLE = "Labelyard API"
 
 # Scalar options that keep the page from talking to anyone but the hub: no default web
 # fonts, no telemetry, no hosted request proxy (``proxyUrl`` stays unset), no hosted AI

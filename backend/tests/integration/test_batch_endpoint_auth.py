@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Auth-Matrix: kein Key → 401, read-Scope → 403, print-Scope → 202.
 
 NOTE: 401/403 tests cannot be done with dependency_overrides — the

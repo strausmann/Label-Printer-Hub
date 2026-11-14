@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integrations and the webhook key follow the runtime settings store (D4/D5)."""
 
 from __future__ import annotations
@@ -36,11 +39,11 @@ SPOOL = {
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch: pytest.MonkeyPatch):
     for name in (
-        "PRINTER_HUB_SPOOLMAN_URL",
-        "PRINTER_HUB_GROCY_URL",
-        "PRINTER_HUB_GROCY_API_KEY",
-        "PRINTER_HUB_WEBHOOK_API_KEY",
-        "PRINTER_HUB_JOB_RETENTION_DAYS",
+        "LABELYARD_SPOOLMAN_URL",
+        "LABELYARD_GROCY_URL",
+        "LABELYARD_GROCY_API_KEY",
+        "LABELYARD_WEBHOOK_API_KEY",
+        "LABELYARD_JOB_RETENTION_DAYS",
     ):
         monkeypatch.delenv(name, raising=False)
     get_settings.cache_clear()

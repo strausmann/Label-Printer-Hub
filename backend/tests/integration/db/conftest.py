@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Fixtures for DB-level integration tests (tests/integration/db/).
 
 Provides ``async_session_empty`` — an AsyncSession against a fresh SQLite DB

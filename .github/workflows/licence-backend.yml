@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: Licences — backend runtime
 
 # Checks the licences of the Python packages that `pip install ./backend` resolves today.
@@ -50,3 +53,5 @@ jobs:
           /tmp/tool/bin/python -m scripts.licence_report
           --python /tmp/rt/bin/python
           --policy ../licence-policy.yml
+          --own-project pyproject.toml
+          --extra licences/extra-records.json

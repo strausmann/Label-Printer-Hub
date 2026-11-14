@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 1k.2: Multi-Label-Batch via `ptouch.print_multi()` — Design Spec
 
 **Datum:** 2026-06-04

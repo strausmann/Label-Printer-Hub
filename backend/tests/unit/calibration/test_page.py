@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The printable calibration page: what is drawn where, read back from the PDF operators."""
 
 from __future__ import annotations

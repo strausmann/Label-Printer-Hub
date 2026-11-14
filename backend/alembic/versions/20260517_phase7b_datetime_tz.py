@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b — normalise existing datetime rows to timezone-aware ISO strings.
 
 Existing rows from Phase 5 inserts contain naive datetimes (no TZ suffix)

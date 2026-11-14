@@ -1,16 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # ============================================================================
-# Label Printer Hub — Pangolin
+# Labelyard — Pangolin
 # One container: the backend serves the API and the web UI (ADR 0015) and is
 # the Pangolin target. Printers are added in the UI.
 # Uses Blueprint Labels with the Two-Resources pattern:
 # - Main UI behind Pangolin SSO
-# - Webhook subroute with auth bypass (uses PRINTER_HUB_WEBHOOK_API_KEY instead)
+# - Webhook subroute with auth bypass (uses LABELYARD_WEBHOOK_API_KEY instead)
 # ============================================================================
 
 services:
-  backend:
-    image: ghcr.io/strausmann/label-printer-hub-backend:${HUB_VERSION:-latest}
-    container_name: label-printer-hub-backend
+  labelyard:
+    image: ghcr.io/strausmann/labelyard:${HUB_VERSION:-1.6.0}
+    container_name: labelyard
     user: "1000:1000"
     networks:
       - pangolin_mgmt
@@ -27,21 +30,21 @@ services:
       # Trust Newt for X-Forwarded-For only when every route to the hub passes Pangolin's Traefik: add no
       # raw TCP site resource that reaches the hub, because that traffic would not carry a header Traefik set.
       - "FORWARDED_ALLOW_IPS=${PROXY_IP:?set PROXY_IP to the fixed address of your reverse proxy on this network - e.g. 192.0.2.10}"
-      - "PRINTER_HUB_SECRET_KEY=${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
-      - "PRINTER_HUB_PUBLIC_URL=${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. https://printerhub.example.invalid}"
+      - "LABELYARD_SECRET_KEY=${LABELYARD_SECRET_KEY:?set LABELYARD_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      - "LABELYARD_PUBLIC_URL=${LABELYARD_PUBLIC_URL:?set LABELYARD_PUBLIC_URL, e.g. https://labelyard.example.invalid}"
       # D10: the hub trusts the Remote-User header only together with this shared
       # token. The Pangolin resource below must inject the SAME value as the
       # X-Pangolin-Token request header; without the token every request is
       # treated as unauthenticated. Generate: openssl rand -hex 32
-      - "PRINTER_HUB_SSO_TRUST_TOKEN=${PRINTER_HUB_SSO_TRUST_TOKEN:?set PRINTER_HUB_SSO_TRUST_TOKEN - generate with: openssl rand -hex 32}"
+      - "LABELYARD_SSO_TRUST_TOKEN=${LABELYARD_SSO_TRUST_TOKEN:?set LABELYARD_SSO_TRUST_TOKEN - generate with: openssl rand -hex 32}"
       # Opt-in only (off by default, D10). Enable ONLY if you rely on them:
-      #   PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER=true       legacy X-Pangolin-User header
-      #   PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS=true      Authorization: Basic bypass credential
-      #   PRINTER_HUB_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true  limit the Basic bypass to a narrower scope
-      # See docs/site/operations/api-keys.md before enabling any of them.
-      - PRINTER_HUB_DATABASE_URL=${PRINTER_HUB_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
-      - PRINTER_HUB_WEBHOOK_API_KEY=${PRINTER_HUB_WEBHOOK_API_KEY:-}
-      - PRINTER_HUB_LOG_LEVEL=${PRINTER_HUB_LOG_LEVEL:-INFO}
+      #   LABELYARD_TRUST_LEGACY_PANGOLIN_USER=true       legacy X-Pangolin-User header
+      #   LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS=true      Authorization: Basic bypass credential
+      #   LABELYARD_PANGOLIN_BYPASS_SCOPE_DOWNGRADE=true  limit the Basic bypass to a narrower scope
+      # See https://labelyard.app/admin/users-and-sso/ before enabling any of them.
+      - LABELYARD_DATABASE_URL=${LABELYARD_DATABASE_URL:-sqlite+aiosqlite:////data/printer-hub.db}
+      - LABELYARD_WEBHOOK_API_KEY=${LABELYARD_WEBHOOK_API_KEY:-}
+      - LABELYARD_LOG_LEVEL=${LABELYARD_LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data
     restart: unless-stopped
@@ -53,33 +56,33 @@ services:
       start_period: 30s
     labels:
       # Main UI — behind Pangolin SSO
-      - "pangolin.public-resources.printerhub.name=Label Printer Hub"
-      - "pangolin.public-resources.printerhub.full-domain=${PRINTERHUB_HOST}"
-      - "pangolin.public-resources.printerhub.protocol=http"
-      - "pangolin.public-resources.printerhub.ssl=true"
-      - "pangolin.public-resources.printerhub.targets[0].method=http"
-      - "pangolin.public-resources.printerhub.targets[0].port=${BACKEND_PORT:-8000}"
-      - "pangolin.public-resources.printerhub.targets[0].path-match=prefix"
-      - "pangolin.public-resources.printerhub.auth.sso-enabled=true"
+      - "pangolin.public-resources.labelyard.name=Labelyard"
+      - "pangolin.public-resources.labelyard.full-domain=${LABELYARD_HOST}"
+      - "pangolin.public-resources.labelyard.protocol=http"
+      - "pangolin.public-resources.labelyard.ssl=true"
+      - "pangolin.public-resources.labelyard.targets[0].method=http"
+      - "pangolin.public-resources.labelyard.targets[0].port=${BACKEND_PORT:-8000}"
+      - "pangolin.public-resources.labelyard.targets[0].path-match=prefix"
+      - "pangolin.public-resources.labelyard.auth.sso-enabled=true"
       # Pangolin sets Remote-User after a successful SSO login. It also has to
-      # inject the trust token the backend expects (PRINTER_HUB_SSO_TRUST_TOKEN)
+      # inject the trust token the backend expects (LABELYARD_SSO_TRUST_TOKEN)
       # as a custom request header, using the same value as the backend variable.
-      - "pangolin.public-resources.printerhub.request-headers[0].name=X-Pangolin-Token"
-      - "pangolin.public-resources.printerhub.request-headers[0].value=${PRINTER_HUB_SSO_TRUST_TOKEN}"
+      - "pangolin.public-resources.labelyard.request-headers[0].name=X-Pangolin-Token"
+      - "pangolin.public-resources.labelyard.request-headers[0].value=${LABELYARD_SSO_TRUST_TOKEN}"
 
       # Webhook subroute — auth bypass (Two-Resources pattern)
       # Note: Two routes on the same full-domain are only possible with distinct
       # path-prefix values. The webhook resource bypasses SSO so that external
       # callers can post without a browser session.
-      - "pangolin.public-resources.printerhub-webhooks.name=Label Printer Hub Webhooks"
-      - "pangolin.public-resources.printerhub-webhooks.full-domain=${PRINTERHUB_HOST}"
-      - "pangolin.public-resources.printerhub-webhooks.protocol=http"
-      - "pangolin.public-resources.printerhub-webhooks.ssl=true"
-      - "pangolin.public-resources.printerhub-webhooks.targets[0].method=http"
-      - "pangolin.public-resources.printerhub-webhooks.targets[0].port=${BACKEND_PORT:-8000}"
-      - "pangolin.public-resources.printerhub-webhooks.targets[0].path-match=prefix"
-      - "pangolin.public-resources.printerhub-webhooks.targets[0].path=/api/v1/webhook/"
-      - "pangolin.public-resources.printerhub-webhooks.auth.bypass=true"
+      - "pangolin.public-resources.labelyard-webhooks.name=Labelyard Webhooks"
+      - "pangolin.public-resources.labelyard-webhooks.full-domain=${LABELYARD_HOST}"
+      - "pangolin.public-resources.labelyard-webhooks.protocol=http"
+      - "pangolin.public-resources.labelyard-webhooks.ssl=true"
+      - "pangolin.public-resources.labelyard-webhooks.targets[0].method=http"
+      - "pangolin.public-resources.labelyard-webhooks.targets[0].port=${BACKEND_PORT:-8000}"
+      - "pangolin.public-resources.labelyard-webhooks.targets[0].path-match=prefix"
+      - "pangolin.public-resources.labelyard-webhooks.targets[0].path=/api/v1/webhook/"
+      - "pangolin.public-resources.labelyard-webhooks.auth.bypass=true"
 
 networks:
   pangolin_mgmt:

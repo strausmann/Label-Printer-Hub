@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineConfig, devices } from "@playwright/test";
 
 // Real-browser layout checks of components that no route renders yet (jsdom has no layout engine).

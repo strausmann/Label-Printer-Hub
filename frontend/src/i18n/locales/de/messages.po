@@ -30,6 +30,11 @@ msgstr "{0, plural, one {# Spalte} other {# Spalten}}"
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# Etikett} other {# Etiketten}}"
 
+#. placeholder {0}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0, plural, one {# package} other {# packages}}"
+msgstr "{0, plural, one {# Paket} other {# Pakete}}"
+
 #. placeholder {0}: codes.length
 #: src/features/archive/TypeDetail.tsx
 msgid "{0, plural, one {# product code} other {# product codes}}"
@@ -71,6 +76,12 @@ msgstr "{0, plural, one {Markierung von # Zelle aufheben} other {Markierung von 
 #: src/features/archive/TypeDetail.tsx
 msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
 msgstr "{0} hat keine Bögen. Beim Löschen verschwinden der Typ und alle seine Versionen endgültig."
+
+#. placeholder {0}: shown.length
+#. placeholder {1}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0} of {1} packages"
+msgstr "{0} von {1} Paketen"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -266,6 +277,10 @@ msgstr "{sentLabels, plural, one {# Etikett gesendet an} other {# Etiketten gese
 #: src/features/jobs/JobDetail.tsx
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
+
+#: src/features/about/DependencyLicences.tsx
+msgid "{token}: licence text at SPDX"
+msgstr "{token}: Lizenztext bei SPDX"
 
 #: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -878,6 +893,11 @@ msgctxt "tape colour"
 msgid "Clear"
 msgstr "Transparent"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Clear filter"
+msgstr "Filter leeren"
+
 #: src/features/archive/ArchivePage.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Clear filters"
@@ -901,6 +921,7 @@ msgstr "Clients"
 
 #: src/features/archive/ImportDialog.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Close"
 msgstr "Schließen"
@@ -1381,9 +1402,18 @@ msgstr "Fehlgeschlagen"
 msgid "Feed mark printed"
 msgstr "Einzugsmarke gedruckt"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "Filter by package or licence"
+msgstr "Nach Paket oder Lizenz filtern"
+
 #: src/features/jobs/JobsPage.tsx
 msgid "Filter by state"
 msgstr "Nach Status filtern"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "field label"
+msgid "Filter packages"
+msgstr "Pakete filtern"
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Filter the sheet types"
@@ -1512,6 +1542,12 @@ msgstr "Zustand"
 #: src/features/settings/System.tsx
 msgid "Healthy"
 msgstr "Gesund"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Hide licence text of {0}"
+msgstr "Lizenztext von {0} ausblenden"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Hide used-up sheets"
@@ -1696,12 +1732,6 @@ msgstr "Etikettenlayout auf 62-mm-Band"
 msgid "Label preview"
 msgstr "Etikettenvorschau"
 
-#: src/i18n/messages.ts
-#: src/shell/Sidebar.tsx
-#: src/shell/SignIn.tsx
-msgid "Label Printer Hub"
-msgstr "Label Printer Hub"
-
 #: src/features/archive/TypeForm.tsx
 msgid "Label shape"
 msgstr "Etikettenform"
@@ -1722,6 +1752,10 @@ msgstr "Etiketten"
 #: src/features/jobs/RunControls.tsx
 msgid "Labels {unknownFrom} to {unknownTo} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
 msgstr "Ob die Etiketten {unknownFrom} bis {unknownTo} gedruckt wurden, ist unklar. Zähle sie auf dem Band nach, lege ein neues Band ein und drucke ab dem ersten fehlenden Etikett neu."
+
+#: src/i18n/messages.ts
+msgid "Labelyard"
+msgstr "Labelyard"
 
 #: src/features/settings/sections.tsx
 msgid "Language"
@@ -1783,6 +1817,11 @@ msgstr "Legende"
 msgid "Level"
 msgstr "Stufe"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Licence"
+msgstr "Lizenz"
+
 #: src/features/about/AboutPage.tsx
 msgctxt "field label"
 msgid "Licence"
@@ -1792,6 +1831,21 @@ msgstr "Lizenz"
 msgctxt "heading"
 msgid "Licence"
 msgstr "Lizenz"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Licence text"
+msgstr "Lizenztext"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgid "Licence text of {0}"
+msgstr "Lizenztext von {0}"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "licence of a package"
+msgid "Licence unknown"
+msgstr "Lizenz unbekannt"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -1806,6 +1860,7 @@ msgid "Load hint"
 msgstr "Einlegehinweis"
 
 #: src/app/router.tsx
+#: src/features/about/DependencyLicences.tsx
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeDetail.tsx
 #: src/features/calibration/CalibrationPage.tsx
@@ -2062,6 +2117,10 @@ msgstr "Keine Aufträge."
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "No other sheet of this type has a free cell."
 msgstr "Kein anderer Bogen dieses Typs hat eine freie Zelle."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "No package matches the filter."
+msgstr "Kein Paket passt zum Filter."
 
 #: src/features/lookup/CartPage.tsx
 msgid "No preview available."
@@ -2377,6 +2436,10 @@ msgstr "Druckereinstellungen öffnen"
 msgid "Open the sheet"
 msgstr "Bogen öffnen"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "Operating system packages of the image are listed in its SBOM; their licence texts are in /usr/share/doc inside the image."
+msgstr "Die Betriebssystempakete des Images stehen in seiner SBOM; ihre Lizenztexte liegen im Image unter /usr/share/doc."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Optional. It checks where the ID can go, and it is needed to print the ID label."
 msgstr "Optional. Damit wird geprüft, wohin die ID passt; zum Drucken des ID-Etiketts ist er nötig."
@@ -2397,6 +2460,11 @@ msgstr "Andere Apps, die über diesen Hub drucken. Sie werden am Namen ihres API
 #: src/shell/labels.ts
 msgid "Overview"
 msgstr "Übersicht"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Package"
+msgstr "Paket"
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Page"
@@ -2444,6 +2512,11 @@ msgstr "Papierformat"
 #: src/shell/labels.ts
 msgid "Paperless ASN"
 msgstr "Paperless-ASN"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Part"
+msgstr "Bereich"
 
 #: src/features/jobs/RunControls.tsx
 msgid "Part {done} of {parts} is done. Check the tape, then continue."
@@ -2812,8 +2885,8 @@ msgid "Remove {itemName}"
 msgstr "{itemName} entfernen"
 
 #: src/shell/BootstrapKeyCreated.tsx
-msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
-msgstr "Entferne <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
+msgid "Remove <0>LABELYARD_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+msgstr "Entferne <0>LABELYARD_BOOTSTRAP_ADMIN_KEY</0> aus dem Container; die Variable funktioniert nicht mehr, sobald dieser Schlüssel existiert."
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Remove colour"
@@ -3101,6 +3174,11 @@ msgstr "Mehrere mit Kommas trennen."
 msgid "Serial number"
 msgstr "Seriennummer"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "part of the hub"
+msgid "Server"
+msgstr "Server"
+
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
 msgstr "Server nicht erreichbar"
@@ -3242,6 +3320,12 @@ msgstr "Bögen"
 msgid "Sheets already made keep printing with the old measurements."
 msgstr "Schon angelegte Bögen drucken weiter mit den alten Maßen."
 
+#. placeholder {0}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show all {0} packages"
+msgstr "Alle {0} Pakete anzeigen"
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Show all {count}"
 msgstr "Alle {count} anzeigen"
@@ -3261,6 +3345,12 @@ msgstr "Verworfene Bögen anzeigen"
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Show fewer"
 msgstr "Weniger anzeigen"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show licence text of {0}"
+msgstr "Lizenztext von {0} anzeigen"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Show the ID label job"
@@ -3955,6 +4045,18 @@ msgstr "Der linke und der rechte Rand unterscheiden sich ({0} und {1}). Miss den
 msgid "The left margin"
 msgstr "Der linke Rand"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list could not be loaded."
+msgstr "Die Lizenzliste konnte nicht geladen werden."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list of the server is not included in this build."
+msgstr "Die Lizenzliste des Servers ist in diesem Build nicht enthalten."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list of the web app is not included in this build."
+msgstr "Die Lizenzliste der Web-App ist in diesem Build nicht enthalten."
+
 #: src/features/lookup/LabelPreview.tsx
 #: src/features/lookup/PrinterPicker.tsx
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
@@ -4226,6 +4328,10 @@ msgstr "Die Rolle wurde gewechselt"
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
 msgstr "Das Geheimnis kommt vom Container, die URL aber nicht. Setze die URL ebenfalls im Container."
 
+#: src/i18n/messages.ts
+msgid "The self-hosted Label Printer Hub for all your labels"
+msgstr "Der selbst gehostete Label Printer Hub für all deine Etiketten"
+
 #: src/app/router.tsx
 #: src/features/archive/errors.ts
 #: src/features/lookup/PrinterPicker.tsx
@@ -4397,6 +4503,11 @@ msgstr "Diese Etiketten gingen an den Drucker, aber niemand hat das Ergebnis bes
 #: src/features/calibration/errors.ts
 msgid "These readings cannot be fitted. Check them and add crossings that are further apart."
 msgstr "Aus diesen Messwerten lässt sich nichts berechnen. Prüfe sie und füge weiter auseinander liegende Kreuzungen hinzu."
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "heading"
+msgid "Third-party software"
+msgstr "Software von Dritten"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
@@ -4629,6 +4740,11 @@ msgstr "Die Fächer erscheinen, sobald der Drucker geantwortet hat."
 msgid "Try again"
 msgstr "Erneut versuchen"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Try again"
+msgstr "Erneut versuchen"
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Turn off the trays you do not use, and mark the one that should be used when none is chosen."
 msgstr "Schalte die Fächer aus, die du nicht nutzt, und markiere das Fach, das gilt, wenn keines gewählt wird."
@@ -4731,6 +4847,11 @@ msgstr "Zertifikat des Druckers prüfen"
 msgid "Version"
 msgstr "Version"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Version"
+msgstr "Version"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Versions"
 msgstr "Versionen"
@@ -4776,6 +4897,11 @@ msgstr "Warnung"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Warning: the certificate is not checked. Anyone on the network path could pose as the printer."
 msgstr "Achtung: Das Zertifikat wird nicht geprüft. Jeder auf dem Netzwerkweg könnte sich als der Drucker ausgeben."
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "part of the hub"
+msgid "Web"
+msgstr "Web"
 
 #: src/features/settings/AccessKeys.tsx
 msgid "Webhook key"

@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: prose
+
+# Prose checks for the docs: Vale (v3.26.0, installed by scripts/vale_setup.sh with a verified
+# checksum) and the glossary. The rules are in .vale.ini and .vale/; the terms are in
+# docs/glossary.toml. Only errors fail: the former product name and rejected glossary terms.
+# Warnings and suggestions are reported in the job summary of the "report" job.
+
+on:
+  pull_request:
+    paths:
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".vale.ini"
+      - ".vale/**"
+      - "docs/glossary.toml"
+      - "frontend/src/i18n/locales/**"
+      - "scripts/glossary.py"
+      - "scripts/test_glossary.py"
+      - "scripts/test_vale_rules.py"
+      - "scripts/vale_scope.py"
+      - "scripts/vale_setup.sh"
+      - "scripts/fixtures/vale/**"
+      - ".github/workflows/prose.yml"
+  push:
+    branches: [main, "milestone/**"]
+    paths:
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".vale.ini"
+      - ".vale/**"
+      - "docs/glossary.toml"
+      - "frontend/src/i18n/locales/**"
+      - "scripts/glossary.py"
+      - "scripts/test_glossary.py"
+      - "scripts/test_vale_rules.py"
+      - "scripts/vale_scope.py"
+      - "scripts/vale_setup.sh"
+      - "scripts/fixtures/vale/**"
+      - ".github/workflows/prose.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  errors:
+    name: errors
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Vale
+        run: scripts/vale_setup.sh
+      - name: Vale errors (fail the job)
+        run: python3 scripts/vale_scope.py | xargs .vale/bin/vale --minAlertLevel=error
+      - name: Counter-tests of the rules
+        run: python3 -m unittest scripts/test_vale_rules.py -v
+
+  report:
+    name: report
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Vale
+        run: scripts/vale_setup.sh
+      - name: Warnings and suggestions (never fail the job)
+        run: |
+          set -u
+          python3 scripts/vale_scope.py | xargs .vale/bin/vale --minAlertLevel=suggestion --no-exit --output=line > vale-report.txt
+          {
+            echo "### Vale: warnings and suggestions"
+            echo
+            echo "These are reported only. The \`errors\` job is the one that fails."
+            echo
+            echo '```'
+            grep -c . vale-report.txt || true
+            echo '```'
+            echo
+            echo '<details><summary>All findings</summary>'
+            echo
+            echo '```'
+            cat vale-report.txt
+            echo '```'
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  glossary:
+    name: glossary
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Tests of the glossary tool
+        run: python3 -m unittest scripts/test_glossary.py -v
+      - name: Generated files are up to date
+        run: |
+          python3 scripts/glossary.py write
+          git diff --exit-code
+      - name: UI catalogues use the glossary terms
+        run: |
+          python3 scripts/glossary.py check-catalog \
+            frontend/src/i18n/locales/de/messages.po \
+            frontend/src/i18n/locales/en/messages.po

@@ -1,5 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # =============================================================================
-# Label Printer Hub — backend container
+# Labelyard — backend container
 #
 # Multi-stage build:
 #   1) web-builder   — builds the web app from frontend/ (pnpm + Vite)
@@ -35,7 +38,11 @@ RUN corepack enable
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
+# The build fails on a licence outside the policy and writes the web licence list and its CycloneDX document.
+COPY licence-policy.yml /licence-policy.yml
+ENV LICENCE_POLICY=/licence-policy.yml
 # The bundle knows the version it was built for; the hub reports its own and a mismatch reloads (#288).
+# Placed directly before the build so a new version never invalidates the `pnpm install` layer above.
 ARG VERSION=0.0.0-dev
 ENV HUB_VERSION="${VERSION}"
 RUN pnpm build && mkdir /dist && cp -r dist/. /dist/
@@ -98,13 +105,22 @@ RUN pip install --no-deps --force-reinstall .
 # were just installed. A violation fails the build. The policy is the repository's single
 # licence-policy.yml; the script imports nothing from `app`. The tool venv holds
 # pip-licenses (build-time only) and never reaches the runtime stage.
+# The same run writes the list the image serves as /licenses/backend.json (D23). It stops on a
+# package without a licence text (--require-texts); CONTRIBUTING.md says what to do then.
 COPY licence-policy.yml /opt/licence/licence-policy.yml
 COPY backend/scripts/licence_report.py /opt/licence/licence_report.py
+COPY backend/licences/ /build/licences/
 RUN python -m venv /opt/licence-tool \
     && /opt/licence-tool/bin/pip install pip-licenses==5.5.5 \
     && /opt/licence-tool/bin/python /opt/licence/licence_report.py \
         --python /opt/venv/bin/python \
-        --policy /opt/licence/licence-policy.yml
+        --policy /opt/licence/licence-policy.yml \
+        --own-project /build/pyproject.toml \
+        --output /build/backend-licences.json \
+        --require-texts \
+        --extra /build/licences/extra-records.json \
+        --extra-root /build \
+        --fallback-dir /build/licences
 
 # -----------------------------------------------------------------------------
 # Stage 2: runtime
@@ -122,12 +138,12 @@ ARG REVISION=unknown
 ARG BUILD_DATE=1970-01-01T00:00:00Z
 
 # OCI Image Spec labels — see https://specs.opencontainers.org/image-spec/annotations/
-# Visible via `docker inspect ghcr.io/strausmann/label-printer-hub-backend:VERSION`.
-LABEL org.opencontainers.image.title="label-printer-hub-backend" \
-      org.opencontainers.image.description="Self-hosted label printer hub for Brother PT/QL series — backend container (Python/FastAPI)" \
-      org.opencontainers.image.url="https://github.com/strausmann/label-printer-hub" \
-      org.opencontainers.image.source="https://github.com/strausmann/label-printer-hub" \
-      org.opencontainers.image.documentation="https://github.com/strausmann/label-printer-hub/tree/main/docs" \
+# Visible via `docker inspect ghcr.io/strausmann/labelyard:VERSION`.
+LABEL org.opencontainers.image.title="Labelyard" \
+      org.opencontainers.image.description="Labelyard — the self-hosted Label Printer Hub for all your labels" \
+      org.opencontainers.image.url="https://labelyard.app" \
+      org.opencontainers.image.source="https://github.com/strausmann/labelyard" \
+      org.opencontainers.image.documentation="https://labelyard.app/" \
       org.opencontainers.image.authors="Björn Strausmann <projects@strausmann.ch>" \
       org.opencontainers.image.vendor="strausmann (independent open-source project; not affiliated with Brother Industries, Ltd.)" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
@@ -144,7 +160,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HUB_VERSION="${VERSION}" \
     HUB_REVISION="${REVISION}" \
     HUB_BUILD_DATE="${BUILD_DATE}" \
-    HUB_REPO_URL="https://github.com/strausmann/label-printer-hub" \
+    HUB_REPO_URL="https://github.com/strausmann/labelyard" \
     # The internal HTTP port the backend listens on. Override at deploy time
     # to run the container on a different port without rebuilding the image.
     # The compose files in examples/ set this via the .env file.
@@ -194,6 +210,8 @@ COPY --chown=hub:hub THIRD_PARTY_NOTICES.md /opt/app/THIRD_PARTY_NOTICES.md
 # The project licence, also served as /licenses/agpl-3.0.txt for the About page.
 COPY --chown=hub:hub LICENSE /opt/app/LICENSE
 COPY --chown=hub:hub LICENSE /opt/app/web/licenses/agpl-3.0.txt
+# The Python and font licence list, generated in the builder stage from the installed venv.
+COPY --from=builder --chown=hub:hub /build/backend-licences.json /opt/app/web/licenses/backend.json
 
 # Alembic runtime configuration and migration scripts.
 #
@@ -210,25 +228,26 @@ WORKDIR /home/hub
 
 USER hub
 
-# EXPOSE documents the DEFAULT port — overridden by the PORT env var at
-# runtime. Adjust the `docker run -p` mapping or compose `ports` to match
-# the value of PORT if you change it.
+# EXPOSE documents the DEFAULT port. The listening port is the first of LABELYARD_SERVER_PORT,
+# its deprecated old-prefix spelling and PORT that is set, else 8000; the healthcheck and the
+# start command resolve it the same way. Adjust the
+# `docker run -p` mapping or compose `ports` to match if you change it.
 EXPOSE 8000
 
 VOLUME ["/data"]
 
-# Shell-form HEALTHCHECK so $PORT is expanded by the shell. Falls back to
-# the ENV default of 8000 if PORT is somehow unset.
+# Shell-form HEALTHCHECK so the port is expanded by the shell, with the same order as the
+# start command below.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl --fail --silent --show-error "http://localhost:${PORT:-8000}/healthz" || exit 1
+    CMD curl --fail --silent --show-error "http://localhost:${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}/healthz" || exit 1
 
 # tini reaps zombies and propagates SIGTERM to uvicorn cleanly. Shell-form
-# CMD expands $PORT and $FORWARDED_ALLOW_IPS at start so deployments can
-# change them without rebuilding the image.
+# CMD expands the port (same order as the healthcheck) and $FORWARDED_ALLOW_IPS at start so
+# deployments can change them without rebuilding the image.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "-c", "exec uvicorn app.main:app \
     --host 0.0.0.0 \
-    --port \"${PORT}\" \
+    --port \"${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}\" \
     --proxy-headers \
     --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS}\" \
     --no-server-header"]

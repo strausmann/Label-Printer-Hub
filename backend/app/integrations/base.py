@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Protocol contract for integration-lookup plugins.
 
 Each external app (Snipe-IT, Spoolman, Grocy, future integrations) lives

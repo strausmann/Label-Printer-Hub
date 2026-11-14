@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { mkdirSync } from "node:fs";
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """GET /api/v1/info (public) and GET /api/v1/system/logs (admin)."""
 
 from __future__ import annotations
@@ -70,14 +73,14 @@ async def test_info_shape(api_client_with_seed) -> None:
         "calibration",
     ]
     assert body["default_language"] == "en"
-    assert body["display_name"] == "Label Printer Hub"
+    assert body["display_name"] == "Labelyard"
     assert body["auth"] == {"sso_configured": False, "bootstrap_open": False}
 
 
 async def test_info_sso_configured_follows_trust_token(
     api_client_with_seed, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_SSO_TRUST_TOKEN", FAKE_TRUST)
+    monkeypatch.setenv("LABELYARD_SSO_TRUST_TOKEN", FAKE_TRUST)
     get_settings.cache_clear()
     body = (await api_client_with_seed.get("/api/v1/info")).json()
     assert body["auth"]["sso_configured"] is True
@@ -93,7 +96,7 @@ async def test_bootstrap_open_reflects_admin_keys(
     # No bootstrap key configured -> closed.
     assert await bootstrap_open() is False
 
-    monkeypatch.setenv("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP)
+    monkeypatch.setenv("LABELYARD_BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP)
     get_settings.cache_clear()
     assert await bootstrap_open() is True
 
@@ -116,7 +119,7 @@ async def test_info_never_contains_secrets(
         "WEBHOOK_API_KEY": FAKE_WEBHOOK,
         "PAPERLESS_TOKEN": FAKE_PAPERLESS,
     }.items():
-        monkeypatch.setenv(f"PRINTER_HUB_{name}", value)
+        monkeypatch.setenv(f"LABELYARD_{name}", value)
     get_settings.cache_clear()
     resp = await api_client_with_seed.get("/api/v1/info")
     assert resp.status_code == 200
@@ -196,7 +199,7 @@ async def test_info_license_and_source(
     """Public (no session): the licence and the link to the running build's source."""
     import app.main as main_module
 
-    repo = "https://github.com/strausmann/label-printer-hub"
+    repo = "https://github.com/strausmann/labelyard"
     monkeypatch.setattr(main_module, "HUB_VERSION", "1.1.0")
     monkeypatch.setattr(main_module, "HUB_REVISION", "0123456789abcdef0123456789abcdef01234567")
     monkeypatch.setattr(main_module, "HUB_REPO_URL", repo)
