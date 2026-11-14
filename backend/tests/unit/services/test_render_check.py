@@ -100,12 +100,12 @@ async def test_lookup_not_found_is_per_item():
 
 @pytest.mark.asyncio
 async def test_lookup_failure_is_per_item_with_fixed_message():
-    err = LookupFailedError("grocy lookup failed: http://10.0.0.5:9283/api boom")
+    err = LookupFailedError("grocy lookup failed: http://grocy.internal.invalid:9283/api boom")
     out = await check_items(_req(_item("BAD"), _item("A1")), _FakeLookups(raises={"BAD": err}))
     r = out.results[0]
     assert r.error_code == "integration_lookup_failed"
     assert r.error_message == "The integration failed or could not be reached."
-    assert "10.0.0.5" not in r.model_dump_json()
+    assert "grocy.internal.invalid" not in r.model_dump_json()
     assert out.results[1].ok
 
 
