@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext, check_printer_access
+from app.auth.dependencies import AuthContext, charge_lookup_fan_out, check_printer_access
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
@@ -145,6 +145,10 @@ async def create_batch(
         use_half_cut = body.half_cut_override and backend_supports_half_cut
     else:
         use_half_cut = backend_supports_half_cut
+
+    # Every item with a lookup is one integration call; the request's token pays for the first.
+    # 429 here, before the printer is asked and before any lookup.
+    charge_lookup_fan_out(auth, sum(1 for item in body.items if item.lookup is not None))
 
     # #277: the queue's tape run carries the batch id, so continue/reprint find it.
     run_id = uuid4()

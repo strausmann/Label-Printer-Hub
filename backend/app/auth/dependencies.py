@@ -101,6 +101,8 @@ class AuthContext(BaseModel):
     allowed_printer_ids: list[str] = []
     user: str | None = None
     session_id: UUID | None = None
+    rate_limit_per_minute: int | None = None
+    """The key's limit; set for key and key-derived session contexts."""
 
 
 def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
@@ -201,20 +203,26 @@ def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: st
         )
 
 
-def charge_key_rate_limit(key_id: Hashable, tokens: int) -> None:
-    """Charge ``tokens`` more of the key's bucket for work one request fans out into.
+def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> None:
+    """Charge the key's bucket for the integration lookups one request fans out into.
 
-    All or nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover
-    it, before any of that work starts. A key without a bucket (no key limit applies) is free.
+    The request's own token (taken by the auth dependency) pays for the first lookup, so
+    ``lookups - 1`` more are taken: N lookups cost what N single GET lookups cost. All or
+    nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover it,
+    raised before any lookup starts. Contexts without a key limit (SSO, bypass) are not charged.
     """
-    allowed, retry_after = _rate_limiter.try_consume(key_id, tokens)
+    if auth.api_key_id is None or auth.rate_limit_per_minute is None:
+        return
+    allowed, retry_after = _rate_limiter.try_consume(
+        auth.api_key_id, lookups - 1, limit_per_minute=auth.rate_limit_per_minute
+    )
     if not allowed:
         raise HTTPException(
             status_code=429,
             detail={
                 "error_code": "rate_limit_exceeded",
                 "error_message": (
-                    f"This request needs {tokens} lookups, more than the key's rate limit "
+                    f"This request needs {lookups} lookups, more than the key's rate limit "
                     f"has left. Retry after {retry_after} seconds."
                 ),
                 "retry_after_seconds": retry_after,
@@ -378,6 +386,7 @@ async def _validate_api_key(
         api_key_id=key_id,
         ip=client_ip,
         allowed_printer_ids=allowed_printer_ids,
+        rate_limit_per_minute=key_row.rate_limit_per_minute,
     )
 
 
@@ -432,6 +441,7 @@ def _session_context(
         allowed_printer_ids=[] if row.scope == "admin" else valid.allowed_printer_ids,
         user=row.user,
         session_id=row.id,
+        rate_limit_per_minute=valid.rate_limit_per_minute,
     )
 
 

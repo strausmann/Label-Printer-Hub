@@ -11,7 +11,7 @@ of a lookup can carry the integration's address or its upstream's answer (CWE-20
 from __future__ import annotations
 
 import asyncio
-import weakref
+import logging
 from collections.abc import Awaitable
 from typing import Protocol
 
@@ -31,9 +31,11 @@ from app.schemas.render_check import (
 from app.schemas.tape_geometry import TAPE_GEOMETRY
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_gate import lookup_gate
 from app.services.lookup_service import LookupFailedError, UnknownAppError
-from app.services.print_service import MAX_BATCH_LOOKUPS
 from app.services.ql_layout import resolve_layout
+
+_log = logging.getLogger(__name__)
 
 _Key = tuple[str, str, ContentType]
 # (code, message, detail) of a failed item; None for an item that fits.
@@ -46,23 +48,6 @@ class _Lookups(Protocol):
 
 def _key(item: RenderCheckItem) -> _Key:
     return (item.lookup.app, item.lookup.identifier, item.content_type)
-
-
-_gates: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = (
-    weakref.WeakKeyDictionary()
-)
-
-
-def _lookup_gate() -> asyncio.Semaphore:
-    """The one lookup bound of this process: all checks together run ``MAX_BATCH_LOOKUPS`` at most.
-
-    A semaphore belongs to one event loop, so there is one per running loop (one in production).
-    """
-    loop = asyncio.get_running_loop()
-    gate = _gates.get(loop)
-    if gate is None:
-        gate = _gates[loop] = asyncio.Semaphore(MAX_BATCH_LOOKUPS)
-    return gate
 
 
 def distinct_lookup_count(request: RenderCheckRequest) -> int:
@@ -88,9 +73,9 @@ async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderC
     validate_layout(request)
 
     engine = LayoutEngine()
-    gate = _lookup_gate()
+    gate = lookup_gate()
 
-    async def _verdict(key: _Key) -> _Verdict:
+    async def _checked(key: _Key) -> _Verdict:
         app, identifier, content_type = key
         try:
             async with gate:
@@ -137,6 +122,15 @@ async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderC
                 {"length": exc.length, "max_bytes": exc.max_bytes},
             )
         return None
+
+    async def _verdict(key: _Key) -> _Verdict:
+        # Whatever else goes wrong in one item stays that item's verdict: an exception that
+        # escaped would leave the sibling lookups running and holding the shared bound.
+        try:
+            return await _checked(key)
+        except Exception:
+            _log.exception("render check failed unexpectedly")
+            return ("render_failed", "The label could not be drawn.", None)
 
     distinct = list(dict.fromkeys(_key(item) for item in request.items))
     verdicts = dict(

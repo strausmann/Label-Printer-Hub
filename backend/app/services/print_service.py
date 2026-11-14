@@ -39,6 +39,7 @@ from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
 from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_gate import lookup_gate
 from app.services.print_error_codes import print_error_code
 from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_JOB
 from app.services.producers.print_queue_producer import publish_job_state_changed
@@ -46,9 +47,6 @@ from app.services.ql_layout import resolve_layout
 
 _log = logging.getLogger(__name__)
 
-
-MAX_BATCH_LOOKUPS = 8
-"""263-78: integration lookups of one batch that run at once."""
 
 # #281 R-281-11: the job error of a deferred job whose completion failed. A fixed sentence per
 # code, never the exception text: a backend error can carry the printer's address.
@@ -526,7 +524,7 @@ class PrintService:
         """Render N items and submit them to the queue as one tape run (#277).
 
         *slot* is the queued-run claim the run takes over (263-76, ``dispatch_batch``). At most
-        ``MAX_BATCH_LOOKUPS`` integration lookups of the batch run at once (263-78).
+        ``MAX_BATCH_LOOKUPS`` integration lookups run at once across all batches (263-78).
 
         The queue splits the run into sub-jobs of ``MAX_LABELS_PER_TAPE_JOB`` and sends groups
         of ``TAPE_GROUP_SIZE``. *run_id* names the run (the batch id of the API). *label_ids*,
@@ -571,7 +569,7 @@ class PrintService:
         ]
 
         # 2. Resolve LabelData ONCE per item, then render via LayoutEngine
-        lookups = asyncio.Semaphore(MAX_BATCH_LOOKUPS)
+        lookups = lookup_gate()  # shared with every other batch and render check
 
         async def _prepare_one(
             req: PrintRequest, opts: PrintOptions

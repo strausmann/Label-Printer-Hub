@@ -36,6 +36,7 @@ from app.services.cleanup_task import CleanupTask
 from app.services.job_lifecycle import JobState
 from app.services.job_store import MemoryJobStore
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_gate import MAX_BATCH_LOOKUPS
 from app.services.print_queue import (
     MAX_HELD_RUNS_PER_KEY_PER_PRINTER,
     MAX_HELD_RUNS_PER_PRINTER,
@@ -44,7 +45,7 @@ from app.services.print_queue import (
     PrintQueue,
     TooManyQueuedRunsError,
 )
-from app.services.print_service import MAX_BATCH_LOOKUPS, PrintService
+from app.services.print_service import PrintService
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -730,6 +731,69 @@ async def test_batch_lookups_are_bounded() -> None:
     await task
     assert lookups.started == 20
     assert lookups.peak <= MAX_BATCH_LOOKUPS
+
+
+async def test_batch_and_render_check_share_one_lookup_bound() -> None:
+    """A batch print and a render check running together never exceed ``MAX_BATCH_LOOKUPS``."""
+    from app.schemas.render_check import RenderCheckItem, RenderCheckLookup, RenderCheckRequest
+    from app.services.render_check import check_items
+
+    class _Counting:
+        def __init__(self) -> None:
+            self.current = 0
+            self.peak = 0
+            self.calls = 0
+
+        async def lookup(self, app: str, identifier: str) -> LabelData:
+            self.calls += 1
+            self.current += 1
+            self.peak = max(self.peak, self.current)
+            try:
+                await asyncio.sleep(0.02)
+            finally:
+                self.current -= 1
+            return LabelData(source_app=app, title="t", primary_id=identifier, qr_payload="x")
+
+    backend = AsyncMock()
+    backend.preflight_check = AsyncMock(
+        return_value=PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, error_flags=[])
+    )
+    queue = MagicMock()
+    queue.enqueue_batch = AsyncMock()
+    store = MagicMock()
+    store.save_queued = AsyncMock()
+    lookups = _Counting()
+    svc = PrintService(
+        printer_id=uuid4(),
+        backend=backend,
+        queue=queue,
+        store=store,
+        engine=LayoutEngine(),
+        lookup_service=lookups,
+    )
+    requests = [
+        PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            lookup=PrintLookupRequest(app="grocy", identifier=f"B{i}"),
+            options=PrintOptions(),
+        )
+        for i in range(20)
+    ]
+    check = RenderCheckRequest(
+        tape_mm=12,
+        items=[
+            RenderCheckItem(
+                content_type=ContentType.QR_TWO_LINES,
+                lookup=RenderCheckLookup(app="grocy", identifier=f"C{i}"),
+            )
+            for i in range(20)
+        ],
+    )
+    await asyncio.gather(
+        svc.submit_batch_job(requests, half_cut=False), check_items(check, lookups)
+    )
+    assert lookups.calls == 40
+    assert 1 < lookups.peak <= MAX_BATCH_LOOKUPS
 
 
 # ---------------------------------------------------------------------------- 266-07 renders

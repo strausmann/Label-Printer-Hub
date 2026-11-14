@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.print_errors import SYNC_ERROR_TYPES, print_error_response
-from app.auth.dependencies import AuthContext, charge_key_rate_limit, check_printer_access
+from app.auth.dependencies import AuthContext, charge_lookup_fan_out, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
 from app.printer_backends.exceptions import (
@@ -306,9 +306,8 @@ async def render_check(
     """Per-item verdicts for a cart; the tape is checked before the first lookup."""
     try:
         validate_layout(body)  # a request that cannot succeed costs neither tokens nor lookups
-        if auth.api_key_id is not None:
-            # The request took one token; every distinct lookup is charged like a GET lookup.
-            charge_key_rate_limit(auth.api_key_id, distinct_lookup_count(body))
+        # The request's token pays for one lookup; the rest is charged like GET lookups.
+        charge_lookup_fan_out(auth, distinct_lookup_count(body))
         return await check_items(body, _lookup_service)
     except UnsupportedTapeError as exc:
         return JSONResponse(

@@ -106,20 +106,23 @@ class RateLimiter:
         retry_after = int(deficit / rate_per_second) + 1
         return False, retry_after
 
-    def try_consume(self, key_id: Hashable, tokens: int) -> tuple[bool, int]:
-        """Take ``tokens`` at once from the key's existing bucket, or none (all or nothing).
+    def try_consume(
+        self, key_id: Hashable, tokens: int, *, limit_per_minute: int
+    ) -> tuple[bool, int]:
+        """Take ``tokens`` at once from the key's bucket, or none (all or nothing).
 
-        Charges work a request fans out into (one integration lookup each). A key without a
-        bucket has no limit to charge. ``tokens`` is capped at the bucket's capacity, so a
-        small limit can still serve a large request once the bucket is full.
-        Returns ``(allowed, retry_after_seconds)``.
+        Charges work a request fans out into, on top of the token the request itself took
+        (which pays for the first lookup). The bucket is created when it was evicted, so the
+        charge is never skipped. ``tokens`` is capped at ``capacity - 1``: the request's own
+        token is already gone, so a full bucket holds at most that, and a larger ask would be
+        refused forever. Returns ``(allowed, retry_after_seconds)``.
         """
-        bucket = self._buckets.get(key_id)
-        if bucket is None or tokens <= 0:
+        rate_per_second = limit_per_minute / 60.0
+        bucket = self._get_bucket(key_id, limit_per_minute)
+        needed = float(min(tokens, bucket.capacity - 1))
+        if needed <= 0:
             return True, 0
-        rate_per_second = bucket.capacity / 60.0
         bucket.refill(rate_per_second)
-        needed = float(min(tokens, bucket.capacity))
         if bucket.tokens >= needed:
             bucket.tokens -= needed
             return True, 0

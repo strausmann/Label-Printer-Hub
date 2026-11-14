@@ -18,8 +18,8 @@ from app.schemas.render_check import (
     RenderCheckRequest,
 )
 from app.services.errors import AppLookupNotFoundError
+from app.services.lookup_gate import MAX_BATCH_LOOKUPS
 from app.services.lookup_service import LookupFailedError, UnknownAppError
-from app.services.print_service import MAX_BATCH_LOOKUPS
 from app.services.render_check import check_items
 
 
@@ -172,3 +172,33 @@ async def test_concurrent_checks_share_one_lookup_bound():
     await asyncio.gather(check_items(first, lookups), check_items(second, lookups))
     assert len(lookups.calls) == 40
     assert 1 < lookups.peak <= MAX_BATCH_LOOKUPS
+
+
+@pytest.mark.asyncio
+async def test_unexpected_lookup_error_is_that_items_verdict_and_leaves_nothing_running():
+    lookups = _FakeLookups(delay=0.02, raises={"BOOM": RuntimeError("not a lookup error")})
+    out = await check_items(_req(*[_item(f"A{i}") for i in range(12)], _item("BOOM")), lookups)
+    assert lookups.running == 0
+    assert out.results[-1].error_code == "render_failed"
+    assert out.results[-1].error_message == "The label could not be drawn."
+    assert all(r.ok for r in out.results[:-1])
+
+
+@pytest.mark.asyncio
+async def test_unexpected_render_error_is_that_items_verdict(monkeypatch):
+    from app.services.layout_engine import LayoutEngine
+
+    real = LayoutEngine.render
+
+    def _render(self, tape_mm, content_type, data, **kw):
+        if data.primary_id == "BOOM":
+            raise ValueError("font exploded")
+        return real(self, tape_mm, content_type, data, **kw)
+
+    monkeypatch.setattr(LayoutEngine, "render", _render)
+    lookups = _FakeLookups(delay=0.01)
+    out = await check_items(_req(*[_item(f"A{i}") for i in range(9)], _item("BOOM")), lookups)
+    assert lookups.running == 0
+    assert [r.error_code for r in out.results[:-1]] == [None] * 9
+    assert out.results[-1].error_code == "render_failed"
+    assert "exploded" not in out.results[-1].model_dump_json()

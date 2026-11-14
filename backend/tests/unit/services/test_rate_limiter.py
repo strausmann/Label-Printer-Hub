@@ -137,17 +137,34 @@ def test_try_consume_takes_all_or_nothing():
 
     rl = RateLimiter()
     assert rl.check_and_consume("k", limit_per_minute=10)  # 9 left
-    assert rl.try_consume("k", 9) == (True, 0)
-    allowed, retry_after = rl.try_consume("k", 5)
+    assert rl.try_consume("k", 5, limit_per_minute=10) == (True, 0)  # 4 left
+    allowed, retry_after = rl.try_consume("k", 5, limit_per_minute=10)
     assert not allowed and retry_after >= 1
-    # nothing was taken by the refusal: one refilled token is still there to take singly
-    assert rl.try_consume("k", 0) == (True, 0)
+    # the refusal took nothing: the 4 left can still be taken
+    assert rl.try_consume("k", 4, limit_per_minute=10) == (True, 0)
 
 
-def test_try_consume_without_bucket_is_free_and_caps_at_capacity():
+def test_try_consume_cap_leaves_room_for_the_requests_own_token():
+    """A fresh bucket minus the request's token holds capacity - 1: asking for more than the
+    limit must still be servable, or such a request is refused forever (review 1)."""
     from app.services.rate_limiter import RateLimiter
 
     rl = RateLimiter()
-    assert rl.try_consume("unknown", 50) == (True, 0)
-    assert rl.check_and_consume("k", limit_per_minute=10) is True
-    assert rl.try_consume("k", 50)[0] is False  # needs the full capacity of 10, 9 are left
+    assert rl.check_and_consume("k", limit_per_minute=5)  # the request's own token: 4 left
+    assert rl.try_consume("k", 9, limit_per_minute=5) == (True, 0)  # capped at 4
+
+
+def test_try_consume_creates_a_missing_bucket_and_charges_it():
+    from app.services.rate_limiter import RateLimiter
+
+    rl = RateLimiter()
+    assert rl.try_consume("evicted", 3, limit_per_minute=5) == (True, 0)  # 2 left
+    assert rl.try_consume("evicted", 3, limit_per_minute=5)[0] is False
+
+
+def test_try_consume_of_nothing_is_free():
+    from app.services.rate_limiter import RateLimiter
+
+    rl = RateLimiter()
+    assert rl.try_consume("k", 0, limit_per_minute=5) == (True, 0)
+    assert rl.try_consume("k", -1, limit_per_minute=5) == (True, 0)

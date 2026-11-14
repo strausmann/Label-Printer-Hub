@@ -138,12 +138,31 @@ async def test_check_results_keep_order(api_client_with_seed):
 
 
 @pytest.mark.asyncio
+async def test_check_as_large_as_the_limit_is_served(api_client_with_seed):
+    """Limit 5, ten distinct items, full bucket: the request's token pays for one lookup and
+    the charge is capped at what the bucket holds. A cap of the capacity would refuse it forever."""
+    key = await _insert_key(["read"], rate_limit=5)
+    with patch("app.api.routes.print._lookup_service.lookup", new=AsyncMock(return_value=_OK)):
+        resp = await api_client_with_seed.post(
+            _URL,
+            json=_body(*[_item(f"A{i}") for i in range(10)]),
+            headers={"X-Label-Hub-Key": key},
+        )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
 async def test_check_over_the_rate_budget_429_before_any_lookup(api_client_with_seed):
     key = await _insert_key(["read"], rate_limit=10)
+    with patch("app.api.routes.print._lookup_service.lookup", new=AsyncMock(return_value=_OK)):
+        first = await api_client_with_seed.post(
+            _URL, json=_body(_item("ONE")), headers={"X-Label-Hub-Key": key}
+        )  # 9 tokens left
+        assert first.status_code == 200
     with patch("app.api.routes.print._lookup_service.lookup", new=AsyncMock()) as svc:
         resp = await api_client_with_seed.post(
             _URL,
-            json=_body(*[_item(f"A{i}") for i in range(20)]),
+            json=_body(*[_item(f"A{i}") for i in range(10)]),  # token -> 8 left, needs 9
             headers={"X-Label-Hub-Key": key},
         )
     assert resp.status_code == 429, resp.text
@@ -155,8 +174,8 @@ async def test_check_over_the_rate_budget_429_before_any_lookup(api_client_with_
 @pytest.mark.asyncio
 async def test_check_charges_each_distinct_lookup_not_duplicates(api_client_with_seed):
     key = await _insert_key(["read"], rate_limit=6)
-    # limit 6: each request takes 1 token plus 1 for its single distinct lookup. Charging the
-    # 40 duplicates instead (capped at the bucket) would refuse the second request.
+    # limit 6: a request with one distinct lookup costs just its own token. Charging the 40
+    # duplicates (capped at the bucket) would drain it and refuse the second request.
     dup = _body(*[_item("SAME")] * 40)  # 40 items, one distinct lookup
     with patch("app.api.routes.print._lookup_service.lookup", new=AsyncMock(return_value=_OK)):
         first = await api_client_with_seed.post(_URL, json=dup, headers={"X-Label-Hub-Key": key})
