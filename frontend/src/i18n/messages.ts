@@ -5,7 +5,8 @@ import { msg } from "@lingui/core/macro";
  * (or `useLingui()._`) so a language switch takes effect without a reload.
  */
 export const messages = {
-  appName: msg`Label Printer Hub`,
+  appName: msg`Labelyard`,
+  tagline: msg`The self-hosted Label Printer Hub for all your labels`,
   loading: msg`Loading…`,
   retry: msg`Try again`,
   somethingWentWrong: msg`Something went wrong.`,

@@ -106,6 +106,36 @@
 }
 
 @layer components {
+  /* Brand art from docs/brand/labelyard (copied to public/brand). The marks come as a light and a dark
+     file; the selectors mirror design/tokens.css, so an explicit theme choice wins over the system. */
+  .brand-dark {
+    display: none;
+  }
+  [data-theme="dark"] .brand-light {
+    display: none;
+  }
+  [data-theme="dark"] .brand-dark {
+    display: block;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand-light {
+      display: none;
+    }
+    :root:not([data-theme="light"]) .brand-dark {
+      display: block;
+    }
+  }
+  /* The wordmark draws in currentColor; used as a mask it takes the theme's ink colour. */
+  .brand-wordmark {
+    background-color: var(--ink);
+    mask: url("/brand/wordmark.svg") left center / contain no-repeat;
+  }
+  @media (forced-colors: active) {
+    .brand-wordmark {
+      forced-color-adjust: none;
+      background-color: CanvasText;
+    }
+  }
   /* Press feedback on everything tappable: instant, small, ease-out. */
   .press {
     transition-property: transform, background-color, color;

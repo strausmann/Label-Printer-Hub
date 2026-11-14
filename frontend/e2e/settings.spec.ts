@@ -81,7 +81,7 @@ test.describe.serial("settings", () => {
     await expect.poll(() => noSideScroll(page)).toBe(true);
     await shot(page, "task-13-general-phone.png", true);
     // Put it back so later tests see the default.
-    await page.getByRole("textbox", { name: "Display name" }).fill("Label Printer Hub");
+    await page.getByRole("textbox", { name: "Display name" }).fill("Labelyard");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
   });
