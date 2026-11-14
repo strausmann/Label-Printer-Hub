@@ -367,9 +367,9 @@ Setting('LABEL_PRINTER_HOOK_JSON', true);
   `source = "grocy"`, `ref` = the Grocycode cut to entity and id (`grcy:p:12`, ≤ 17 characters; `ref` max 120,
   `schemas/sheet_print.py:93`), purpose = default (title, else id); `label_data.source_app = "grocy"` as on tape
   (R-281-5). Default tray; calibration snapshot as for any sheet print (`sheets/print_service.py:1479-1481`).
-  - **Refused sheet (review I-2):** the one re-choice leaves out the sheet the first try was refused on, so a sheet the
-    planner cannot take (for example one whose ID cell is still due and that has a single free cell) does not stop the
-    labels of its type.
+  - **Refused sheet (reviews I-2, N-3):** every sheet a try was refused on stays out of the next choice, so sheets the
+    planner cannot take (for example ones whose ID cell is still due and that have a single free cell) do not stop the
+    labels of their type; the label ends on the next sheet that takes it or on a new one.
 - **R-281-16 (deferred printing on a page target).** Fits R-281-11: the request does **one insert and no
   reservation**, then answers 202. It stores a `queued` job on the page printer with payload `{"deferred": true,
   "deferred_kind": "sheet_page", "label_data", "content_type", "sheet_type"}` (no `kind`). Jobs and sheets share one
@@ -393,7 +393,8 @@ Setting('LABEL_PRINTER_HOOK_JSON', true);
     (`sheets/print_service.py:1294-1302`). T7-1 stays unchanged for every other caller.
   - **Sheet filled meanwhile:** the sheet is chosen outside the lock and `reserve` plans `first_free` again under it
     (`sheets/reservation.py:387-461`). If that existing sheet has no free cell any more (`insufficient_cells`,
-    `sheet_discarded`, `sheet_not_found`), the task chooses once more; a second failure is the job's error.
+    `sheet_discarded`, `sheet_not_found`), the task chooses again without that sheet, until a sheet takes the label
+    or the choice is a new sheet; a new sheet that fails is the job's error.
   - **Margin ID and feed mark in flight (C26):** between `reserve` and the hand-off the reservation has a `jobs` row
     without a `sheet_page` detail, so neither `unattached_reservation_sheets` (`repositories/sheets.py:147-161`) nor
     `_active_sheet_page_carries` (`sheets/reservation.py:157-170`) counts it. A `reserved` cell whose job is `queued`
@@ -417,7 +418,7 @@ Setting('LABEL_PRINTER_HOOK_JSON', true);
   lock, the transaction's first statement (`sheets/locking.py:44-69`), with the composite key as the last guard
   (`sheets/reservation.py:458-465`). Choosing and reserving run under an in-process `asyncio.Lock` per sheet type key,
   so two simultaneous labels do not open **two** new sheets; the hub is one process (ADR 0015; `uvicorn` without
-  `--workers`, `backend/Dockerfile:245`). A UI print in parallel is handled by the re-plan under the lock and the one
+  `--workers`, `backend/Dockerfile:245`). A UI print in parallel is handled by the re-plan under the lock and the
   re-choice; a UI print that sent `expected_cells` may get `plan_changed` (existing behaviour, documented).
 - **R-281-18 (settings UI).** Settings > Integrations > Grocy, label section:
   - **Default target:** printer select with "First enabled tape printer", then enabled printers grouped "Tape
