@@ -138,6 +138,53 @@ test.describe.serial("settings", () => {
     }
   });
 
+  test("integrations: map Grocy batteries to a sheet type on a page printer", async () => {
+    // The seeded page printer and sheet type of the e2e hub; nothing is created, the keys are put back.
+    const keys = {
+      "integrations.grocy.label.battery.printer": "",
+      "integrations.grocy.label.battery.sheet_type": "",
+    };
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/integrations");
+      const panel = page.getByRole("group", { name: "Grocy labels" });
+      const battery = panel.getByRole("group", { name: "Battery" });
+      await expect(battery.getByRole("button", { name: /Sheet type$/ })).toHaveCount(0);
+      await battery.getByRole("button", { name: /Printer$/ }).click();
+      await expect(page.getByRole("group", { name: "Page printers" })).toBeVisible();
+      await page.getByRole("option", { name: "Office page printer" }).click();
+      const sheetType = battery.getByRole("button", { name: /Sheet type$/ });
+      await expect(sheetType).toBeVisible();
+      await expect(battery.getByText("Choose a sheet type for this page printer.")).toBeVisible();
+      const save = panel.getByRole("button", { name: "Save" });
+      await expect(save).toBeDisabled();
+      await sheetType.click();
+      await page.locator('[role="option"]').filter({ hasText: "avery-zweckform-l4736rev" }).click();
+      await expect(save).toBeEnabled();
+      await save.click();
+      await expect(panel.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+      await shot(page, "t8b-grocy-sheet-target-desktop.png", true);
+
+      await page.reload();
+      const again = page.getByRole("group", { name: "Grocy labels" }).getByRole("group", { name: "Battery" });
+      await expect(again.getByRole("button", { name: /Printer$/ })).toContainText("Office page printer");
+      await expect(again.getByRole("button", { name: /Sheet type$/ })).not.toContainText("Choose a sheet type");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => noSideScroll(page)).toBe(true);
+      await shot(page, "t8b-grocy-sheet-target-phone.png", true);
+
+      // "Same as default" hides the sheet type and clears it.
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await again.getByRole("button", { name: /Printer$/ }).click();
+      await page.getByRole("option", { name: "Same as default" }).click();
+      await expect(again.getByRole("button", { name: /Sheet type$/ })).toHaveCount(0);
+      await page.getByRole("group", { name: "Grocy labels" }).getByRole("button", { name: "Save" }).click();
+      await expect(page.getByRole("group", { name: "Grocy labels" }).getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+    } finally {
+      expect(await putSettings(page, keys)).toBe(200);
+    }
+  });
+
   test("general: change the display name and see it saved", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/settings");

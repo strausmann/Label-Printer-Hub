@@ -289,6 +289,29 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await panTo(page, 0);
       });
 
+      test("Grocy labels: the sheet type list of a page printer and the Save button can be brought into sight", async () => {
+        await prepare(mode);
+        await page.goto("/settings/integrations");
+        const panel = page.getByRole("group", { name: "Grocy labels" });
+        const battery = panel.getByRole("group", { name: "Battery" });
+        const printer = battery.getByRole("button", { name: /Printer$/ });
+        await printer.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await printer.click();
+        await page.getByRole("option", { name: "Office page printer" }).click();
+        const sheetType = battery.getByRole("button", { name: /Sheet type$/ });
+        await sheetType.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, sheetType, "the sheet type field");
+        // A select opens no keyboard; on a short screen its list must still fit what is visible.
+        await sheetType.click();
+        await expectInSight(page, page.locator('[role="option"]').first(), "the first sheet type");
+        await page.keyboard.press("Escape");
+        await keyboard(mode);
+        const save = panel.getByRole("button", { name: "Save" });
+        await save.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, save, "the Save button of the Grocy labels");
+        // Nothing was saved: the next test loads the page again with the stored values.
+      });
+
       /** New sheet with a type chosen: the tallest state of the form, with the keyboard still open. */
       async function openTallAddSheet() {
         const dialog = await openAddSheet();
