@@ -423,10 +423,27 @@ async def test_bootstrap_session_names_the_variable_in_use(
 
 
 @pytest.mark.asyncio
-async def test_other_sessions_carry_no_bootstrap_variable(api_client_with_seed):
-    """Only a bootstrap session names the variable; signed out and key sessions do not."""
+async def test_other_sessions_carry_no_bootstrap_variable(api_client_with_seed, monkeypatch):
+    """Only a bootstrap session names the variable; signed out, key and SSO sessions do not."""
+    # The variable is set, so a null below comes from the session kind, not from an unset variable.
+    monkeypatch.setenv(ENV_PREFIX + "BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
+    _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
     client = api_client_with_seed
     assert (await client.get("/api/v1/auth/session")).json()["bootstrap_variable"] is None
+
+    key, _ = await _insert_key(["admin"])
+    assert (await _sign_in(client, key)).status_code == 204
+    body = (await client.get("/api/v1/auth/session")).json()
+    assert body["signed_in"] is True
+    assert body["bootstrap_variable"] is None
+
+    client.cookies.clear()
+    sso = await client.get(
+        "/api/v1/auth/session",
+        headers={"Remote-User": "alice", "X-Pangolin-Token": FAKE_TRUST_TOKEN},
+    )
+    assert sso.json()["source"] == "pangolin-sso"
+    assert sso.json()["bootstrap_variable"] is None
 
 
 @pytest.mark.asyncio
