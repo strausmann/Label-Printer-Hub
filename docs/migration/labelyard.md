@@ -37,6 +37,7 @@ Coming from 1.4.x? Upgrade your API clients for 1.5.0 first (`/api/v1` paths, wi
 ## Behaviour changes
 
 - **The server port variable now takes effect.** `LABELYARD_SERVER_PORT` (and the old `PRINTER_HUB_SERVER_PORT`) was documented but ignored. The container now listens on the port it names and falls back to `PORT`, then `8000`. A `.env` file copied from an older `.env.example` may still contain `LABELYARD_SERVER_PORT=8090`: delete that line, or set it to the port your compose file maps (`8000` by default). Afterwards `/healthz` on the mapped port must answer. If the port is not `8000`, the hub logs one warning at startup that names the variable.
+- **Installed web apps keep the old icon for a while.** A home-screen app installed before 1.6.0 shows the old name and icon until the browser refreshes its manifest. On iOS that never happens by itself: remove the app from the home screen and add it again.
 
 ## Environment variables
 
