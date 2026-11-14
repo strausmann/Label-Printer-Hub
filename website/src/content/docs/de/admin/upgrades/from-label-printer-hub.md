@@ -12,7 +12,7 @@ Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umben
 | Vorher | Nachher |
 |---|---|
 | Image `ghcr.io/strausmann/label-printer-hub-backend` | `ghcr.io/strausmann/labelyard` |
-| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/<user>/labelyard` |
+| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/bstrausmann/labelyard` |
 | Befehl `printer-hub` | `labelyard` (der alte Befehl bleibt als Alias) |
 | Umgebungspräfix `PRINTER_HUB_` | `LABELYARD_` (das alte Präfix wird weiter gelesen, siehe [Umgebungsvariablen](#umgebungsvariablen)) |
 | PDF-Schriftart `PRINTHUB_PDF_FONT` | `LABELYARD_PDF_FONT` (der alte Name wird weiter gelesen) |
@@ -24,7 +24,7 @@ Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umben
 
 Du nutzt einen Seitendrucker? Lass zuerst seine Warteschlange leerlaufen. 1.6.0 erkennt die Aufträge aus 1.5.x weiter als eigene, fragt aber unter dem neuen Benutzernamen nach ihnen. Ein Druckserver, der nur den Besitzer eines Auftrags abbrechen lässt (bei CUPS der Standard), kann den Abbruch eines laufenden Auftrags aus 1.5.x verweigern.
 
-1. Ändere `image:` in deiner Compose-Datei auf `ghcr.io/strausmann/labelyard:1.6.0` (oder `docker.io/<user>/labelyard:1.6.0`).
+1. Ändere `image:` in deiner Compose-Datei auf `ghcr.io/strausmann/labelyard:1.6.0` (oder `docker.io/bstrausmann/labelyard:1.6.0`).
 2. Hol das Image: `docker compose pull`.
 3. Starte neu: `docker compose up -d`.
 
@@ -51,6 +51,7 @@ Umbenennen musst du vorerst nicht. Der Hub liest `LABELYARD_*`; die früheren Na
 
 - Eine `LABELYARD_`-Variable gewinnt immer gegen ihren `PRINTER_HUB_`-Zwilling.
 - Leere Werte werden bei beiden Präfixen ignoriert, eine Compose-Zeile wie `PRINTER_HUB_X=${PRINTER_HUB_X:-}` überschreibt also nie etwas.
+- Dieselbe Regel heißt auch: Ein leeres `LABELYARD_X=` schaltet ein gesetztes `PRINTER_HUB_X` **nicht** ab, der alte Wert wirkt weiter. Um eine Einstellung abzuschalten, entfernst du die alte Variable oder setzt die neue auf einen ausdrücklichen Wert. Das betrifft vor allem die Sicherheitseinstellungen `PRINTER_HUB_SSO_TRUST_TOKEN` (leer schaltet den SSO-Header-Weg ab), `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`, `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` und `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER`: Setze `LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS=false` und `LABELYARD_TRUST_LEGACY_PANGOLIN_USER=false` ausdrücklich und lösche die Zeilen mit altem Token und Schlüssel, statt die neuen leer zu lassen.
 - Beim Start schreibt der Hub eine Warnzeile, die die alten Namen auflistet, die noch wirken, damit du weißt, was du umbenennen solltest. Du findest sie in der Container-Ausgabe (`docker logs`) und in der Log-Ansicht des Hubs auf der Seite System. Wird ein alter Name von einem `LABELYARD_`-Zwilling überstimmt, listet eine zweite Zeile diese ignorierten Namen. Beide Zeilen enthalten nur **Namen**, nie Werte.
 - Die alten Namen werden mindestens bis 2.0.0 gelesen.
 - Die PDF-Schriftart folgt demselben Muster: `LABELYARD_PDF_FONT` wird zuerst gelesen, das alte `PRINTHUB_PDF_FONT`, wenn das neue nicht gesetzt oder leer ist, mit einer Warnung, die die Variable nennt.

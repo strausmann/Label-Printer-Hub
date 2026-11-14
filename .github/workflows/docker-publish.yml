@@ -63,10 +63,12 @@ on:
         description: "Image tag (without v prefix), e.g. 0.1.0. Leave empty to build a dev/branch image instead."
         required: false
 
+# The build legs push by digest and need no OIDC token. Only the merge job
+# signs, so only it asks for `id-token: write`. A caller (release.yml,
+# preview-image.yml) caps these grants and must grant at least the same.
 permissions:
   contents: read
   packages: write
-  id-token: write
 
 # Per-ref grouping: cancel an older in-progress run on the same branch when
 # a new push arrives. Release and manually-dispatched builds are NEVER
@@ -81,9 +83,12 @@ concurrency:
 env:
   REGISTRY_GHCR: ghcr.io
   # The image name, written out: the GHCR address is ghcr.io/strausmann/labelyard
-  # and the Docker Hub address docker.io/<DOCKERHUB_USERNAME>/labelyard. Neither is
+  # and the Docker Hub address docker.io/bstrausmann/labelyard. Neither is
   # derived from github.repository, which changes when the repository is renamed.
   IMAGE_NAME: labelyard
+  # The Docker Hub namespace (the organization) is an identity, not a secret: it is
+  # written out here. DOCKERHUB_USERNAME is only the login of the organization token.
+  DOCKERHUB_NAMESPACE: bstrausmann
   # Annotate both per-platform manifests AND the index. GHCR's package UI
   # reads the package description from the index annotation; without this
   # the page shows "No description provided".
@@ -151,8 +156,9 @@ jobs:
       # job. The name is fixed (and already lowercase, as OCI refs must be)
       # instead of derived from github.repository: the repository is renamed
       # after the milestone merge, and the image address must not move with it.
-      # Step id `image` and output `ref` are read by the merge job's outputs
-      # (image-ref, used by the sbom job).
+      # The ref is never exposed as a job output: GitHub drops any output whose
+      # value contains a secret, and DOCKERHUB_USERNAME equals the Docker Hub namespace.
+      # The sbom job computes its own copy.
       - name: Compute image ref
         id: image
         run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
@@ -161,11 +167,26 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          REGISTRY_HOST: ${{ env.REGISTRY_GHCR }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       # `secrets.*` is not allowed in step-level `if:` expressions — we
       # surface the value into the step env first, then condition on env.*.
@@ -174,10 +195,23 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        # Same bounded retry as the GHCR login.
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       # Classify what we're building AND derive a version-like value for
       # labels/build-args. Three flavors:
@@ -291,10 +325,16 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     runs-on: ubuntu-24.04
     needs: build
+    # A job-level block replaces the workflow default, so all three are listed.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # keyless cosign signature (Sigstore with the job's OIDC token)
     # Read by the sbom job (one matrix entry today). The tag is the validated,
-    # v-stripped release version; the ref is the lowercase GHCR repository.
+    # v-stripped release version. The image ref is deliberately not an output
+    # (it contains the owner name, which equals a repo secret, so GitHub would
+    # drop it: "Skip output since it may contain secret").
     outputs:
-      image-ref: ${{ steps.image.outputs.ref }}
       tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
@@ -339,7 +379,7 @@ jobs:
           merge-multiple: true
 
       # Mirror of the build-phase step (see the comment there): a fixed name,
-      # never github.repository. Keep id `image` / output `ref` (merge.outputs).
+      # never github.repository.
       - name: Compute image ref
         id: image
         run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
@@ -348,21 +388,49 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          REGISTRY_HOST: ${{ env.REGISTRY_GHCR }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       - name: Log in to Docker Hub
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        # Same bounded retry as the GHCR login.
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
 
       # Classify what we're building AND derive a version-like value for
       # labels/build-args. Three flavors:
@@ -409,7 +477,7 @@ jobs:
           # as for the login step: a username without a token would push unauthenticated.
           images: |
             ${{ steps.image.outputs.ref }}
-            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN) && format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}
+            ${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME && secrets.DOCKERHUB_TOKEN) && format('docker.io/{0}/{1}', env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME) || '' }}
           # Tag scheme by flavor (identical on GHCR and Docker Hub):
           #   branch   <branch-slug>                       manual dispatch, GHCR only
           #   dev      dev                                 main-branch push
@@ -571,11 +639,33 @@ jobs:
     steps:
       # A new package may still be private, so the read goes through a login.
       - name: Log in to GHCR
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          registry: ${{ env.REGISTRY_GHCR }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          REGISTRY_HOST: ${{ env.REGISTRY_GHCR }}
+          REGISTRY_USERNAME: ${{ github.actor }}
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # A slow auth endpoint must not drop a release image: up to 4
+          # attempts, 10 s / 20 s / 30 s apart. The secret goes in over stdin,
+          # never as an argument, and docker prints only its own status.
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$REGISTRY_PASSWORD" | docker login "$REGISTRY_HOST" --username "$REGISTRY_USERNAME" --password-stdin; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 4 ]; then
+              echo "::warning::Registry login failed (attempt $attempt of 4), retrying"
+              sleep $((attempt * 10))
+            fi
+          done
+          echo "::error::Registry login failed after 4 attempts"
+          exit 1
+
+      # Same fixed name as the build and merge jobs (never github.repository).
+      # Computed here, not passed as a merge job output: see the comment on
+      # merge.outputs.
+      - name: Compute image ref
+        id: image
+        run: echo "ref=${REGISTRY_GHCR}/strausmann/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Install Syft
         id: syft
@@ -590,7 +680,7 @@ jobs:
         id: sbom
         env:
           SYFT: ${{ steps.syft.outputs.cmd }}
-          IMAGE_REF: ${{ needs.merge.outputs.image-ref }}
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
           TAG: ${{ needs.merge.outputs.tag }}
         run: |
           set -euo pipefail

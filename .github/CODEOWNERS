@@ -49,3 +49,5 @@
 /backend/pyproject.toml
 /frontend/package.json
 /frontend/pnpm-lock.yaml
+/website/package.json
+/website/pnpm-lock.yaml

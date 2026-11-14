@@ -4057,6 +4057,17 @@
             "title": "Bootstrap",
             "type": "boolean"
           },
+          "bootstrap_variable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bootstrap Variable"
+          },
           "csrf_token": {
             "anyOf": [
               {

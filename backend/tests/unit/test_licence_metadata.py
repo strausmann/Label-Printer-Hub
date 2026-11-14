@@ -11,6 +11,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SPDX = "AGPL-3.0-or-later"
 # The verbatim https://www.gnu.org/licenses/agpl-3.0.txt, 661 lines.
@@ -172,3 +174,25 @@ def test_supply_chain_doc() -> None:
     assert f"]({SUPPLY_CHAIN_DOC})" in readme
     assert "## Supply chain: SBOM and provenance" in readme
     assert readme.index("## License") < readme.index("## Supply chain: SBOM and provenance")
+
+
+@pytest.mark.parametrize(
+    ("page", "heading"),
+    [
+        ("website/src/content/docs/admin/security.md", "## Verify the image signature"),
+        ("website/src/content/docs/de/admin/security.md", "## Die Image-Signatur prüfen"),
+    ],
+)
+def test_website_explains_signature_verification(page: str, heading: str) -> None:
+    """The canonical docs (EN and DE) carry the same verify command as docs/supply-chain.md."""
+    text = _read(page)
+    assert heading in text
+    identities = re.findall(r"--certificate-identity-regexp '([^']*)'", text)
+    assert identities == [COSIGN_IDENTITY_REGEXP]
+    assert "--certificate-oidc-issuer https://token.actions.githubusercontent.com" in text
+    digest = (
+        "imagetools inspect ghcr.io/strausmann/labelyard:<version>"
+        " --format '{{ .Manifest.Digest }}'"
+    )
+    assert digest in text
+    assert "ghcr.io/strausmann/labelyard@<digest>" in text

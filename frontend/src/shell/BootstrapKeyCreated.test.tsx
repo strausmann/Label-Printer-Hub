@@ -24,7 +24,7 @@ async function renderFlow(props: Partial<React.ComponentProps<typeof BootstrapKe
   render(
     <I18nProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <BootstrapKeyCreated onCreate={onCreate} onContinue={onContinue} />
+        <BootstrapKeyCreated onCreate={onCreate} onContinue={onContinue} variable={props.variable} />
       </QueryClientProvider>
     </I18nProvider>,
   );
@@ -57,6 +57,14 @@ describe("BootstrapKeyCreated", () => {
     expect(screen.queryByRole("button", { name: "Create admin key" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(onContinue).toHaveBeenCalledWith("lh_pat_fake-key-for-tests");
+  });
+
+  it("names the variable the deployment set, not a fixed one", async () => {
+    const variable = ["PRINTER", "HUB_BOOTSTRAP_ADMIN_KEY"].join("_");
+    await renderFlow({ variable });
+    await userEvent.click(screen.getByRole("button", { name: "Create admin key" }));
+    expect(await screen.findByText(variable)).toBeInTheDocument();
+    expect(screen.queryByText("LABELYARD_BOOTSTRAP_ADMIN_KEY")).toBeNull();
   });
 
   it("copies the key", async () => {

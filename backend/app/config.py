@@ -5,9 +5,13 @@
 
 All settings are read from environment variables prefixed with ``LABELYARD_``
 (e.g. ``LABELYARD_DATABASE_URL``). The former ``PRINTER_HUB_`` prefix is still read as a
-deprecated fallback (see :mod:`app.config_legacy`); a ``LABELYARD_`` variable always wins.
-A ``.env`` file in the working directory is loaded automatically when present; values from
-the environment always take precedence over ``.env`` values.
+deprecated fallback (see :mod:`app.config_legacy`). A ``.env`` file in the working directory
+is loaded automatically when present. The prefix decides first, the source second::
+
+    LABELYARD_ env -> LABELYARD_ .env -> PRINTER_HUB_ env -> PRINTER_HUB_ .env
+
+So a ``LABELYARD_`` value always wins, even one from ``.env`` over a ``PRINTER_HUB_``
+process variable; within one prefix the process environment beats ``.env``.
 
 Printers are managed in the database (UI/API); there is no printer configuration
 file and no printer-specific setting here.
@@ -17,8 +21,7 @@ NOT unknown environment variables. pydantic-settings silently ignores unknown
 process environment variables, so leftovers of removed settings are dropped on
 startup. Operators should rely on the changelog (or ``Settings(...)``-based init
 in tests) to detect leftover config. Unknown keys in a ``.env`` file are different:
-a key with the ``LABELYARD_`` or ``PRINTER_HUB_`` prefix that matches no field is
-rejected at startup.
+a key that matches no field is rejected at startup, whatever its prefix.
 
 Usage::
 

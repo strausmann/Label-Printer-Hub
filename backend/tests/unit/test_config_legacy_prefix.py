@@ -204,6 +204,27 @@ def test_dotenv_unknown_own_prefix_unchanged(tmp_path: Path, prefix: str) -> Non
     assert f"{prefix.lower()}no_such_field" in str(err.value)
 
 
+def test_plugin_variables_in_process_env_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """backend/app/integrations/README.md: a plugin reads its own variables from the environment."""
+    _required(monkeypatch)
+    monkeypatch.setenv("OPENFOODFACTS_API_URL", "http://off.example.invalid")
+    monkeypatch.setenv("LABELYARD_OPENFOODFACTS_API_URL", "http://off.example.invalid")
+    s = Settings()  # type: ignore[call-arg]
+    assert not hasattr(s, "openfoodfacts_api_url")
+
+
+@pytest.mark.parametrize("key", ["OPENFOODFACTS_API_URL", "LABELYARD_OPENFOODFACTS_API_URL"])
+def test_plugin_variables_in_dotenv_stop_startup(tmp_path: Path, key: str) -> None:
+    """Any key of the hub's .env that is no setting is rejected, whatever its prefix."""
+    (tmp_path / ".env").write_text(
+        f"LABELYARD_SECRET_KEY={KEY}\nLABELYARD_PUBLIC_URL={URL}\n{key}=x\n"
+    )
+    with pytest.raises(ValidationError) as err:
+        Settings()  # type: ignore[call-arg]
+    assert "extra_forbidden" in str(err.value)
+    assert key.lower() in str(err.value)
+
+
 # -- empty values count as "not set" for both prefixes ------------------------------------------
 
 

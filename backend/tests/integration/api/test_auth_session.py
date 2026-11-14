@@ -16,6 +16,7 @@ import app.models  # noqa: F401
 import bcrypt
 import pytest
 from app.config import get_settings
+from app.config_legacy import ENV_PREFIX, LEGACY_ENV_PREFIX
 from app.models.api_key import ApiKey
 from app.models.printer import Printer
 from app.models.ui_session import UiSession
@@ -383,6 +384,66 @@ async def test_bootstrap_only_until_admin_key_exists(api_client_with_seed, monke
     client.cookies.clear()
     resp = await _sign_in(client, FAKE_BOOTSTRAP_KEY)
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_disabled_bootstrap_names_the_variable_in_use(
+    api_client_with_seed, monkeypatch, legacy
+):
+    """The message names the variable the deployment set, also the deprecated one."""
+    new = ENV_PREFIX + "BOOTSTRAP_ADMIN_KEY"
+    old = LEGACY_ENV_PREFIX + "BOOTSTRAP_ADMIN_KEY"
+    named = f"Remove {new} (legacy {old})." if legacy else f"Remove {new}."
+    monkeypatch.setenv(old if legacy else new, FAKE_BOOTSTRAP_KEY)
+    get_settings.cache_clear()
+    await _insert_key(["admin"])
+    resp = await _sign_in(api_client_with_seed, FAKE_BOOTSTRAP_KEY)
+    assert resp.status_code == 401, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error_code"] == "bootstrap_disabled"
+    assert detail["error_message"].endswith(named)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_bootstrap_session_names_the_variable_in_use(
+    api_client_with_seed, monkeypatch, legacy
+):
+    """A bootstrap session carries the variable name the deployment set (a name, never a value)."""
+    new = ENV_PREFIX + "BOOTSTRAP_ADMIN_KEY"
+    old = LEGACY_ENV_PREFIX + "BOOTSTRAP_ADMIN_KEY"
+    monkeypatch.setenv(old if legacy else new, FAKE_BOOTSTRAP_KEY)
+    get_settings.cache_clear()
+    client = api_client_with_seed
+    assert (await _sign_in(client, FAKE_BOOTSTRAP_KEY)).status_code == 204
+    body = (await client.get("/api/v1/auth/session")).json()
+    assert body["bootstrap_variable"] == (old if legacy else new)
+    assert FAKE_BOOTSTRAP_KEY not in str(body)
+
+
+@pytest.mark.asyncio
+async def test_other_sessions_carry_no_bootstrap_variable(api_client_with_seed, monkeypatch):
+    """Only a bootstrap session names the variable; signed out, key and SSO sessions do not."""
+    # The variable is set, so a null below comes from the session kind, not from an unset variable.
+    monkeypatch.setenv(ENV_PREFIX + "BOOTSTRAP_ADMIN_KEY", FAKE_BOOTSTRAP_KEY)
+    _set_env(monkeypatch, sso_trust_token=FAKE_TRUST_TOKEN)
+    client = api_client_with_seed
+    assert (await client.get("/api/v1/auth/session")).json()["bootstrap_variable"] is None
+
+    key, _ = await _insert_key(["admin"])
+    assert (await _sign_in(client, key)).status_code == 204
+    body = (await client.get("/api/v1/auth/session")).json()
+    assert body["signed_in"] is True
+    assert body["bootstrap_variable"] is None
+
+    client.cookies.clear()
+    sso = await client.get(
+        "/api/v1/auth/session",
+        headers={"Remote-User": "alice", "X-Pangolin-Token": FAKE_TRUST_TOKEN},
+    )
+    assert sso.json()["source"] == "pangolin-sso"
+    assert sso.json()["bootstrap_variable"] is None
 
 
 @pytest.mark.asyncio

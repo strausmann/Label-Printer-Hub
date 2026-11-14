@@ -3,7 +3,7 @@
 
 # Prune the Labelyard image on both registries with one retention rule
 # (scripts/ghcr_rules.py): ghcr.io/strausmann/labelyard and
-# docker.io/<DOCKERHUB_USERNAME>/labelyard.
+# docker.io/bstrausmann/labelyard.
 #
 # Kept: release images from 1.4.0 on (x.y.z), their floating tags (x.y, x,
 # latest), the rolling `dev` tag from main, and preview tags (x.y.z-rc.N
@@ -150,6 +150,8 @@ jobs:
           ACTOR: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_PATH: strausmann/labelyard
+          # The Docker Hub namespace is written out; the secret is only the login.
+          HUB_NAMESPACE: bstrausmann
           HUB_REPOSITORY: labelyard
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_ADMIN_TOKEN: ${{ secrets.DOCKERHUB_ADMIN_TOKEN }}

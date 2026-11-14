@@ -152,7 +152,9 @@ The web UI's API types are generated from the backend's OpenAPI document (`pnpm 
 ## Releases ([ADR 0008](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0008-conventional-commits-and-semantic-release.md))
 
 - Conventional Commits drive version bumps via semantic-release
-- Push to `main` → release pipeline: tag → GitHub Release → Docker image on GHCR + Docker Hub
+- The release workflow runs nightly at 04:00 UTC or by manual dispatch on `main`, not on every push. It publishes only when there are releasable commits: tag → GitHub Release → Docker image on GHCR + Docker Hub
+- Registry logins in the image workflow retry up to four times; a persistent failure fails the run
+- If the image jobs fail after the tag and GitHub Release exist, the run's step summary names the missing version and the run id. Rebuild with `gh run rerun <run-id> --failed`: it reruns the image jobs and the release SBOM on `refs/heads/main`, so the images are signed and the SBOM is attached. If the run can no longer be rerun, use `gh workflow run docker-publish.yml --ref main -f tag=<version>` (it builds the tag's commit) and attach the SBOM by hand with `gh release upload`. Caution: this dispatch moves `latest`, `X.Y` and `X` to that version, so use it only for the newest stable release. Do not dispatch on the tag ref: images built from a tag ref are not signed
 - Tag scheme ([ADR 0007](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0007-docker-image-tag-scheme.md)): every stable release publishes `1.0.0`, `1.0`, `1`, and `latest` — pre-releases get only the full version
 - Multi-arch: `linux/amd64` + `linux/arm64`
 

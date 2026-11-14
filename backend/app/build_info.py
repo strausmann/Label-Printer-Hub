@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 PROJECT_LICENSE: Final = "AGPL-3.0-or-later"
 CANONICAL_REPO_URL: Final = "https://github.com/strausmann/labelyard"
 
-_SEMVER = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?")
+_RELEASE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 _COMMIT = re.compile(r"[0-9a-f]{7,40}")
 
 
@@ -53,11 +53,12 @@ def public_repo_url(repo_url: str) -> str:
 def source_url(repo_url: str, version: str, revision: str) -> str:  # D20
     """Link to the exact source of this build.
 
-    A release links its tag, any other build with a known commit links that
-    commit, and anything else falls back to the repository root.
+    Only a release ``X.Y.Z`` links its tag. A pre-release (``X.Y.Z-rc.N``) has
+    no git tag, so it links the commit it was built from, like any other build
+    with a known commit; anything else falls back to the repository root.
     """
     base = public_repo_url(repo_url)
-    if _SEMVER.fullmatch(version) and not version.startswith("0.0.0-"):
+    if _RELEASE.fullmatch(version):
         return f"{base}/tree/v{version}"
     if _COMMIT.fullmatch(revision):
         return f"{base}/tree/{revision}"

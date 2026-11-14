@@ -1,6 +1,6 @@
 ---
 title: Sicherheitsmodell
-description: Was Labelyard schützt, was nicht, und wie du eine Sicherheitslücke meldest.
+description: Was Labelyard schützt, was nicht, wie du die Image-Signatur prüfst und wie du eine Sicherheitslücke meldest.
 ---
 
 ## Was der Hub schützt
@@ -20,6 +20,21 @@ description: Was Labelyard schützt, was nicht, und wie du eine Sicherheitslück
 - Angreifer im selben Netz wie die Drucker. Etikettendrucker nehmen Druckdaten über TCP-Port 9100 an und antworten auf SNMP mit der Community `public`, so sind sie gebaut; stell sie in ein Netzsegment, dem du vertraust.
 - Einen kompromittierten Reverse Proxy oder Container-Host.
 - Bösartige Drucker-Firmware.
+
+## Die Image-Signatur prüfen
+
+Ab 1.6.0 ist jedes Release-, Vorschau- und `dev`-Image mit [cosign](https://docs.sigstore.dev/) ohne Schlüssel signiert: Die Signatur entsteht mit dem GitHub-Actions-Token des Image-Workflows des Projekts und gilt für den Multi-Arch-Index, also auch für die Plattform-Images und ihre SBOM- und Provenance-Attestierungen. Ein Tag kann wandern, deshalb löst du ihn zuerst in seinen Digest auf und prüfst den Digest:
+
+```bash
+docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
+
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/strausmann/labelyard@<digest>
+```
+
+Die Identität lässt nur den Image-Workflow dieses Repositorys zu (unter seinem jetzigen und seinem früheren Namen), gestartet von `main` oder einem Milestone-Zweig. `[b]` im Muster steht für den Buchstaben b. Auf Docker Hub ist der Digest derselbe; ersetze die letzte Zeile durch `docker.io/bstrausmann/labelyard@<digest>`, um die Kopie dort zu prüfen. `cosign verify` endet mit einem Fehler, wenn keine gültige Signatur passt. Die [Hinweise zur Lieferkette](https://github.com/strausmann/labelyard/blob/main/docs/supply-chain.md) beschreiben die genaue Release-Identität, die SBOM und die Provenance (auf Englisch).
 
 ## Eine Lücke melden
 

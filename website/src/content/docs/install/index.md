@@ -5,7 +5,7 @@ sidebar:
   label: Docker Compose
 ---
 
-Labelyard ships as one image, `ghcr.io/strausmann/labelyard` (also on Docker Hub as `docker.io/strausmann/labelyard`), for `linux/amd64` and `linux/arm64`. One process serves the REST API, the live event stream and the web UI.
+Labelyard ships as one image, `ghcr.io/strausmann/labelyard` (also on Docker Hub as `docker.io/bstrausmann/labelyard`), for `linux/amd64` and `linux/arm64`. One process serves the REST API, the live event stream and the web UI.
 
 ## What you need
 

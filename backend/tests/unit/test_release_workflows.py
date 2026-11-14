@@ -11,6 +11,7 @@ image workflow against a throw-away pre-release tag does that.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
@@ -77,13 +78,45 @@ def test_docker_hub_gets_every_flavor_but_branch() -> None:
     assert line.strip() == (
         "${{ (steps.tag.outputs.flavor != 'branch' && secrets.DOCKERHUB_USERNAME "
         "&& secrets.DOCKERHUB_TOKEN) "
-        "&& format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME) || '' }}"
+        "&& format('docker.io/{0}/{1}', env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME) || '' }}"
     )
-    assert "format('docker.io/{0}/labelyard', secrets.DOCKERHUB_USERNAME)" in line
+    assert "format('docker.io/{0}/{1}', env.DOCKERHUB_NAMESPACE, env.IMAGE_NAME)" in line
+    # The namespace is no longer built from the secret.
+    assert "format('docker.io/{0}/labelyard', secrets." not in line
     assert "steps.tag.outputs.flavor != 'branch'" in line
     # Pre-releases (previews) reach Docker Hub too; only their floating tags are refused.
     assert "contains(steps.tag.outputs.tag, '-')" not in line
     assert "flavor == 'release'" not in line
+
+
+def test_docker_hub_namespace_is_written_out() -> None:
+    """The Docker Hub namespace is identity, not a secret: literal in every workflow
+    that names a Docker Hub address; the secret DOCKERHUB_USERNAME only logs in."""
+    for name in ("docker-publish.yml", "dockerhub-description.yml"):
+        assert _load(name)["env"]["DOCKERHUB_NAMESPACE"] == "bstrausmann", name
+    cleanup = _load("registry-cleanup.yml")["jobs"]["dockerhub"]["steps"][-1]["env"]
+    assert cleanup["HUB_NAMESPACE"] == "bstrausmann"
+    assert cleanup["HUB_REPOSITORY"] == "labelyard"
+    # The login still comes from the secrets.
+    assert cleanup["DOCKERHUB_USERNAME"] == "${{ secrets.DOCKERHUB_USERNAME }}"
+    for name in ("docker-publish.yml",):
+        text = _text(name)
+        assert text.count("username: ") == 0
+        assert text.count("secrets.DOCKERHUB_USERNAME }}") == 2  # the two login steps
+        assert text.count('--username "$DOCKERHUB_USERNAME"') == 2
+    # No workflow builds a Docker Hub address from the login secret.
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "docker.io" in line or "hub.docker.com" in line:
+                # (the "Docker Hub configured" condition may name the secret; the address may not)
+                assert not re.search(r"format\('docker\.io[^)]*secrets\.", line), (
+                    f"{path.name}:{number}"
+                )
+                assert "DOCKERHUB_USERNAME }}/" not in line, f"{path.name}:{number}"
+                assert "docker.io/strausmann" not in line, f"{path.name}:{number}"
+                assert "<DOCKERHUB_USERNAME>" not in line, f"{path.name}:{number}"
+    login = _load("dockerhub-description.yml")["jobs"]["description"]["steps"][-1]["with"]
+    assert login["username"] == "${{ secrets.DOCKERHUB_USERNAME }}"
 
 
 TAGLINE = "Labelyard — the self-hosted Label Printer Hub for all your labels"
@@ -207,7 +240,8 @@ def test_dockerhub_description_workflow() -> None:
     assert len(action) == 1
     with_ = action[0]["with"]
     assert with_["password"] == "${{ secrets.DOCKERHUB_ADMIN_TOKEN }}"
-    assert with_["repository"] == "${{ secrets.DOCKERHUB_USERNAME }}/labelyard"
+    assert with_["repository"] == "${{ env.DOCKERHUB_NAMESPACE }}/labelyard"
+    assert with_["username"] == "${{ secrets.DOCKERHUB_USERNAME }}"
     assert with_["readme-filepath"] == ".github/dockerhub/README.md"
     assert with_["short-description"] == TAGLINE
     assert len(with_["short-description"].encode()) <= 100
@@ -216,7 +250,7 @@ def test_dockerhub_description_workflow() -> None:
     text = readme.read_text(encoding="utf-8")
     for needle in (
         "docker pull ghcr.io/strausmann/labelyard",
-        "docker pull docker.io/",
+        "docker pull docker.io/bstrausmann/labelyard",
         "https://labelyard.app",
     ):
         assert needle in text, needle
@@ -429,6 +463,54 @@ def test_dependabot_covers_release_toolchain() -> None:
     assert entries, "release toolchain pins would never receive updates"
 
 
+def _codeowners_owners(path: str) -> list[str]:
+    """Owners of a repository path: the last matching CODEOWNERS line wins.
+
+    Covers the pattern forms the file uses: `*`, an anchored file, an anchored
+    directory with a trailing slash and an anchored glob.
+    """
+    owners: list[str] = []
+    text = (REPO_ROOT / ".github" / "CODEOWNERS").read_text(encoding="utf-8")
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        pattern, *line_owners = line.split()
+        if pattern == "*":
+            hit = True
+        elif pattern.endswith("/"):
+            hit = path.startswith(pattern)
+        else:
+            hit = fnmatch.fnmatchcase(path, pattern)
+        if hit:
+            owners = line_owners
+    return owners
+
+
+def test_dependabot_npm_and_pip_manifests_have_no_code_owner() -> None:
+    """Dependabot patch/minor PRs on these manifests auto-merge only when ownerless.
+
+    The release toolchain under /.github/ stays owned on purpose.
+    """
+    cfg = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    manifests = {
+        ("pip", "/"): ["/backend/pyproject.toml"],
+        ("npm", "/"): ["/package.json", "/frontend/package.json", "/frontend/pnpm-lock.yaml"],
+        ("npm", "/website"): ["/website/package.json", "/website/pnpm-lock.yaml"],
+    }
+    configured = {(u["package-ecosystem"], u["directory"]) for u in cfg["updates"]}
+    for key, paths in manifests.items():
+        assert key in configured, key
+        for path in paths:
+            assert (REPO_ROOT / path.lstrip("/")).is_file(), path
+            assert _codeowners_owners(path) == [], path
+    assert _codeowners_owners("/.github/release-tools/package.json") == ["@strausmann"]
+    # Every npm/pip directory Dependabot updates outside /.github/ is covered above.
+    for ecosystem, directory in configured:
+        if ecosystem in ("npm", "pip") and not directory.startswith("/.github"):
+            assert (ecosystem, directory) in manifests, (ecosystem, directory)
+
+
 def test_release_jobs_declare_minimal_permissions() -> None:
     wf = _load("release.yml")
     assert wf["permissions"] == {"contents": "read"}
@@ -437,8 +519,9 @@ def test_release_jobs_declare_minimal_permissions() -> None:
         "issues": "write",
         "pull-requests": "write",
     }
+    # The called workflow only reads the repository; the asset upload is release-sbom's.
     assert wf["jobs"]["images"]["permissions"] == {
-        "contents": "write",
+        "contents": "read",
         "packages": "write",
         "id-token": "write",
     }
@@ -580,14 +663,19 @@ def test_sbom_job_is_read_only() -> None:
 def test_sbom_uses_merge_image_ref() -> None:
     wf = _load("docker-publish.yml")
     merge = wf["jobs"]["merge"]
-    assert merge["outputs"]["image-ref"] == "${{ steps.image.outputs.ref }}"
     assert merge["outputs"]["tag"] == "${{ steps.tag.outputs.tag }}"
-    assert any(s.get("id") == "image" for s in merge["steps"])
     assert any(s.get("id") == "tag" for s in merge["steps"])
     sbom = json.dumps(wf["jobs"]["sbom"])
-    assert "needs.merge.outputs.image-ref" in sbom
+    assert "needs.merge.outputs.image-ref" not in sbom
     assert "ghcr.io/" not in sbom
     assert "docker.io/" not in sbom
+    image_steps = [s for s in wf["jobs"]["sbom"]["steps"] if s.get("id") == "image"]
+    assert len(image_steps) == 1, "the sbom job computes its own image ref"
+    # Workflow-level env vars are shell variables already; no expression in run:.
+    assert 'ref=${REGISTRY_GHCR}/strausmann/${IMAGE_NAME}"' in image_steps[0]["run"]
+    assert "github.repository" not in json.dumps(image_steps[0])
+    gen = next(s for s in wf["jobs"]["sbom"]["steps"] if s.get("id") == "sbom")
+    assert gen["env"]["IMAGE_REF"] == "${{ steps.image.outputs.ref }}"
     steps = wf["jobs"]["sbom"]["steps"]
     runs = "\n".join(str(s.get("run", "")) for s in steps)
     assert "${{" not in runs, "expressions reach run: only through env:"
@@ -692,9 +780,16 @@ def test_signing_is_keyless() -> None:
     for needle in ("COSIGN_KEY", "COSIGN_PASSWORD", "--key"):
         assert needle not in text, needle
     wf = _load("docker-publish.yml")
-    assert wf["permissions"]["id-token"] == "write"
-    merge_permissions = wf["jobs"]["merge"].get("permissions")
-    assert merge_permissions is None or merge_permissions.get("id-token") == "write"
+    # Only the job that signs can mint an OIDC token; the build legs cannot.
+    assert wf["permissions"] == {"contents": "read", "packages": "write"}
+    assert wf["jobs"]["merge"]["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+    }
+    for job_name, job in wf["jobs"].items():
+        if job_name != "merge":
+            assert "id-token" not in job.get("permissions", {}), job_name
     # The caller caps the permissions of the called workflow.
     assert _load("release.yml")["jobs"]["images"]["permissions"]["id-token"] == "write"
     assert _load("preview-image.yml")["jobs"]["publish"]["permissions"]["id-token"] == "write"
@@ -781,3 +876,99 @@ def test_reuse_job() -> None:
     assert reuse[0]["uses"] == "fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5"
     assert not reuse[0].get("continue-on-error")
     assert "# v6.0.0" in _text("ci.yml")
+
+
+def _login_steps(job: dict[str, Any]) -> list[dict[str, Any]]:
+    return [s for s in job["steps"] if str(s.get("name", "")).startswith("Log in to ")]
+
+
+def test_registry_logins_retry_without_leaking_credentials() -> None:
+    """A slow auth endpoint must not drop a release image (#325).
+
+    Source-text guard: the logins are shell steps with a bounded loop, the
+    secret goes in over stdin. It cannot prove the retry works on GitHub.
+    """
+    wf = _load("docker-publish.yml")
+    assert "docker/login-action" not in _text("docker-publish.yml")
+    total = 0
+    for job_name in ("build", "merge", "sbom"):
+        steps = _login_steps(wf["jobs"][job_name])
+        assert steps, f"{job_name} has no registry login"
+        for step in steps:
+            total += 1
+            run = str(step.get("run", ""))
+            assert "for attempt in 1 2 3 4; do" in run, f"{job_name}: {step['name']} is not retried"
+            assert "-lt 4" in run and "sleep" in run
+            assert "exit 1" in run, f"{job_name}: a persistent failure must still fail"
+            assert "--password-stdin" in run
+            assert re.search(r"printf '%s' \"\$\w+\" \| docker login", run)
+            # No secret expression inside the script text (it goes through env).
+            assert "secrets." not in run
+    assert total == 5  # GHCR in build, merge, sbom; Docker Hub in build, merge
+
+
+def test_missing_images_are_reported_with_the_rebuild_command() -> None:
+    wf = _load("release.yml")
+    job = wf["jobs"]["images-missing"]
+    assert job["needs"] == ["release", "images"]
+    cond = str(job["if"])
+    assert "always()" in cond
+    assert "new-release-published == 'true'" in cond
+    assert "!inputs.dry_run" in cond
+    assert "needs.images.result != 'success'" in cond
+    assert job["permissions"] == {}
+    run = str(job["steps"][0]["run"])
+    assert "GITHUB_STEP_SUMMARY" in run
+    assert "## Release images missing: ${VERSION}" in run
+    # Primary path: rerun the failed jobs of the same run. It keeps the run's ref
+    # (refs/heads/main), so the images are signed and release-sbom runs again.
+    env = job["steps"][0]["env"]
+    assert env["RUN_ID"] == "${{ github.run_id }}"
+    assert '[[ "$RUN_ID" =~ ^[0-9]+$ ]]' in run
+    assert "gh run rerun ${RUN_ID} --failed" in run
+    # Fallback: dispatch on main (a signing ref); the tag input picks the commit.
+    assert "gh workflow run docker-publish.yml --ref main -f tag=${VERSION}" in run
+    assert "gh release upload v${VERSION} labelyard-${VERSION}.cdx.json" in run
+    # A dispatch on the tag ref publishes unsigned images (refs/tags/* is not signed).
+    assert "--ref v" not in run
+    assert "secrets." not in json.dumps(job)
+
+
+def test_rebuild_dispatch_on_main_signs() -> None:
+    """The fallback `--ref main -f tag=<v>` publishes signed images.
+
+    test_release_builds_from_tag pins that a set tag input checks out the tag's
+    commit; this pins that the dispatch ref, main, is a signing ref and a tag
+    ref is not.
+    """
+    steps = _merge_steps()
+    run = str(steps[_signing_step_index(steps)]["run"])
+    match = re.search(r"signed_refs='([^']+)'", run)
+    assert match
+    assert re.fullmatch(match.group(1), "refs/heads/main")
+    assert not re.fullmatch(match.group(1), "refs/tags/v1.6.0")
+
+
+def test_no_job_output_carries_the_image_ref_or_owner() -> None:
+    """GitHub drops job outputs containing a secret value (DOCKERHUB_USERNAME
+    equals the Docker Hub namespace), so such an output arrives empty downstream."""
+    for name in ("docker-publish.yml", "release.yml", "preview-image.yml"):
+        for job_name, job in _load(name)["jobs"].items():
+            for key, value in (job.get("outputs") or {}).items():
+                where = f"{name}:{job_name}.{key}"
+                text = str(value)
+                assert "image-ref" not in key, where
+                for needle in (
+                    "outputs.ref",
+                    "REGISTRY_",
+                    "IMAGE_NAME",
+                    "DOCKERHUB_",
+                    "docker.io",
+                    "bstrausmann",
+                    "strausmann",
+                    "github.repository",
+                    "github.actor",
+                    "repository_owner",
+                ):
+                    assert needle not in text, where
+                assert "steps.image." not in text, where

@@ -464,7 +464,12 @@ class CliTest(unittest.TestCase):
         self.assertEqual((code, out), (0, "1.6.0\n1.5.1\n"))
 
     def test_dockerhub_delete_deletes_each_tag(self) -> None:
-        env = {"DOCKERHUB_USERNAME": "User", "DOCKERHUB_ADMIN_TOKEN": "pat", "HUB_REPOSITORY": "labelyard"}
+        env = {
+            "DOCKERHUB_USERNAME": "User",
+            "DOCKERHUB_ADMIN_TOKEN": "pat",
+            "HUB_NAMESPACE": "Org",
+            "HUB_REPOSITORY": "labelyard",
+        }
         with (
             mock.patch.dict("os.environ", env),
             mock.patch.object(g, "dockerhub_token", return_value="jwt") as token,
@@ -475,7 +480,7 @@ class CliTest(unittest.TestCase):
         token.assert_called_once_with("User", "pat")
         self.assertEqual(
             delete.call_args_list,
-            [mock.call("user", "labelyard", "1.6.0-rc.1", "jwt"), mock.call("user", "labelyard", "1.6.0-rc.2", "jwt")],
+            [mock.call("org", "labelyard", "1.6.0-rc.1", "jwt"), mock.call("org", "labelyard", "1.6.0-rc.2", "jwt")],
         )
         self.assertNotIn("pat", out)
 
@@ -486,7 +491,12 @@ class CliTest(unittest.TestCase):
         token.assert_not_called()
 
     def test_dockerhub_delete_stops_at_the_first_error(self) -> None:
-        env = {"DOCKERHUB_USERNAME": "u", "DOCKERHUB_ADMIN_TOKEN": "p", "HUB_REPOSITORY": "labelyard"}
+        env = {
+            "DOCKERHUB_USERNAME": "u",
+            "DOCKERHUB_ADMIN_TOKEN": "p",
+            "HUB_NAMESPACE": "org",
+            "HUB_REPOSITORY": "labelyard",
+        }
         error = urllib.error.HTTPError("x", 403, "x", {}, None)  # type: ignore[arg-type]
         with (
             mock.patch.dict("os.environ", env),
@@ -498,7 +508,12 @@ class CliTest(unittest.TestCase):
         self.assertEqual(delete.call_count, 1)
 
     def test_dockerhub_tags(self) -> None:
-        env = {"DOCKERHUB_USERNAME": "User", "DOCKERHUB_ADMIN_TOKEN": "pat", "HUB_REPOSITORY": "labelyard"}
+        env = {
+            "DOCKERHUB_USERNAME": "User",
+            "DOCKERHUB_ADMIN_TOKEN": "pat",
+            "HUB_NAMESPACE": "Org",
+            "HUB_REPOSITORY": "labelyard",
+        }
         with (
             mock.patch.dict("os.environ", env),
             mock.patch.object(g, "dockerhub_token", return_value="jwt"),
@@ -506,7 +521,17 @@ class CliTest(unittest.TestCase):
         ):
             code, out = self.run_cli(["dockerhub-tags"], "")
         self.assertEqual((code, out), (0, "dev\n1.6.0\n"))
-        fetch.assert_called_once_with("user", "labelyard", "jwt")
+        fetch.assert_called_once_with("org", "labelyard", "jwt")
+        # The login uses the secret name, the repository path the namespace.
+
+    def test_dockerhub_namespace_is_required_and_not_the_login(self) -> None:
+        env = {"DOCKERHUB_USERNAME": "User", "DOCKERHUB_ADMIN_TOKEN": "pat", "HUB_REPOSITORY": "labelyard"}
+        with (
+            mock.patch.dict("os.environ", env, clear=True),
+            mock.patch.object(g, "dockerhub_token", return_value="jwt"),
+            self.assertRaises(KeyError),
+        ):
+            self.run_cli(["dockerhub-tags"], "")
 
     def test_select_deletions_needs_the_released_file(self) -> None:
         code, _ = self.run_cli(["select-deletions"], "1.6.0-rc.1\n")

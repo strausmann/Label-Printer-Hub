@@ -53,6 +53,8 @@ export interface Session {
   user: string | null;
   /** A bootstrap session: it may only create the first admin key (D7). */
   bootstrap: boolean;
+  /** Bootstrap session only: the variable the deployment set to enable the bootstrap key. */
+  bootstrapVariable: string | null;
   csrfToken: string | null;
   refetch: () => Promise<unknown>;
   signIn: (key: string) => Promise<void>;
@@ -144,6 +146,7 @@ export function useSession(): Session {
     source: data?.source ?? null,
     user: data?.user ?? null,
     bootstrap: data?.bootstrap ?? false,
+    bootstrapVariable: data?.bootstrap_variable ?? null,
     csrfToken,
     refetch: query.refetch,
     signIn,

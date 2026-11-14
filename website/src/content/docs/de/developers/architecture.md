@@ -152,7 +152,9 @@ Die API-Typen der Weboberfläche werden aus dem OpenAPI-Dokument des Backends er
 ## Releases ([ADR 0008](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0008-conventional-commits-and-semantic-release.md))
 
 - Conventional Commits bestimmen über semantic-release die Versionssprünge
-- Push nach `main` → Release-Pipeline: Tag → GitHub-Release → Docker-Image auf GHCR + Docker Hub
+- Der Release-Workflow läuft jede Nacht um 04:00 UTC oder per manuellem Start auf `main`, nicht bei jedem Push. Er veröffentlicht nur, wenn releasefähige Commits vorliegen: Tag → GitHub-Release → Docker-Image auf GHCR + Docker Hub
+- Die Registry-Anmeldungen im Image-Workflow werden bis zu viermal versucht; ein dauerhafter Fehler lässt den Lauf fehlschlagen
+- Schlagen die Image-Jobs fehl, obwohl Tag und GitHub-Release schon existieren, nennt die Step-Summary des Laufs die fehlende Version und die Lauf-ID. Neu gebaut wird mit `gh run rerun <lauf-id> --failed`: Das wiederholt die Image-Jobs und die Release-SBOM auf `refs/heads/main`, die Images werden also signiert und die SBOM wird angehängt. Lässt sich der Lauf nicht mehr wiederholen, baut `gh workflow run docker-publish.yml --ref main -f tag=<version>` den Commit des Tags; die SBOM kommt dann von Hand mit `gh release upload` dazu. Achtung: Dieser Start setzt `latest`, `X.Y` und `X` auf diese Version; nutze ihn nur für das neueste stabile Release. Nicht auf dem Tag-Ref starten: Images aus einem Tag-Ref werden nicht signiert
 - Tag-Schema ([ADR 0007](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0007-docker-image-tag-scheme.md)): Jedes stabile Release veröffentlicht `1.0.0`, `1.0`, `1` und `latest` – Vorabversionen bekommen nur die volle Version
 - Mehrere Architekturen: `linux/amd64` + `linux/arm64`
 

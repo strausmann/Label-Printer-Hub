@@ -107,6 +107,7 @@ function BootstrapScreen() {
         ).plaintext
       }
       onContinue={session.signIn}
+      variable={session.bootstrapVariable}
     />
   );
 }

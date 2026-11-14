@@ -15,13 +15,16 @@ interface Props {
   onCreate: () => Promise<string>;
   /** Signs in with the new key; the bootstrap session ends once a real admin key exists (D7). */
   onContinue: (key: string) => Promise<void>;
+  /** Name of the variable the deployment set (from the session; a name, never a value). */
+  variable?: string | null;
 }
 
 /**
  * First sign-in with the one-time bootstrap key: the only thing it can do is create the
  * first admin key. The key is shown once, then the hub asks to remove the bootstrap variable.
  */
-export function BootstrapKeyCreated({ onCreate, onContinue }: Props) {
+export function BootstrapKeyCreated({ onCreate, onContinue, variable }: Props) {
+  const variableName = variable ?? "LABELYARD_BOOTSTRAP_ADMIN_KEY";
   const { t } = useLingui();
   const [key, setKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -91,7 +94,7 @@ export function BootstrapKeyCreated({ onCreate, onContinue }: Props) {
             <p>{t`This key is shown only once. Store it in your password manager before you continue.`}</p>
             <p>
               <Trans>
-                Remove <code>LABELYARD_BOOTSTRAP_ADMIN_KEY</code> from the container; it no longer works once this key exists.
+                Remove <code>{variableName}</code> from the container; it no longer works once this key exists.
               </Trans>
             </p>
             <Button onPress={() => void proceed(key)} isDisabled={busy} className={PRIMARY_BUTTON}>
