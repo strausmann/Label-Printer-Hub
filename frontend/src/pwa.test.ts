@@ -68,13 +68,18 @@ describe("pwa", () => {
     // AGPL section 13: the installed app must hand out its licence. /licenses/*.txt is not precached, so
     // without this entry the navigation fallback answers the About page's link with index.html.
     const deny = workbox.navigateFallbackDenylist ?? [];
-    for (const path of ["/licenses/agpl-3.0.txt", "/licenses/"]) {
+    for (const path of ["/licenses/agpl-3.0.txt", "/licenses/", "/licenses/backend.json", "/frontend.cdx.json"]) {
       expect(
         deny.some((re) => re.test(path)),
         path,
       ).toBe(true);
     }
-    expect(deny.some((re) => re.test("/licensesx"))).toBe(false);
+    for (const path of ["/licensesx", "/frontend.cdx.jsonx", "/frontendXcdx.json"]) {
+      expect(
+        deny.some((re) => re.test(path)),
+        path,
+      ).toBe(false);
+    }
   });
 
   it("serves its manifest as a plain file, not a generated one", () => {

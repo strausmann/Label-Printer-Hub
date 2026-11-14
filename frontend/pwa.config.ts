@@ -25,9 +25,15 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     // browsers without SVG favicons; the app itself never shows them.
     globIgnores: ["scalar/**", "brand/social-card.png", "brand/mark-mono.svg", "favicon-16.png", "favicon-32.png"],
     navigateFallback: "/index.html",
-    // /licenses/ holds the licence texts the About page links (AGPL section 13); they are not precached,
-    // so the fallback would answer that link with the app shell instead of the text.
-    navigateFallbackDenylist: [/^\/api\//, /^\/docs(\/|$)/, /^\/openapi\.json$/, /^\/licenses\//],
+    // /licenses/ holds the licence texts the About page links (AGPL section 13), /frontend.cdx.json is the
+    // web bundle's SBOM; neither is precached, so the fallback would answer them with the app shell.
+    navigateFallbackDenylist: [
+      /^\/api\//,
+      /^\/docs(\/|$)/,
+      /^\/openapi\.json$/,
+      /^\/licenses\//,
+      /^\/frontend\.cdx\.json$/,
+    ],
     runtimeCaching: [],
     cleanupOutdatedCaches: true,
     clientsClaim: true,
