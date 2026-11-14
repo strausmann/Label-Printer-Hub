@@ -51,6 +51,7 @@ Renaming is optional for now. The hub reads `LABELYARD_*`; the former `PRINTER_H
 
 - A `LABELYARD_` variable always wins over its `PRINTER_HUB_` twin.
 - Empty values are ignored on both prefixes, so a compose line such as `PRINTER_HUB_X=${PRINTER_HUB_X:-}` never overrides anything.
+- The same rule means that an empty `LABELYARD_X=` does **not** switch off a `PRINTER_HUB_X` that is set: the old value stays in effect. To switch a setting off, remove the old variable, or set the new one to an explicit value. This matters most for the security settings `PRINTER_HUB_SSO_TRUST_TOKEN` (empty disables the SSO header path), `PRINTER_HUB_BOOTSTRAP_ADMIN_KEY`, `PRINTER_HUB_TRUST_PANGOLIN_BASIC_BYPASS` and `PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER`: set `LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS=false` and `LABELYARD_TRUST_LEGACY_PANGOLIN_USER=false` explicitly, and delete the old token and key lines rather than blanking the new ones.
 - At startup the hub logs one warning line listing the old names that take effect, so you know what to rename. You find it in the container output (`docker logs`) and in the hub's log view on the System page. If an old name is overridden by a `LABELYARD_` twin, a second line lists those ignored names. Both lines carry **names** only, never values.
 - The old names are read until at least 2.0.0.
 - The PDF font override follows the same pattern: `LABELYARD_PDF_FONT` is read first, the old `PRINTHUB_PDF_FONT` when the new one is unset or empty, with a warning that names the variable.
