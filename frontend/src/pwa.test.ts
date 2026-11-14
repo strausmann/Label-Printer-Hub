@@ -82,7 +82,7 @@ describe("pwa", () => {
 
   it("does not precache the brand files the app never shows", () => {
     const ignored = workbox.globIgnores ?? [];
-    expect(ignored).toEqual(expect.arrayContaining(["brand/social-card.png", "brand/mark-mono.svg"]));
+    expect(ignored).toEqual(expect.arrayContaining(["brand/social-card.png", "brand/mark-mono.svg", "favicon-16.png", "favicon-32.png"]));
   });
 
   it("carries the Labelyard name", () => {
