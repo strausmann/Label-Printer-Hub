@@ -142,7 +142,7 @@ class SQLiteJobStore(JobStore):
         detail: dict[str, Any] | None,
         *,
         result: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         """Non-terminal -> FAILED with ``"<code>: <message>"``; ``detail`` into ``result``.
 
         One commit: the result (``result`` or the stored one, plus ``error_detail``) and the
@@ -151,12 +151,12 @@ class SQLiteJobStore(JobStore):
         async with self._session_factory() as session:
             job = await jobs_repo.get(session, job_id)
             if job is None:
-                return
+                return False
             if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
                 logger.warning(
                     "mark_failed_code called on job %s in terminal state %s", job_id, job.state
                 )
-                return
+                return False
             merged = dict(result) if result is not None else dict(job.result or {})
             if detail is not None:
                 merged["error_detail"] = dict(detail)
@@ -166,6 +166,7 @@ class SQLiteJobStore(JobStore):
                 f"{code}: {message}",
                 result=merged if (result is not None or detail is not None) else None,
             )
+            return True
 
     async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
         """Replace the payload of a QUEUED job; False when unknown or no longer QUEUED."""

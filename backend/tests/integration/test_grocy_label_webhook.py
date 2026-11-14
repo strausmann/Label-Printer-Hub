@@ -731,3 +731,66 @@ async def test_cancel_during_preflight_never_prints(hub: Hub) -> None:
     assert row.state == "cancelled"
     assert "rendered_tape_mm" not in row.payload
     assert hub.backend.printed_images == []
+
+
+# --- events only for real state changes (review F3, F5) --------------------------------------
+
+
+def _job_events(hub: Hub, job_id: str) -> list[tuple[str, str]]:
+    return [
+        (str(e.data["from_state"]), str(e.data["to_state"]))
+        for e in hub.events
+        if e.event_type == "job.state_changed" and e.data.get("job_id") == job_id
+    ]
+
+
+async def test_cancelled_job_whose_preflight_fails_is_not_announced_failed(hub: Hub) -> None:
+    hub.slow_preflight(1.0, error=PrinterOfflineError("offline"))
+    async with hub.running() as (client, _app):
+        r = await _post(client)
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+        cancel = await client.post(
+            f"/api/v1/jobs/{job_id}/cancel", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert 200 <= cancel.status_code < 300, cancel.text
+        await asyncio.sleep(1.5)  # past the failing preflight
+        row = await _row(job_id)
+    assert row.state == "cancelled"
+    assert ("queued", "failed") not in _job_events(hub, job_id)
+
+
+async def test_cancel_between_payload_and_queue_hand_off_never_prints(
+    hub: Hub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window after ``set_queued_payload`` and before ``submit_with_id`` (review F5)."""
+    from app.services.print_queue import PrintQueue
+
+    release = asyncio.Event()
+    original = PrintQueue.submit_with_id
+
+    async def held(self: PrintQueue, *args: Any, **kwargs: Any) -> UUID:
+        await release.wait()
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(PrintQueue, "submit_with_id", held)
+    async with hub.running() as (client, _app):
+        r = await _post(client)
+        assert r.status_code == 202, r.text
+        job_id = r.json()["job_id"]
+
+        async def completed() -> bool:
+            return "rendered_tape_mm" in (await _row(job_id)).payload
+
+        await _until(completed)
+        cancel = await client.post(
+            f"/api/v1/jobs/{job_id}/cancel", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert 200 <= cancel.status_code < 300, cancel.text
+        release.set()
+        await asyncio.sleep(0.5)  # the worker takes the job and refuses it
+        row = await _row(job_id)
+    assert row.state == "cancelled"
+    assert hub.backend.printed_images == []
+    events = _job_events(hub, job_id)
+    assert not any(to in ("printing", "failed") for _from, to in events), events

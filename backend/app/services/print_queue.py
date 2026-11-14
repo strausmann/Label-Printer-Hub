@@ -2262,17 +2262,15 @@ class PrintQueue:
         self._queues[printer_id].put_nowait(job)
         logger.info("Job %s (persisted) queued on %s", job_key, printer_id)
 
-    def _veto_print(self, job: Job, printer_id: UUID) -> None:
-        """End an in-memory PRINTING job whose DB row refused the pick-up."""
+    def _veto_print(self, job: Job) -> None:
+        """End an in-memory PRINTING job whose DB row refused the pick-up.
+
+        Nothing is announced: the row already holds its terminal state (cancelled through the
+        API), and neither ``printing`` nor ``failed`` was ever true for it (#281 review F5).
+        """
         job.error_code = "cancelled_before_print"
         job.error_msg = "cancelled_before_print"
         JobStateMachine.transition(job, JobState.FAILED)
-        self._notify_state_change(
-            job,
-            JobState.PRINTING,
-            JobState.FAILED,
-            queue_depth=self._queue_depth(printer_id),
-        )
         logger.warning("Job %s not printed: its row is no longer queued", job.id)
 
     def _drop_unqueued(self, job: Job) -> None:
@@ -2362,12 +2360,6 @@ class PrintQueue:
             # cancel was accepted and the job was printed anyway.
             _from = job.state
             JobStateMachine.transition(job, JobState.PRINTING)
-            self._notify_state_change(
-                job,
-                _from,
-                JobState.PRINTING,
-                queue_depth=self._queue_depth(printer_id),
-            )
 
             try:
                 # Phase 2: DB-State QUEUED->PRINTING persistieren (bridge: dataclass.id ist str)
@@ -2376,8 +2368,15 @@ class PrintQueue:
                     # is authoritative, never print.  The state machine has no
                     # PRINTING -> CANCELLED edge, so the in-memory job ends FAILED
                     # (which also releases wait_for_job); the terminal row is untouched.
-                    self._veto_print(job, printer_id)
+                    self._veto_print(job)
                     continue
+                # Announced once the row agreed: a vetoed job never shows as printing (#281).
+                self._notify_state_change(
+                    job,
+                    _from,
+                    JobState.PRINTING,
+                    queue_depth=self._queue_depth(printer_id),
+                )
                 if job.tape_mm is None:
                     raise RuntimeError(
                         f"Job {job.id} has no tape_mm — submit() and retry_job() must populate it"
@@ -2762,15 +2761,15 @@ class PrintQueue:
                 continue
             try:
                 JobStateMachine.transition(job, JobState.PRINTING)
+                if not await self._store.mark_printing(UUID(job.id)):
+                    self._veto_print(job)  # row cancelled via the API: skip item
+                    continue
                 self._notify_state_change(
                     job,
                     JobState.QUEUED,
                     JobState.PRINTING,
                     queue_depth=self._queue_depth(printer_id),
                 )
-                if not await self._store.mark_printing(UUID(job.id)):
-                    self._veto_print(job, printer_id)  # row cancelled via the API: skip item
-                    continue
                 active_jobs.append(job)
                 payloads.append(batch.image_payloads[idx])
             except InvalidStateTransitionError:

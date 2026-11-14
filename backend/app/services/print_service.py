@@ -420,8 +420,10 @@ class PrintService:
             elif isinstance(exc, QrPayloadTooLongError):
                 detail = {"length": exc.length, "max_bytes": exc.max_bytes}
             message = _DEFERRED_FAILURE_MESSAGES.get(code, _DEFERRED_FAILURE_FALLBACK)
-            await self._store.mark_failed_code(job_id, code, message, detail)
-            self._publish_failed(job_id, code)
+            # Announced only when the row changed: a job the user cancelled meanwhile stays
+            # cancelled and must not show up as failed (review F3).
+            if await self._store.mark_failed_code(job_id, code, message, detail):
+                self._publish_failed(job_id, code)
 
     def _publish_failed(self, job_id: UUID, error_code: str) -> None:
         """Announce a job that failed outside the queue worker (``job.state_changed``)."""

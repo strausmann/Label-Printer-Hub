@@ -107,13 +107,14 @@ class JobStore(Protocol):
         detail: dict[str, Any] | None,
         *,
         result: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         """Transition any non-terminal -> FAILED with ``error = "<code>: <message>"``.
 
         ``result`` (when given) replaces the stored result, and ``detail`` (when given) is
         merged into it as ``error_detail`` — all in the same write as the state change, so a
         crash leaves either the old row or the finished one, never a half-written mix.
-        Silently no-op if job_id does not exist or the row is already terminal.
+        Silently no-op if job_id does not exist or the row is already terminal. Returns
+        whether the row changed (a caller announces the failure only then).
         """
 
     async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
@@ -228,14 +229,15 @@ class MemoryJobStore(JobStore):
         detail: dict[str, Any] | None,
         *,
         result: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         job = self._jobs.get(job_id)
         if job is None or job.state in _TERMINAL:
-            return
+            return False
         job.state = JobState.FAILED.value
         job.error = f"{code}: {message}"
         job.result = _with_detail(dict(result) if result is not None else job.result, detail)
         job.finished_at = datetime.now(UTC)
+        return True
 
     async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
         job = self._jobs.get(job_id)
