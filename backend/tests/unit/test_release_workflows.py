@@ -641,7 +641,7 @@ def test_sbom_uses_merge_image_ref() -> None:
     # Workflow-level env vars are shell variables already; no expression in run:.
     assert 'ref=${REGISTRY_GHCR}/strausmann/${IMAGE_NAME}"' in image_steps[0]["run"]
     assert "github.repository" not in json.dumps(image_steps[0])
-    gen = [s for s in wf["jobs"]["sbom"]["steps"] if s.get("id") == "sbom"][0]
+    gen = next(s for s in wf["jobs"]["sbom"]["steps"] if s.get("id") == "sbom")
     assert gen["env"]["IMAGE_REF"] == "${{ steps.image.outputs.ref }}"
     steps = wf["jobs"]["sbom"]["steps"]
     runs = "\n".join(str(s.get("run", "")) for s in steps)
@@ -925,6 +925,14 @@ def test_no_job_output_carries_the_image_ref_or_owner() -> None:
                 where = f"{name}:{job_name}.{key}"
                 text = str(value)
                 assert "image-ref" not in key, where
-                for needle in ("outputs.ref", "REGISTRY_", "IMAGE_NAME", "strausmann", "github.repository", "github.actor", "repository_owner"):
+                for needle in (
+                    "outputs.ref",
+                    "REGISTRY_",
+                    "IMAGE_NAME",
+                    "strausmann",
+                    "github.repository",
+                    "github.actor",
+                    "repository_owner",
+                ):
                     assert needle not in text, where
                 assert "steps.image." not in text, where
