@@ -506,3 +506,40 @@ class TestGetPrinter:
         svc = PrinterAdminService(db_session, audit_user="testuser")
         printer = await svc.get_printer("unknown-slug")
         assert printer is None
+
+
+class TestMergeSnmpCommunity:
+    """Write-only community (#296): kept only for the same SNMP target."""
+
+    @staticmethod
+    def _conn(host: str, port: int = 9100, community: str | None = None) -> dict:
+        snmp: dict = {"discover": True}
+        if community is not None:
+            snmp["community"] = community
+        return {"host": host, "port": port, "snmp": snmp}
+
+    @pytest.mark.parametrize(
+        ("stored_host", "new_host"),
+        [
+            ("2001:db8::1", "2001:DB8:0:0::1"),
+            ("[2001:db8::1]", "2001:db8::1"),
+            ("Printer.Example.Invalid.", "printer.example.invalid"),
+        ],
+    )
+    def test_same_target_spelled_differently_keeps_stored(
+        self, stored_host: str, new_host: str
+    ) -> None:
+        from app.services.printer_admin_service import merge_snmp_community
+
+        merged = merge_snmp_community(self._conn(new_host), self._conn(stored_host, community="k"))
+        assert merged["snmp"]["community"] == "k"
+
+    @pytest.mark.parametrize(("host", "port"), [("2001:db8::2", 9100), ("2001:db8::1", 161)])
+    def test_new_target_without_community_raises(self, host: str, port: int) -> None:
+        from app.services.printer_admin_service import (
+            SnmpCommunityRequiredError,
+            merge_snmp_community,
+        )
+
+        with pytest.raises(SnmpCommunityRequiredError):
+            merge_snmp_community(self._conn(host, port), self._conn("2001:db8::1", community="k"))

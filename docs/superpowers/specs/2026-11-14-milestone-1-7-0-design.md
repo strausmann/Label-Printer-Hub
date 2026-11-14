@@ -113,6 +113,12 @@ never carry `str(exc)` of an upstream or integration error (CWE-209). A job reco
   `connection.snmp.community` by `connection.snmp.community_set: bool`. On create and update, a `snmp` object
   **without** a `community` key (or with `null`) keeps the stored community (`"public"` on create); a non-empty string
   replaces it. The rest of `connection` is still replaced as a whole.
+- **R-296-5a (security review of Task 1, 2026-11-14):** the stored community is kept only for the same SNMP target.
+  When an update changes `connection.host` or `connection.port` (compared after normalisation: case, blanks and a
+  trailing dot of a name; an IP address by value) and carries no `community`, the hub answers 422
+  `snmp_community_required` and saves nothing; it never resets to `public` silently. Otherwise pointing a printer at a
+  host of the caller's choice would send the stored community there. A row without a stored community gets `public`.
+  The form (Task 2) therefore requires the community field when the host or port changes and a community is stored.
 - **R-296-6 (backend, review F3):** the tape backends receive the stored community and use it for the preflight, so
   printing and discovery use the same community.
 - Docs: `docs/getting-started.md` section 2 ("Turn on status discovery") uses the form; the `curl` example moves to

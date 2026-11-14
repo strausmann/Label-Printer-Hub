@@ -33,21 +33,31 @@ ADMIN = "/api/v1/admin/printers"
 
 
 @pytest.fixture(autouse=True)
-def _no_snmp() -> Iterator[None]:
-    """The runtime wires printers with ``snmp.discover``; keep every SNMP query local."""
-    preflight = AsyncMock(return_value=PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12))
+def snmp_calls() -> Iterator[dict[str, AsyncMock]]:
+    """The runtime wires printers with ``snmp.discover``; keep every SNMP query local.
+
+    Yields the stubs, so a test can assert that no SNMP request was made at all.
+    """
+    stubs = {
+        "model": AsyncMock(return_value="PT-P750W"),
+        "probe_preflight": AsyncMock(
+            return_value=PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12)
+        ),
+        "identity": AsyncMock(return_value=None),
+        "print_preflight": AsyncMock(
+            return_value=PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12)
+        ),
+    }
     with (
+        patch("app.services.printer_runtime._resolve_model_id_from_config", stubs["model"]),
         patch(
-            "app.services.printer_runtime._resolve_model_id_from_config",
-            AsyncMock(return_value="PT-P750W"),
+            "app.services.producers.status_probe_producer.query_preflight",
+            stubs["probe_preflight"],
         ),
-        patch("app.services.producers.status_probe_producer.query_preflight", preflight),
-        patch(
-            "app.services.producers.status_probe_producer.query_identity",
-            AsyncMock(return_value=None),
-        ),
+        patch("app.services.producers.status_probe_producer.query_identity", stubs["identity"]),
+        patch("app.printer_backends.ptouch_backend.query_preflight", stubs["print_preflight"]),
     ):
-        yield
+        yield stubs
 
 
 def _factory():
@@ -149,9 +159,11 @@ async def test_printer_read_key_never_sees_community(api_client_with_seed, caplo
     assert PLANTED not in caplog.text
 
 
-async def _put_snmp(client, slug: str, snmp: dict[str, Any]):
+async def _put_snmp(
+    client, slug: str, snmp: dict[str, Any], host: str = "192.0.2.41", port: int = 9100
+):
     headers = await _key(["admin"])
-    body = {"connection": {"host": "192.0.2.41", "port": 9100, "snmp": snmp}}
+    body = {"connection": {"host": host, "port": port, "snmp": snmp}}
     return await client.put(f"{ADMIN}/{slug}", json=body, headers=headers)
 
 
@@ -267,3 +279,106 @@ async def test_discovery_without_any_community_is_refused(api_client_with_seed) 
     assert resp.status_code == 422, resp.text
     assert resp.json()["detail"]["error_code"] == "snmp_community_required"
     assert (await _stored_connection(printer.id))["snmp"] == {"discover": False, "community": ""}
+
+
+# --- A new SNMP target needs the community again (security fix, #296) -------------------
+#
+# The community is write-only. Keeping it across a change of host or port would send the
+# stored secret over SNMP to whatever host the request names, so a changed target without a
+# community is refused before anything is saved or wired.
+
+
+def _call_target(args: Any) -> tuple[str, int] | None:
+    """The (host, port) an SNMP stub was called for: a host argument or a printer config."""
+    values = [*args.args, *args.kwargs.values()]
+    for value in values:
+        host = getattr(value, "host", None)
+        if host is not None:
+            return str(host), int(getattr(value, "port", 9100))
+    for value in values:
+        if isinstance(value, str):
+            return value, 9100  # query_preflight(host, ...): SNMP itself has no print port
+    return None
+
+
+@pytest.mark.parametrize(
+    ("host", "port"),
+    [("198.51.100.7", 9100), ("192.0.2.41", 9101)],
+    ids=["host-changed", "port-changed"],
+)
+async def test_changed_target_without_community_is_refused(
+    api_client_with_seed, snmp_calls, host: str, port: int
+) -> None:
+    printer = await _insert_printer()
+    resp = await _put_snmp(api_client_with_seed, printer.slug, {"discover": True}, host, port)
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"]["error_code"] == "snmp_community_required"
+    assert PLANTED not in resp.text
+    assert await _stored_connection(printer.id) == {
+        "host": "192.0.2.41",
+        "port": 9100,
+        "snmp": {"discover": True, "community": PLANTED},
+    }
+    # The hub's start-up wires the stored row (old target) during the first request; what
+    # must never happen is an SNMP call towards the target the refused request named.
+    for name, call in snmp_calls.items():
+        for args in call.await_args_list:
+            assert (host, port) != _call_target(args), f"SNMP stub {name} reached {host}:{port}"
+
+
+async def test_changed_target_with_null_community_is_refused(api_client_with_seed) -> None:
+    printer = await _insert_printer(discover=False)
+    resp = await _put_snmp(
+        api_client_with_seed, printer.slug, {"discover": False, "community": None}, "198.51.100.7"
+    )
+    assert resp.status_code == 422, resp.text
+    assert (await _stored_connection(printer.id))["host"] == "192.0.2.41"
+
+
+async def test_changed_target_with_community_is_saved(api_client_with_seed) -> None:
+    printer = await _insert_printer()
+    resp = await _put_snmp(
+        api_client_with_seed,
+        printer.slug,
+        {"discover": True, "community": "n3w"},
+        "198.51.100.7",
+    )
+    assert resp.status_code == 200, resp.text
+    stored = await _stored_connection(printer.id)
+    assert stored["host"] == "198.51.100.7"
+    assert stored["snmp"]["community"] == "n3w"
+
+
+async def test_same_target_after_normalisation_keeps_stored(api_client_with_seed) -> None:
+    """Case and surrounding blanks of the host are not a new target."""
+    async with _factory()() as s:
+        slug = f"snmp-{uuid4().hex[:8]}"
+        printer = Printer(
+            name=slug,
+            slug=slug,
+            model="PT-P750W",
+            backend="ptouch",
+            connection={
+                "host": "Printer.Example.Invalid",
+                "port": 9100,
+                "snmp": {"discover": True, "community": PLANTED},
+            },
+        )
+        s.add(printer)
+        await s.commit()
+        await s.refresh(printer)
+    resp = await _put_snmp(
+        api_client_with_seed, printer.slug, {"discover": True}, " printer.example.invalid. "
+    )
+    assert resp.status_code == 200, resp.text
+    assert (await _stored_connection(printer.id))["snmp"]["community"] == PLANTED
+
+
+async def test_changed_target_of_a_row_without_community_stores_public(
+    api_client_with_seed,
+) -> None:
+    """Nothing stored, nothing to leak: the new target gets ``public``."""
+    printer = await _insert_printer(community=None, discover=False)
+    resp = await _put_snmp(api_client_with_seed, printer.slug, {"discover": False}, "198.51.100.7")
+    assert resp.status_code == 200, resp.text
+    assert (await _stored_connection(printer.id))["snmp"]["community"] == "public"

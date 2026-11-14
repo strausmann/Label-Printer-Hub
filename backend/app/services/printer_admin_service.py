@@ -16,6 +16,8 @@ Flattening-Helpers (top-level Funktionen fuer einfaches Unit-Testing):
 
 from __future__ import annotations
 
+import contextlib
+import ipaddress
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -136,7 +138,11 @@ class TraysNotAllowedError(Exception):
 
 
 class SnmpCommunityRequiredError(Exception):
-    """``snmp.discover`` is on, but neither the request nor the stored row has a community."""
+    """The request needs an SNMP community it does not carry.
+
+    Either ``snmp.discover`` is on and there is no community at all, or the SNMP target
+    (host or port) changes and the stored community must not follow it.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -154,20 +160,46 @@ def _stored_community(connection: Mapping[str, Any] | None) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _snmp_target(connection: Mapping[str, Any] | None) -> tuple[str, int | None]:
+    """Host and port a community would be sent to, normalised for comparison.
+
+    The host ignores case, surrounding blanks and a trailing dot; an IP address compares by
+    value (``ipaddress``), so two spellings of one address are the same target.
+    """
+    conn = connection or {}
+    host = str(conn.get("host") or "").strip().rstrip(".").lower()
+    with contextlib.suppress(ValueError):  # a name, not an address
+        host = ipaddress.ip_address(host.strip("[]")).compressed
+    port = conn.get("port")
+    try:
+        port_number: int | None = int(port) if port is not None else None
+    except (TypeError, ValueError):
+        port_number = None
+    return host, port_number
+
+
 def merge_snmp_community(
     new_connection: dict[str, Any], stored_connection: Mapping[str, Any] | None
 ) -> dict[str, Any]:
     """Resolve a write-only community: ``None`` keeps the stored one (``public`` without one).
 
-    A non-empty string replaces it. Raises ``SnmpCommunityRequiredError`` when discovery is
-    on and the result is empty (an old row that stored ``""``).
+    A non-empty string replaces it. The stored community is kept only for the same SNMP
+    target: when host or port change, a request without a community is refused, because
+    the hub would otherwise send the stored secret to the new host (#296). Raises
+    ``SnmpCommunityRequiredError`` for that, and when discovery is on and the result is
+    empty (an old row that stored ``""``).
     """
     snmp = new_connection.get("snmp")
     if not isinstance(snmp, dict):
         return new_connection
     if snmp.get("community") is None:
         stored = _stored_community(stored_connection)
-        snmp["community"] = DEFAULT_SNMP_COMMUNITY if stored is None else stored
+        if stored is None:
+            snmp["community"] = DEFAULT_SNMP_COMMUNITY
+        elif _snmp_target(new_connection) != _snmp_target(stored_connection):
+            raise SnmpCommunityRequiredError()
+        else:
+            snmp["community"] = stored
     if snmp.get("discover") and not snmp["community"]:
         raise SnmpCommunityRequiredError()
     return new_connection

@@ -134,7 +134,7 @@ export interface paths {
         get: operations["get_printer_api_v1_admin_printers__slug__get"];
         /**
          * Drucker aktualisieren
-         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). ``connection.snmp.community`` is write-only: omitted or null keeps the stored one; discovery without any community is 422 ``snmp_community_required``. An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
+         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). ``connection.snmp.community`` is write-only: omitted or null keeps the stored one while host and port stay the same; a new host or port without a community, or discovery without any community, is 422 ``snmp_community_required``. An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
          */
         put: operations["update_printer_api_v1_admin_printers__slug__put"];
         post?: never;
@@ -3124,7 +3124,7 @@ export interface components {
         SNMPConfig: {
             /**
              * Community
-             * @description Write-only (#296). Omitted or null keeps the stored community (``public`` on create); a non-empty string replaces it. Responses never carry it; they report ``connection.snmp.community_set`` instead.
+             * @description Write-only (#296). Omitted or null keeps the stored community (``public`` on create), but only while host and port stay the same: an update that changes either must send the community again (422 ``snmp_community_required``), so a stored community is never sent to a new host. A non-empty string replaces it. Responses never carry it; they report ``connection.snmp.community_set`` instead.
              */
             community?: string | null;
             /**

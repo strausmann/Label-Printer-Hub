@@ -30,9 +30,11 @@ MAX_IPP_URI_LENGTH = 1023
 
 
 SNMP_COMMUNITY_DOC = (
-    "Write-only (#296). Omitted or null keeps the stored community (``public`` on create); "
-    "a non-empty string replaces it. Responses never carry it; they report "
-    "``connection.snmp.community_set`` instead."
+    "Write-only (#296). Omitted or null keeps the stored community (``public`` on create), "
+    "but only while host and port stay the same: an update that changes either must send "
+    "the community again (422 ``snmp_community_required``), so a stored community is never "
+    "sent to a new host. A non-empty string replaces it. Responses never carry it; they "
+    "report ``connection.snmp.community_set`` instead."
 )
 
 

@@ -414,8 +414,9 @@ async def get_printer(
         "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. "
         "``connection`` must fit the stored backend (422 ``invalid_connection``); "
         "``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). "
-        "``connection.snmp.community`` is write-only: omitted or null keeps the stored one; "
-        "discovery without any community is 422 ``snmp_community_required``. "
+        "``connection.snmp.community`` is write-only: omitted or null keeps the stored one "
+        "while host and port stay the same; a new host or port without a community, or "
+        "discovery without any community, is 422 ``snmp_community_required``. "
         "An ``ipp`` printer is probed again when its URI changes or a tray key is new. "
         "A change of the connection, the trays or the IPP queue timeout re-wires the printer "
         "before the answer: a job printing on it finishes first (up to its queue timeout), "
@@ -455,7 +456,10 @@ async def update_printer(
             status_code=422,
             detail={
                 "error_code": "snmp_community_required",
-                "error_message": "Status discovery needs an SNMP community.",
+                "error_message": (
+                    "Send the SNMP community: status discovery needs one, and a new host "
+                    "or port does not take over the stored one."
+                ),
             },
         ) from exc
     except PrinterNotFoundBySlugError as exc:
