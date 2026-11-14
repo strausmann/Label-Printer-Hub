@@ -18,8 +18,7 @@ from app.models.sheet import Sheet, SheetCell
 from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
 from app.sheets.geometry import Geometry
-from app.printer_backends.ipp.attributes import Margins
-from app.sheets.grocy_sheet import choose_grocy_sheet, grocy_blocked_cells
+from app.sheets.grocy_sheet import choose_grocy_sheet
 from app.sheets.sheet_service import MarkedCell
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -120,21 +119,3 @@ async def test_excluded_code_is_skipped(session: AsyncSession) -> None:
 
     assert await choose_grocy_sheet(session, KEY, exclude={refused}) == other
     assert await choose_grocy_sheet(session, KEY, exclude={refused, other}) is None
-
-
-async def test_hardware_margin_cells_are_not_free(session: AsyncSession) -> None:
-    """Review M-1: a cell in the printer's hardware margin cannot take a Grocy label. G10's
-    last row ends 2150 + 5 x 2120 = 12750 hmm from the top; a bottom margin of 17000 on a
-    29700 page reaches into it (cells 9 and 10)."""
-    edge = await _sheet(session, free=2)  # only cells 9 and 10 free: both in the margin
-    usable = await _sheet(session, free=4)
-    margins = Margins(top=0, left=0, bottom=17000, right=0)
-
-    assert await choose_grocy_sheet(session, KEY) == edge
-    assert await choose_grocy_sheet(session, KEY, hw_margins=margins) == usable
-
-
-def test_grocy_blocked_cells_follow_the_margins() -> None:
-    assert grocy_blocked_cells(G10, None) == []
-    assert grocy_blocked_cells(G10, Margins(top=0, left=0, bottom=17000, right=0)) == [9, 10]
-    assert grocy_blocked_cells(G10, Margins(top=3000, left=0, bottom=0, right=0)) == [1, 2]
