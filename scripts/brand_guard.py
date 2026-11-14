@@ -197,10 +197,36 @@ _OLD_DISPLAY = "Label Printer " + "Hub"
 README_HERO_TAGLINE = f"**The self-hosted {_OLD_DISPLAY} for all your labels.**"
 README_HERO_FORMERLY = f"Formerly *{_OLD_DISPLAY}*."
 
+# The old display name stays as the subtitle inside these exact phrases: the web app's tagline
+# (English and German, sentence start and mid-sentence) and its PWA manifest description. A
+# match is allowed only when it lies inside one of them and the file is part of the web app
+# (``frontend/``); a changed phrase, or the phrase in any other file, is a hit again. The README
+# keeps its own exact-line allowance above.
+SUBTITLE_FILES: tuple[str, ...] = ("frontend/",)
+SUBTITLE_PHRASES: tuple[str, ...] = (
+    f"The self-hosted {_OLD_DISPLAY} for all your labels",
+    f"the self-hosted {_OLD_DISPLAY} for all your labels",
+    f"Der selbst gehostete {_OLD_DISPLAY} für all deine Etiketten",
+    f"der selbst gehostete {_OLD_DISPLAY} für all deine Etiketten",
+    f"{_OLD_DISPLAY} — print labels, scan codes and watch your label printers.",
+)
 
-def _display_allowed(path: str, line: str, _m: re.Match[str]) -> bool:
+
+def _inside_phrase(line: str, m: re.Match[str], phrase: str) -> bool:
+    start = line.find(phrase)
+    while start != -1:
+        if start <= m.start() and m.end() <= start + len(phrase):
+            return True
+        start = line.find(phrase, start + 1)
+    return False
+
+
+def _display_allowed(path: str, line: str, m: re.Match[str]) -> bool:
     # The old display name survives only as the subtitle next to the new name.
     if "Labelyard" in line:
+        return True
+    in_web_app = _matches_any(path, SUBTITLE_FILES)
+    if in_web_app and any(_inside_phrase(line, m, p) for p in SUBTITLE_PHRASES):
         return True
     if path == "README.md":
         text = line.strip()

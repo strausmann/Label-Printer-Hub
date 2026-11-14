@@ -129,6 +129,9 @@
   .brand-wordmark {
     background-color: var(--ink);
     mask: url("/brand/wordmark.svg") left center / contain no-repeat;
+    /* Browsers drop backgrounds when printing; the wordmark is drawn by one. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   @media (forced-colors: active) {
     .brand-wordmark {

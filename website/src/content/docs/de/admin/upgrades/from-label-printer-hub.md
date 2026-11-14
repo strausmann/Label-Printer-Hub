@@ -40,6 +40,7 @@ Du kommst von 1.4.x? Bring deine API-Clients zuerst auf 1.5.0 (`/api/v1`-Pfade, 
 ## Verhaltensänderungen
 
 - **Die Port-Variable wirkt jetzt.** `LABELYARD_SERVER_PORT` (und das alte `PRINTER_HUB_SERVER_PORT`) war dokumentiert, wurde aber ignoriert. Der Container lauscht jetzt auf dem genannten Port und fällt auf `PORT`, dann auf `8000` zurück. Eine `.env`-Datei, die du aus einer älteren `.env.example` kopiert hast, kann noch `LABELYARD_SERVER_PORT=8090` enthalten: Lösche die Zeile oder setze den Port, den deine Compose-Datei abbildet (standardmäßig `8000`). Danach muss `/healthz` auf dem abgebildeten Port antworten. Ist der Port nicht `8000`, schreibt der Hub beim Start eine Warnung ins Log, die die Variable nennt.
+- **Installierte Web-Apps behalten das alte Symbol noch eine Weile.** Eine App, die du vor 1.6.0 auf dem Startbildschirm installiert hast, zeigt den alten Namen und das alte Symbol, bis der Browser ihr Manifest neu lädt. Unter iOS passiert das nie von selbst: Entferne die App vom Startbildschirm und füge sie neu hinzu.
 
 ## Umgebungsvariablen
 
