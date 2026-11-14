@@ -381,6 +381,8 @@ class PrinterRuntime:
         wirings = list(self._wired.values())
         try:
             for wiring in wirings:
+                if wiring.service is not None:
+                    await wiring.service.cancel_deferred()  # #281: they end failed_restart
                 await self._stop_producer(wiring)
             await self._queue().stop(
                 timeout_s=shutdown_wait_s(
@@ -477,6 +479,7 @@ class PrinterRuntime:
                 backend=cast(Any, backend),
                 store=self._app.state.job_store,
                 layout_defaults=parse_layout_defaults(printer.layout_defaults),
+                event_bus=getattr(self._app.state, "event_bus", None),
             )
             self._router.register_service(cfg.slug, service)
             if self._started:
@@ -632,6 +635,10 @@ class PrinterRuntime:
             return
         try:
             await self._cancel_retry(printer_id)
+            if wiring.service is not None:
+                # #281: a deferred job still being prepared ends failed_restart in the
+                # recovery of the next attach instead of printing through a stale wiring.
+                await wiring.service.cancel_deferred()
             # The producer first: once stopped it cannot reach the queue's pause control
             # for a printer the queue has forgotten (ruling b).
             await self._stop_producer(wiring)

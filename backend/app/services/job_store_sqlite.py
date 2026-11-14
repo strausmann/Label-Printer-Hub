@@ -167,6 +167,16 @@ class SQLiteJobStore(JobStore):
                 result=merged if (result is not None or detail is not None) else None,
             )
 
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        """Replace the payload of a QUEUED job; False when unknown or no longer QUEUED."""
+        async with self._session_factory() as session:
+            return await jobs_repo.set_queued_payload(session, job_id, payload)
+
+    async def mark_queued_failed_restart(self, job_id: UUID, error: str) -> None:
+        """QUEUED -> FAILED_RESTART with *error*. Silently no-op otherwise."""
+        async with self._session_factory() as session:
+            await jobs_repo.mark_queued_failed_restart(session, job_id, error)
+
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING tape jobs of this printer as FAILED_RESTART."""
         async with self._session_factory() as session:

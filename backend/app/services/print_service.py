@@ -17,22 +17,27 @@ import asyncio
 import functools
 import logging
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 from PIL import Image
 
-from app.models.job import Job
+from app.models.job import Job, JobState
 from app.printer_backends.exceptions import (
     ConflictingOrientationError,
     NoTapeLoadedError,
     PrinterDisabledError,
+    QrPayloadTooLongError,
+    TapeMismatchError,
 )
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
 from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
+from app.services.event_bus import BusEvent
 from app.services.layout_engine import LayoutEngine
+from app.services.print_error_codes import print_error_code
 from app.services.print_queue import MAX_LABELS_PER_TAPE_JOB
 from app.services.ql_layout import resolve_layout
 
@@ -41,6 +46,21 @@ _log = logging.getLogger(__name__)
 
 MAX_BATCH_LOOKUPS = 8
 """263-78: integration lookups of one batch that run at once."""
+
+# #281 R-281-11: the job error of a deferred job whose completion failed. A fixed sentence per
+# code, never the exception text: a backend error can carry the printer's address.
+_DEFERRED_FAILURE_MESSAGES: dict[str, str] = {
+    "printer_disabled": "The printer is disabled.",
+    "printer_offline": "The printer could not be reached.",
+    "printer_cover_open": "The printer cover is open.",
+    "no_tape_loaded": "No tape is loaded in the printer.",
+    "tape_empty": "The tape is empty.",
+    "tape_mismatch": "The loaded tape does not fit the label.",
+    "unsupported_tape": "The loaded tape is not supported.",
+    "content_type_data_mismatch": "The label data does not fit the content type.",
+    "qr_payload_too_long": "The QR code content is too long for the loaded tape.",
+}
+_DEFERRED_FAILURE_FALLBACK = "The label could not be printed."
 
 
 class PrintService:
@@ -58,6 +78,7 @@ class PrintService:
         engine: LayoutEngine,
         lookup_service: Any = None,  # optional LookupService protocol
         layout_defaults: Mapping[int, LayoutDefault] | None = None,
+        event_bus: Any = None,  # optional EventBus: failed deferred jobs are announced on it
     ) -> None:
         self._printer_id = printer_id
         self._printer_slug = printer_slug
@@ -68,6 +89,9 @@ class PrintService:
         self._engine = engine
         self._lookup_service = lookup_service
         self._layout_defaults: dict[int, LayoutDefault] = dict(layout_defaults or {})
+        self._event_bus = event_bus
+        # #281: the completions of deferred jobs that still run (cancelled on a stop/re-wire).
+        self._deferred: set[asyncio.Task[None]] = set()
 
     @property
     def layout_defaults(self) -> dict[int, LayoutDefault]:
@@ -231,6 +255,197 @@ class PrintService:
             orientation=str(orientation),
         )
         return job_id
+
+    # ------------------------------------------------------------------ deferred jobs (#281)
+
+    async def accept_deferred_job(
+        self,
+        raw: RawLabelData,
+        *,
+        content_type: ContentType,
+        source_app: str,
+        api_key_id: UUID | None,
+        source_ip: str | None,
+    ) -> UUID:
+        """Store a ``queued`` job and complete it after the caller has answered (R-281-11).
+
+        The row holds the label data, the requested content type and ``deferred: true``, but
+        no tape fields yet. A tracked task then runs preflight -> tape -> render (a
+        ``qr_three_lines`` label without a secondary line prints as ``qr_two_lines``) ->
+        completes the payload -> hands it to the queue. Any failure there sets the job
+        ``failed`` with the code ``POST /api/v1/print`` would answer and publishes
+        ``job.state_changed``. A restart before the hand-off ends the job ``failed_restart``
+        (the queue's recovery); it is never printed twice.
+        """
+        label = LabelData(
+            source_app=source_app,
+            title=raw.title,
+            primary_id=raw.primary_id,
+            qr_payload=raw.qr_payload,
+            secondary=raw.secondary,
+            items=raw.items,
+        )
+        job_id = uuid4()
+        await self._store.save_queued(
+            Job(
+                id=job_id,
+                printer_id=self._printer_id,
+                template_key=None,
+                payload={
+                    "deferred": True,
+                    "label_data": label.model_dump(),
+                    "content_type": str(content_type),
+                },
+                api_key_id=api_key_id,
+                source_ip=source_ip,
+            )
+        )
+        task = asyncio.create_task(
+            self._complete_deferred(job_id, label, content_type),
+            name=f"deferred-job-{job_id}",
+        )
+        self._deferred.add(task)
+        task.add_done_callback(self._deferred.discard)
+        return job_id
+
+    async def record_failed_job(
+        self,
+        error_code: str,
+        *,
+        api_key_id: UUID | None,
+        source_ip: str | None,
+        source_app: str,
+        message: str = _DEFERRED_FAILURE_FALLBACK,
+    ) -> UUID:
+        """Store a ``failed`` job on this printer for a label that could not be built.
+
+        A content error of a webhook (``grocy_label_invalid``, ``grocy_label_mismatch``):
+        the request was accepted, the failure is shown where the operator looks (the job
+        page). ``message`` must be a fixed sentence; it never repeats the request.
+        """
+        job_id = uuid4()
+        now = datetime.now(UTC)
+        await self._store.save_queued(
+            Job(
+                id=job_id,
+                printer_id=self._printer_id,
+                template_key=None,
+                state=JobState.FAILED.value,
+                payload={"label_data": {"source_app": source_app}},
+                error=f"{error_code}: {message}",
+                api_key_id=api_key_id,
+                source_ip=source_ip,
+                finished_at=now,
+            )
+        )
+        self._publish_failed(job_id, error_code)
+        return job_id
+
+    async def cancel_deferred(self) -> None:
+        """Cancel the deferred completions that still run (a stop or a re-wire).
+
+        Their rows stay ``queued`` without tape fields; the queue's recovery ends them
+        ``failed_restart``.
+        """
+        tasks = list(self._deferred)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _complete_deferred(
+        self, job_id: UUID, label: LabelData, requested: ContentType
+    ) -> None:
+        try:
+            if not self._printer_enabled:
+                raise PrinterDisabledError(self._printer_id, self._printer_slug)
+            preflight = await self._backend.preflight_check()
+            if preflight.loaded_tape_mm is None:
+                raise NoTapeLoadedError()
+            tape_mm = preflight.loaded_tape_mm
+            options = PrintOptions()
+            orientation, preset = self._resolve_layout(tape_mm, options)
+            options = options.model_copy(
+                update={"orientation": orientation, "layout_preset": preset}
+            )
+            content_type = requested
+            if content_type is ContentType.QR_THREE_LINES and not label.secondary:
+                # R-281-7: only a stock entry with a due date has the third line.
+                content_type = ContentType.QR_TWO_LINES
+            image = await asyncio.to_thread(
+                functools.partial(
+                    self._engine.render,
+                    tape_mm,
+                    content_type,
+                    label,
+                    orientation=orientation,
+                    preset=preset,
+                )
+            )
+            completed = await self._store.set_queued_payload(
+                job_id,
+                {
+                    "deferred": True,
+                    "label_data": label.model_dump(),
+                    "content_type": str(content_type),
+                    "rendered_tape_mm": tape_mm,
+                    "tape_mm": tape_mm,
+                    "options": options.model_dump(mode="json"),
+                },
+            )
+            if not completed:
+                # Cancelled (or otherwise ended) while it was prepared: nothing to print.
+                return
+            await self._queue.submit_with_id(
+                job_id,
+                self._printer_id,
+                image,
+                tape_mm=tape_mm,
+                auto_cut=options.auto_cut,
+                high_resolution=options.high_resolution,
+                half_cut=options.half_cut,
+                last_page=options.last_page,
+                orientation=str(orientation),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            code = print_error_code(exc)
+            if code == "internal_error":
+                _log.exception("Deferred job %s failed", job_id)
+            detail: dict[str, Any] | None = None
+            if isinstance(exc, TapeMismatchError):
+                detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+            elif isinstance(exc, QrPayloadTooLongError):
+                detail = {"length": exc.length, "max_bytes": exc.max_bytes}
+            message = _DEFERRED_FAILURE_MESSAGES.get(code, _DEFERRED_FAILURE_FALLBACK)
+            await self._store.mark_failed_code(job_id, code, message, detail)
+            self._publish_failed(job_id, code)
+
+    def _publish_failed(self, job_id: UUID, error_code: str) -> None:
+        """Announce a job that failed outside the queue worker (``job.state_changed``)."""
+        if self._event_bus is None:
+            return
+        channel = f"printer:{self._printer_id}:queue"
+        try:
+            self._event_bus.publish(
+                channel,
+                BusEvent(
+                    channel=channel,
+                    event_id=self._event_bus.next_event_id(channel),
+                    event_type="job.state_changed",
+                    timestamp=datetime.now(UTC),
+                    data={
+                        "job_id": str(job_id),
+                        "from_state": JobState.QUEUED.value,
+                        "to_state": JobState.FAILED.value,
+                        "queue_depth": 0,
+                        "error_code": error_code,
+                    },
+                ),
+            )
+        except Exception:  # an event must never fail the job write
+            _log.exception("Publishing the failure of job %s failed", job_id)
 
     async def _resolve_label_data(
         self, request: PrintRequest, *, source_app: str = "manual"

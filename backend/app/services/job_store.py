@@ -116,6 +116,18 @@ class JobStore(Protocol):
         Silently no-op if job_id does not exist or the row is already terminal.
         """
 
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        """Replace the payload of a QUEUED job (a deferred job completed, #281).
+
+        Returns False, and writes nothing, when the job is unknown or no longer QUEUED.
+        """
+
+    async def mark_queued_failed_restart(self, job_id: UUID, error: str) -> None:
+        """QUEUED -> FAILED_RESTART with *error*: a deferred job a restart interrupted (#281).
+
+        Silently no-op if job_id does not exist or the row is not QUEUED.
+        """
+
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: set all PRINTING *tape* jobs of this printer to FAILED_RESTART
         with error='printer_interrupted'.
@@ -223,6 +235,21 @@ class MemoryJobStore(JobStore):
         job.state = JobState.FAILED.value
         job.error = f"{code}: {message}"
         job.result = _with_detail(dict(result) if result is not None else job.result, detail)
+        job.finished_at = datetime.now(UTC)
+
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.QUEUED.value:
+            return False
+        job.payload = dict(payload)
+        return True
+
+    async def mark_queued_failed_restart(self, job_id: UUID, error: str) -> None:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.QUEUED.value:
+            return
+        job.state = JobState.FAILED_RESTART.value
+        job.error = error
         job.finished_at = datetime.now(UTC)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:

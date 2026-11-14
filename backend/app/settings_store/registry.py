@@ -27,6 +27,52 @@ def _integration(
     return defs
 
 
+GROCY_LABEL_TYPES: tuple[str, ...] = ("product", "stock_entry", "chore", "battery", "recipe")
+GROCY_LABEL_CONTENT_TYPES: tuple[str, ...] = (
+    "qr_only",
+    "qr_one_line",
+    "qr_two_lines",
+    "qr_three_lines",
+)
+
+
+GROCY_LABEL_DEFAULT_PRINTER_KEY = "integrations.grocy.label.printer"
+
+
+def grocy_label_content_type_key(label_type: str) -> str:
+    return f"integrations.grocy.label.{label_type}.content_type"
+
+
+def grocy_label_printer_key(label_type: str) -> str:
+    return f"integrations.grocy.label.{label_type}.printer"
+
+
+def _grocy_label() -> list[SettingDef]:
+    """#281 R-281-7: the Grocy label printer webhook, one content type and printer per type.
+
+    Printers are printer slugs. A type's ``""`` uses the default target
+    (``integrations.grocy.label.printer``), whose ``""`` is the first enabled tape printer
+    (maintainer ruling on #281, 2026-11-14).
+    """
+    defs = [
+        SettingDef("integrations.grocy.label.enabled", "bool", False, None),
+        SettingDef(GROCY_LABEL_DEFAULT_PRINTER_KEY, "str", "", None),
+    ]
+    for label_type in GROCY_LABEL_TYPES:
+        default = "qr_three_lines" if label_type == "stock_entry" else "qr_two_lines"
+        defs.append(
+            SettingDef(
+                grocy_label_content_type_key(label_type),
+                "enum",
+                default,
+                None,
+                choices=GROCY_LABEL_CONTENT_TYPES,
+            )
+        )
+        defs.append(SettingDef(grocy_label_printer_key(label_type), "str", "", None))
+    return defs
+
+
 _DEFS: list[SettingDef] = [
     SettingDef("general.display_name", "str", "Labelyard", None),
     SettingDef("general.language", "enum", "en", None, choices=("en", "de")),
@@ -35,6 +81,7 @@ _DEFS: list[SettingDef] = [
     SettingDef("general.public_url", "url", "", "public_url"),
     *_integration("snipeit", secret="api_key", secret_env="snipeit_api_key"),
     *_integration("grocy", secret="api_key", secret_env="grocy_api_key"),
+    *_grocy_label(),
     *_integration("spoolman", secret=None, secret_env=None),
     *_integration("paperless", secret="token", secret_env="paperless_token"),
     SettingDef("access.webhook_api_key", "secret", "", "webhook_api_key"),

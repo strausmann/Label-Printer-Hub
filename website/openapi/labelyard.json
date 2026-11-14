@@ -11714,6 +11714,157 @@
         ]
       }
     },
+    "/api/v1/webhook/grocy/label": {
+      "post": {
+        "description": "Grocy's label printer webhook (``LABEL_PRINTER_WEBHOOK``) for products, stock entries, chores, batteries and recipes.  **Authentication:** an API key with the ``print`` scope as the ``token`` query parameter (Grocy sends no headers) or the ``X-Label-Hub-Key`` header; a read key answers 403 ``insufficient_scope``, an admin key 403 ``token_scope_too_wide``, every other failure of the token 401 ``invalid_token``.  The key's printer restriction and rate limit apply.  The webhook is off until ``integrations.grocy.label.enabled`` is set.  The label type comes from the Grocycode; content type and printer come from the mapping of that type in Settings > Integrations > Grocy (a type without a printer uses the default target, and without one the first enabled tape printer).  The route answers 202 within 1.5 s with the job's UUID: printing runs afterwards, and a printer failure (offline, no tape) sets the job ``failed`` with the code ``POST /api/v1/print`` would answer.  A label that cannot be built (unreadable body, invalid Grocycode, name field of another type) also answers 202, with a ``failed`` job (``grocy_label_invalid``, ``grocy_label_mismatch``).",
+        "operationId": "grocy_label_webhook_api_v1_webhook_grocy_label_post",
+        "parameters": [
+          {
+            "description": "A Labelyard API key with the print scope (D24, ADR 0027). Read from a literal 'token=' parameter only; the X-Label-Hub-Key header wins when both are sent. The hub hides the value in its own logs",
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          {
+            "description": "The same key as a header, for callers that can send headers",
+            "in": "header",
+            "name": "X-Label-Hub-Key",
+            "required": false,
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "What the hub reads from one label request of Grocy.",
+                "properties": {
+                  "battery": {
+                    "anyOf": [
+                      {
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The battery name, for a battery label",
+                    "title": "Battery"
+                  },
+                  "chore": {
+                    "anyOf": [
+                      {
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The chore name, for a chore label",
+                    "title": "Chore"
+                  },
+                  "due_date": {
+                    "anyOf": [
+                      {
+                        "maxLength": 64,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Grocy's localised due date line of a stock entry, for example 'DD: 2026-12-01'. Printed as the third line of a stock entry label",
+                    "title": "Due Date"
+                  },
+                  "grocycode": {
+                    "description": "The Grocycode of the object, for example 'grcy:p:12' (product), 'grcy:p:12:63a1b2c3d4e5f' (stock entry), 'grcy:c:3' (chore), 'grcy:b:4' (battery) or 'grcy:r:5' (recipe). It decides the label type and is the QR code",
+                    "pattern": "^grcy:(p|b|c|r):[0-9]{1,10}(:[^:\\s]{1,64}){0,3}$",
+                    "title": "Grocycode",
+                    "type": "string"
+                  },
+                  "product": {
+                    "anyOf": [
+                      {
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The product name, for a product or stock entry label",
+                    "title": "Product"
+                  },
+                  "recipe": {
+                    "anyOf": [
+                      {
+                        "maxLength": 512,
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "The recipe name, for a recipe label",
+                    "title": "Recipe"
+                  }
+                },
+                "required": [
+                  "grocycode"
+                ],
+                "title": "GrocyLabelPayload",
+                "type": "object"
+              }
+            }
+          },
+          "description": "The JSON object Grocy sends with LABEL_PRINTER_HOOK_JSON=true, at most 1 MiB. Fields not listed are ignored",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookAcceptedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "``invalid_token``: the token is missing, unknown, disabled or expired."
+          },
+          "403": {
+            "description": "``insufficient_scope`` (a read key), ``token_scope_too_wide`` (an admin key) or ``printer_not_allowed`` (the key may not use the label's printer; the message does not name it)."
+          },
+          "413": {
+            "description": "``body_too_large``: the body is larger than 1 MiB."
+          },
+          "415": {
+            "description": "``json_required``: set LABEL_PRINTER_HOOK_JSON=true in Grocy."
+          },
+          "429": {
+            "description": "``rate_limit_exceeded``: the key's per-minute limit, with Retry-After."
+          },
+          "503": {
+            "description": "``grocy_label_disabled`` (the webhook is switched off), ``grocy_label_printer_unavailable`` (the mapped printer is unknown, disabled or not a tape printer) or no enabled tape printer."
+          }
+        },
+        "summary": "Accept a label request of Grocy's label printer webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
     "/api/v1/webhook/spoolman": {
       "post": {
         "description": "Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; a ``quantity`` in range is printed as the label's third line, in the hub's language, and never counts copies.",

@@ -63,9 +63,47 @@ def test_registry_has_exactly_the_specified_keys() -> None:
         "integrations.paperless.timeout",
         "access.webhook_api_key",
         "jobs.retention_days",
+        "integrations.grocy.label.enabled",
+        "integrations.grocy.label.printer",
+        *(
+            f"integrations.grocy.label.{t}.{f}"
+            for t in ("product", "stock_entry", "chore", "battery", "recipe")
+            for f in ("content_type", "printer")
+        ),
     }
     assert SETTINGS["general.language"].choices == ("en", "de")
     assert SETTINGS["jobs.retention_days"].default == 30
+
+
+def test_grocy_label_settings_have_defaults() -> None:
+    """R-281-7: off by default; QR with two lines, a stock entry three; printers unset."""
+    enabled = SETTINGS["integrations.grocy.label.enabled"]
+    assert (enabled.kind, enabled.default, enabled.env_field) == ("bool", False, None)
+    target = SETTINGS["integrations.grocy.label.printer"]
+    assert (target.kind, target.default, target.env_field) == ("str", "", None)
+    choices = ("qr_only", "qr_one_line", "qr_two_lines", "qr_three_lines")
+    defaults = {
+        "product": "qr_two_lines",
+        "stock_entry": "qr_three_lines",
+        "chore": "qr_two_lines",
+        "battery": "qr_two_lines",
+        "recipe": "qr_two_lines",
+    }
+    for label_type, default in defaults.items():
+        ct = SETTINGS[f"integrations.grocy.label.{label_type}.content_type"]
+        assert (ct.kind, ct.default, ct.env_field, ct.choices) == ("enum", default, None, choices)
+        printer = SETTINGS[f"integrations.grocy.label.{label_type}.printer"]
+        assert (printer.kind, printer.default, printer.env_field) == ("str", "", None)
+
+
+async def test_grocy_label_content_type_rejects_listing(store, async_session_factory) -> None:
+    async with async_session_factory() as s:
+        with pytest.raises(InvalidSettingValueError):
+            await store.set_many(
+                s, {"integrations.grocy.label.product.content_type": "qr_with_listing"}
+            )
+        await store.set_many(s, {"integrations.grocy.label.product.content_type": "qr_only"})
+    assert store.get("integrations.grocy.label.product.content_type") == "qr_only"
 
 
 async def test_defaults_without_env(store, async_session_factory) -> None:

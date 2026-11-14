@@ -99,6 +99,7 @@ from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
 from app.api.routes import events_v1 as events_v1_routes
+from app.api.routes import grocy_label as grocy_label_routes
 from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
@@ -698,6 +699,7 @@ def create_app() -> _LifespanManager:
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
+    app.include_router(grocy_label_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
     app.include_router(auth_session_routes.router)

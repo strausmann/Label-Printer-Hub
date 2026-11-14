@@ -1,6 +1,6 @@
 # 0027 — A print-scope key in the URL authenticates the Grocy label webhook
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-11-14
 - **Deciders:** maintainer
 
@@ -54,7 +54,7 @@ The dependency is `require_print_token` (`backend/app/api/dependencies/token_aut
 - **A reverse proxy's access log is outside the hub.** The filter covers the hub's own uvicorn loggers only; an operator who logs full URLs at the proxy must redact there or accept the token in that log.
 - The existing debug line for an unknown key prefix (`backend/app/auth/dependencies.py`) logs the first 16 characters of a presented key. For `lh_` keys that prefix is the stored, displayed key prefix and not secret, so it stays.
 - The route auth guardrail (`backend/tests/unit/api/test_route_auth_coverage_guardrail.py`) recognises `require_print_token` as an auth dependency.
-- This ADR becomes `Accepted` in the PR that ships the webhook route (#281, part 2).
+- Accepted with the webhook route `POST /api/v1/webhook/grocy/label` (`backend/app/api/routes/grocy_label.py`, #281 part 2).
 
 ## References
 

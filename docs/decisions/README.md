@@ -51,7 +51,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0024](0024-runtime-printer-wiring-and-hardware-identity.md) | Printers are wired at runtime through one code path and identified by hardware | Accepted |
 | [0025](0025-milestone-branches-for-minor-and-major-releases.md) | Minor and major releases come from milestone branches | Accepted |
 | [0026](0026-rename-to-labelyard.md) | The project is called Labelyard | Accepted |
-| [0027](0027-url-token-for-the-grocy-label-webhook.md) | A print-scope key in the URL authenticates the Grocy label webhook | Proposed |
+| [0027](0027-url-token-for-the-grocy-label-webhook.md) | A print-scope key in the URL authenticates the Grocy label webhook | Accepted |
 
 The [decision register](register.md) lists the short `D<n>` labels cited in code.
 

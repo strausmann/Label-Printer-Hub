@@ -131,6 +131,9 @@ class UnrenderableJobError(Exception):
     """
 
 
+DEFERRED_INTERRUPTED = "deferred_interrupted"
+"""Error of a deferred job (#281) that a restart or a re-wire caught before it was queued."""
+
 # Payload keys a stored job needs to be re-rendered (recovery and retry).
 _REQUIRED_RERENDER_KEYS = frozenset({"content_type", "label_data", "rendered_tape_mm"})
 
@@ -816,6 +819,13 @@ class PrintQueue:
             # label_data but missing rendered_tape_mm would still fail in
             # _rerender_from_db_payload; guard must cover the full set.
             _missing_keys = _REQUIRED_RERENDER_KEYS - db_job.payload.keys()
+            if _missing_keys and db_job.payload.get("deferred") is True:
+                # #281 R-281-11: a deferred job whose completion (preflight, tape, render)
+                # a restart interrupted. It was never handed to the queue, so it ends once,
+                # without a print.
+                logger.info("Recovery: deferred job %s ends as failed_restart", db_job.id)
+                await self._store.mark_queued_failed_restart(db_job.id, DEFERRED_INTERRUPTED)
+                continue
             if _missing_keys:
                 skip_msg = (
                     f"Recovery: Skipping job {db_job.id} — payload lacks "

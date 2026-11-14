@@ -152,6 +152,37 @@ async def set_result(session: AsyncSession, job_id: UUID, result: dict[str, Any]
     return job
 
 
+async def set_queued_payload(session: AsyncSession, job_id: UUID, payload: dict[str, Any]) -> bool:
+    """Replace the payload of a QUEUED job (a deferred job completed, #281). ``False``: the job
+    is unknown or no longer QUEUED (cancelled meanwhile), nothing written."""
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value)
+        .values(payload=dict(payload))
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
+
+async def mark_queued_failed_restart(session: AsyncSession, job_id: UUID, error: str) -> bool:
+    """One QUEUED job -> FAILED_RESTART with *error* (a deferred job a restart interrupted)."""
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value)
+        .values(
+            state=JobState.FAILED_RESTART.value,
+            error=error,
+            finished_at=datetime.now(UTC),
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
+
 async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:
     """Transition QUEUED|PRINTING → CANCELLED. Sets finished_at."""
     job = await _get_or_raise(session, job_id)
