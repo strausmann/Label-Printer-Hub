@@ -93,7 +93,36 @@ describe("the preview", () => {
       routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: [{ item_index: 0, sheet_code: "L4736-0002", cell: 5, printed_at: "2026-11-01T08:00:00Z" }] }) }),
       1,
     );
-    expect(await screen.findByText(/already printed onto L4736-0002, cell 5/)).toBeVisible();
+    expect(await screen.findByText(/^Flour: printed before on L4736-0002 on .*2026, cell 5$/)).toBeVisible();
+  });
+
+  it("sums up ten copies of an item printed five times before in one line, with the details folded (#340)", async () => {
+    // The server lists the earlier prints once, on the first copy (backend test_preview_reprint_hints_once_per_item_not_per_copy).
+    const earlier = [2, 3, 4, 5, 6].map((cell) => ({ item_index: 0, sheet_code: "L4736-0001", cell, printed_at: "2026-11-14T08:00:00Z" }));
+    const fresh = [18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
+    await itemView(routes({ preview: previewFor("L4736-0001", fresh, USED_17, { reprint_hints: earlier }) }), 10);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    const lines = await within(preview).findAllByText(/printed before/);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toHaveTextContent(/^Flour: printed before 5× on L4736-0001 on .*2026, cells 2–6$/);
+    expect(within(preview).queryByText(/already printed/)).toBeNull();
+  });
+
+  it("opens a table of the earlier prints of an item on several sheets (#340)", async () => {
+    const hints = [
+      { item_index: 0, sheet_code: "L4736-0001", cell: 2, printed_at: "2026-11-14T08:00:00Z" },
+      { item_index: 0, sheet_code: "L4736-0001", cell: 3, printed_at: "2026-11-14T08:00:00Z" },
+      { item_index: 0, sheet_code: "L4736-0002", cell: 9, printed_at: "2026-11-01T08:00:00Z" },
+    ];
+    await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: hints }) }), 1);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    const summary = await within(preview).findByText(/^Flour: printed before 3× on 2 sheets, last on .*2026$/);
+    await userEvent.click(summary);
+    const table = within(preview).getByRole("table", { name: "Earlier prints of Flour" });
+    const rows = within(table).getAllByRole("row").map((r) => r.textContent);
+    expect(rows).toHaveLength(3);
+    expect(rows[1]).toMatch(/^L4736-0001.*2026 ?2–3 ?2$/);
+    expect(rows[2]).toMatch(/^L4736-0002.*2026 ?9 ?1$/);
   });
 
   it("shows the feed mark entry, the margin ID with its band, and the not-printed warning", async () => {

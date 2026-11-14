@@ -162,8 +162,20 @@ msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hid
 msgstr "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
-msgid "{item} was already printed onto {where}, cell {cell} ({when})."
-msgstr "{item} was already printed onto {where}, cell {cell} ({when})."
+msgid "{item}: printed before {count}× on {only}, last on {last}"
+msgstr "{item}: printed before {count}× on {only}, last on {last}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {sheet} on {when}, cells {cells}"
+msgstr "{item}: printed before {count}× on {sheet} on {when}, cells {cells}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {sheetCount} sheets, last on {last}"
+msgstr "{item}: printed before {count}× on {sheetCount} sheets, last on {last}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before on {sheet} on {when}, cell {cells}"
+msgstr "{item}: printed before on {sheet} on {when}, cell {cells}"
 
 #: src/features/archive/TypeForm.tsx
 msgid "{label} is too long: at most {max} characters."
@@ -804,6 +816,7 @@ msgid "Cell {n} → {purpose} · {source}"
 msgstr "Cell {n} → {purpose} · {source}"
 
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Cells"
 msgstr "Cells"
@@ -1057,6 +1070,11 @@ msgstr "Could not pause the printer."
 msgid "Could not resume the printer."
 msgstr "Could not resume the printer."
 
+#: src/features/sheets/print/SheetPreview.tsx
+msgctxt "number of earlier prints"
+msgid "Count"
+msgstr "Count"
+
 #: src/features/printers/PauseReason.tsx
 msgid "Cover is open"
 msgstr "Cover is open"
@@ -1122,6 +1140,10 @@ msgstr "Cuts the tape but leaves the backing, so a strip of labels stays togethe
 #: src/shell/ThemeSwitch.tsx
 msgid "Dark theme"
 msgstr "Dark theme"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Date"
+msgstr "Date"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "default"
@@ -1296,6 +1318,10 @@ msgstr "Drawing the sheet…"
 #: src/features/settings/PrinterForm.tsx
 msgid "Driver"
 msgstr "Driver"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Earlier prints of {item}"
+msgstr "Earlier prints of {item}"
 
 #: src/features/settings/Printers.tsx
 msgid "Edit"
@@ -3222,6 +3248,7 @@ msgstr "Settle the cells on the sheet"
 
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetPicker.tsx
+#: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet"
 msgstr "Sheet"

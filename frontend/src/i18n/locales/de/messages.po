@@ -162,8 +162,20 @@ msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hid
 msgstr "{hidden, plural, one {# aufgebrauchter Bogen ausgeblendet} other {# aufgebrauchte Bögen ausgeblendet}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
-msgid "{item} was already printed onto {where}, cell {cell} ({when})."
-msgstr "{item} wurde schon auf {where} gedruckt, Zelle {cell} ({when})."
+msgid "{item}: printed before {count}× on {only}, last on {last}"
+msgstr "{item}: schon {count}× auf {only} gedruckt, zuletzt am {last}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {sheet} on {when}, cells {cells}"
+msgstr "{item}: am {when} schon {count}× auf {sheet} gedruckt, Zellen {cells}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {sheetCount} sheets, last on {last}"
+msgstr "{item}: schon {count}× auf {sheetCount} Bögen gedruckt, zuletzt am {last}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before on {sheet} on {when}, cell {cells}"
+msgstr "{item}: am {when} schon auf {sheet} gedruckt, Zelle {cells}"
 
 #: src/features/archive/TypeForm.tsx
 msgid "{label} is too long: at most {max} characters."
@@ -804,6 +816,7 @@ msgid "Cell {n} → {purpose} · {source}"
 msgstr "Zelle {n} → {purpose} · {source}"
 
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Cells"
 msgstr "Zellen"
@@ -1057,6 +1070,11 @@ msgstr "Der Drucker konnte nicht pausiert werden."
 msgid "Could not resume the printer."
 msgstr "Der Drucker konnte nicht fortgesetzt werden."
 
+#: src/features/sheets/print/SheetPreview.tsx
+msgctxt "number of earlier prints"
+msgid "Count"
+msgstr "Anzahl"
+
 #: src/features/printers/PauseReason.tsx
 msgid "Cover is open"
 msgstr "Die Abdeckung ist offen"
@@ -1122,6 +1140,10 @@ msgstr "Schneidet das Band an, lässt aber das Trägerpapier ganz, damit ein Str
 #: src/shell/ThemeSwitch.tsx
 msgid "Dark theme"
 msgstr "Dunkles Design"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Date"
+msgstr "Datum"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "default"
@@ -1296,6 +1318,10 @@ msgstr "Der Bogen wird gezeichnet …"
 #: src/features/settings/PrinterForm.tsx
 msgid "Driver"
 msgstr "Treiber"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Earlier prints of {item}"
+msgstr "Frühere Drucke von {item}"
 
 #: src/features/settings/Printers.tsx
 msgid "Edit"
@@ -3222,6 +3248,7 @@ msgstr "Zellen auf dem Bogen klären"
 
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetPicker.tsx
+#: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet"
 msgstr "Bogen"

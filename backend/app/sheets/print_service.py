@@ -873,7 +873,11 @@ def reserved_margin_id_payload(
 
 
 async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -> list[ReprintHint]:
-    """Where lookup items were printed before: ``used`` cells only (pre-flight C32)."""
+    """Where lookup items were printed before: ``used`` cells only (pre-flight C32).
+
+    Every copy of an item is an item of its own; the earlier prints are listed once, on the item
+    index of the first copy (#340), not once per copy.
+    """
     found: dict[tuple[str, str], list[ss.CellHit]] = {}
     hints: list[ReprintHint] = []
     for index, item in enumerate(items):
@@ -882,12 +886,11 @@ async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -
         if item.meta.ref is None:
             continue
         key = (item.meta.source, item.meta.ref)
-        if key not in found:
-            found[key] = [
-                h
-                for h in await ss.find_cells(session, source=key[0], ref=key[1])
-                if h.state == "used"
-            ]
+        if key in found:
+            continue
+        found[key] = [
+            h for h in await ss.find_cells(session, source=key[0], ref=key[1]) if h.state == "used"
+        ]
         hints.extend(
             ReprintHint(item_index=index, sheet_code=h.code, cell=h.cell, printed_at=h.updated_at)
             for h in found[key][:MAX_HINTS_PER_ITEM]
