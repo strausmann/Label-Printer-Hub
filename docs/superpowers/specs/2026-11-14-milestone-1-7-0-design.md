@@ -367,6 +367,15 @@ Setting('LABEL_PRINTER_HOOK_JSON', true);
   `source = "grocy"`, `ref` = the Grocycode cut to entity and id (`grcy:p:12`, ≤ 17 characters; `ref` max 120,
   `schemas/sheet_print.py:93`), purpose = default (title, else id); `label_data.source_app = "grocy"` as on tape
   (R-281-5). Default tray; calibration snapshot as for any sheet print (`sheets/print_service.py:1479-1481`).
+  - **Hardware margin (controller ruling, review M-1):** the webhook has no preview to warn about a label the printer
+    may clip, so a cell that reaches into the printer's hardware margin (the planner's `hw_margin_cells` rule) never
+    takes a Grocy label. The choice does not count such cells as free, and the print passes them as `skip`, so choice
+    and planner agree. Unknown margins block nothing. A new sheet takes no `skip`; with blocking margins the hub creates
+    it first (ID in the margin) and prints onto it as an existing sheet. A printer whose margins block every cell of the
+    type ends the job `insufficient_cells`.
+  - **Refused sheet (review I-2):** the one re-choice leaves out the sheet the first try was refused on, so a sheet the
+    planner cannot take (for example one whose ID cell is still due and that has a single free cell) does not stop the
+    labels of its type.
 - **R-281-16 (deferred printing on a page target).** Fits R-281-11: the request does **one insert and no
   reservation**, then answers 202. It stores a `queued` job on the page printer with payload `{"deferred": true,
   "deferred_kind": "sheet_page", "label_data", "content_type", "sheet_type"}` (no `kind`). Jobs and sheets share one
