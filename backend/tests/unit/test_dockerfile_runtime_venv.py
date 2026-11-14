@@ -38,4 +38,11 @@ def test_runtime_stage_installs_nothing_into_the_venv() -> None:
     runtime = TEXT.split("AS runtime", 1)[1]
     assert "COPY --from=builder --chown=hub:hub /opt/venv /opt/venv" in runtime
     assert not re.search(r"\bpip\s+install\b", runtime)
-    assert "setuptools" not in runtime
+
+
+def test_runtime_stage_removes_the_base_image_pip_before_the_user_switch() -> None:
+    runtime = TEXT.split("AS runtime", 1)[1]
+    match = re.search(r"^RUN /usr/local/bin/python -m pip uninstall -y (.+?) \\$", runtime, re.M)
+    assert match, "the runtime stage must uninstall the base image's pip"
+    assert {"pip", "setuptools", "wheel"} <= set(match.group(1).split())
+    assert runtime.index("pip uninstall") < runtime.index("\nUSER hub")

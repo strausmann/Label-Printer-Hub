@@ -198,6 +198,18 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
+# The base image's own pip (and setuptools/wheel, if the tag ships them) is not used at runtime:
+# the app runs from /opt/venv and installs nothing. Removing it takes its vendored
+# setuptools/pkg_resources and the pip CVE findings out of the image (#332). The interpreter
+# is called by absolute path because /opt/venv/bin is first on PATH.
+RUN /usr/local/bin/python -m pip uninstall -y pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.12/site-packages/pip* \
+              /usr/local/lib/python3.12/site-packages/setuptools* \
+              /usr/local/lib/python3.12/site-packages/wheel* \
+              /usr/local/lib/python3.12/site-packages/pkg_resources \
+              /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.12 \
+    && ! /usr/local/bin/python -c "import pip" 2>/dev/null
+
 # Non-root user — UID/GID 1000 per CLAUDE.md hard rule. The data volume
 # will be writable by this user.
 RUN groupadd --system --gid 1000 hub \
