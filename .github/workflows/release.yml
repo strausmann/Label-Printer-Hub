@@ -140,8 +140,10 @@ jobs:
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    # The called workflow reads the repository and never writes to it (the
+    # release asset is attached by release-sbom), so `contents: read` suffices.
     permissions:
-      contents: write
+      contents: read
       packages: write
       id-token: write
 

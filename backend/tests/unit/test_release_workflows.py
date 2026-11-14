@@ -437,8 +437,9 @@ def test_release_jobs_declare_minimal_permissions() -> None:
         "issues": "write",
         "pull-requests": "write",
     }
+    # The called workflow only reads the repository; the asset upload is release-sbom's.
     assert wf["jobs"]["images"]["permissions"] == {
-        "contents": "write",
+        "contents": "read",
         "packages": "write",
         "id-token": "write",
     }
