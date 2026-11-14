@@ -23,7 +23,7 @@ description: What Labelyard protects, what it does not, how to verify the image 
 
 ## Verify the image signature
 
-From 1.6.0 on, every published image is signed with [cosign](https://docs.sigstore.dev/) without a key: the signature is made with the GitHub Actions token of the project's image workflow and covers the multi-arch index, so the platform images and their SBOM and provenance attestations are covered too. A tag can move, so resolve it to its digest first and verify the digest:
+From 1.6.0 on, every release, preview and `dev` image is signed with [cosign](https://docs.sigstore.dev/) without a key: the signature is made with the GitHub Actions token of the project's image workflow and covers the multi-arch index, so the platform images and their SBOM and provenance attestations are covered too. A tag can move, so resolve it to its digest first and verify the digest:
 
 ```bash
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'

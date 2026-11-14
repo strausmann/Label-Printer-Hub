@@ -23,7 +23,7 @@ description: Was Labelyard schützt, was nicht, wie du die Image-Signatur prüfs
 
 ## Die Image-Signatur prüfen
 
-Ab 1.6.0 ist jedes veröffentlichte Image mit [cosign](https://docs.sigstore.dev/) ohne Schlüssel signiert: Die Signatur entsteht mit dem GitHub-Actions-Token des Image-Workflows des Projekts und gilt für den Multi-Arch-Index, also auch für die Plattform-Images und ihre SBOM- und Provenance-Attestierungen. Ein Tag kann wandern, deshalb löst du ihn zuerst in seinen Digest auf und prüfst den Digest:
+Ab 1.6.0 ist jedes Release-, Vorschau- und `dev`-Image mit [cosign](https://docs.sigstore.dev/) ohne Schlüssel signiert: Die Signatur entsteht mit dem GitHub-Actions-Token des Image-Workflows des Projekts und gilt für den Multi-Arch-Index, also auch für die Plattform-Images und ihre SBOM- und Provenance-Attestierungen. Ein Tag kann wandern, deshalb löst du ihn zuerst in seinen Digest auf und prüfst den Digest:
 
 ```bash
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
