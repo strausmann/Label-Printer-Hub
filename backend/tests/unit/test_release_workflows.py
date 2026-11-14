@@ -146,6 +146,29 @@ def test_actions_are_pinned_to_full_commit_shas() -> None:
                     )
 
 
+# Legacy major-tag actions in ci.yml; any other action there must be SHA-pinned.
+_CI_MAJOR_TAG_ALLOWED = {
+    "actions/checkout@v6",
+    "actions/setup-python@v6",
+    "actions/setup-node@v6",
+    "actions/upload-artifact@v7",
+    "pnpm/action-setup@v4",
+    "codecov/codecov-action@v7",
+    "codecov/test-results-action@v1",
+    "docker/setup-buildx-action@v4",
+    "docker/build-push-action@v7",
+}
+
+
+def test_ci_new_actions_are_sha_pinned() -> None:
+    sha = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+    for job_name, job in _load("ci.yml")["jobs"].items():
+        for step in job.get("steps", []):
+            uses = step.get("uses")
+            if uses and uses not in _CI_MAJOR_TAG_ALLOWED:
+                assert sha.match(uses), f"ci.yml/{job_name}: {uses} must be SHA-pinned"
+
+
 def test_release_version_output_chain_is_wired() -> None:
     """exec plugin -> $GITHUB_OUTPUT -> steps.semantic.outputs.version -> images.if.
 
@@ -327,6 +350,12 @@ def test_ci_image_check() -> None:
     syft = [s for s in steps if "download-syft" in str(s.get("uses", ""))]
     assert len(syft) == 1
     assert re.match(r"^[^@\s]+@[0-9a-f]{40}$", syft[0]["uses"]), syft[0]["uses"]
+    assert syft[0]["with"]["syft-version"] == "v1.55.0"
+    gate = next(s for s in steps if "+sbom-cataloger" in str(s.get("run", "")))
+    assert "jq -e" in gate["run"]
+    assert not gate.get("continue-on-error")
+    info = next(s for s in steps if s.get("name") == "Default catalogue (informational)")
+    assert info["continue-on-error"] is True
     runs = "\n".join(str(s.get("run", "")) for s in steps)
     assert "+sbom-cataloger" in runs
     for needle in ("backend.json", "frontend.json", "frontend.cdx.json", "agpl-3.0.txt"):
