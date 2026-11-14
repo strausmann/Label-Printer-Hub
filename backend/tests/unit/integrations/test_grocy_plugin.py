@@ -485,9 +485,7 @@ async def test_battery_and_chore_reject_non_numeric_ids_without_a_request(bad: s
 
 @pytest.mark.asyncio
 @respx.mock
-@pytest.mark.parametrize(
-    "body", [[], {"last_charged": None}, {"battery": {"name": "no id"}}, {"battery": "x"}]
-)
+@pytest.mark.parametrize("body", [[], {"last_charged": None}, {"battery": "x"}])
 async def test_battery_response_without_a_battery_object_fails_loudly(body: object) -> None:
     respx.get("https://grocy.example/api/batteries/4").mock(
         return_value=httpx.Response(200, json=body)
@@ -502,3 +500,54 @@ async def test_chore_response_without_a_chore_object_fails_loudly() -> None:
     respx.get("https://grocy.example/api/chores/7").mock(return_value=httpx.Response(200, json={}))
     with pytest.raises(ValueError):
         await bound(GrocyPlugin).chore("7")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_battery_and_chore_id_and_link_come_from_the_asked_id_not_the_answer() -> None:
+    hostile = {"id": "../../evil", "name": "X"}
+    respx.get("https://grocy.example/api/batteries/4").mock(
+        return_value=httpx.Response(200, json={**_BATTERY, "battery": hostile})
+    )
+    respx.get("https://grocy.example/api/chores/7").mock(
+        return_value=httpx.Response(200, json={**_CHORE, "chore": hostile})
+    )
+    battery = await bound(GrocyPlugin).battery("4")
+    chore = await bound(GrocyPlugin).chore("7")
+    assert (battery.id, battery.url) == ("4", "https://grocy.example/battery/4")
+    assert (chore.id, chore.url) == ("7", "https://grocy.example/chore/7")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_battery_and_chore_text_is_bounded() -> None:
+    long_battery = {"id": 4, "name": "n" * 500, "description": "d" * 5000}
+    respx.get("https://grocy.example/api/batteries/4").mock(
+        return_value=httpx.Response(200, json={**_BATTERY, "battery": long_battery})
+    )
+    respx.get("https://grocy.example/api/chores/7").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **_CHORE,
+                "chore": {"id": 7, "name": "c" * 500},
+                "next_execution_assigned_user": {"display_name": "u" * 500},
+            },
+        )
+    )
+    battery = await bound(GrocyPlugin).battery("4")
+    chore = await bound(GrocyPlugin).chore("7")
+    assert len(battery.name) == 200
+    assert battery.description is not None and len(battery.description) == 2000
+    assert len(chore.name) == 200
+    assert chore.assigned_to is not None and len(chore.assigned_to) == 200
+
+
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize("cycles", [True, -1, "4", 2.5, None])
+async def test_battery_charge_cycles_must_be_a_real_count(cycles: object) -> None:
+    respx.get("https://grocy.example/api/batteries/4").mock(
+        return_value=httpx.Response(200, json={**_BATTERY, "charge_cycles_count": cycles})
+    )
+    assert (await bound(GrocyPlugin).battery("4")).charge_cycles == 0

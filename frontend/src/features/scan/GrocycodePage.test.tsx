@@ -55,8 +55,8 @@ describe("the Grocycode page, battery", () => {
     const facts = screen.getByText("Last charged").closest("dl")!;
     expect(within(facts).getByText("Charge cycles").nextSibling).toHaveTextContent("4");
     expect(within(facts).getByText("Last charged").nextSibling).toHaveTextContent(/2026/);
-    // Never charged again is said in words, not left empty.
-    expect(within(facts).getByText("Next charge").nextSibling).toHaveTextContent("Never");
+    // No next date is said in words, not left empty, and not as "Never".
+    expect(within(facts).getByText("Next charge").nextSibling).toHaveTextContent("Not scheduled");
     // The link comes with the answer: no earlier product lookup is needed.
     expect(screen.getByRole("link", { name: /Open in Grocy/ })).toHaveAttribute("href", `${GROCY}/battery/4`);
     expect(screen.getByRole("link", { name: "Scan again" })).toHaveAttribute("href", "/scan");
@@ -66,6 +66,20 @@ describe("the Grocycode page, battery", () => {
     await open("/grocycode/b/4", { [B]: { ...BATTERY, last_charged: null, charge_cycles: 0 } });
     await screen.findByRole("heading", { level: 1, name: "Remote AAA" });
     expect(screen.getByText("Last charged").nextSibling).toHaveTextContent("Never");
+  });
+
+  it("a chore never done says Never, one with no next run Not scheduled", async () => {
+    await open("/grocycode/c/7", { [C]: { ...CHORE, last_tracked: null, next_estimated_execution: null } });
+    await screen.findByRole("heading", { level: 1, name: "Water the plants" });
+    expect(screen.getByText("Last done").nextSibling).toHaveTextContent("Never");
+    expect(screen.getByText("Next due").nextSibling).toHaveTextContent("Not scheduled");
+  });
+
+  it("a date that cannot be read is a dash, never Invalid Date", async () => {
+    await open("/grocycode/b/4", { [B]: { ...BATTERY, last_charged: "not-a-date" } });
+    await screen.findByRole("heading", { level: 1, name: "Remote AAA" });
+    expect(screen.getByText("Last charged").nextSibling).toHaveTextContent("—");
+    expect(screen.queryByText(/Invalid/)).toBeNull();
   });
 
   it("an unknown battery says so and offers no Grocy link", async () => {
@@ -148,7 +162,8 @@ describe("the Grocycode page, battery", () => {
     expect(screen.getByText("Grocy-Batterie 4")).toBeVisible();
     expect(screen.getByText("Zuletzt geladen")).toBeVisible();
     expect(screen.getByText("Zuletzt geladen").nextSibling).toHaveTextContent(/13\.03\.2026/);
-    expect(screen.getByText("Nächste Ladung").nextSibling).toHaveTextContent("Nie");
+    expect(screen.getByText("Nächste Ladung").nextSibling).toHaveTextContent("Nicht geplant");
+    expect(screen.queryByText("Nie")).toBeNull();
   });
 });
 

@@ -118,7 +118,7 @@ async def test_lookup_invalid_app_returns_422() -> None:
 
 from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult  # noqa: E402
 from app.services.errors import IntegrationNotConfiguredError  # noqa: E402
-from app.services.lookup_service import LookupFailedError  # noqa: E402
+from app.services.lookup_service import LookupFailedError, UnknownAppError  # noqa: E402
 
 _BATTERY = GrocyBatteryResult(
     id="4", name="Remote AAA", url="https://grocy.example.invalid/battery/4", charge_cycles=3
@@ -159,22 +159,37 @@ def test_grocy_chore_route_returns_the_dto() -> None:
     assert r.json()["url"].endswith("/chore/7")
 
 
-@pytest.mark.parametrize("kind", ["batteries", "chores"])
-def test_grocy_object_routes_map_the_errors_like_the_product_lookup(kind: str) -> None:
-    method = "grocy_battery" if kind == "batteries" else "grocy_chore"
+_LEAKY = "ConnectError to https://grocy.internal.example.invalid:9283/api/batteries/4 key=hunter2"
+_ROUTES = [
+    ("lookup", "/api/v1/lookup/grocy/4"),
+    ("grocy_battery", "/api/v1/lookup/grocy/batteries/4"),
+    ("grocy_chore", "/api/v1/lookup/grocy/chores/7"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), _ROUTES)
+def test_all_lookup_routes_map_the_errors_alike(method: str, path: str) -> None:
     cases = [
-        (AppLookupNotFoundError("nope"), 404),
-        (IntegrationNotConfiguredError("Grocy is not configured"), 503),
-        (LookupFailedError("upstream failed"), 500),
+        (AppLookupNotFoundError("nope"), 404, None),
+        (IntegrationNotConfiguredError("Grocy is not configured"), 503, None),
+        (
+            UnknownAppError(f"Unknown integration. Registered: {_LEAKY}"),
+            422,
+            "integration_unknown_app",
+        ),
+        (LookupFailedError(_LEAKY), 502, "integration_lookup_failed"),
     ]
-    for error, status in cases:
+    for error, status, code in cases:
         with patch(
             f"app.api.routes.lookup._lookup_service.{method}", new=AsyncMock(side_effect=error)
         ):
-            r = TestClient(_build_app(), raise_server_exceptions=False).get(
-                f"/api/v1/lookup/grocy/{kind}/4"
-            )
-        assert r.status_code == status, (kind, error)
+            r = TestClient(_build_app(), raise_server_exceptions=False).get(path)
+        assert r.status_code == status, (method, error)
+        if code:
+            assert r.json()["detail"]["error_code"] == code
+            # A fixed message: the exception text carries an address and a key.
+            assert "grocy.internal" not in r.text
+            assert "hunter2" not in r.text
 
 
 @pytest.mark.parametrize("bad", ["abc", "4x", "-1", "1" * 19])

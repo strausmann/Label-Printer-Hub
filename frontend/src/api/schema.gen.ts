@@ -484,7 +484,7 @@ export interface paths {
         };
         /**
          * Read a Grocy battery
-         * @description Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up.
+         * @description Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up, 502 when it fails.
          */
         get: operations["grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get"];
         put?: never;
@@ -504,7 +504,7 @@ export interface paths {
         };
         /**
          * Read a Grocy chore
-         * @description Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up.
+         * @description Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up, 502 when it fails.
          */
         get: operations["grocy_chore_api_v1_lookup_grocy_chores__chore_id__get"];
         put?: never;
@@ -5336,14 +5336,19 @@ export interface operations {
                     "application/json": components["schemas"]["GrocyBatteryResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request names an integration this hub does not have. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description The integration failed or its upstream could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
             };
         };
     };
@@ -5368,14 +5373,19 @@ export interface operations {
                     "application/json": components["schemas"]["GrocyChoreResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request names an integration this hub does not have. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description The integration failed or its upstream could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
             };
         };
     };
@@ -5400,14 +5410,19 @@ export interface operations {
                     "application/json": components["schemas"]["LookupResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request names an integration this hub does not have. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description The integration failed or its upstream could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
             };
         };
     };

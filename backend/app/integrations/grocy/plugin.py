@@ -47,8 +47,16 @@ def _grocy_date(value: object) -> datetime | None:
     return None if parsed.year >= _NEVER_YEAR else parsed
 
 
-def _text(value: object) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None
+_NAME_MAX = 200
+_DESCRIPTION_MAX = 2000
+
+
+def _text(value: object, limit: int) -> str | None:
+    """Trimmed text cut to ``limit`` characters; None when it is not text or empty."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text[:limit] if text else None
 
 
 @runtime_checkable
@@ -145,34 +153,42 @@ class GrocyPlugin(StoreBoundPlugin):
         """
         details, base = await self._details("batteries", battery_id, "Battery")
         battery = details.get("battery")
-        if not isinstance(battery, dict) or battery.get("id") is None:
+        if not isinstance(battery, dict):
             raise ValueError(f"Grocy response for battery {battery_id!r} has no battery object")
         cycles = details.get("charge_cycles_count")
+        # The id and the link come from the id that was asked for (digits only, checked), not from
+        # the answer: Grocy's JSON never decides where the link points.
         return GrocyBatteryResult(
-            id=str(battery["id"]),
-            name=_text(battery.get("name")) or f"Battery {battery_id}",
-            description=_text(battery.get("description")),
-            url=f"{base}/battery/{battery['id']}",
+            id=battery_id,
+            name=_text(battery.get("name"), _NAME_MAX) or f"Battery {battery_id}",
+            description=_text(battery.get("description"), _DESCRIPTION_MAX),
+            url=f"{base}/battery/{battery_id}",
             last_charged=_grocy_date(details.get("last_charged")),
             next_estimated_charge=_grocy_date(details.get("next_estimated_charge_time")),
-            charge_cycles=cycles if isinstance(cycles, int) and cycles >= 0 else 0,
+            charge_cycles=cycles
+            if isinstance(cycles, int) and not isinstance(cycles, bool) and cycles >= 0
+            else 0,
         )
 
     async def chore(self, chore_id: str) -> GrocyChoreResult:
         """``GET /api/chores/{choreId}`` (ChoreDetailsResponse in Grocy's OpenAPI file)."""
         details, base = await self._details("chores", chore_id, "Chore")
         chore = details.get("chore")
-        if not isinstance(chore, dict) or chore.get("id") is None:
+        if not isinstance(chore, dict):
             raise ValueError(f"Grocy response for chore {chore_id!r} has no chore object")
         assigned = details.get("next_execution_assigned_user")
         return GrocyChoreResult(
-            id=str(chore["id"]),
-            name=_text(chore.get("name")) or f"Chore {chore_id}",
-            description=_text(chore.get("description")),
-            url=f"{base}/chore/{chore['id']}",
+            id=chore_id,
+            name=_text(chore.get("name"), _NAME_MAX) or f"Chore {chore_id}",
+            description=_text(chore.get("description"), _DESCRIPTION_MAX),
+            url=f"{base}/chore/{chore_id}",
             last_tracked=_grocy_date(details.get("last_tracked")),
             next_estimated_execution=_grocy_date(details.get("next_estimated_execution_time")),
-            assigned_to=_text(assigned.get("display_name")) if isinstance(assigned, dict) else None,
+            assigned_to=(
+                _text(assigned.get("display_name"), _NAME_MAX)
+                if isinstance(assigned, dict)
+                else None
+            ),
         )
 
     async def _details(

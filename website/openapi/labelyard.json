@@ -8325,7 +8325,7 @@
     },
     "/api/v1/lookup/grocy/batteries/{battery_id}": {
       "get": {
-        "description": "Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up.",
+        "description": "Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up, 502 when it fails.",
         "operationId": "grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get",
         "parameters": [
           {
@@ -8353,14 +8353,10 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The request names an integration this hub does not have."
+          },
+          "502": {
+            "description": "The integration failed or its upstream could not be reached."
           }
         },
         "security": [
@@ -8376,7 +8372,7 @@
     },
     "/api/v1/lookup/grocy/chores/{chore_id}": {
       "get": {
-        "description": "Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up.",
+        "description": "Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up, 502 when it fails.",
         "operationId": "grocy_chore_api_v1_lookup_grocy_chores__chore_id__get",
         "parameters": [
           {
@@ -8404,14 +8400,10 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The request names an integration this hub does not have."
+          },
+          "502": {
+            "description": "The integration failed or its upstream could not be reached."
           }
         },
         "security": [
@@ -8466,14 +8458,10 @@
             "description": "Successful Response"
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The request names an integration this hub does not have."
+          },
+          "502": {
+            "description": "The integration failed or its upstream could not be reached."
           }
         },
         "security": [

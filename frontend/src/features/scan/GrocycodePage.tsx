@@ -34,8 +34,12 @@ function Reading({ entity, id }: { entity: "b" | "c"; id: string }) {
   const notFound = query.error instanceof ApiError && query.error.status === 404;
   const href = safeHref(data?.url) ?? (known && !notFound ? `${known}/${path}/${id}` : null);
 
-  const when = (value: string | null | undefined) =>
-    value ? new Date(value).toLocaleString(i18n.locale, { dateStyle: "medium", timeStyle: "short" }) : t`Never`;
+  // No date reads in words (the caller says which); a date that cannot be read is a dash, never "Invalid Date".
+  const when = (value: string | null | undefined, none: string) => {
+    if (!value) return none;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString(i18n.locale, { dateStyle: "medium", timeStyle: "short" });
+  };
 
   return (
     <div className="flex max-w-xl flex-col gap-5">
@@ -55,15 +59,15 @@ function Reading({ entity, id }: { entity: "b" | "c"; id: string }) {
 
       {data && entity === "b" && (
         <Facts>
-          <Fact label={t`Last charged`}>{when((data as GrocyBattery).last_charged)}</Fact>
-          <Fact label={t`Next charge`}>{when((data as GrocyBattery).next_estimated_charge)}</Fact>
+          <Fact label={t`Last charged`}>{when((data as GrocyBattery).last_charged, t`Never`)}</Fact>
+          <Fact label={t`Next charge`}>{when((data as GrocyBattery).next_estimated_charge, t`Not scheduled`)}</Fact>
           <Fact label={t`Charge cycles`}>{(data as GrocyBattery).charge_cycles}</Fact>
         </Facts>
       )}
       {data && entity === "c" && (
         <Facts>
-          <Fact label={t`Last done`}>{when((data as GrocyChore).last_tracked)}</Fact>
-          <Fact label={t`Next due`}>{when((data as GrocyChore).next_estimated_execution)}</Fact>
+          <Fact label={t`Last done`}>{when((data as GrocyChore).last_tracked, t`Never`)}</Fact>
+          <Fact label={t`Next due`}>{when((data as GrocyChore).next_estimated_execution, t`Not scheduled`)}</Fact>
           {(data as GrocyChore).assigned_to && <Fact label={t`Assigned to`}>{(data as GrocyChore).assigned_to}</Fact>}
         </Facts>
       )}

@@ -2392,6 +2392,10 @@ msgstr "Not ready"
 msgid "Not reported"
 msgstr "Not reported"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Not scheduled"
+msgstr "Not scheduled"
+
 #: src/features/settings/SettingField.tsx
 msgid "Not set"
 msgstr "Not set"
