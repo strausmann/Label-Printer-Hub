@@ -12,7 +12,12 @@ import { SourceLink } from "../features/about/SourceLink";
 import { useConfiguredIntegrations } from "../features/integrations/api";
 import { messages } from "../i18n/messages";
 
-/** Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed. */
+/**
+ * Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed.
+ *
+ * A fixed box that scrolls as a whole on a short screen. It was a sticky box with a scrolling list inside, and on an
+ * Android tablet Chrome drew the lower part of that list again below it while the page scrolled (#341).
+ */
 export function Sidebar() {
   const { t, i18n } = useLingui();
   const info = useInfo();
@@ -33,7 +38,7 @@ export function Sidebar() {
       : { state: "idle" as const, label: t`Connecting…` };
 
   return (
-    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-surface lg:flex">
+    <aside className="fixed inset-y-0 left-0 z-10 hidden w-64 flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface lg:flex">
       <div className="px-6 pt-6 pb-4">
         <Link to="/" className="press flex items-center gap-3 text-section font-bold text-ink">
           {/* One mark per colour scheme (index.css shows the matching one); the name carries the meaning. */}
@@ -42,7 +47,7 @@ export function Sidebar() {
           <span className="min-w-0 [overflow-wrap:anywhere]">{info.data?.display_name ?? i18n._(messages.appName)}</span>
         </Link>
       </div>
-      <nav aria-label={t`Main`} className="flex-1 overflow-y-auto px-3 pb-4">
+      <nav aria-label={t`Main`} className="flex-1 px-3 pb-4">
         {groups.map((group) => {
           const heading = labels.group[group.id];
           const headingId = `nav-group-${group.id}`;
