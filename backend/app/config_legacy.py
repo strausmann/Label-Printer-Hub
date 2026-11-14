@@ -145,3 +145,30 @@ def setting_variable_label(field: str, report: LegacyReport) -> str:
     name = ENV_PREFIX + field.upper()
     legacy = LEGACY_ENV_PREFIX + field.upper()
     return f"{name} (legacy {legacy})" if legacy in report.used else name
+
+
+DEFAULT_LISTEN_PORT = "8000"
+# Same order as the container start command and healthcheck (backend/Dockerfile).
+_PORT_VARIABLES = ("LABELYARD_SERVER_PORT", "PRINTER_HUB_SERVER_PORT", "PORT")
+
+
+def listen_port_warning(environ: Mapping[str, str]) -> str | None:
+    """Warning text when the container's listen port is not the default 8000, else None.
+
+    The port is chosen by the shell in the start command, before the application runs; this
+    repeats that choice (first non-empty of the variables above) so a port set by an old
+    ``.env`` line shows up in ``docker logs``. It names the variable and the value, never a
+    secret.
+    """
+    for name in _PORT_VARIABLES:
+        value = environ.get(name, "")
+        if value:
+            if value == DEFAULT_LISTEN_PORT:
+                return None
+            return (
+                f"The hub listens on port {value}, set by {name}, not on the default "
+                f"{DEFAULT_LISTEN_PORT}. If the published port, the proxy or the healthcheck "
+                f"still use {DEFAULT_LISTEN_PORT}, delete that line or set it to "
+                f"{DEFAULT_LISTEN_PORT}."
+            )
+    return None

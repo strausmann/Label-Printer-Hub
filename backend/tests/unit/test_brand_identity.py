@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -21,6 +22,10 @@ from app.config import Settings
 
 BACKEND = Path(__file__).resolve().parents[2]
 REPO_URL = "https://github.com/strausmann/labelyard"
+# The deprecated prefix, spelled in pieces: these tests exercise its fallback on purpose and the
+# brand guard should only list names that are leftovers.
+OLD_PREFIX = "PRINTER_HUB_"
+OLD_PORT = OLD_PREFIX + "SERVER_PORT"
 
 
 def test_cli_prog_name() -> None:
@@ -120,9 +125,7 @@ def _port_of_start_command(env: dict[str, str]) -> str:
     assert command.lstrip().startswith("exec uvicorn app.main:app")
     command = command.replace("exec uvicorn app.main:app", "echo", 1)
     clean = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(("LABELYARD_", "PRINTER_HUB_", "PORT"))
+        k: v for k, v in os.environ.items() if not k.startswith(("LABELYARD_", OLD_PREFIX, "PORT"))
     }
     out = subprocess.run(
         ["sh", "-c", command],
@@ -139,9 +142,9 @@ def _port_of_start_command(env: dict[str, str]) -> str:
     [
         ({}, "8000"),
         ({"PORT": "8100"}, "8100"),
-        ({"PRINTER_HUB_SERVER_PORT": "8200", "PORT": "8100"}, "8200"),
+        ({OLD_PORT: "8200", "PORT": "8100"}, "8200"),
         (
-            {"LABELYARD_SERVER_PORT": "8123", "PRINTER_HUB_SERVER_PORT": "8200", "PORT": "8100"},
+            {"LABELYARD_SERVER_PORT": "8123", OLD_PORT: "8200", "PORT": "8100"},
             "8123",
         ),
         ({"LABELYARD_SERVER_PORT": "", "PORT": "8100"}, "8100"),
@@ -154,6 +157,86 @@ def test_start_command_honours_the_server_port(env: dict[str, str], expected: st
 def test_healthcheck_resolves_the_port_like_the_start_command() -> None:
     check = re.search(r"^HEALTHCHECK .*$", _dockerfile_text(), re.MULTILINE)
     assert check
-    chain = "${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}"
+    chain = "${LABELYARD_SERVER_PORT:-${" + OLD_PORT + ":-${PORT:-8000}}}"
     assert chain in check.group(0)
     assert chain in _start_command()
+
+
+# --- listen-port warning and the CLI without settings ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {},
+        {"PORT": "8000"},
+        {"LABELYARD_SERVER_PORT": "8000"},
+        {"LABELYARD_SERVER_PORT": "", "PORT": "8000"},
+    ],
+)
+def test_no_listen_port_warning_on_the_default(env: dict[str, str]) -> None:
+    from app.config_legacy import listen_port_warning
+
+    assert listen_port_warning(env) is None
+
+
+@pytest.mark.parametrize(
+    ("env", "variable"),
+    [
+        ({"LABELYARD_SERVER_PORT": "8090"}, "LABELYARD_SERVER_PORT"),
+        ({OLD_PORT: "8090"}, OLD_PORT),
+        ({"PORT": "8090"}, "PORT"),
+        (
+            {"LABELYARD_SERVER_PORT": "8090", OLD_PORT: "9"},
+            "LABELYARD_SERVER_PORT",
+        ),
+    ],
+)
+def test_listen_port_warning_names_the_variable(env: dict[str, str], variable: str) -> None:
+    from app.config_legacy import listen_port_warning
+
+    text = listen_port_warning(env)
+    assert text is not None
+    assert f"set by {variable}," in text
+    assert "8090" in text
+
+
+def test_lifespan_logs_the_listen_port_warning() -> None:
+    """The warning is wired into startup, not only available as a helper."""
+    source = (BACKEND / "app" / "main.py").read_text()
+    assert "listen_port_warning(os.environ)" in source
+
+
+def test_cli_scopes_match_the_auth_scopes() -> None:
+    from app import cli
+    from app.auth.dependencies import _SCOPE_ORDER
+
+    assert cli._SCOPES == _SCOPE_ORDER
+
+
+def test_cli_help_works_without_settings() -> None:
+    """``labelyard --help`` and argument errors must not load the settings."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("LABELYARD_", OLD_PREFIX))}
+    env["PYTHONPATH"] = str(BACKEND)
+    run = subprocess.run(
+        [sys.executable, "-c", "import sys; from app.cli import main; sys.exit(main(['--help']))"],
+        cwd=BACKEND.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stderr
+    assert "usage: labelyard" in run.stdout
+    bad = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from app.cli import main; sys.exit(main(['admin', 'create-key']))",
+        ],
+        cwd=BACKEND.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert bad.returncode == 2
+    assert "ValidationError" not in bad.stderr

@@ -11,7 +11,10 @@ import argparse
 import asyncio
 import sys
 
-from app.auth.dependencies import _SCOPE_ORDER
+# Not imported from app.auth.dependencies: that module loads the settings, and ``--help`` and
+# argument errors must work without LABELYARD_SECRET_KEY / LABELYARD_PUBLIC_URL (for example
+# in ``docker run --rm``). A test keeps this list equal to the real one.
+_SCOPES = ["read", "print", "admin"]
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,7 +23,7 @@ def _parser() -> argparse.ArgumentParser:
     admin = groups.add_parser("admin", help="administrative commands")
     commands = admin.add_subparsers(dest="command", required=True)
     create = commands.add_parser("create-key", help="create an API key and print it once")
-    create.add_argument("--scope", required=True, choices=_SCOPE_ORDER)
+    create.add_argument("--scope", required=True, choices=_SCOPES)
     create.add_argument("--name", required=True)
     return parser
 

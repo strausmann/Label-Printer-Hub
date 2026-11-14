@@ -37,6 +37,10 @@ Du kommst von 1.4.x? Bring deine API-Clients zuerst auf 1.5.0 (`/api/v1`-Pfade, 
 - Alle `/api/v1`-Pfade und der Ereignisstrom.
 - Der registrierte Name des Exportformats für Bogentypen (`.sheet-type`).
 
+## Verhaltensänderungen
+
+- **Die Port-Variable wirkt jetzt.** `LABELYARD_SERVER_PORT` (und das alte `PRINTER_HUB_SERVER_PORT`) war dokumentiert, wurde aber ignoriert. Der Container lauscht jetzt auf dem genannten Port und fällt auf `PORT`, dann auf `8000` zurück. Eine `.env`-Datei, die du aus einer älteren `.env.example` kopiert hast, kann noch `LABELYARD_SERVER_PORT=8090` enthalten: Lösche die Zeile oder setze den Port, den deine Compose-Datei abbildet (standardmäßig `8000`). Danach muss `/healthz` auf dem abgebildeten Port antworten. Ist der Port nicht `8000`, schreibt der Hub beim Start eine Warnung ins Log, die die Variable nennt.
+
 ## Umgebungsvariablen
 
 Umbenennen musst du vorerst nicht. Der Hub liest `LABELYARD_*`; die früheren Namen `PRINTER_HUB_*` werden als veralteter Rückfall weiter gelesen.

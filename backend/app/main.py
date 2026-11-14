@@ -124,7 +124,7 @@ from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.build_info import PROJECT_LICENSE, public_repo_url
 from app.calibration.page import render_calibration_page
 from app.config import get_settings
-from app.config_legacy import report_from_process, warn_legacy_env
+from app.config_legacy import listen_port_warning, report_from_process, warn_legacy_env
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
@@ -280,6 +280,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     warn_legacy_env(report_from_process(), _log)
+    if (port_warning := listen_port_warning(os.environ)) is not None:
+        _log.warning(port_warning)
     warn_if_insecure_cookies(settings)
     # 266-14: the PDF font is registered before any planner or renderer thread can need it.
     # A missing font is reported where it is used (the sheet print answers with it).
