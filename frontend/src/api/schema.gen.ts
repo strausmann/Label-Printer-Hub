@@ -19,7 +19,7 @@ export interface paths {
         put?: never;
         /**
          * Create a new API key
-         * @description Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix.
+         * @description Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix. A key with the admin scope always acts on every printer: a non-empty ``allowed_printer_ids`` on it is 422 ``admin_key_not_restrictable``.
          */
         post: operations["create_api_key_api_v1_admin_api_keys_post"];
         delete?: never;
@@ -51,7 +51,7 @@ export interface paths {
         head?: never;
         /**
          * Update API key metadata
-         * @description Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that.
+         * @description Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that. A key with the admin scope refuses a non-empty ``allowed_printer_ids`` (422 ``admin_key_not_restrictable``).
          */
         patch: operations["update_api_key_api_v1_admin_api_keys__key_id__patch"];
         trace?: never;
