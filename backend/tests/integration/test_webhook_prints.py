@@ -243,6 +243,13 @@ async def test_quantity_line_follows_hub_language(hub: Hub) -> None:
         assert row.payload["label_data"]["secondary"][0] == "851 g übrig"
 
 
+async def test_grocy_quantity_line_follows_hub_language(hub: Hub) -> None:
+    async with hub.running() as (client, app):
+        await _set_language(app, "de")
+        row = await _quantity_job(client, GROCY, {**GROCY_BODY, "quantity": -1.5})
+        assert row.payload["label_data"]["secondary"][0] == "Bestandsänderung: -1,5"
+
+
 async def test_grocy_quantity_prints_three_lines(hub: Hub) -> None:
     async with hub.running() as (client, _app):
         row = await _quantity_job(client, GROCY, {**GROCY_BODY, "quantity": -2})

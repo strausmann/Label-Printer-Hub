@@ -52,11 +52,17 @@ def _plain(value: Decimal) -> str:
 
 def spoolman_quantity_line(quantity: float | None, language: str) -> str | None:
     """The remaining grams of a spool, rounded half up to whole grams."""
-    if not _in_range("spoolman", quantity, 0, SPOOLMAN_QUANTITY_MAX):
+    # The range is judged on the rounded value: -0.4 rounds to 0 and is in range.
+    if not _in_range("spoolman", quantity, -0.5, SPOOLMAN_QUANTITY_MAX):
         return None
     assert quantity is not None
     grams = Decimal(str(quantity)).quantize(_ONE, rounding=ROUND_HALF_UP)
-    return _template("spoolman", language).format(n=_plain(grams))
+    if grams < 0:  # -0.5 rounds half up to -1
+        _log.info("Ignoring an out-of-range spoolman webhook quantity")
+        return None
+    # A rounded zero has no sign: -0.0 and -0.4 print as 0.
+    text = "0" if grams == 0 else _plain(grams)
+    return _template("spoolman", language).format(n=text)
 
 
 def grocy_quantity_line(quantity: float | None, language: str) -> str | None:
