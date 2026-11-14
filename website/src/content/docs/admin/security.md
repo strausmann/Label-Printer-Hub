@@ -1,6 +1,6 @@
 ---
 title: Security model
-description: What Labelyard protects, what it does not, and how to report a vulnerability.
+description: What Labelyard protects, what it does not, how to verify the image signature, and how to report a vulnerability.
 ---
 
 ## What the hub protects
@@ -20,6 +20,21 @@ description: What Labelyard protects, what it does not, and how to report a vuln
 - Attackers on the same network as the printers. Label printers accept print data on TCP port 9100 and answer SNMP with the community `public` by design; put them on a network segment you trust.
 - A compromised reverse proxy or container host.
 - Malicious printer firmware.
+
+## Verify the image signature
+
+From 1.6.0 on, every published image is signed with [cosign](https://docs.sigstore.dev/) without a key: the signature is made with the GitHub Actions token of the project's image workflow and covers the multi-arch index, so the platform images and their SBOM and provenance attestations are covered too. A tag can move, so resolve it to its digest first and verify the digest:
+
+```bash
+docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
+
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/strausmann/labelyard@<digest>
+```
+
+The identity accepts only the image workflow of this repository (under its current and its former name), run from `main` or a milestone branch. `[b]` in the pattern matches the letter b. The digest is the same on Docker Hub; replace the last line with `docker.io/strausmann/labelyard@<digest>` to check the copy there. `cosign verify` exits with an error when no valid signature matches. The [supply-chain notes](https://github.com/strausmann/labelyard/blob/main/docs/supply-chain.md) cover the exact release identity, the SBOM and the provenance.
 
 ## Reporting a vulnerability
 
