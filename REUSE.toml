@@ -107,13 +107,14 @@ precedence = "override"
 SPDX-FileCopyrightText = "2007 Free Software Foundation, Inc. <https://fsf.org/>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
-# Third-party: Contributor Covenant 2.1, CC BY 4.0 (the licence of the text at version 2.1),
+# Third-party: Contributor Covenant 2.1, created by Coraline Ada Ehmke in 2014 and stewarded
+# by the Organization for Ethical Source; CC BY 4.0 (the licence of the text at version 2.1),
 # adapted with the project's contact address.
 [[annotations]]
 path = "CODE_OF_CONDUCT.md"
 precedence = "override"
 SPDX-FileCopyrightText = [
-  "Organization for Ethical Source <https://www.contributor-covenant.org>",
+  "2014 Coraline Ada Ehmke and Contributor Covenant contributors <https://www.contributor-covenant.org>",
   "2026 Björn Strausmann and Labelyard contributors",
 ]
 SPDX-License-Identifier = "CC-BY-4.0"
@@ -139,14 +140,16 @@ SPDX-FileCopyrightText = "2017 IBM Corp. with Reserved Font Name \"Plex\""
 SPDX-License-Identifier = "OFL-1.1"
 
 # Third-party: DejaVu Sans 2.37 (Debian fonts-dejavu-core) and its licence text. The
-# fonts are (c) Bitstream; the DejaVu changes are in the public domain.
+# fonts are (c) Bitstream; the glyphs imported from the Arev fonts are (c) Tavmjong Bah
+# under the Arev licence (the Bitstream Vera text with the names changed); the DejaVu
+# changes are in the public domain.
 [[annotations]]
 path = [
   "backend/app/page_render/fonts/DejaVuSans.ttf",
   "backend/app/page_render/fonts/LICENSE-DejaVu.txt",
 ]
 precedence = "override"
-SPDX-FileCopyrightText = "2003 Bitstream, Inc."
+SPDX-FileCopyrightText = ["2003 Bitstream, Inc.", "2006 Tavmjong Bah"]
 SPDX-License-Identifier = "Bitstream-Vera"
 
 # Third-party: licence texts shipped in the image (B1), each under its own licence.

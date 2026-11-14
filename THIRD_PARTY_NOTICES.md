@@ -88,6 +88,8 @@ The label sheet geometries in `backend/app/seed/sheet_types.json` were derived f
 template files of [gLabels-qt](https://github.com/j-evins/glabels-qt) at commit `37901c1`,
 which are licensed under the MIT licence:
 
+<!-- REUSE-IgnoreStart -->
+
 ```text
 Copyright (C) 2001-2026 Jaye Evins
 
@@ -106,6 +108,8 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+<!-- REUSE-IgnoreEnd -->
 
 The entries for L4731REV and L4736REV cite Labelplanet and MR-Label as sources of facts
 (measurements) only; no text or files from those sites are included.

@@ -1,5 +1,11 @@
-# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+## SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+## SPDX-License-Identifier: AGPL-3.0-or-later
+## The two lines above head this template (Mako comments, not emitted); the two below
+## head every migration made from it, with the year the migration is created.
+## REUSE-IgnoreStart
+# SPDX-FileCopyrightText: ${create_date.year} Björn Strausmann and Labelyard contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
+## REUSE-IgnoreEnd
 
 """${message}
 

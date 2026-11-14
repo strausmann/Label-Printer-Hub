@@ -16,7 +16,11 @@ This license is for your protection as a Contributor as well as the protection
 of the Maintainer and its users; it does not change your rights to use your
 own Contributions for any other purpose.
 
+<!-- REUSE-IgnoreStart -->
+
 ## 1. Grant of Copyright License
+
+<!-- REUSE-IgnoreEnd -->
 
 Subject to the terms and conditions of this Agreement, You hereby grant to the
 Maintainer and to recipients of software distributed by the Maintainer a

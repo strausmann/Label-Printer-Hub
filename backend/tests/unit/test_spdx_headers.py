@@ -31,6 +31,10 @@ REUSE_TOML = REPO / "REUSE.toml"
 # REUSE-IgnoreStart
 HEADER_COPYRIGHT = "SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors"
 HEADER_LICENCE = "SPDX-License-Identifier: AGPL-3.0-or-later"
+# The year is the file's creation year (CONTRIBUTING.md, "Licence headers"), so any year matches.
+HEADER_COPYRIGHT_RE = re.compile(
+    r"SPDX-FileCopyrightText: 20\d\d Björn Strausmann and Labelyard contributors"
+)
 # REUSE-IgnoreEnd
 
 HEADER_WINDOW = 6
@@ -61,6 +65,7 @@ COMMENTABLE_NAMES = frozenset(
         ".dockerignore",
         ".editorconfig",
         ".env.example",
+        ".git-blame-ignore-revs",
         ".gitignore",
         "CODEOWNERS",
         "Dockerfile",
@@ -88,11 +93,17 @@ THIRD_PARTY = (
 
 
 def _glob_to_regex(pattern: str) -> re.Pattern[str]:
-    """REUSE.toml globbing: ``*`` stays inside one path segment, ``**`` crosses them."""
+    """REUSE.toml globbing: ``*`` stays inside one path segment, ``**`` crosses them.
+
+    ``**/`` also matches zero directories, so ``**/*.json`` covers ``package.json`` at the root.
+    """
     out = []
     i = 0
     while i < len(pattern):
-        if pattern.startswith("**", i):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
             out.append(".*")
             i += 2
         elif pattern[i] == "*":
@@ -142,6 +153,37 @@ def _commentable(path: str) -> bool:
     return p.name in COMMENTABLE_NAMES or p.suffix in COMMENTABLE_SUFFIXES
 
 
+def _has_header(text: str) -> bool:
+    head = "\n".join(text.splitlines()[:HEADER_WINDOW])
+    return HEADER_COPYRIGHT_RE.search(head) is not None and HEADER_LICENCE in head
+
+
+# REUSE-IgnoreStart
+def test_header_year_is_creation_year() -> None:
+    """A header from a later year is as correct as one from 2026; the year is never bumped."""
+    licence = f"# {HEADER_LICENCE}\n"
+    for year in ("2026", "2027", "2031"):
+        text = f"# SPDX-FileCopyrightText: {year} Björn Strausmann and Labelyard contributors\n"
+        assert _has_header(text + licence), year
+    assert not _has_header("# SPDX-FileCopyrightText: 1999 Björn Strausmann\n" + licence)
+    assert not _has_header(f"# {HEADER_COPYRIGHT}\n")
+    assert not _has_header("x = 1\n" * HEADER_WINDOW + f"# {HEADER_COPYRIGHT}\n" + licence)
+
+
+# REUSE-IgnoreEnd
+
+
+def test_glob_double_star_matches_root_and_subdirectories() -> None:
+    double = _glob_to_regex("**/*.json")
+    assert double.match("package.json")
+    assert double.match("frontend/e2e/fixtures/backend-licences.json")
+    assert not double.match("package.json.bak")
+    single = _glob_to_regex("frontend/*.json")
+    assert single.match("frontend/package.json")
+    assert not single.match("frontend/src/x.json")
+    assert _glob_to_regex("website/src/content/docs/**").match("website/src/content/docs/a/b.md")
+
+
 def test_own_sources_carry_header() -> None:
     missing = []
     for path in _tracked():
@@ -150,9 +192,7 @@ def test_own_sources_carry_header() -> None:
         file = REPO / path
         if file.stat().st_size == 0:
             continue
-        head = file.read_text(encoding="utf-8").splitlines()[:HEADER_WINDOW]
-        text = "\n".join(head)
-        if HEADER_COPYRIGHT not in text or HEADER_LICENCE not in text:
+        if not _has_header(file.read_text(encoding="utf-8")):
             missing.append(path)
     assert not missing, "SPDX header missing in the first lines of:\n" + "\n".join(missing)
 
@@ -187,7 +227,7 @@ def test_third_party_files_not_relicensed() -> None:
     for path in THIRD_PARTY:
         head = (REPO / path).read_bytes()[:4096]
         assert b"AGPL-3.0-or-later" not in head or path == "LICENSE", path
-        assert HEADER_COPYRIGHT.encode() not in head, path
+        assert HEADER_COPYRIGHT_RE.search(head.decode("utf-8", "replace")) is None, path
         assert _covered_by_reuse_toml(path), path
     by_path = {}
     for ann in _annotations():

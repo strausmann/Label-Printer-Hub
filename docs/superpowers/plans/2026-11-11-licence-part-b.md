@@ -17,6 +17,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 ## Global Constraints
 
+<!-- REUSE-IgnoreStart -->
+
 - Release **1.6.0** = rename (#280) + this plan. Minor release: `feat` is allowed; **no commit and no PR title with `!`, no `BREAKING CHANGE:`/`BREAKING-CHANGE:` footer** — semantic-release would compute 2.0.0. Issue #154's own title is `feat!: …`; no commit and not the milestone → `main` PR title is taken from it.
 - Only B3 is a `feat` (`feat(ui)`); every other commit is `build`, `ci` or `docs` (none of them releases, `.releaserc.json` `releaseRules`).
 - Commit scopes from `commitlint.config.cjs` only (`docker`, `web`, `ui`, `ci`, `release`, `docs`, `license`). Commits use the maintainer's git identity. No AI attribution, no internal host names (public repo, `ci.yml` privacy scan).
@@ -34,6 +36,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - Image stays non-root UID 1000; the CSP in `backend/app/web/spa.py` and the precache globs in `frontend/pwa.config.ts` (no `json`) stay unchanged; `BUILDKIT_SBOM_SCAN_STAGE` stays off.
 - Never rebuild or push an already published version. No throwaway release tags: the live check (B8) uses the milestone preview `1.6.0-rc.N` that the rename plan builds anyway.
 - Coverage gates stay: backend `--cov-fail-under=80`, web 70 %. UI work loads the design skills (`.claude`-side rule of the operator; named in B3).
+
+<!-- REUSE-IgnoreEnd -->
 
 ## Preconditions
 
@@ -232,6 +236,8 @@ Load before writing UI code: `taste-skill:design-taste-frontend`, `emil-design-e
 
 Placed here in the document after B4; it runs last (see above). Header-only change to existing files plus REUSE metadata; no behaviour change. The last code task of the milestone: after every Part B and rename task and the last sync, before gate, review and audit (Ordering).
 
+<!-- REUSE-IgnoreStart -->
+
 **Decisions:**
 - **Header text:** the two lines of Global Constraints, in the file's comment syntax (`#` for Python, shell, YAML, TOML, Dockerfile, Makefile, `.gitignore`/`.dockerignore`, `.env.example`, `alembic.ini.runtime`; `//` for TS/TSX/JS/MJS/CJS; `/* */` for CSS; `<!-- -->` for Markdown and HTML). Shebang and encoding lines stay first; Python headers go before the module docstring; `frontend/index.html` puts the comment after `<!doctype html>`.
 - **Inline header** in every own file whose format allows comments, including docs, ADRs, plans and the history files (one header, nothing else changed).
@@ -258,6 +264,8 @@ Placed here in the document after B4; it runs last (see above). Header-only chan
 - [ ] **Step 3: Implement.** `reuse annotate --copyright "Björn Strausmann and Labelyard contributors" --year 2026 --license AGPL-3.0-or-later --skip-unrecognised` on the own commentable files (Markdown with `--style html`), `REUSE.toml` for the rest, `reuse download --all`, the CI job, the CONTRIBUTING section.
 - [ ] **Step 4: Run** `reuse lint` (clean), the full backend suite, `pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build`, `ruff format --check .` (headers above docstrings must not trip the formatter), `docker build -f backend/Dockerfile .` (the licence gate still parses the policy), and `git diff --stat` shows only additions of header lines outside `REUSE.toml`, `LICENSES/`, CONTRIBUTING and `ci.yml` (`git diff -U0 | grep '^-' | grep -v '^---'` empty). Counter-test: remove the header from one `.py` → `test_own_sources_carry_header` names it; put `#` into `licence-policy.yml` → `test_json_files_stay_json` fails; drop one `REUSE.toml` font entry → `reuse lint` fails.
 - [ ] **Step 5: Commit** `chore(license): SPDX headers and REUSE metadata for every file` (`Refs #154`), then `chore(license): ignore the header commit in git blame` with `.git-blame-ignore-revs`.
+
+<!-- REUSE-IgnoreEnd -->
 
 ### Task B5: Explicit `mode=max` provenance and an image content check in CI
 

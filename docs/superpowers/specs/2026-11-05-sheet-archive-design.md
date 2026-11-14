@@ -271,6 +271,8 @@ The prefix is the first product code without vendor-specific suffixes (`L4731REV
 
 ### 9.5 Seed
 
+<!-- REUSE-IgnoreStart -->
+
 - **File:** `backend/app/seed/sheet_types.json`, a list of documents in the export format (one parser for both), plus a `seed_revision` integer.
 - **Content:** the researched seed, converted to our schema: only the numbers and provenance, **notes translated to English**, the derived "remaining margin" fields dropped (they are computed), `verified=false` everywhere. The research file was checked for private data: it contains vendor data, public source URLs and the public gLabels commit hash only; its notes are German and must be translated.
 - **36 types, not 42 (OC-13, see Operator question 1).** The issue says Avery 7163, 8658, L4730 and L4770 deviate enough to need a cross-check "before going in". They are held back from the seed until cross-checked. The plan review found two more that fail the geometry rules of section 7.1 as researched: Avery 7161 (`pitch_y` 46.74 < label height 46.78) and Avery Zweckform 3475 (three 70.05 mm columns at 0 mm margin are wider than A4). They are held back as well until their values are checked (maintainer ruling 2026-11-05). Users can still create all six as custom types.
@@ -278,6 +280,8 @@ The prefix is the first product code without vendor-specific suffixes (`L4731REV
 - **Loading (OC-14):** on startup a seeder inserts every seed type whose key is missing. A type already in the database is never changed automatically, with one exception: if all its versions have `origin=seed` and no sheet uses it yet, and the seed geometry changed in a newer `seed_revision`, a new version is added. Locally edited types are left alone; the change is logged.
 - **Notices:** `THIRD_PARTY_NOTICES.md` gets an entry for the gLabels-qt template database: project URL, commit `37901c1`, the copyright line ("Copyright (C) 2001-2026 Jaye Evins") and the MIT text. The two hand-added types cite Labelplanet LP189/25, MR-Label MR111 and Labelplanet LP48/45 as sources in their `source_*` fields; only facts are taken, no page content.
 - **Trademarks:** vendor names and product codes identify which sheet is meant ("for Avery Zweckform L4731REV"); the archive never implies affiliation. Same spirit as `docs/policies/trademarks.md`.
+
+<!-- REUSE-IgnoreEnd -->
 
 ## 10. Physical sheets
 
