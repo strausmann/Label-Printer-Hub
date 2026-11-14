@@ -162,6 +162,7 @@ from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
 from app.services.readiness import build_readiness_response
 from app.settings_store import SettingsStore
+from app.sheets.grocy_sheet import GrocySheetLabels
 from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
 from app.sheets.sweep import SheetReservationSweep
@@ -366,6 +367,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         on_run_change=pq_producer.handle_run_change,
     )
     app.state.print_queue = queue
+    # #281 R-281-16: Grocy labels onto the sheets of page printers (deferred, tracked tasks).
+    grocy_sheet_labels = GrocySheetLabels(
+        async_session, queue, job_store, event_bus, settings_store
+    )
+    app.state.grocy_sheet_labels = grocy_sheet_labels
 
     # Browser sessions: purge those expired for more than a day on every cleanup run.
     cleanup_task = CleanupTask(
@@ -417,6 +423,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # The sweep first: it asks the queue, which the runtime stops. Then the producers, the
         # queue (once, longest attached timeout), then the page clients.
         await reservation_sweep.stop()
+        # Before the runtime and the outcome handler go: a Grocy sheet label not handed off
+        # yet ends ``deferred_interrupted`` and frees its cell (R-281-16).
+        await grocy_sheet_labels.cancel_pending()
         await runtime.stop()
         await cleanup_task.stop()
         unregister_outcome_handler("sheet_page", sheet_outcome)

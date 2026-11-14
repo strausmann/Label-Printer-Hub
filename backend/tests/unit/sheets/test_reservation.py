@@ -768,3 +768,56 @@ async def test_reserve_exact_hands_back_the_cells_in_the_order_it_was_given(sess
     assert [a.cell for a in page.assignments] == [1, 9, 2, 5]
     assert [a.item_index for a in page.assignments] == [None, 0, 1, 2]
     assert [a.ref for a in page.assignments[1:]] == ["r-9", "r-2", "r-5"]
+
+
+# ---------------------------------------------------------------------------- given job ids (#281)
+
+
+async def test_reserve_uses_given_job_ids(session: AsyncSession) -> None:
+    code = await make_sheet(session, used=5)
+    given = uuid4()
+    (page,) = await do_reserve(session, [existing(code)], 1, job_ids=[given])
+
+    assert page.job_id == given
+    rows = [c for c in await cells(session) if c.state == "reserved"]
+    assert [(c.cell_no, c.job_id) for c in rows] == [(6, given)]
+
+
+async def test_reserve_job_ids_length_mismatch_raises(session: AsyncSession) -> None:
+    code = await make_sheet(session, used=5)
+    with pytest.raises(ValueError, match="job_ids"):
+        await do_reserve(session, [existing(code)], 1, job_ids=[uuid4(), uuid4()])
+    assert [c for c in await cells(session) if c.state == "reserved"] == []
+
+
+async def test_deferred_reservation_counts_as_unattached(session: AsyncSession) -> None:
+    """C26 for the Grocy stored row: its reserved cells have a ``jobs`` row, but the row still
+    carries the deferred payload (no ``detail.margin_id``) until the hand-off."""
+    await make_sheet(session, placement="margin")
+    sheet_id = (await session.execute(select(Sheet.id))).scalar_one()
+    job_id = uuid4()
+    session.add(
+        Job(
+            id=job_id,
+            printer_id=uuid4(),
+            state=JobState.QUEUED.value,
+            payload={"deferred": True, "deferred_kind": "sheet_page", "label_data": {}},
+        )
+    )
+    session.add(
+        SheetCell(sheet_id=sheet_id, cell_no=1, state="reserved", job_id=job_id, source="grocy")
+    )
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is True
+    assert await feed_mark_in_flight(session, sheet_id) is True
+    # Handed off: a page payload without a margin ID does not carry it.
+    row = await session.get(Job, job_id)
+    assert row is not None
+    row.payload = {"kind": "sheet_page", "detail": {"sheet_id": str(sheet_id)}}
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is False
+    # A finished deferred row (a tape Grocy job keeps the flag) does not count.
+    row.payload = {"deferred": True, "label_data": {}}
+    row.state = JobState.DONE.value
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is False

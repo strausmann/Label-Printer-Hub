@@ -180,8 +180,10 @@ async def margin_id_in_flight(session: AsyncSession, sheet_id: UUID) -> bool:
     so it stays in flight until a human resolves the cell, F3-1); or if the sheet has
     ``reserved`` cells whose job has no ``jobs`` row yet: the page job is saved after the
     reservation commits, and in that window a second request must not draw the margin ID again
-    (C26); or if a job that has ended still owns ``reserved`` cells, because its outcome handler
-    has not settled them yet (R10-4). The last two rules are conservative: at worst the margin
+    (C26). A Grocy label's stored row (#281) counts the same until its hand-off: it is
+    ``queued`` and still carries ``payload.deferred``, so no ``detail`` says what it prints;
+    or if a job that has ended still owns ``reserved`` cells, because its outcome handler has
+    not settled them yet (R10-4). The last two rules are conservative: at worst the margin
     ID moves to a later job (OC-40).
     """
     return (await _in_flight_flags(session, sheet_id))[0]
@@ -385,6 +387,7 @@ async def _attempt(
     margin: MarginContext,
     required_type_key: str | None,
     actor: str,
+    job_ids: Sequence[UUID] | None = None,
 ) -> tuple[list[ReservedPage], list[SheetTouched]]:
     explicit = any(isinstance(p.cells, list) for p in placements)
     async with write_transaction(session):
@@ -397,16 +400,19 @@ async def _attempt(
         fresh = expected_of(pl, new_views)
         if expected is not None and list(expected) != fresh:
             raise PlanChangedError(_plan_detail(fresh))  # write_transaction rolls it all back
+        if job_ids is not None and len(job_ids) != len(pl.pages):
+            # A caller's own ids (a stored job row, #281): one per planned page, or nothing.
+            raise ValueError(f"job_ids: {len(job_ids)} given, {len(pl.pages)} pages planned")
 
         now = datetime.now(UTC)
         rows: list[dict[str, Any]] = []
         pages: list[ReservedPage] = []
         touched: dict[UUID, SheetTouched] = {}
         next_item = 0
-        for page in pl.pages:
+        for index, page in enumerate(pl.pages):
             sheet_id = page.sheet.sheet_id
             assert sheet_id is not None and page.sheet.code is not None
-            job_id = uuid4()
+            job_id = uuid4() if job_ids is None else job_ids[index]
             assignments: list[CellAssignment] = []
             if page.id_cell is not None:
                 assignments.append(
@@ -483,8 +489,13 @@ async def reserve(
     required_type_key: str | None,
     actor: str,
     bus: EventBus | None = None,
+    job_ids: Sequence[UUID] | None = None,
 ) -> list[ReservedPage]:
     """Plan and reserve in one write transaction; publish ``sheet.updated`` after the commit.
+
+    ``job_ids``: the job id of each planned page, for a caller that stored its job row first
+    (a Grocy label, #281); a count that differs from the plan raises ``ValueError`` and nothing
+    is written. ``None``: every page gets a new id.
 
     ``margin`` is required on purpose: the margin context chooses the band of the margin ID, and
     a print without it would store no band (ruling T2-1). A preview without a printer calls
@@ -502,6 +513,7 @@ async def reserve(
         "margin": margin,
         "required_type_key": required_type_key,
         "actor": actor,
+        "job_ids": job_ids,
     }
     try:
         pages, touched = await _attempt(session, **kwargs)

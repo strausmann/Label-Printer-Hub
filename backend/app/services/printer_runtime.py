@@ -643,6 +643,11 @@ class PrinterRuntime:
                 # instead of printing through a stale wiring; the start-up recovery only
                 # catches what a crash or a failed (or slow) write left queued.
                 await wiring.service.cancel_deferred()
+            grocy_sheets = getattr(self._app.state, "grocy_sheet_labels", None)
+            if grocy_sheets is not None:
+                # #281 R-281-16: the same for Grocy labels on a page printer's sheets, before
+                # the re-attach's recovery could end a row whose task still reserves.
+                await grocy_sheets.cancel_for(printer_id)
             # The producer first: once stopped it cannot reach the queue's pause control
             # for a printer the queue has forgotten (ruling b).
             await self._stop_producer(wiring)

@@ -343,8 +343,13 @@ def _lookup_error(exc: Exception, index: int) -> ItemLookupFailedError | None:
     return None
 
 
-async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) -> list[ResolvedItem]:
+async def resolve_items(
+    items: Sequence[SheetItem], lookup: AppLookupService, *, source_app: str = "manual"
+) -> list[ResolvedItem]:
     """Label data and record keeping per item, in request order.
+
+    ``source_app`` is the ``label_data.source_app`` of raw items (``"grocy"`` for a Grocy
+    label, R-281-15); a lookup's label keeps the integration's own.
 
     Identical lookups (same app and identifier) run once. Lookups run with at most
     ``LOOKUP_CONCURRENCY`` in flight. All of them finish before the
@@ -374,7 +379,7 @@ async def resolve_items(items: Sequence[SheetItem], lookup: AppLookupService) ->
         assert item.data is not None  # the schema: exactly one of data and lookup
         raw = item.data
         return LabelData(
-            source_app="manual",
+            source_app=source_app,
             title=raw.title,
             primary_id=raw.primary_id,
             qr_payload=raw.qr_payload,
@@ -1072,6 +1077,15 @@ class PageQueue(Protocol):
         job_id: UUID | None = None,
     ) -> UUID: ...
 
+    async def submit_stored_page_job(
+        self,
+        printer_id: UUID,
+        payload: PagePayload,
+        *,
+        api_key_id: UUID | None,
+        job_id: UUID,
+    ) -> UUID: ...
+
 
 def check_item_fits(
     item: ResolvedItem,
@@ -1305,6 +1319,29 @@ async def _job_row_exists(session_factory: async_sessionmaker[AsyncSession], job
         return True  # unknown: keep the cells, the startup sweep settles them
 
 
+async def _stored_row_keeps_cells(
+    session_factory: async_sessionmaker[AsyncSession], job_id: UUID
+) -> bool:
+    """Whether the cells of a stored row's page stay reserved after a failed hand-off (R-281-16).
+
+    The exception cannot tell whether the payload swap committed (a ``CancelledError`` may land
+    after it), so the row decides: a ``queued`` row with a page payload is printed onto its
+    cells by the next recovery (T7-1) and keeps them; a row that is gone, no longer ``queued``
+    or still ``deferred`` was never queued and frees them. A lookup that fails keeps the cells
+    for the sweep, as ``_job_row_exists`` does.
+    """
+    try:
+        async with session_factory() as session:
+            row = await session.get(Job, job_id, populate_existing=True)
+    except Exception:
+        logger.exception("could not look up job %s", job_id)
+        return True
+    if row is None or row.state != "queued":
+        return False
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    return payload.get("deferred") is not True
+
+
 async def _settle_batch(
     session_factory: async_sessionmaker[AsyncSession], batch_id: UUID, job_ids: list[str]
 ) -> None:
@@ -1330,15 +1367,21 @@ async def _undo_partial_print(
     batch_id: UUID | None,
     bus: Any,
     exc: BaseException,
+    *,
+    stored: bool = False,
 ) -> None:
     """After a failure: free the cells of pages that have no job, shrink the batch to the pages
     that do, and tell the client which those are (ruling T7-2).
 
-    The failing page counts as queued if its ``jobs`` row exists (ruling T7-1)."""
+    The failing page counts as queued if its ``jobs`` row exists (ruling T7-1). ``stored``: the
+    page's row was stored before the reservation (a Grocy label), so it always exists; the row's
+    state decides instead (``_stored_row_keeps_cells``, R-281-16)."""
     queued = list(submitted)
     pending = list(reserved[len(submitted) :])
-    if pending and await _job_row_exists(session_factory, pending[0].job_id):
-        queued.append(pending.pop(0).job_id)
+    if pending:
+        keeps = _stored_row_keeps_cells if stored else _job_row_exists
+        if await keeps(session_factory, pending[0].job_id):
+            queued.append(pending.pop(0).job_id)
     await _release_all(session_factory, [p.job_id for p in pending], bus)
     if batch_id is None:
         return
@@ -1389,9 +1432,13 @@ async def _queue_pages(
     source_ip: str | None,
     actor: str,
     bus: Any,
+    stored: bool = False,
 ) -> tuple[UUID, list[PrintedPage]]:
     """Payloads, the batch and the page jobs of reserved pages; the part of a print that follows
     the reservation, shared by ``print_sheets`` and ``create_sheet_with_id_label``.
+
+    ``stored``: each page's ``jobs`` row exists already (a Grocy label's deferred row, #281);
+    the hand-off swaps its payload (``submit_stored_page_job``) instead of inserting a row.
 
     Everything that can fail without touching the queue comes first, so that the queue is the
     only failure point left once the first page is submitted. A failure frees the reservations
@@ -1431,20 +1478,31 @@ async def _queue_pages(
         await session.commit()
         for page, payload in zip(reserved, payloads, strict=True):
             try:
-                await queue.submit_page_job(
-                    printer.id,
-                    payload,
-                    api_key_id=api_key_id,
-                    source_ip=source_ip,
-                    job_id=page.job_id,
-                )
+                if stored:
+                    await queue.submit_stored_page_job(
+                        printer.id, payload, api_key_id=api_key_id, job_id=page.job_id
+                    )
+                else:
+                    await queue.submit_page_job(
+                        printer.id,
+                        payload,
+                        api_key_id=api_key_id,
+                        source_ip=source_ip,
+                        job_id=page.job_id,
+                    )
             except KeyError:
                 raise PrinterUnavailableError() from None
             printed.append(_printed_page(page))
     except BaseException as exc:
         await asyncio.shield(
             _undo_partial_print(
-                session_factory, reserved, [p.job_id for p in printed], batch_id, bus, exc
+                session_factory,
+                reserved,
+                [p.job_id for p in printed],
+                batch_id,
+                bus,
+                exc,
+                stored=stored,
             )
         )
         raise
@@ -1464,8 +1522,15 @@ async def print_sheets(
     source_ip: str | None,
     language: str | None,
     bus: Any = None,
+    job_id: UUID | None = None,
+    source_app: str = "manual",
 ) -> SheetPrintResponse:
     """Print the items onto sheets: one page job per planned page, one batch for all of them.
+
+    ``job_id``: the page prints as this stored ``queued`` row (a Grocy label, R-281-16): the
+    reservation takes the id, the hand-off swaps the row's payload, and a failure frees the
+    cell unless the row already is a queued page. A run prints one sheet, so one page.
+    ``source_app`` reaches the label data of raw items.
 
     Order: printer kind, tray and the calibration snapshot (once, before anything is reserved),
     a dry plan for the cheap refusals, the integration lookups, the per-item check against the
@@ -1502,7 +1567,7 @@ async def print_sheets(
         # plans exactly the placed ones, so a changed sheet still answers ``plan_changed``.
         request = request.model_copy(update={"items": request.items[:placed]})
         await session.commit()  # no read transaction stays open while the lookups run
-        items = await resolve_items(request.items, lookup)
+        items = await resolve_items(request.items, lookup, source_app=source_app)
         await asyncio.to_thread(_check_plan_items, dry.pages, items, facts.render_dpi, scan)
 
         expected = (
@@ -1522,6 +1587,7 @@ async def print_sheets(
             required_type_key=None,
             actor=actor,
             bus=bus,
+            job_ids=None if job_id is None else [job_id],
         )
 
         batch_id, printed = await _queue_pages(
@@ -1539,6 +1605,7 @@ async def print_sheets(
             source_ip=source_ip,
             actor=actor,
             bus=bus,
+            stored=job_id is not None,
         )
     return SheetPrintResponse(
         batch_id=batch_id, pages=printed, placed=placed, remaining=total - placed

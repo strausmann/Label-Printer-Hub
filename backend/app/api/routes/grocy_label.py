@@ -20,13 +20,17 @@ Order (R-281-8):
    first enabled tape printer): an unknown slug answers 503
    ``grocy_label_printer_unavailable`` before the access check, so the answer says nothing
    about printers the key may not use; then
-   ``check_printer_access`` (403 with the fixed message, mapped or not); then a disabled or
-   page printer answers 503 ``grocy_label_printer_unavailable``.
+   ``check_printer_access`` (403 with the fixed message, mapped or not); then a disabled
+   printer answers 503 ``grocy_label_printer_unavailable``, and an enabled page printer whose
+   target names no sheet type, an unknown or an archived one 503
+   ``grocy_label_sheet_type_unavailable`` (R-281-14).
 3. A content error (unparseable JSON, a schema failure, a code outside ``GROCYCODE_PATTERN``,
    a text over 512 characters: ``grocy_label_invalid``; a name field that does not match the
    type: ``grocy_label_mismatch``) answers 202 with a ``failed`` job on the target printer.
-4. Otherwise a deferred job is accepted (``PrintService.accept_deferred_job``) and the route
-   answers 202; preflight, render and the queue hand-off run after the answer (R-281-11).
+4. Otherwise a deferred job is accepted and the route answers 202: on a tape printer
+   ``PrintService.accept_deferred_job`` (preflight, render and the queue hand-off run after
+   the answer, R-281-11), on a page printer ``GrocySheetLabels.accept`` (the sheet choice, the
+   reservation and the hand-off run after the answer, R-281-16).
 
 No answer names a printer, and none repeats the body or the token.
 """
@@ -34,6 +38,7 @@ No answer names a printer, and none repeats the body or the token.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -46,7 +51,9 @@ from app.api.dependencies.token_auth import require_print_token
 from app.api.routes.webhooks import _resolve_default_printer_id
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.db.session import get_session
+from app.models.printer import Printer
 from app.repositories import printers as printers_repo
+from app.repositories import sheet_types as types_repo
 from app.schemas.content_type import ContentType
 from app.schemas.grocy_label import (
     MAX_GROCY_LABEL_BODY,
@@ -148,25 +155,63 @@ def resolve_grocy_sheet_type(settings: Any, label_type: GrocyLabelType) -> str |
     return str(settings.get(key) or "").strip() or None
 
 
+@dataclass(frozen=True)
+class TapeTarget:
+    """A tape printer: its ``PrintService`` prints the label (R-281-11)."""
+
+    service: Any
+
+
+@dataclass(frozen=True)
+class PageTarget:
+    """A page printer and the sheet type its labels go onto (R-281-13)."""
+
+    printer: Printer
+    sheet_type: str
+
+
+def _sheet_type_unavailable() -> HTTPException:
+    # No key in the message: Grocy forwards it to its user.
+    return _error(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "grocy_label_sheet_type_unavailable",
+        "The sheet type for Grocy labels is not set, unknown or archived in Labelyard.",
+    )
+
+
 async def _target_printer(
     request: Request, session: AsyncSession, auth: AuthContext, label_type: GrocyLabelType
-) -> Any:
-    """The ``PrintService`` of the label type's printer, after the access check."""
-    slug = resolve_grocy_target(request.app.state.settings_store, label_type)
+) -> TapeTarget | PageTarget:
+    """The label type's target, after the access check (R-281-8, 2; R-281-14)."""
+    store = request.app.state.settings_store
+    slug = resolve_grocy_target(store, label_type)
+    printer: Printer | None = None
     if slug is not None:
         printer = await printers_repo.get_by_slug(session, slug)
         if printer is None:
             raise _unavailable()  # before the access check: reveals nothing about printers
         printer_id: UUID = printer.id
-        usable = printer.enabled and printer.backend != "ipp"
     else:
         printer_id = UUID(await _resolve_default_printer_id(session))
-        usable = True
     check_printer_access(auth, printer_id, default_printer=True)
-    service = request.app.state.printer_runtime.print_service_for(printer_id) if usable else None
+    if printer is not None and not printer.enabled:
+        raise _unavailable()
+    if printer is not None and printer.backend == "ipp":
+        # Checked at request time: the settings store knows no other entities (R-281-14).
+        sheet_type = resolve_grocy_sheet_type(store, label_type)
+        known = None if sheet_type is None else await types_repo.get_by_key(session, sheet_type)
+        if sheet_type is None or known is None or known.archived_at is not None:
+            raise _sheet_type_unavailable()
+        return PageTarget(printer=printer, sheet_type=sheet_type)
+    service = request.app.state.printer_runtime.print_service_for(printer_id)
     if service is None:
         raise _unavailable()
-    return service
+    return TapeTarget(service=service)
+
+
+def _grocycode_ref(code: str) -> str:
+    """The Grocycode cut to entity and id (``grcy:p:12``): the cell's ``ref`` (R-281-15)."""
+    return ":".join(code.split(":")[:3])
 
 
 _OPENAPI_EXTRA: dict[str, Any] = {
@@ -215,8 +260,9 @@ _RESPONSES: dict[int | str, dict[str, Any]] = {
     503: {
         "description": (
             "``grocy_label_disabled`` (the webhook is switched off), "
-            "``grocy_label_printer_unavailable`` (the mapped printer is unknown, disabled or "
-            "not a tape printer) or no enabled tape printer."
+            "``grocy_label_printer_unavailable`` (the mapped printer is unknown or disabled), "
+            "``grocy_label_sheet_type_unavailable`` (a page printer whose sheet type is not "
+            "set, unknown or archived) or no enabled tape printer."
         )
     },
 }
@@ -237,10 +283,14 @@ _RESPONSES: dict[int | str, dict[str, Any]] = {
         "The webhook is off until ``integrations.grocy.label.enabled`` is set.  The label "
         "type comes from the Grocycode; content type and printer come from the mapping of "
         "that type in Settings > Integrations > Grocy (a type without a printer uses the "
-        "default target, and without one the first enabled tape printer).  The route "
+        "default target, and without one the first enabled tape printer).  A page printer "
+        "prints the label onto one cell of its sheet type: the lowest free cell of the "
+        "started sheet with the fewest free cells, else a new sheet with its ID in the "
+        "margin.  The route "
         "answers 202 within 1.5 s with the job's UUID: printing runs afterwards, and a "
         "printer failure (offline, no tape) sets the job ``failed`` with the code "
-        "``POST /api/v1/print`` would answer.  A "
+        "``POST /api/v1/print`` would answer; on a page printer a sheet failure sets the code "
+        "of the sheet print (for example ``content_type_data_mismatch``).  A "
         "label that cannot be built (unreadable body, invalid Grocycode, name field of "
         "another type) also answers 202, with a ``failed`` job (``grocy_label_invalid``, "
         "``grocy_label_mismatch``)."
@@ -268,8 +318,9 @@ async def grocy_label_webhook(
     raw = await read_bounded(request, MAX_GROCY_LABEL_BODY, _too_large)
     document = _decode(raw)
     label_type = _target_type(document)
-    service = await _target_printer(request, session, auth, label_type)
+    target = await _target_printer(request, session, auth, label_type)
     source_ip = request.client.host if request.client else None
+    await session.commit()  # no read transaction stays open behind the job insert
 
     error_code: str | None = None
     try:
@@ -280,17 +331,37 @@ async def grocy_label_webhook(
     except ValidationError:
         error_code = "grocy_label_invalid"
     if error_code is not None:
-        job_id = await service.record_failed_job(
-            error_code,
-            api_key_id=auth.api_key_id,
-            source_ip=source_ip,
-            source_app=SOURCE_APP,
-            message=_CONTENT_ERROR_MESSAGES[error_code],
-        )
+        if isinstance(target, PageTarget):
+            job_id = await request.app.state.grocy_sheet_labels.record_failed(
+                target.printer.id,
+                error_code,
+                message=_CONTENT_ERROR_MESSAGES[error_code],
+                api_key_id=auth.api_key_id,
+                source_ip=source_ip,
+            )
+        else:
+            job_id = await target.service.record_failed_job(
+                error_code,
+                api_key_id=auth.api_key_id,
+                source_ip=source_ip,
+                source_app=SOURCE_APP,
+                message=_CONTENT_ERROR_MESSAGES[error_code],
+            )
         return WebhookAcceptedResponse(job_id=job_id)
 
     content_type = ContentType(store.get(grocy_label_content_type_key(label_type)))
-    job_id = await service.accept_deferred_job(
+    if isinstance(target, PageTarget):
+        job_id = await request.app.state.grocy_sheet_labels.accept(
+            target.printer,
+            sheet_type=target.sheet_type,
+            raw=label,
+            content_type=content_type,
+            ref=_grocycode_ref(payload.grocycode),
+            api_key_id=auth.api_key_id,
+            source_ip=source_ip,
+        )
+        return WebhookAcceptedResponse(job_id=job_id)
+    job_id = await target.service.accept_deferred_job(
         label,
         content_type=content_type,
         source_app=SOURCE_APP,

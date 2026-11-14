@@ -134,6 +134,26 @@ class UnrenderableJobError(Exception):
     """
 
 
+class JobNoLongerQueuedError(Exception):
+    """``submit_stored_page_job``: the stored row is no longer ``queued`` (cancelled meanwhile).
+
+    Not a ``SheetApiError``: the Grocy sheet task treats it as "cancelled" and ends quietly.
+    """
+
+    def __init__(self, job_id: UUID) -> None:
+        super().__init__(f"Job {job_id} is no longer queued")
+        self.job_id = job_id
+
+
+def _is_deferred_sheet_label(payload: Any) -> bool:
+    """A Grocy label for a sheet, stored before its sheet was chosen (#281, R-281-16)."""
+    return (
+        isinstance(payload, Mapping)
+        and payload.get("deferred") is True
+        and payload.get("deferred_kind") == "sheet_page"
+    )
+
+
 DEFERRED_INTERRUPTED = "deferred_interrupted"
 """Error of a deferred job (#281) that a restart or a re-wire caught before it was queued."""
 
@@ -932,6 +952,9 @@ class PrintQueue:
         for db_job in pending:
             if db_job.state != DbJobState.QUEUED.value or str(db_job.id) in self._jobs:
                 continue
+            if _is_deferred_sheet_label(db_job.payload):
+                await self._end_deferred_sheet_label(db_job.id)
+                continue
             try:
                 payload = PagePayload.model_validate(db_job.payload)
             except ValueError:
@@ -945,6 +968,25 @@ class PrintQueue:
                 PageJob(job=job, payload=payload, api_key_id=db_job.api_key_id)
             )
             logger.info("Recovery: page job %s re-enqueued on %s", db_job.id, printer_id)
+
+    async def _end_deferred_sheet_label(self, job_id: UUID) -> None:
+        """A Grocy sheet label a restart or a re-wire caught before its hand-off (R-281-16).
+
+        It ends ``failed`` with ``deferred_interrupted``, not ``failed_restart``: the page was
+        never sent, and the sweep reads ``failed_restart`` as "maybe printed". The outcome
+        handler frees the cell it reserved (never started).
+        """
+        logger.warning("Recovery: Grocy sheet label %s was not handed off; ended", job_id)
+        await self._store.mark_failed_code(
+            job_id,
+            DEFERRED_INTERRUPTED,
+            "The hub stopped before the label was handed to the printer.",
+            None,
+            result={"phase": "ended", "started": False},
+        )
+        await notify_ended(
+            "sheet_page", job_id, state="failed", started=False, error_code=DEFERRED_INTERRUPTED
+        )
 
     async def _may_recover_page_job(self, job_id: UUID, payload: PagePayload) -> bool:
         """The kind's owner agrees that a ``queued`` row prints after a restart (263-47).
@@ -1876,6 +1918,50 @@ class PrintQueue:
         await self._queues[printer_id].put(PageJob(job=job, payload=payload, api_key_id=api_key_id))
         logger.info("Page job %s queued on %s", row.id, printer_id)
         return row.id
+
+    async def submit_stored_page_job(
+        self,
+        printer_id: UUID,
+        payload: PagePayload,
+        *,
+        api_key_id: UUID | None,
+        job_id: UUID,
+    ) -> UUID:
+        """Hand a stored ``queued`` row (a deferred Grocy label, #281) its payload and queue it.
+
+        The job is registered in memory **before** the payload swap, as ``submit_with_id`` does
+        (audit R3-1): a cancel from then on reaches the queue and not only the row. The swap
+        writes only while the row is ``queued``; a row cancelled before that raises
+        ``JobNoLongerQueuedError`` and the registration is dropped. A cancel between the swap
+        and the hand-off to the worker is settled by ``cancel()`` itself; nothing is enqueued.
+
+        Raises:
+            MediaKindMismatchError: *printer_id* is a tape printer.
+            KeyError: *printer_id* is unknown to the queue.
+            JobNoLongerQueuedError: the row is unknown or no longer ``queued``.
+        """
+        if self._removing(printer_id):
+            raise KeyError(f"Unknown printer: {printer_id}")
+        if printer_id in self._printers:
+            raise MediaKindMismatchError()
+        if printer_id not in self._page_printers:
+            raise KeyError(f"Unknown printer: {printer_id}")
+        job = self._new_page_job(job_id, printer_id, payload)
+        try:
+            swapped = await self._store.set_queued_payload(job_id, payload.model_dump(mode="json"))
+        except BaseException:
+            # A committed swap leaves a ``queued`` page row: the caller keeps its cells (T7-1)
+            # and the next start prints it onto them. This process forgets it.
+            self._drop_unqueued(job)
+            raise
+        if not swapped:
+            self._drop_unqueued(job)
+            raise JobNoLongerQueuedError(job_id)
+        if job.state != JobState.QUEUED:
+            return job_id  # cancelled after the swap; cancel() persisted it and freed the cells
+        await self._queues[printer_id].put(PageJob(job=job, payload=payload, api_key_id=api_key_id))
+        logger.info("Stored page job %s queued on %s", job_id, printer_id)
+        return job_id
 
     async def _end_unsaved_page_job(self, job: Job, payload: PagePayload) -> None:
         """``save_queued`` raised, possibly after its commit (266-09).

@@ -150,13 +150,21 @@ async def cells_by_ref(
 async def unattached_reservation_sheets(
     session: AsyncSession, sheet_ids: Sequence[UUID]
 ) -> set[UUID]:
-    """Which of the sheets have a ``reserved`` cell whose job has no ``jobs`` row yet."""
+    """Which of the sheets have a ``reserved`` cell whose job has no ``jobs`` row yet, or
+    whose job is a stored Grocy row not handed off yet (``queued`` with ``payload.deferred``,
+    #281): neither tells yet whether its page carries the margin ID or the feed mark (C26)."""
+    no_row = ~exists().where(col(Job.id) == col(SheetCell.job_id))
+    deferred = exists().where(
+        col(Job.id) == col(SheetCell.job_id),
+        col(Job.state) == JobState.QUEUED.value,
+        literal_column(json_at("$.deferred")) == 1,
+    )
     result = await session.execute(
         select(col(SheetCell.sheet_id))
         .where(
             col(SheetCell.sheet_id).in_(list(sheet_ids)),
             col(SheetCell.state) == "reserved",
-            ~exists().where(col(Job.id) == col(SheetCell.job_id)),
+            no_row | deferred,
         )
         .distinct()
         .execution_options(**_FRESH)
