@@ -143,6 +143,13 @@ def report_from_process(env_file: str | os.PathLike[str] | None = ".env") -> Leg
     return legacy_env_report(os.environ, keys)
 
 
+def setting_variable_in_use(field: str, report: LegacyReport) -> str:
+    """The one variable name the deployment set for ``field``: the legacy one while it is in use."""
+    name = ENV_PREFIX + field.upper()
+    legacy = LEGACY_ENV_PREFIX + field.upper()
+    return legacy if legacy in report.used else name
+
+
 def setting_variable_label(field: str, report: LegacyReport) -> str:
     """Variable to fix for ``field``; names the legacy one when that is the one in use."""
     name = ENV_PREFIX + field.upper()

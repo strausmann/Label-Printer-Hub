@@ -3140,6 +3140,8 @@ export interface components {
              * @default false
              */
             bootstrap: boolean;
+            /** Bootstrap Variable */
+            bootstrap_variable?: string | null;
             /** Csrf Token */
             csrf_token?: string | null;
             /** Scope */
