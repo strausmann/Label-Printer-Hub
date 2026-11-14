@@ -153,8 +153,9 @@ jobs:
       # job. The name is fixed (and already lowercase, as OCI refs must be)
       # instead of derived from github.repository: the repository is renamed
       # after the milestone merge, and the image address must not move with it.
-      # Step id `image` and output `ref` are read by the merge job's outputs
-      # (image-ref, used by the sbom job).
+      # The ref is never exposed as a job output: GitHub drops any output whose
+      # value contains a secret, and DOCKERHUB_USERNAME equals the owner name.
+      # The sbom job computes its own copy.
       - name: Compute image ref
         id: image
         run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
@@ -327,9 +328,10 @@ jobs:
       packages: write
       id-token: write   # keyless cosign signature (Sigstore with the job's OIDC token)
     # Read by the sbom job (one matrix entry today). The tag is the validated,
-    # v-stripped release version; the ref is the lowercase GHCR repository.
+    # v-stripped release version. The image ref is deliberately not an output
+    # (it contains the owner name, which equals a repo secret, so GitHub would
+    # drop it: "Skip output since it may contain secret").
     outputs:
-      image-ref: ${{ steps.image.outputs.ref }}
       tag: ${{ steps.tag.outputs.tag }}
     strategy:
       fail-fast: false
@@ -374,7 +376,7 @@ jobs:
           merge-multiple: true
 
       # Mirror of the build-phase step (see the comment there): a fixed name,
-      # never github.repository. Keep id `image` / output `ref` (merge.outputs).
+      # never github.repository.
       - name: Compute image ref
         id: image
         run: echo "ref=${{ env.REGISTRY_GHCR }}/strausmann/${{ env.IMAGE_NAME }}" >> "$GITHUB_OUTPUT"
@@ -655,6 +657,13 @@ jobs:
           echo "::error::Registry login failed after 4 attempts"
           exit 1
 
+      # Same fixed name as the build and merge jobs (never github.repository).
+      # Computed here, not passed as a merge job output: see the comment on
+      # merge.outputs.
+      - name: Compute image ref
+        id: image
+        run: echo "ref=${REGISTRY_GHCR}/strausmann/${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
       - name: Install Syft
         id: syft
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
@@ -668,7 +677,7 @@ jobs:
         id: sbom
         env:
           SYFT: ${{ steps.syft.outputs.cmd }}
-          IMAGE_REF: ${{ needs.merge.outputs.image-ref }}
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
           TAG: ${{ needs.merge.outputs.tag }}
         run: |
           set -euo pipefail

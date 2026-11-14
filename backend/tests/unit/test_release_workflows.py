@@ -630,14 +630,19 @@ def test_sbom_job_is_read_only() -> None:
 def test_sbom_uses_merge_image_ref() -> None:
     wf = _load("docker-publish.yml")
     merge = wf["jobs"]["merge"]
-    assert merge["outputs"]["image-ref"] == "${{ steps.image.outputs.ref }}"
     assert merge["outputs"]["tag"] == "${{ steps.tag.outputs.tag }}"
-    assert any(s.get("id") == "image" for s in merge["steps"])
     assert any(s.get("id") == "tag" for s in merge["steps"])
     sbom = json.dumps(wf["jobs"]["sbom"])
-    assert "needs.merge.outputs.image-ref" in sbom
+    assert "needs.merge.outputs.image-ref" not in sbom
     assert "ghcr.io/" not in sbom
     assert "docker.io/" not in sbom
+    image_steps = [s for s in wf["jobs"]["sbom"]["steps"] if s.get("id") == "image"]
+    assert len(image_steps) == 1, "the sbom job computes its own image ref"
+    # Workflow-level env vars are shell variables already; no expression in run:.
+    assert 'ref=${REGISTRY_GHCR}/strausmann/${IMAGE_NAME}"' in image_steps[0]["run"]
+    assert "github.repository" not in json.dumps(image_steps[0])
+    gen = [s for s in wf["jobs"]["sbom"]["steps"] if s.get("id") == "sbom"][0]
+    assert gen["env"]["IMAGE_REF"] == "${{ steps.image.outputs.ref }}"
     steps = wf["jobs"]["sbom"]["steps"]
     runs = "\n".join(str(s.get("run", "")) for s in steps)
     assert "${{" not in runs, "expressions reach run: only through env:"
@@ -909,3 +914,17 @@ def test_rebuild_dispatch_on_main_signs() -> None:
     assert match
     assert re.fullmatch(match.group(1), "refs/heads/main")
     assert not re.fullmatch(match.group(1), "refs/tags/v1.6.0")
+
+
+def test_no_job_output_carries_the_image_ref_or_owner() -> None:
+    """GitHub drops job outputs containing a secret value (DOCKERHUB_USERNAME
+    equals the owner name), so such an output arrives empty downstream."""
+    for name in ("docker-publish.yml", "release.yml", "preview-image.yml"):
+        for job_name, job in _load(name)["jobs"].items():
+            for key, value in (job.get("outputs") or {}).items():
+                where = f"{name}:{job_name}.{key}"
+                text = str(value)
+                assert "image-ref" not in key, where
+                for needle in ("outputs.ref", "REGISTRY_", "IMAGE_NAME", "strausmann", "github.repository", "github.actor", "repository_owner"):
+                    assert needle not in text, where
+                assert "steps.image." not in text, where
