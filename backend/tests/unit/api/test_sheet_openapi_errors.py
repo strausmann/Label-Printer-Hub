@@ -88,9 +88,17 @@ def test_webhook_routes_declare_the_envelope_for_422(schema: dict[str, Any]) -> 
     is not repeated), so the document must say so, not ``HTTPValidationError`` (Codex P2)."""
     ref = f"#/components/schemas/{SHEET_ERROR_SCHEMA_NAME}"
     webhook_paths = [p for p in schema["paths"] if p.startswith(WEBHOOK_PREFIX)]
-    assert len(webhook_paths) == 2
+    # The Grocy label webhook reads its body raw and answers a bad label with 202 and a failed
+    # job (#281, R-281-8): it has no 422 to declare.
+    no_422 = {"/api/v1/webhook/grocy/label"}
+    assert sorted(webhook_paths) == sorted(
+        {"/api/v1/webhook/spoolman", "/api/v1/webhook/grocy", *no_422}
+    )
     for path in webhook_paths:
         for operation in schema["paths"][path].values():
+            if path in no_422:
+                assert "422" not in operation["responses"], path
+                continue
             response = operation["responses"]["422"]
             assert response["content"]["application/json"]["schema"] == {"$ref": ref}, path
 
