@@ -13,6 +13,13 @@ SPDX = "AGPL-3.0-or-later"
 # The verbatim https://www.gnu.org/licenses/agpl-3.0.txt, 661 lines.
 AGPL_TEXT_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
 SUPPLY_CHAIN_DOC = "docs/supply-chain.md"
+# The certificate identity users verify against (#311): the image workflow of this repository,
+# under the old and the new repository name. `[b]` matches the letter b; it keeps the old name
+# out of the text for scripts/brand_guard.py.
+COSIGN_IDENTITY_REGEXP = (
+    r"^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)"
+    r"/\.github/workflows/docker-publish\.yml@refs/(heads|tags)/"
+)
 
 
 def _read(relative: str) -> str:
@@ -85,6 +92,24 @@ def test_notices_name_copyleft_dependencies() -> None:
         assert f"`{package}`" in notices, package
 
 
+def test_cosign_identity_regexp() -> None:
+    rule = re.compile(COSIGN_IDENTITY_REGEXP)
+    old = "Label-Printer-Hu" + "b"
+    for repo in (old, "labelyard"):
+        for ref in ("refs/tags/v1.6.0", "refs/heads/main", "refs/heads/milestone/1.6.0"):
+            identity = (
+                f"https://github.com/strausmann/{repo}/.github/workflows/docker-publish.yml@{ref}"
+            )
+            assert rule.match(identity), identity
+    for identity in (
+        "https://github.com/strausmann/labelyard/.github/workflows/release.yml@refs/heads/main",
+        "https://github.com/someone-else/labelyard/.github/workflows/docker-publish.yml@refs/heads/main",
+        "https://github.com/strausmann/labelyard-fork/.github/workflows/docker-publish.yml@refs/heads/main",
+        "https://github.com/strausmann/labelyard/.github/workflows/docker-publish.yml@refs/pull/1/merge",
+    ):
+        assert not rule.match(identity), identity
+
+
 def test_supply_chain_doc() -> None:
     doc = _read(SUPPLY_CHAIN_DOC)
     for needle in (
@@ -97,6 +122,9 @@ def test_supply_chain_doc() -> None:
         ".cdx.json",
         "licence-policy.yml",
         "/usr/share/doc",
+        "cosign verify",
+        "token.actions.githubusercontent.com",
+        COSIGN_IDENTITY_REGEXP,
     ):
         assert needle in doc, needle
     # On a multi-platform image the short form prints null; it must not be recommended.

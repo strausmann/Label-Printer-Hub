@@ -467,7 +467,49 @@ jobs:
             src_args+=( "${DIGEST_REPO}@sha256:${d}" )
           done
 
-          docker buildx imagetools create "${tag_args[@]}" "${ann_args[@]}" "${src_args[@]}"
+          # The metadata file records the digest of the pushed index; the signing
+          # step reads it from there instead of resolving a tag that can move.
+          docker buildx imagetools create --metadata-file "$RUNNER_TEMP/index-meta.json" \
+            "${tag_args[@]}" "${ann_args[@]}" "${src_args[@]}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: v3.1.4
+
+      # Keyless signature (#311): Sigstore with this job's GitHub OIDC token
+      # (`id-token: write`), no key and no secret. The certificate names this
+      # workflow file as the identity. Signed is the index digest, once per
+      # repository the index was pushed to (GHCR, and Docker Hub when its tags are
+      # in the list); the index carries the platform images and their attestations.
+      - name: Sign the index by digest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          DIGEST=$(jq -r '."containerimage.descriptor".digest' "$RUNNER_TEMP/index-meta.json")
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::No valid index digest in the imagetools metadata file"
+            exit 1
+          fi
+          # Repositories from the tag list: strip `:<tag>`, keep each once.
+          repos=()
+          while IFS= read -r ref; do
+            [ -z "$ref" ] && continue
+            repo="${ref%:*}"
+            case " ${repos[*]-} " in
+              *" $repo "*) ;;
+              *) repos+=( "$repo" ) ;;
+            esac
+          done <<< "$TAGS"
+          if [ "${#repos[@]}" -eq 0 ]; then
+            echo "::error::No repository to sign"
+            exit 1
+          fi
+          for repo in "${repos[@]}"; do
+            echo "Signing ${repo}@${DIGEST}"
+            cosign sign --yes "${repo}@${DIGEST}"
+          done
 
       - name: Verify multi-arch manifest
         env:

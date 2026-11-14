@@ -199,6 +199,13 @@ class SelectDeletionsTest(unittest.TestCase):
     def test_duplicates_are_listed_once(self) -> None:
         self.assertEqual(g.select_deletions(["1.6.0-rc.1", "1.6.0-rc.1"], {"1.6.0"}), ["1.6.0-rc.1"])
 
+    def test_signature_tag_is_never_selected(self) -> None:
+        # cosign's fallback tag on GHCR (no referrers API): `sha256-<index hex>`.
+        signature = "sha256-" + "0123456789abcdef" * 4
+        tags = [signature, "1.6.0", "1.6.0-rc.1"]
+        self.assertEqual(g.select_deletions(tags, {"1.6.0"}), ["1.6.0-rc.1"])
+        self.assertEqual(g.select_deletions([signature], set()), [])
+
 
 
 

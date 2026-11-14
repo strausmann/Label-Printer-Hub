@@ -614,3 +614,82 @@ def test_release_sbom_job() -> None:
     download = [s for s in steps if str(s.get("uses", "")).startswith("actions/download-artifact@")]
     assert len(download) == 1
     assert download[0]["with"]["name"] == "release-sbom"
+
+
+# Keyless cosign signing (#311). Pins re-resolved on 2026-11-14.
+_COSIGN_INSTALLER = "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
+_DIGEST_CHECK = "^sha256:[0-9a-f]{64}$"
+
+
+def _merge_steps() -> list[dict[str, Any]]:
+    steps = _load("docker-publish.yml")["jobs"]["merge"]["steps"]
+    assert isinstance(steps, list)
+    return steps
+
+
+def _signing_step_index(steps: list[dict[str, Any]]) -> int:
+    found = [i for i, s in enumerate(steps) if "cosign sign" in str(s.get("run", ""))]
+    assert len(found) == 1, "exactly one signing step in job merge"
+    return found[0]
+
+
+def test_merge_signs_index_digest() -> None:
+    steps = _merge_steps()
+    installers = [
+        (i, s)
+        for i, s in enumerate(steps)
+        if str(s.get("uses", "")).startswith("sigstore/cosign-installer@")
+    ]
+    assert len(installers) == 1
+    installer_index, installer = installers[0]
+    assert installer["uses"] == _COSIGN_INSTALLER
+    assert re.match(r"^v\d+\.\d+\.\d+$", str(installer["with"]["cosign-release"]))
+
+    sign_index = _signing_step_index(steps)
+    sign = steps[sign_index]
+    run = str(sign["run"])
+    # The digest, never a tag: one `cosign sign` per repository, `<repo>@<digest>`.
+    assert re.search(r'cosign sign --yes "\$\{?repo\}?@\$\{?DIGEST\}?"', run), run
+    assert ":${" not in run, "a tag must not be signed"
+    assert "${{" not in run, "expressions reach run: only through env:"
+    assert sign["env"]["TAGS"] == "${{ steps.meta.outputs.tags }}"
+
+    creates = [i for i, s in enumerate(steps) if "imagetools create" in str(s.get("run", ""))]
+    assert len(creates) == 1
+    create_index = creates[0]
+    assert "--metadata-file" in str(steps[create_index]["run"])
+    assert create_index < installer_index < sign_index
+
+
+def test_signing_is_keyless() -> None:
+    text = _text("docker-publish.yml")
+    for needle in ("COSIGN_KEY", "COSIGN_PASSWORD", "--key"):
+        assert needle not in text, needle
+    wf = _load("docker-publish.yml")
+    assert wf["permissions"]["id-token"] == "write"
+    merge_permissions = wf["jobs"]["merge"].get("permissions")
+    assert merge_permissions is None or merge_permissions.get("id-token") == "write"
+    # The caller caps the permissions of the called workflow.
+    assert _load("release.yml")["jobs"]["images"]["permissions"]["id-token"] == "write"
+    assert _load("preview-image.yml")["jobs"]["publish"]["permissions"]["id-token"] == "write"
+
+
+def test_digest_is_validated() -> None:
+    steps = _merge_steps()
+    run = str(steps[_signing_step_index(steps)]["run"])
+    assert _DIGEST_CHECK in run
+    assert run.index(_DIGEST_CHECK) < run.index("cosign sign")
+    assert "containerimage.descriptor" in run
+
+
+def test_cleanup_keeps_signature_children() -> None:
+    steps = _load("registry-cleanup.yml")["jobs"]["ghcr"]["steps"]
+    prune = [
+        s for s in steps if str(s.get("uses", "")).startswith("dataaxiom/ghcr-cleanup-action@")
+    ]
+    assert len(prune) == 1
+    # v1.2.2 treats the signature (referrer or `sha256-<digest>` tag) as a child of its image.
+    assert (
+        prune[0]["uses"] == "dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f"
+    )
+    assert prune[0]["with"]["delete-orphaned-images"] is True
