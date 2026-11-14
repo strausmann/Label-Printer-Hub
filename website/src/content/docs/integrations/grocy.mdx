@@ -3,6 +3,8 @@ title: Grocy
 description: Print product labels from Grocy, on demand or when stock changes.
 ---
 
+import Screenshot from "../../../components/Screenshot.astro";
+
 The Grocy plugin looks up products in your Grocy and prints their labels, with a QR code that leads back to the product.
 
 ## Setup
@@ -21,6 +23,8 @@ Grocy can call the hub when stock is added or removed, and the hub prints a labe
 ## Printing Grocy's own labels
 
 Grocy has a label printer feature of its own: a print button for products, stock entries, chores, batteries and recipes. Labelyard can be the printer behind that button.
+
+<Screenshot shot="grocy-labels" lang="en" alt="Grocy labels: the switch, the default printer and a layout and printer for each label type." />
 
 1. Open **Settings > Integrations**. The **Grocy labels** panel sits below the integrations.
 2. Switch on **Print Grocy's labels**. Until then, the hub refuses Grocy's labels with `503`.

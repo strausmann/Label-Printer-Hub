@@ -161,6 +161,17 @@ Page printers rarely print exactly where the page says. Choose printer and tray,
   </picture>
 </p>
 
+### Grocy's own labels
+
+Grocy can send its own labels (products, stock entries, chores, batteries and recipes) to the hub. Under **Settings > Integrations** you switch this on, choose the default printer and a layout and printer for each label type, and copy the lines for Grocy's `config.php`.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/grocy-labels-dark.png">
+    <img src="docs/screenshots/grocy-labels-light.png" alt="Grocy labels: the switch, the default printer and a layout and printer for each label type.">
+  </picture>
+</p>
+
 ### On a phone
 
 The same pages adapt to a phone held next to the printer.

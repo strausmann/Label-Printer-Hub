@@ -24,6 +24,7 @@ import { signInWith } from "./fixtures";
  *   calibration     calibration
  *   print-dialog    print-dialog
  *   cart-sheet      cart-sheet
+ *   grocy-labels    grocy-labels
  *
  * Desktop is 1440 x 900 in light and dark for every view; the phone (390 x 844) shows `overview`, `printer-detail`
  * and `sheets`. File names are `<view>-<light|dark>[-phone].png`. The README shows English only; the German website
@@ -58,6 +59,7 @@ const TEXT = {
     preview: "Label preview",
     ontoSheet: "Print onto a sheet",
     ontoSheetButton: "Print onto sheet",
+    grocyLabels: "Grocy labels",
   },
   de: {
     connected: /^Verbunden/,
@@ -69,6 +71,7 @@ const TEXT = {
     preview: "Etikettenvorschau",
     ontoSheet: "Auf einen Bogen drucken",
     ontoSheetButton: "Auf den Bogen drucken",
+    grocyLabels: "Grocy-Etiketten",
   },
 } satisfies Record<Lang, unknown>;
 type Text = (typeof TEXT)["en"];
@@ -184,6 +187,17 @@ const VIEWS: View[] = [
       await page.goto("/cart?sheet=L4736-0001");
       await expect(page.getByRole("heading", { level: 2, name: text.ontoSheet })).toBeVisible();
       await expect(page.getByRole("button", { name: text.ontoSheetButton })).toBeEnabled({ timeout: 30_000 });
+    },
+  },
+  {
+    name: "grocy-labels",
+    phone: false,
+    open: async (page, text) => {
+      await page.goto("/settings/integrations");
+      const panel = page.getByRole("group", { name: text.grocyLabels });
+      await expect(panel).toBeVisible();
+      // Bring the panel's top below the sticky top bar.
+      await panel.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 88));
     },
   },
 ];

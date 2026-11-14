@@ -3,6 +3,8 @@ title: Grocy
 description: Produktetiketten aus Grocy drucken, auf Abruf oder wenn sich der Bestand ändert.
 ---
 
+import Screenshot from "../../../../components/Screenshot.astro";
+
 Das Grocy-Plugin schlägt Produkte in deinem Grocy nach und druckt ihre Etiketten, mit einem QR-Code, der zurück zum Produkt führt.
 
 ## Einrichtung
@@ -21,6 +23,8 @@ Grocy kann den Hub aufrufen, wenn Bestand hinzukommt oder entnommen wird, und de
 ## Grocys eigene Etiketten drucken
 
 Grocy hat eine eigene Etikettendrucker-Funktion: einen Druckknopf für Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Labelyard kann der Drucker hinter diesem Knopf sein.
+
+<Screenshot shot="grocy-labels" lang="de" alt="Grocy-Etiketten: der Schalter, der Standarddrucker und je Etikettenart ein Layout und ein Drucker." />
 
 1. Öffne **Einstellungen > Integrationen**. Der Bereich **Grocy-Etiketten** steht unter den Integrationen.
 2. Schalte **Grocys Etiketten drucken** ein. Solange das aus ist, lehnt der Hub Grocys Etiketten mit `503` ab.
