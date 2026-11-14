@@ -107,14 +107,16 @@ def test_docker_hub_namespace_is_written_out() -> None:
     # No workflow builds a Docker Hub address from the login secret.
     for path in sorted(WORKFLOWS.glob("*.yml")):
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "docker.io" in line or "hub.docker.com" in line:
-                # (the "Docker Hub configured" condition may name the secret; the address may not)
-                assert not re.search(r"format\('docker\.io[^)]*secrets\.", line), (
-                    f"{path.name}:{number}"
-                )
-                assert "DOCKERHUB_USERNAME }}/" not in line, f"{path.name}:{number}"
-                assert "docker.io/strausmann" not in line, f"{path.name}:{number}"
-                assert "<DOCKERHUB_USERNAME>" not in line, f"{path.name}:{number}"
+            where = f"{path.name}:{number}"
+            # Compare the namespace segment of every Docker Hub reference exactly.
+            for namespace in re.findall(r"(?<![\w.-])docker\.io/([^/\s'\"]+)/", line):
+                assert namespace in {"bstrausmann", "{0}"}, where
+            for namespace in re.findall(r"(?<![\w.-])hub\.docker\.com/r/([^/\s'\"]+)/", line):
+                assert namespace == "bstrausmann", where
+            # (the "Docker Hub configured" condition may name the secret; the address may not)
+            assert not re.search(r"format\('docker\.io[^)]*secrets\.", line), where
+            assert not re.search(r"docker\.io/<?\$?\{?\{?\s*DOCKERHUB_USERNAME", line), where
+            assert "DOCKERHUB_USERNAME }}/" not in line, where
     login = _load("dockerhub-description.yml")["jobs"]["description"]["steps"][-1]["with"]
     assert login["username"] == "${{ secrets.DOCKERHUB_USERNAME }}"
 
@@ -248,12 +250,12 @@ def test_dockerhub_description_workflow() -> None:
     readme = REPO_ROOT / ".github" / "dockerhub" / "README.md"
     assert len(readme.read_bytes()) <= 25_000
     text = readme.read_text(encoding="utf-8")
-    for needle in (
-        "docker pull ghcr.io/strausmann/labelyard",
-        "docker pull docker.io/bstrausmann/labelyard",
-        "https://labelyard.app",
-    ):
-        assert needle in text, needle
+    pulls = {ln.strip() for ln in text.splitlines() if ln.startswith("docker pull ")}
+    assert pulls == {
+        "docker pull ghcr.io/strausmann/labelyard:latest",
+        "docker pull docker.io/bstrausmann/labelyard:latest",
+    }
+    assert "https://labelyard.app" in text
     # Docker Hub resolves no relative paths: every image is an absolute URL.
     images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
     images += re.findall(r'<img[^>]+src="([^"]+)"', text)
