@@ -65,4 +65,22 @@ describe("the registered resolvers together", () => {
   it("an asset label link still resolves as a label link", () => {
     expect(resolveScan(qr("https://hub.example.invalid/asset/42"))).toEqual({ resolverId: "label-link", route: "/asset/42" });
   });
+
+  it("a product Grocycode opens the Grocy product", () => {
+    expect(resolveScan(qr("grcy:p:13"))).toEqual({ resolverId: "grocycode", route: "/product/13" });
+    expect(resolveScan(qr("grcy:p:13:60bf8b5244b04"))?.route).toBe("/product/13");
+  });
+
+  it("a battery code opens the Grocycode page", () => {
+    expect(resolveScan(qr("grcy:b:4"))?.route).toBe("/grocycode/b/4");
+    expect(resolveScan(qr("grcy:c:7"))?.route).toBe("/grocycode/c/7");
+  });
+
+  it("a label link still wins", () => {
+    expect(resolveScan(qr("https://hub.example.invalid/product/13"))?.resolverId).toBe("label-link");
+  });
+
+  it("an unknown Grocycode kind is not claimed", () => {
+    expect(resolveScan(qr("grcy:r:5"))).toBeNull();
+  });
 });

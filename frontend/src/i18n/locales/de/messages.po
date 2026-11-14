@@ -1603,9 +1603,17 @@ msgstr "Raster"
 msgid "Grocy"
 msgstr "Grocy"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy battery {id}"
+msgstr "Grocy-Batterie {id}"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet."
 msgstr "Grocy kann seine eigenen Etiketten an diesen Hub schicken: Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Jedes Etikett wird ein Auftrag auf dem Drucker, den du hier wählst. Auf einem Seitendrucker belegt es eine Zelle eines Bogens: die nächste freie Zelle des vollsten angefangenen Bogens seines Bogentyps, sonst einen neuen Bogen."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy chore {id}"
+msgstr "Grocy-Hausarbeit {id}"
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy labels"
@@ -2523,6 +2531,10 @@ msgstr "{sheetCode} öffnen"
 msgid "Open in {appName}"
 msgstr "In {appName} öffnen"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Open in Grocy"
+msgstr "In Grocy öffnen"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
 msgid "Open Settings › Integrations"
@@ -3269,6 +3281,7 @@ msgstr "Scannen"
 msgid "Scan a sheet code"
 msgstr "Bogencode scannen"
 
+#: src/features/scan/GrocycodePage.tsx
 #: src/features/scan/ScanScreen.tsx
 msgid "Scan again"
 msgstr "Erneut scannen"
@@ -3967,6 +3980,14 @@ msgstr "Die Markierung der Zellen konnte nicht aufgehoben werden."
 msgid "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 msgstr "Die Kontrollseite ist gedruckt. Miss die Kreuzungen noch einmal: Jede sollte innerhalb von 0,5 mm liegen."
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "The code on this label names a battery in Grocy."
+msgstr "Der Code auf diesem Etikett bezeichnet eine Batterie in Grocy."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "The code on this label names a chore in Grocy."
+msgstr "Der Code auf diesem Etikett bezeichnet eine Hausarbeit in Grocy."
+
 #: src/features/archive/errors.ts
 msgid "The code prefix"
 msgstr "Das Code-Präfix"
@@ -4075,6 +4096,10 @@ msgstr "Der Hub kennt keinen Bogen {code}."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "Der Hub kennt keinen Bogen {preselectedSheet}."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "The hub does not know the Grocy address yet. Open a product from Grocy once, or open it in Grocy yourself."
+msgstr "Der Hub kennt die Grocy-Adresse noch nicht. Öffne einmal ein Produkt aus Grocy oder öffne den Eintrag selbst in Grocy."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The hub restarted while this label waited for the next part. Print it again."

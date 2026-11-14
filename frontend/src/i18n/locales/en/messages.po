@@ -1603,9 +1603,17 @@ msgstr "Grid"
 msgid "Grocy"
 msgstr "Grocy"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy battery {id}"
+msgstr "Grocy battery {id}"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet."
 msgstr "Grocy can send its own labels to this hub: products, stock entries, chores, batteries and recipes. Each label becomes a print job on the printer you choose here. On a page printer it takes one cell of a sheet: the next free cell of the fullest started sheet of its sheet type, else a new sheet."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "Grocy chore {id}"
+msgstr "Grocy chore {id}"
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Grocy labels"
@@ -2523,6 +2531,10 @@ msgstr "Open {sheetCode}"
 msgid "Open in {appName}"
 msgstr "Open in {appName}"
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "Open in Grocy"
+msgstr "Open in Grocy"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
 msgid "Open Settings › Integrations"
@@ -3269,6 +3281,7 @@ msgstr "Scan"
 msgid "Scan a sheet code"
 msgstr "Scan a sheet code"
 
+#: src/features/scan/GrocycodePage.tsx
 #: src/features/scan/ScanScreen.tsx
 msgid "Scan again"
 msgstr "Scan again"
@@ -3967,6 +3980,14 @@ msgstr "The cells could not be un-marked."
 msgid "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 msgstr "The check page printed. Measure the crossings again: each one should be within 0.5 mm."
 
+#: src/features/scan/GrocycodePage.tsx
+msgid "The code on this label names a battery in Grocy."
+msgstr "The code on this label names a battery in Grocy."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "The code on this label names a chore in Grocy."
+msgstr "The code on this label names a chore in Grocy."
+
 #: src/features/archive/errors.ts
 msgid "The code prefix"
 msgstr "The code prefix"
@@ -4075,6 +4096,10 @@ msgstr "The hub does not know a sheet {code}."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "The hub does not know a sheet {preselectedSheet}."
 msgstr "The hub does not know a sheet {preselectedSheet}."
+
+#: src/features/scan/GrocycodePage.tsx
+msgid "The hub does not know the Grocy address yet. Open a product from Grocy once, or open it in Grocy yourself."
+msgstr "The hub does not know the Grocy address yet. Open a product from Grocy once, or open it in Grocy yourself."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The hub restarted while this label waited for the next part. Print it again."

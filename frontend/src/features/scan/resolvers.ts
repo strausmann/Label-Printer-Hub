@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { parseGrocycode } from "./grocycode";
 import { parseLabelPath } from "../lookup/labelUrl";
 import { sheetResolver } from "../sheets/resolver";
 import type { ScanHit } from "./decoder";
@@ -60,3 +61,12 @@ registerScanResolver({
 // After the foundation ones. The resolver comes from a module that does not import this one, so
 // nothing runs before the registry above exists.
 registerScanResolver(sheetResolver);
+
+registerScanResolver({
+  id: "grocycode",
+  match: (hit) => parseGrocycode(hit.text) !== null,
+  resolve: (hit) => {
+    const code = parseGrocycode(hit.text)!;
+    return code.entity === "p" ? `/product/${code.id}` : `/grocycode/${code.entity}/${code.id}`;
+  },
+});

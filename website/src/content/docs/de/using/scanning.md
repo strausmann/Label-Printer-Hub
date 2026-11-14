@@ -9,6 +9,7 @@ Die Weboberfläche scannt mit der Kamera deines Handys oder Laptops. Installier 
 
 - **Einen Barcode oder eine ID eines Eintrags**, zum Beispiel eine Inventarnummer aus Snipe-IT oder einen Produkt-Barcode aus Grocy. Der Hub schlägt ihn in der App nach, der er gehört, und zeigt sein Etikett, fertig zum Drucken oder für den Warenkorb.
 - **Ein Etikett, das der Hub gedruckt hat.** Sein QR-Code ist ein Etikettenlink (`/asset/…`, `/loc/…`, `/spool/…`, `/product/…`), der den Eintrag wieder öffnet.
+- **Einen Grocycode**, den Code, den Grocy auf seine eigenen Etiketten druckt (`grcy:p:13`). Ein Produktcode öffnet dieses Produkt im Hub, fertig zum Drucken. Ein Batterie- oder Hausarbeitscode (`grcy:b:4`, `grcy:c:7`) öffnet eine Seite, die ihn benennt und auf den Eintrag in Grocy verlinkt, sobald der Hub die Grocy-Adresse von einem geöffneten Produkt kennt.
 - **Einen Bogencode**, um genau diesen Bogen zu wählen, wenn du auf einen Bogen druckst.
 
 Statt zu scannen kannst du eine ID auch eintippen: eine Inventarnummer (`AT-0042`), eine numerische ID (`42`) oder einen gedruckten Etikettenlink. Standorte brauchen das Präfix `loc:`, zum Beispiel `loc:17`.

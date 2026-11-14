@@ -169,6 +169,17 @@ test.describe.serial("scan", () => {
     await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
   });
 
+  test("@grocycode a scanned Grocycode opens the Grocy product", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Scan" }).click();
+    await expect(page).toHaveURL(/\/product\/13$/, { timeout: 20_000 });
+    expect(await noSideScroll(page)).toBe(true);
+    await shot(page, "task-10-scan-opens-grocy-product.png");
+    // The camera is off again once the screen is left.
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
+  });
+
   test("@data-matrix zxing worker decodes a data-matrix image under the production CSP", async () => {
     const problems = await watch(page);
     // Make sure the browser's own detector cannot be the one reading this.
