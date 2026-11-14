@@ -24,11 +24,16 @@ from urllib.parse import unquote
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext, ScopeRefusedError, _validate_api_key
+from app.auth.dependencies import (
+    MAX_KEY_LENGTH,
+    AuthContext,
+    ScopeRefusedError,
+    _validate_api_key,
+)
 from app.db.session import get_session
 
 TOKEN_QUERY_PARAM = "token"
-MAX_TOKEN_LENGTH = 128
+MAX_TOKEN_LENGTH = MAX_KEY_LENGTH  # one limit for the header and the URL token (#321)
 
 _TOKEN_NAME = TOKEN_QUERY_PARAM.encode("ascii")
 _REFUSED_SCOPES = frozenset({"admin"})
@@ -84,6 +89,3 @@ async def require_print_token(
                 "error_message": "Use a key with the print scope for a URL token.",
             },
         ) from None
-    except ValueError:
-        # bcrypt refuses a token of 73..128 bytes with a real prefix: no key is that long.
-        raise _invalid_token() from None

@@ -54,6 +54,10 @@ _SCOPE_HIERARCHY: dict[str, list[str]] = {
     "read": ["read"],
 }
 
+# #321: no key is longer than this; a longer value is refused before lookup and bcrypt
+# (bcrypt >= 5 raises on more than 72 bytes). The URL token uses the same limit.
+MAX_KEY_LENGTH = 128
+
 # Scope → HTTP status for insufficient scope
 _SCOPE_ORDER = ["read", "print", "admin"]
 
@@ -221,6 +225,13 @@ async def _validate_api_key(
             detail={"error_code": "invalid_key_format", "error_message": "Invalid key format"},
         )
 
+    if len(key_header) > MAX_KEY_LENGTH:
+        # #321: same answer as an unknown key, before the lookup and bcrypt.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
+        )
+
     prefix = key_header[:16]
     key_row = await api_keys_repo.get_by_prefix(session, prefix)
 
@@ -249,7 +260,12 @@ async def _validate_api_key(
                 detail={"error_code": "key_expired", "error_message": "API key has expired"},
             )
 
-    if not await verify_api_key_async(key_header, key_row.key_hash):
+    try:
+        key_matches = await verify_api_key_async(key_header, key_row.key_hash)
+    except ValueError:
+        # #321: bcrypt >= 5 refuses more than 72 bytes; no key is that long.
+        key_matches = False
+    if not key_matches:
         _log.debug("bcrypt mismatch for prefix %s", prefix)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
