@@ -616,3 +616,23 @@ class TestCancelDeferred:
         elapsed = time.monotonic() - started
         assert store.mark_queued_many_failed_restart.await_count == 1
         assert elapsed < DEFERRED_STOP_BUDGET_S + 0.5
+
+    async def test_ended_jobs_are_announced_failed_restart(self, make_service) -> None:
+        """Review N4: a watcher sees the job leave ``queued``."""
+        from app.services.event_bus import EventBus
+
+        svc, _queue, store, backend = make_service()
+        bus = EventBus()
+        svc._event_bus = bus
+        events = bus.subscribe(f"printer:{_PRINTER_ID}:queue", "t")
+        ids = await _interrupted_jobs(svc, backend, 2)
+        # The store ended only the first one (the second was cancelled meanwhile).
+        store.mark_queued_many_failed_restart = AsyncMock(return_value=[ids[0]])
+        await svc.cancel_deferred()
+        frames = []
+        while not events.empty():
+            frames.append(events.get_nowait())
+        assert [(f.data["job_id"], f.data["from_state"], f.data["to_state"]) for f in frames] == [
+            (str(ids[0]), "queued", "failed_restart")
+        ]
+        assert frames[0].data["error_code"] == "deferred_interrupted"

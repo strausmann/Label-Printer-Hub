@@ -18,6 +18,45 @@ from app.services.job_lifecycle import Job, JobState
 _log = logging.getLogger(__name__)
 
 
+def publish_job_state_changed(
+    bus: EventBus | None,
+    *,
+    printer_id: UUID,
+    job_id: UUID,
+    from_state: str,
+    to_state: str,
+    error_code: str | None = None,
+) -> None:
+    """Announce a job that changed state outside the queue worker (#281).
+
+    A deferred job ended before it reached the queue, or a job the queue did not track was
+    cancelled: no worker transition announces it, so a watcher would keep it ``queued``.
+    The same frame as :meth:`PrintQueueProducer.handle_transition`. Must not raise.
+    """
+    if bus is None:
+        return
+    channel = f"printer:{printer_id}:queue"
+    try:
+        bus.publish(
+            channel,
+            BusEvent(
+                channel=channel,
+                event_id=bus.next_event_id(channel),
+                event_type="job.state_changed",
+                timestamp=datetime.now(UTC),
+                data={
+                    "job_id": str(job_id),
+                    "from_state": from_state,
+                    "to_state": to_state,
+                    "queue_depth": 0,
+                    "error_code": error_code,
+                },
+            ),
+        )
+    except Exception:
+        _log.exception("Publishing the state change of job %s failed", job_id)
+
+
 class PrintQueueProducer:
     """Converts job state transitions into EventBus events."""
 

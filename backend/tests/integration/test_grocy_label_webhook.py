@@ -733,6 +733,8 @@ async def test_cancel_during_preflight_never_prints(hub: Hub) -> None:
     assert row.state == "cancelled"
     assert "rendered_tape_mm" not in row.payload
     assert hub.backend.printed_images == []
+    # Review N4: the untracked cancel is announced, so a watcher does not stay on "queued".
+    assert _job_events(hub, job_id) == [("queued", "cancelled")]
 
 
 # --- events only for real state changes (review F3, F5) --------------------------------------
@@ -814,6 +816,7 @@ async def test_detach_ends_an_interrupted_deferred_job_at_once(hub: Hub) -> None
     assert (row.state, row.error) == ("failed_restart", "deferred_interrupted")
     assert later.state == "failed_restart"
     assert hub.backend.printed_images == []
+    assert _job_events(hub, job_id) == [("queued", "failed_restart")]  # review N4
 
 
 async def test_deferred_row_left_by_a_crash_ends_failed_restart(hub: Hub) -> None:

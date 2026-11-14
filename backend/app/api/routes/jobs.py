@@ -63,6 +63,7 @@ from app.schemas.print_request import RawLabelData
 from app.schemas.problem import ProblemDetail
 from app.services.page_jobs import IDENTITY_HELD_KINDS, PagePayload
 from app.services.print_queue import UnrenderableJobError
+from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.sheets import print_service
 from app.sheets.errors import (
     MediaKindMismatchError,
@@ -270,6 +271,15 @@ async def cancel_job(
             )
         return read
     cancelled = await jobs_repo.mark_cancelled(session, job_id)
+    # The queue does not hold the job (a deferred Grocy job before its hand-off, #281): no
+    # worker transition announces it, so a watcher would keep it ``queued`` (review N4).
+    publish_job_state_changed(
+        getattr(request.app.state, "event_bus", None),
+        printer_id=cancelled.printer_id,
+        job_id=cancelled.id,
+        from_state=JobState.QUEUED.value,
+        to_state=JobState.CANCELLED.value,
+    )
     return JobRead.model_validate(cancelled, from_attributes=True)
 
 

@@ -35,10 +35,10 @@ from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
 from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
-from app.services.event_bus import BusEvent
 from app.services.layout_engine import LayoutEngine
 from app.services.print_error_codes import print_error_code
 from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_JOB
+from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.services.ql_layout import resolve_layout
 
 _log = logging.getLogger(__name__)
@@ -379,7 +379,7 @@ class PrintService:
 
     async def _end_interrupted(self, job_ids: list[UUID]) -> None:
         try:
-            await asyncio.wait_for(
+            ended = await asyncio.wait_for(
                 self._store.mark_queued_many_failed_restart(job_ids, DEFERRED_INTERRUPTED),
                 timeout=DEFERRED_STOP_BUDGET_S,
             )
@@ -388,6 +388,16 @@ class PrintService:
                 "%d interrupted deferred job(s) left queued for the start-up recovery (%s)",
                 len(job_ids),
                 exc.__class__.__name__,
+            )
+            return
+        for job_id in ended:
+            publish_job_state_changed(
+                self._event_bus,
+                printer_id=self._printer_id,
+                job_id=job_id,
+                from_state=JobState.QUEUED.value,
+                to_state=JobState.FAILED_RESTART.value,
+                error_code=DEFERRED_INTERRUPTED,
             )
 
     async def _complete_deferred(
@@ -464,28 +474,14 @@ class PrintService:
 
     def _publish_failed(self, job_id: UUID, error_code: str) -> None:
         """Announce a job that failed outside the queue worker (``job.state_changed``)."""
-        if self._event_bus is None:
-            return
-        channel = f"printer:{self._printer_id}:queue"
-        try:
-            self._event_bus.publish(
-                channel,
-                BusEvent(
-                    channel=channel,
-                    event_id=self._event_bus.next_event_id(channel),
-                    event_type="job.state_changed",
-                    timestamp=datetime.now(UTC),
-                    data={
-                        "job_id": str(job_id),
-                        "from_state": JobState.QUEUED.value,
-                        "to_state": JobState.FAILED.value,
-                        "queue_depth": 0,
-                        "error_code": error_code,
-                    },
-                ),
-            )
-        except Exception:  # an event must never fail the job write
-            _log.exception("Publishing the failure of job %s failed", job_id)
+        publish_job_state_changed(
+            self._event_bus,
+            printer_id=self._printer_id,
+            job_id=job_id,
+            from_state=JobState.QUEUED.value,
+            to_state=JobState.FAILED.value,
+            error_code=error_code,
+        )
 
     async def _resolve_label_data(
         self, request: PrintRequest, *, source_app: str = "manual"
