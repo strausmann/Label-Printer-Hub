@@ -237,7 +237,7 @@ async def test_print_job_sends_document_and_attrs() -> None:
     (op,) = fake.received
     assert op.operation == "Print-Job"
     assert op.document == PDF
-    assert op.attributes["requesting-user-name"] == ["label-printer-hub"]
+    assert op.attributes["requesting-user-name"] == ["labelyard"]
     assert op.attributes["job-name"] == ["Calibration page"]
     assert op.attributes["document-format"] == ["application/pdf"]
     assert op.job_attributes["copies"] == [1]
@@ -251,14 +251,14 @@ async def test_print_job_client_owns_the_target_attributes() -> None:
     hostile = [
         Attr("printer-uri", Tag.URI, ["ipp://other.example.invalid/x"]),
         Attr("attributes-charset", Tag.CHARSET, ["us-ascii"]),
-        Attr("requesting-user-name", Tag.NAME, ["label-printer-hub"]),
+        Attr("requesting-user-name", Tag.NAME, ["labelyard"]),
     ]
     async with _client(fake) as client:
         await client.print_job(PDF, [], hostile)
     (op,) = fake.received
     assert op.attributes["printer-uri"] == [URI]
     assert op.attributes["attributes-charset"] == ["utf-8"]
-    assert op.attributes["requesting-user-name"] == ["label-printer-hub"]
+    assert op.attributes["requesting-user-name"] == ["labelyard"]
     assert op.attributes["document-format"] == ["application/pdf"]  # default added
 
     rec = _Recorder(_ipp(_print_job_response(1)))
@@ -289,7 +289,7 @@ async def test_get_job_script_progression() -> None:
     get = fake.received[1]
     assert get.attributes["job-id"] == [1]
     assert get.attributes["printer-uri"] == [URI]
-    assert get.attributes["requesting-user-name"] == ["label-printer-hub"]
+    assert get.attributes["requesting-user-name"] == ["labelyard"]
 
 
 async def test_request_ids_increment_per_client() -> None:
@@ -423,7 +423,7 @@ async def test_cancel_job() -> None:
     cancel = fake.received[1]
     assert cancel.operation == "Cancel-Job"
     assert cancel.attributes["job-id"] == [1]
-    assert cancel.attributes["requesting-user-name"] == ["label-printer-hub"]
+    assert cancel.attributes["requesting-user-name"] == ["labelyard"]
 
 
 async def test_validate_job() -> None:
@@ -568,7 +568,7 @@ async def test_get_job_request_bytes() -> None:
         + wire.attr(0x48, "attributes-natural-language", b"en")
         + wire.attr(0x45, "printer-uri", wire.URI)
         + wire.attr(0x21, "job-id", wire.i32(7))
-        + wire.attr(0x42, "requesting-user-name", b"label-printer-hub")
+        + wire.attr(0x42, "requesting-user-name", b"labelyard")
         + wire.attr(0x44, "requested-attributes", b"job-id")
         + wire.more(0x44, b"job-state")
         + wire.more(0x44, b"job-state-reasons")
@@ -602,7 +602,7 @@ async def test_cancel_and_get_jobs_request_bytes() -> None:
         + wire.i32(1)
         + head
         + wire.attr(0x21, "job-id", wire.i32(7))
-        + wire.attr(0x42, "requesting-user-name", b"label-printer-hub")
+        + wire.attr(0x42, "requesting-user-name", b"labelyard")
         + wire.END_OF_ATTRIBUTES
     )
     assert rec.bodies[1] == (
@@ -610,7 +610,7 @@ async def test_cancel_and_get_jobs_request_bytes() -> None:
         + wire.u16(0x000A)
         + wire.i32(2)
         + head
-        + wire.attr(0x42, "requesting-user-name", b"label-printer-hub")
+        + wire.attr(0x42, "requesting-user-name", b"labelyard")
         + wire.attr(0x21, "limit", wire.i32(GET_JOBS_LIMIT))
         + wire.attr(0x44, "which-jobs", b"completed")
         + wire.attr(0x44, "requested-attributes", b"job-id")
@@ -868,9 +868,9 @@ async def test_get_job_reports_name_and_originating_user() -> None:
         + wire.attr(0x21, "job-id", wire.i32(9))
         + wire.attr(0x23, "job-state", wire.i32(5))
         + wire.attr(0x42, "job-name", b"Calibration page")
-        + wire.attr(0x42, "job-originating-user-name", b"label-printer-hub")
+        + wire.attr(0x42, "job-originating-user-name", b"labelyard")
         + wire.END_OF_ATTRIBUTES
     )
     client = IppClient(URI, transport=_Recorder(_ipp(body)))
     info = await client.get_job(9)
-    assert (info.name, info.originating_user) == ("Calibration page", "label-printer-hub")
+    assert (info.name, info.originating_user) == ("Calibration page", "labelyard")

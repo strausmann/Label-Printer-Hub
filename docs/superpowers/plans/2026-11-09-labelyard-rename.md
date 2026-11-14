@@ -167,6 +167,7 @@ Release sequence (metadata in Task 12, operator steps in Task 13):
 | `general.display_name` | New default only | An explicitly stored name is the operator's choice. |
 | PWA `id: "/"` | Keep | Installed apps keep their identity and only show the new name and icon. |
 | Example Pangolin resource keys | Rename in examples; migration guide says to keep the existing key | Changing a blueprint key makes Pangolin create a second resource. |
+| IPP job user name | New jobs `labelyard`, old name still recognised (`LEGACY_IPP_USER_NAME` in `job_attrs.py`, accepted by `is_own_job`) | A job sent by 1.5.x can still be on the printer during the upgrade; only the old name marks it as the hub's own (restart recovery and tracking compare it). Ruling 2026-11-14. |
 
 ## Review Focus
 
@@ -604,6 +605,7 @@ Order of the items below (Blocker 1 of the plan review): Docker Hub, domain veri
 GitHub (after the milestone merge):
 - [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Then start the release run (`gh workflow run release.yml`) if the nightly one is not imminent; it publishes `labelyard:1.6.0`.
 - [ ] Right after the rename and before the first release run, in **one commit**: `.releaserc.json` `repositoryUrl` → `git@github.com:strausmann/labelyard.git`, the pin in `backend/tests/unit/test_release_workflows.py::test_semantic_release_pushes_over_ssh`, and `repository` in the root `package.json`. (Not in Task 6: until the rename the new address does not exist, and the release runs on merge.)
+- [ ] In that same commit, remove the temporary guard allowance for `.releaserc.json` and `test_release_workflows.py` after the rename (`TEMPORARY_REPO_URL_FILES` in `scripts/brand_guard.py` and its test `test_temporary_repo_url_allowance_covers_exactly_two_paths`); `python3 scripts/brand_guard.py` stays at exit 0.
 - [ ] Release checklist, every release: lift the example image default (`HUB_VERSION:-<version>`) in `examples/*.yml`, `examples/.env.example` and `examples/README.md` to the new version, or add a test that fails when the default differs from the current version.
 - [ ] Repository metadata, social preview and package pages: Task 12.
 - [ ] GHCR: the package `labelyard` exists since the first preview (Task 11 Step 5); set it to **public**, link it to the renamed repo, and grant the repo the Admin role under "Manage Actions access" (needed by `registry-cleanup.yml`).

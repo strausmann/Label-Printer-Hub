@@ -124,6 +124,29 @@ class BrandGuardTest(unittest.TestCase):
         rules = sorted(self.rules())
         self.assertEqual(rules, ["cli", "cli", "env-prefix", "env-prefix", "slug"])
 
+    def test_legacy_ipp_user_name_allowed_only_in_its_constant(self) -> None:
+        path = "backend/app/printer_backends/ipp/job_attrs.py"
+        self.add(path, f'LEGACY_IPP_USER_NAME = "{SLUG}"  # jobs sent by 1.5.x\nUSER_NAME = "{SLUG}"\n')
+        self.add("backend/app/printer_backends/ipp/client.py", f'LEGACY_IPP_USER_NAME = "{SLUG}"\n')
+        hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
+        self.assertEqual(hits, [("backend/app/printer_backends/ipp/client.py", 1), (path, 2)])
+
+    def test_temporary_repo_url_allowance_covers_exactly_two_paths(self) -> None:
+        url = f'"repositoryUrl": "git@github.com:strausmann/{SLUG}.git"\n'
+        allowed = (".releaserc.json", "backend/tests/unit/test_release_workflows.py")
+        for path in allowed:
+            self.add(path, url)
+        for path in ("package.json", "backend/tests/unit/test_release_workflows_more.py", "x/.releaserc.json"):
+            self.add(path, url)
+        hits = sorted(h.path for h in brand_guard.find_hits(self.root))
+        self.assertEqual(
+            hits,
+            ["backend/tests/unit/test_release_workflows_more.py", "package.json", "x/.releaserc.json"],
+        )
+        # the allowance is for the slug only: other old names in those files stay hits
+        self.add(".releaserc.json", f"{DISPLAY}\n")
+        self.assertEqual(self.rules(".releaserc.json"), ["display"])
+
     def test_slug_not_reported_twice(self) -> None:
         self.add("README.md", f"{SLUG}-backend\n")
         self.assertEqual(self.rules(), ["slug"])

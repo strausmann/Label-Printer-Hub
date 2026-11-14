@@ -130,7 +130,7 @@ def print_job_request() -> bytes:
         + attr(0x47, "attributes-charset", b"utf-8")
         + attr(0x48, "attributes-natural-language", b"en")
         + attr(0x45, "printer-uri", URI)
-        + attr(0x42, "requesting-user-name", b"label-printer-hub")
+        + attr(0x42, "requesting-user-name", b"labelyard")
         + attr(0x42, "job-name", b"Calibration page")
         + attr(0x49, "document-format", b"application/pdf")
         + bytes([0x02])  # job-attributes-tag
