@@ -1,6 +1,7 @@
 name: Screenshots
 
-# Renders the README screenshots (docs/screenshots/) from the e2e fixtures and opens a pull request
+# Renders the README screenshots (docs/screenshots/) and the website screenshots
+# (website/src/assets/screens/, English and German) from the e2e fixtures and opens a pull request
 # when any of them changed. Manual only: `pnpm screenshots` is the same command, run locally.
 on:
   workflow_dispatch:
@@ -59,7 +60,9 @@ jobs:
         uses: peter-evans/create-pull-request@3ffccacd46053766916f087ce41d627c0b8cf2d1 # v8.1.3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          add-paths: docs/screenshots/*.png
+          add-paths: |
+            docs/screenshots/*.png
+            website/src/assets/screens/*.webp
           branch: docs/readme-screenshots
           delete-branch: true
           commit-message: "docs(ui): refresh the generated README screenshots"

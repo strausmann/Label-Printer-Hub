@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "e2e": "playwright test",
     "e2e:harness": "playwright test -c playwright.harness.config.ts",
-    "screenshots": "playwright test -c playwright.screenshots.config.ts && node scripts/check-screenshot-sizes.mjs",
+    "screenshots": "playwright test -c playwright.screenshots.config.ts && node scripts/check-screenshot-sizes.mjs && node scripts/optimise-screenshots.mjs",
     "gen:api": "python ../backend/scripts/export_openapi.py > openapi.json && openapi-typescript openapi.json -o src/api/schema.gen.ts",
     "i18n:extract": "lingui extract",
     "i18n:compile": "lingui compile --strict --typescript"

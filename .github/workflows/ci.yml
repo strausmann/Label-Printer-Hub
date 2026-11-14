@@ -177,6 +177,9 @@ jobs:
       - name: Unit tests (coverage threshold 70)
         run: pnpm test:coverage
 
+      - name: Unit tests of the build scripts
+        run: node --test 'scripts/*.test.mjs'
+
       # The API types are generated from the backend's OpenAPI; a stale file fails here.
       - uses: actions/setup-python@v6
         with:

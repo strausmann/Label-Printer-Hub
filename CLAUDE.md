@@ -7,7 +7,7 @@ This file configures **Claude Code** (and other LLM-based tools that read it) fo
 When you start working in this repository, read in this order:
 
 1. [`README.md`](README.md) — project overview
-2. [`docs/architecture.md`](docs/architecture.md) — current architecture in one page
+2. [`website/src/content/docs/developers/architecture.md`](website/src/content/docs/developers/architecture.md) — current architecture in one page (published at https://labelyard.app/developers/architecture/)
 3. [`docs/decisions/`](docs/decisions/) — ADRs explaining **why** every architectural choice was made
 4. [`docs/policies/privacy.md`](docs/policies/privacy.md) — what must NOT be committed (binding)
 5. [`docs/policies/trademarks.md`](docs/policies/trademarks.md) — Brother trademark rules (binding)

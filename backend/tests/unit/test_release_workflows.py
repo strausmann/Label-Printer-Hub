@@ -291,6 +291,7 @@ def test_actions_are_pinned_to_full_commit_shas() -> None:
         "licence-gate.yml",
         "licence-backend.yml",
         "website.yml",
+        "screenshots.yml",
         "prose.yml",
         "registry-cleanup.yml",
         "preview-image.yml",
@@ -303,6 +304,21 @@ def test_actions_are_pinned_to_full_commit_shas() -> None:
                     assert sha.match(uses), (
                         f"{name}/{job_name}: {uses} is not pinned to a 40-character commit SHA"
                     )
+
+
+def test_website_deploy_waits_for_the_freshness_check() -> None:
+    jobs = _load("website.yml")["jobs"]
+    assert jobs["deploy"]["needs"] == ["parity", "freshness", "build"]
+    assert set(jobs["deploy"]["needs"]) <= set(jobs)
+    steps = jobs["freshness"]["steps"]
+    run = "\n".join(str(step.get("run", "")) for step in steps)
+    assert "website/scripts/export-openapi.mjs" in run
+    assert "website/scripts/gen-config-reference.py" in run
+    diff = next(step["run"] for step in steps if "git diff" in str(step.get("run", "")))
+    assert "--exit-code" in diff
+    docs = "website/src/content/docs"
+    for path in ("website/openapi", f"{docs}/reference", f"{docs}/de/reference"):
+        assert path in diff, path
 
 
 # Legacy major-tag actions in ci.yml; any other action there must be SHA-pinned.

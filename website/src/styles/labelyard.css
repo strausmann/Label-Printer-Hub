@@ -254,6 +254,58 @@ a,
   color: var(--ink);
 }
 
+/* Screenshots of the web app: the file of the current theme (see components/Screenshot.astro).
+   A tone step frames them; no shadow, no rule. */
+.ly-shot {
+  display: block;
+}
+
+.ly-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-2);
+  background: var(--sunken);
+}
+
+:root[data-theme="dark"] .ly-shot-light,
+:root[data-theme="light"] .ly-shot-dark {
+  display: none;
+}
+
+.ly-hero-shot {
+  margin: 0;
+}
+
+/* The tour on the Try page: one shot per row, its caption beside it on wide screens. */
+.ly-tour {
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  margin-block: 2rem 0;
+}
+
+.ly-tour figure {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.ly-tour figcaption {
+  color: var(--ink);
+  line-height: 1.55;
+  max-width: 60ch;
+}
+
+.ly-tour figcaption strong {
+  display: block;
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.sl-markdown-content .ly-tour :is(figure, figcaption, span, img) {
+  margin-top: 0;
+}
+
 /* The landing page brings its own h1; hide Starlight's title panel there and its rules. */
 main:has(.ly-home) .content-panel:has(#_top) {
   display: none;
@@ -265,7 +317,7 @@ main:has(.ly-home) .content-panel {
 
 /* Markdown's flow spacing (margin-top on every sibling) does not apply inside the landing grid:
    the grid gaps set the rhythm. */
-.sl-markdown-content .ly-home :is(section, div, dl, dt, dd, ul, li, p, h1, h2) {
+.sl-markdown-content .ly-home :is(section, div, dl, dt, dd, ul, li, p, h1, h2, figure, span, img) {
   margin-top: 0;
 }
 

@@ -56,11 +56,11 @@ spoolman_timeout:
   en: 'Seconds to wait for Spoolman.'
   de: 'Sekunden, die auf Spoolman gewartet wird.'
 server_port:
-  en: 'The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT`, then `PRINTER_HUB_SERVER_PORT`, then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.'
-  de: 'Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT`, dann `PRINTER_HUB_SERVER_PORT`, dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.'
+  en: 'The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT` (or its name from earlier releases, see [upgrades](/admin/upgrades/)), then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.'
+  de: 'Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT` (oder den Namen aus früheren Versionen, siehe [Aktualisieren](/de/admin/upgrades/)), dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.'
 log_level:
-  en: 'One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error.'
-  de: 'Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab.'
+  en: 'One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error. At `DEBUG` the hub''s own loggers are verbose, but the database driver stays at `INFO`, so SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it.'
+  de: 'Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab. Bei `DEBUG` sind die eigenen Logger des Hubs ausführlich, der Datenbanktreiber bleibt aber auf `INFO`, SQL-Anweisungen und ihre Werte landen also nicht im Log. Bibliotheken von Dritten protokollieren bei `DEBUG` sehr wohl: Lies ein Debug-Log, bevor du es weitergibst.'
 sign_in_limit_per_minute:
   en: 'Browser sign-in attempts per minute and client address. Behind a proxy all clients share the proxy''s address unless the proxy is trusted (`FORWARDED_ALLOW_IPS`).'
   de: 'Anmeldeversuche im Browser pro Minute und Client-Adresse. Hinter einem Proxy teilen sich alle Clients dessen Adresse, solange der Proxy nicht als vertrauenswürdig eingetragen ist (`FORWARDED_ALLOW_IPS`).'

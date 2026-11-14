@@ -163,13 +163,13 @@ Also set in the web UI; a value set here wins and locks the field there.
 
 Default: `8000`
 
-The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT`, then `PRINTER_HUB_SERVER_PORT`, then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.
+The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT` (or its name from earlier releases, see [upgrades](/admin/upgrades/)), then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.
 
 ### `LABELYARD_LOG_LEVEL`
 
 Default: `INFO`
 
-One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error.
+One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error. At `DEBUG` the hub's own loggers are verbose, but the database driver stays at `INFO`, so SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it.
 
 ### `LABELYARD_SIGN_IN_LIMIT_PER_MINUTE`
 

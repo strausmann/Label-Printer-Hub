@@ -11,6 +11,12 @@ Labelyard erreicht jeden Drucker über das Netz. Drucker, die nur USB können, w
 
 Drucker der Brother PT-Serie und QL-Serie im Netz, zum Beispiel der PT-P750W und der QL-820NWB. Der Hub druckt über TCP-Port 9100 und liest den Zustand des Druckers, auch das eingelegte Band oder die Etikettenrolle, über SNMP (UDP-Port 161).
 
+Die Adresse eines Druckers findest du in den DHCP-Zuteilungen deines Routers, im Display oder auf der Webseite des Druckers, oder du suchst dein Netz nach den beiden Ports ab:
+
+```bash
+nmap -p 9100,161 192.0.2.0/24 --open
+```
+
 Prüf vom Host aus, auf dem der Hub läuft, bevor du den Drucker hinzufügst:
 
 ```bash

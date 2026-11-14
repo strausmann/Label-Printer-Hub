@@ -1,0 +1,36 @@
+---
+/**
+ * A screenshot of the web app in the page's language, in the light and the dark theme. The site
+ * follows Starlight's theme switch (data-theme on <html>), not only the system setting, so both
+ * files are in the page and CSS shows the one of the current theme. The hidden one is not in the
+ * accessibility tree, and since both are loading="lazy" the browser fetches only the visible one:
+ * a hidden lazy image never enters the viewport. width and height keep the space, so nothing shifts.
+ *
+ * The files are website/src/assets/screens/<shot>.<en|de>.<light|dark>.webp, rendered by
+ * `pnpm -C frontend screenshots`; a missing variant fails the build.
+ */
+import type { ImageMetadata } from "astro";
+
+interface Props {
+  shot: string;
+  lang: "en" | "de";
+  alt: string;
+}
+
+const { shot, lang, alt } = Astro.props;
+const files = import.meta.glob<{ default: ImageMetadata }>("../assets/screens/*.webp", { eager: true });
+
+function variant(theme: "light" | "dark"): ImageMetadata {
+  const file = files[`../assets/screens/${shot}.${lang}.${theme}.webp`];
+  if (!file) throw new Error(`missing screenshot ${shot}.${lang}.${theme}.webp in src/assets/screens/`);
+  return file.default;
+}
+
+const light = variant("light");
+const dark = variant("dark");
+---
+
+<span class="ly-shot">
+  <img class="ly-shot-light" src={light.src} width={light.width} height={light.height} alt={alt} loading="lazy" decoding="async" />
+  <img class="ly-shot-dark" src={dark.src} width={dark.width} height={dark.height} alt={alt} loading="lazy" decoding="async" />
+</span>

@@ -28,7 +28,8 @@ PRIVATE_IP = re.compile(
 )
 # Hostnames that appear as URL hosts or Host(`...`) rules; ${VAR} hosts are fine.
 HOST = re.compile(r"(?:https?://|Host\(`)([^/\s:`'\"$}),]+)")
-ALLOWED_HOSTS = {"localhost", "github.com", "example.invalid"}
+# labelyard.app is the project's own documentation site, which the examples link to.
+ALLOWED_HOSTS = {"localhost", "github.com", "example.invalid", "labelyard.app"}
 
 
 def _env_names(service: dict) -> set[str]:
@@ -197,12 +198,14 @@ def test_readme_has_no_removed_printer_variables() -> None:
 
 
 def test_architecture_docs_describe_the_single_process() -> None:
-    arch = (REPO / "docs" / "architecture.md").read_text()
-    assert "Go web server" not in arch and "oapi-codegen" not in arch
-    assert "ADR [0015]" in arch or "0015-single-process-deployment" in arch
-    sse = (REPO / "docs" / "architecture" / "sse.md").read_text()
-    assert "/api/v1/events" in sse
-    assert "backend:8090" not in sse and "HTMX" not in sse
+    for lang in ("", "de/"):
+        dev = REPO / "website" / "src" / "content" / "docs" / f"{lang}developers"
+        arch = (dev / "architecture.md").read_text()
+        assert "Go web server" not in arch and "oapi-codegen" not in arch
+        assert "ADR [0015]" in arch or "0015-single-process-deployment" in arch
+        sse = (dev / "architecture" / "sse.md").read_text()
+        assert "/api/v1/events" in sse
+        assert "backend:8090" not in sse and "HTMX" not in sse
 
 
 def test_privacy_policy_example_uses_documentation_addresses() -> None:
