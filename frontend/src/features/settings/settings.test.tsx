@@ -145,7 +145,8 @@ describe("Integrations", () => {
   });
 });
 
-describe("Grocy labels", () => {
+// Several React Aria selects are opened per test (2-3 s each run); the 5 s default left no margin under coverage.
+describe("Grocy labels", { timeout: 15_000 }, () => {
   const SPARE = { ...ADMIN_PRINTER, id: "44444444-4444-4444-8444-444444444444", name: "Spare tape", slug: "spare-tape", enabled: false };
   const routes = (over: Record<string, unknown> = {}) => ({
     "GET /api/v1/settings": settingsList(),
@@ -260,6 +261,53 @@ describe("Grocy labels", () => {
     await userEvent.click(within(grocy).getByRole("button", { name: "Save" }));
     expect(await within(grocy).findByRole("alert")).toHaveTextContent("integrations.grocy.label.printer: not a printer");
     expect(within(grocy).queryByText("Saved")).toBeNull();
+    // Nothing is lost: the edit is still there and can be saved again.
+    expect(within(grocy).getByRole("switch", { name: "Print Grocy's labels" })).toBeChecked();
+    expect(within(grocy).getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("an edit made while a save is on its way survives that save", async () => {
+    let answer: (value: unknown) => void = () => {};
+    const { calls } = mockApi(
+      routes({
+        "PUT /api/v1/settings": () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("switch", { name: "Print Grocy's labels" }));
+    await userEvent.click(within(grocy).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({ values: { "integrations.grocy.label.enabled": true } }));
+    // The save has not answered yet; the person goes on editing.
+    const chore = within(grocy).getByRole("group", { name: "Chore" });
+    await userEvent.click(within(chore).getByRole("button", { name: /Layout$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "QR code only" }));
+    answer(settingsList({ "integrations.grocy.label.enabled": { value: true } }));
+    expect(await within(grocy).findByText("Saved")).toBeVisible();
+    expect(within(chore).getByRole("button", { name: /Layout$/ })).toHaveTextContent("QR code only");
+    expect(within(grocy).getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("a saved printer is shown by its slug, not as unavailable, when the printers cannot be loaded", async () => {
+    mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({ "integrations.grocy.label.printer": { value: PRINTER_A.slug, is_set: true } }),
+        "GET /api/v1/admin/printers": respond(500, { detail: "boom" }),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    // While the list loads (a 5xx is asked again twice) the slug is shown as it is.
+    expect(within(grocy).getByRole("button", { name: /Default printer$/ })).toHaveTextContent(PRINTER_A.slug);
+    expect(
+      await within(grocy).findByText("The printers could not be loaded. A saved printer is shown by its short name.", undefined, { timeout: 10_000 }),
+    ).toBeVisible();
+    const target = within(grocy).getByRole("button", { name: /Default printer$/ });
+    expect(target).toHaveTextContent(PRINTER_A.slug);
+    expect(target).not.toHaveTextContent("not available");
   });
 
   it("a save the server cannot be reached for says so", async () => {

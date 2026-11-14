@@ -40,16 +40,19 @@ export interface LabelPrinter {
 /**
  * The printers a label can go to: the empty choice first, then the enabled tape printers. A saved slug that is
  * not among them (disabled, removed, a page printer) stays in the list under `unavailable(slug)`, so the select
- * still shows what is stored instead of jumping to another printer.
+ * still shows what is stored instead of jumping to another printer. `printers` is `null` while the list is not known
+ * (loading, or the request failed): then the saved slug is shown as it is, because nothing says it is unavailable.
  */
 export function labelPrinterOptions(
-  printers: readonly LabelPrinter[],
+  printers: readonly LabelPrinter[] | null,
   current: string,
   emptyLabel: string,
   unavailable: (slug: string) => string,
 ): { id: string; label: string }[] {
-  const usable = printers.filter((p) => p.enabled && p.backend !== "ipp").map((p) => ({ id: p.slug, label: p.name }));
+  const usable = (printers ?? []).filter((p) => p.enabled && p.backend !== "ipp").map((p) => ({ id: p.slug, label: p.name }));
   const options = [{ id: "", label: emptyLabel }, ...usable];
-  if (current !== "" && !usable.some((o) => o.id === current)) options.push({ id: current, label: unavailable(current) });
+  if (current !== "" && !usable.some((o) => o.id === current)) {
+    options.push({ id: current, label: printers === null ? current : unavailable(current) });
+  }
   return options;
 }

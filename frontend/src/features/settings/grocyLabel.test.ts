@@ -51,6 +51,14 @@ describe("labelPrinterOptions", () => {
     ]);
   });
 
+  it("shows a saved printer by its slug, not as unavailable, while the printers are not known", () => {
+    expect(labelPrinterOptions(null, "desk", "Same as default", (slug) => `${slug} (not available)`)).toEqual([
+      { id: "", label: "Same as default" },
+      { id: "desk", label: "desk" },
+    ]);
+    expect(labelPrinterOptions(null, "", "Same as default", (slug) => slug)).toEqual([{ id: "", label: "Same as default" }]);
+  });
+
   it("keeps a saved printer that cannot take labels now, marked as such", () => {
     expect(labelPrinterOptions(printers, "spare", "Same as default", (slug) => `${slug} (not available)`)).toEqual([
       { id: "", label: "Same as default" },

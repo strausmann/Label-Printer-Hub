@@ -47,7 +47,8 @@ function LabelTarget({
 }: {
   label: string;
   value: string;
-  printers: readonly LabelPrinter[];
+  /** `null` while the printers are not known (loading or failed). */
+  printers: readonly LabelPrinter[] | null;
   emptyLabel: string;
   onChange: (value: string) => void;
   isDisabled?: boolean;
@@ -136,7 +137,8 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
   const keys = grocyLabelKeys();
   const { values, invalid } = draft.payload(keys);
   const changed = Object.keys(values).length > 0;
-  const list: LabelPrinter[] = printers.data ?? [];
+  // Until the list has arrived nothing says a saved printer is unavailable, so it is shown as it is.
+  const list: readonly LabelPrinter[] | null = printers.isSuccess ? printers.data : null;
   const enabled = Boolean(enabledView.value);
   const publicUrl = String(draft.view("general.public_url")?.value ?? "");
 
@@ -176,6 +178,7 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
           onChange={change(GROCY_LABEL_DEFAULT_PRINTER_KEY)}
           isDisabled={locked(GROCY_LABEL_DEFAULT_PRINTER_KEY)}
         />
+        {printers.isError ? <p className={HINT}>{t`The printers could not be loaded. A saved printer is shown by its short name.`}</p> : null}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -222,9 +225,11 @@ export function GrocyLabelSettings({ views }: { views: SettingView[] }) {
           isDisabled={!changed || invalid.length > 0 || save.isPending}
           onPress={() => {
             setSaved(false);
+            // Only what this save sent is settled by it; an edit made while it is on its way stays in the draft.
+            const sent = Object.keys(values);
             save.mutate(values, {
               onSuccess: () => {
-                draft.clear(keys);
+                draft.clear(sent);
                 setSaved(true);
               },
             });
