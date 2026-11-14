@@ -178,6 +178,11 @@ class SQLiteJobStore(JobStore):
         async with self._session_factory() as session:
             await jobs_repo.mark_queued_failed_restart(session, job_id, error)
 
+    async def mark_queued_many_failed_restart(self, job_ids: list[UUID], error: str) -> list[UUID]:
+        """The QUEUED ones of ``job_ids`` -> FAILED_RESTART in one statement; the changed ids."""
+        async with self._session_factory() as session:
+            return await jobs_repo.mark_queued_many_failed_restart(session, job_ids, error)
+
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING tape jobs of this printer as FAILED_RESTART."""
         async with self._session_factory() as session:

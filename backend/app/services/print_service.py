@@ -62,6 +62,9 @@ _DEFERRED_FAILURE_MESSAGES: dict[str, str] = {
 }
 _DEFERRED_FAILURE_FALLBACK = "The label could not be printed."
 
+DEFERRED_STOP_BUDGET_S = 2.0
+"""#281 review N1: the most a stop or detach waits to end its interrupted deferred jobs."""
+
 
 class PrintService:
     """Orchestrate preflight → render → persist → queue.submit."""
@@ -359,26 +362,33 @@ class PrintService:
         not leave it ``queued`` until a later attach (review F4). A job already completed
         stays ``queued``: the queue holds it, or its recovery prints it once. A crash, where
         this never runs, is caught by the queue's recovery.
+
+        The write is one statement for all of them, bounded by ``DEFERRED_STOP_BUDGET_S``, so
+        a stop stays inside a container's grace period even when SQLite is locked; what it
+        does not finish, the start-up recovery ends.
         """
         jobs = dict(self._deferred)
         for task in jobs:
             task.cancel()
         if jobs:
             await asyncio.gather(*jobs, return_exceptions=True)
-        for job_id in jobs.values():
-            if job_id not in self._unhanded:
-                continue
-            try:
-                await self._store.mark_queued_failed_restart(job_id, DEFERRED_INTERRUPTED)
-            except Exception as exc:
-                # A cancelled write can still hold the SQLite lock: the stop or detach must go
-                # on, and the queue's recovery ends the row at the next start.
-                _log.warning(
-                    "Deferred job %s left queued for the recovery (%s)",
-                    job_id,
-                    exc.__class__.__name__,
-                )
+        interrupted = [job_id for job_id in jobs.values() if job_id in self._unhanded]
+        if interrupted:
+            await self._end_interrupted(interrupted)
         self._unhanded.difference_update(jobs.values())
+
+    async def _end_interrupted(self, job_ids: list[UUID]) -> None:
+        try:
+            await asyncio.wait_for(
+                self._store.mark_queued_many_failed_restart(job_ids, DEFERRED_INTERRUPTED),
+                timeout=DEFERRED_STOP_BUDGET_S,
+            )
+        except Exception as exc:  # TimeoutError, a locked database: the stop goes on
+            _log.warning(
+                "%d interrupted deferred job(s) left queued for the start-up recovery (%s)",
+                len(job_ids),
+                exc.__class__.__name__,
+            )
 
     async def _complete_deferred(
         self, job_id: UUID, label: LabelData, requested: ContentType

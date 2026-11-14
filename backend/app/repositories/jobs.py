@@ -183,6 +183,31 @@ async def mark_queued_failed_restart(session: AsyncSession, job_id: UUID, error:
     return int(result.rowcount) > 0  # type: ignore[attr-defined]
 
 
+async def mark_queued_many_failed_restart(
+    session: AsyncSession, job_ids: list[UUID], error: str
+) -> list[UUID]:
+    """The QUEUED ones of ``job_ids`` -> FAILED_RESTART with *error*, in one statement.
+
+    Returns the ids that changed (a job cancelled meanwhile is left alone).
+    """
+    if not job_ids:
+        return []
+    stmt = (
+        update(Job)
+        .where(col(Job.id).in_(job_ids), col(Job.state) == JobState.QUEUED.value)
+        .values(
+            state=JobState.FAILED_RESTART.value,
+            error=error,
+            finished_at=datetime.now(UTC),
+        )
+        .returning(col(Job.id))
+        .execution_options(synchronize_session=False)
+    )
+    changed = [row[0] for row in (await session.execute(stmt)).all()]
+    await session.commit()
+    return changed
+
+
 async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:
     """Transition QUEUED|PRINTING → CANCELLED. Sets finished_at."""
     job = await _get_or_raise(session, job_id)

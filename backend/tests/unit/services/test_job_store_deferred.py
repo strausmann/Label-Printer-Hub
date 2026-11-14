@@ -77,3 +77,20 @@ async def test_mark_queued_failed_restart_leaves_other_states(store: JobStore) -
         assert row is not None
         assert row.state == state.value
     await store.mark_queued_failed_restart(uuid4(), "deferred_interrupted")  # unknown: no error
+
+
+async def test_mark_queued_many_failed_restart_ends_only_queued_rows(store: JobStore) -> None:
+    queued = [await _saved(store) for _ in range(3)]
+    cancelled = await _saved(store)
+    await store.mark_cancelled(cancelled.id)
+    ids = [j.id for j in queued] + [cancelled.id, uuid4()]
+    changed = await store.mark_queued_many_failed_restart(ids, "deferred_interrupted")
+    assert sorted(changed) == sorted(j.id for j in queued)
+    for job in queued:
+        row = await store.get(job.id)
+        assert row is not None
+        assert (row.state, row.error) == (JobState.FAILED_RESTART.value, "deferred_interrupted")
+    row = await store.get(cancelled.id)
+    assert row is not None
+    assert row.state == JobState.CANCELLED.value
+    assert await store.mark_queued_many_failed_restart([], "deferred_interrupted") == []

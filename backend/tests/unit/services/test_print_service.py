@@ -557,28 +557,62 @@ class TestPrinterDisabledCheck:
 # ---------------------------------------------------------------------------
 
 
-class TestCancelDeferred:
-    async def test_a_store_error_while_ending_the_job_does_not_raise(self, make_service) -> None:
-        import asyncio
+async def _interrupted_jobs(svc: PrintService, backend: MagicMock, count: int) -> list[UUID]:
+    """``count`` deferred jobs whose preflight never returns."""
+    import asyncio
 
-        svc, queue, store, backend = make_service()
-        started = asyncio.Event()
+    started = asyncio.Semaphore(0)
 
-        async def slow_preflight() -> PreflightStatus:
-            started.set()
-            await asyncio.sleep(10)
-            return _preflight()
+    async def slow_preflight() -> PreflightStatus:
+        started.release()
+        await asyncio.sleep(60)
+        return _preflight()
 
-        backend.preflight_check = slow_preflight
-        store.mark_queued_failed_restart = AsyncMock(side_effect=RuntimeError("database is locked"))
-        job_id = await svc.accept_deferred_job(
-            RawLabelData(title="Oat milk", primary_id="12", qr_payload="grcy:p:12"),
+    backend.preflight_check = slow_preflight
+    ids = [
+        await svc.accept_deferred_job(
+            RawLabelData(title="Oat milk", primary_id=str(n), qr_payload=f"grcy:p:{n}"),
             content_type=ContentType.QR_TWO_LINES,
             source_app="grocy",
             api_key_id=None,
             source_ip=None,
         )
-        await asyncio.wait_for(started.wait(), 2)
-        await svc.cancel_deferred()  # must not raise: the recovery ends the row later
-        store.mark_queued_failed_restart.assert_awaited_once_with(job_id, "deferred_interrupted")
+        for n in range(count)
+    ]
+    for _ in ids:
+        await asyncio.wait_for(started.acquire(), 2)
+    return ids
+
+
+class TestCancelDeferred:
+    async def test_a_store_error_while_ending_the_jobs_does_not_raise(self, make_service) -> None:
+        svc, queue, store, backend = make_service()
+        store.mark_queued_many_failed_restart = AsyncMock(
+            side_effect=RuntimeError("database is locked")
+        )
+        ids = await _interrupted_jobs(svc, backend, 2)
+        await svc.cancel_deferred()  # must not raise: the recovery ends the rows later
+        store.mark_queued_many_failed_restart.assert_awaited_once()
+        assert sorted(store.mark_queued_many_failed_restart.await_args.args[0]) == sorted(ids)
         queue.submit_with_id.assert_not_called()
+
+    async def test_many_jobs_end_in_one_bounded_write(self, make_service) -> None:
+        """Review N1: one store call for all of them, and a stuck store cannot hold the stop."""
+        import asyncio
+        import time
+
+        from app.services.print_service import DEFERRED_STOP_BUDGET_S
+
+        svc, _queue, store, backend = make_service()
+
+        async def locked(_ids: list[UUID], _error: str) -> list[UUID]:
+            await asyncio.sleep(30)  # the database lock never clears
+            return []
+
+        store.mark_queued_many_failed_restart = AsyncMock(side_effect=locked)
+        await _interrupted_jobs(svc, backend, 20)
+        started = time.monotonic()
+        await svc.cancel_deferred()
+        elapsed = time.monotonic() - started
+        assert store.mark_queued_many_failed_restart.await_count == 1
+        assert elapsed < DEFERRED_STOP_BUDGET_S + 0.5

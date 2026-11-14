@@ -129,6 +129,12 @@ class JobStore(Protocol):
         Silently no-op if job_id does not exist or the row is not QUEUED.
         """
 
+    async def mark_queued_many_failed_restart(self, job_ids: list[UUID], error: str) -> list[UUID]:
+        """The QUEUED ones of ``job_ids`` -> FAILED_RESTART with *error*, in one write (#281).
+
+        Returns the ids that changed; unknown and no longer QUEUED ids are left alone.
+        """
+
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: set all PRINTING *tape* jobs of this printer to FAILED_RESTART
         with error='printer_interrupted'.
@@ -253,6 +259,18 @@ class MemoryJobStore(JobStore):
         job.state = JobState.FAILED_RESTART.value
         job.error = error
         job.finished_at = datetime.now(UTC)
+
+    async def mark_queued_many_failed_restart(self, job_ids: list[UUID], error: str) -> list[UUID]:
+        changed: list[UUID] = []
+        for job_id in job_ids:
+            job = self._jobs.get(job_id)
+            if job is None or job.state != JobState.QUEUED.value:
+                continue
+            job.state = JobState.FAILED_RESTART.value
+            job.error = error
+            job.finished_at = datetime.now(UTC)
+            changed.append(job_id)
+        return changed
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         count = 0
