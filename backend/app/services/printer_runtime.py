@@ -636,8 +636,9 @@ class PrinterRuntime:
         try:
             await self._cancel_retry(printer_id)
             if wiring.service is not None:
-                # #281: a deferred job still being prepared ends failed_restart in the
-                # recovery of the next attach instead of printing through a stale wiring.
+                # #281: a deferred job still being prepared ends failed_restart at once
+                # instead of printing through a stale wiring; the start-up recovery only
+                # catches what a crash or a failed (or slow) write left queued.
                 await wiring.service.cancel_deferred()
             # The producer first: once stopped it cannot reach the queue's pause control
             # for a printer the queue has forgotten (ruling b).
