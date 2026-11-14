@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { apiFetch } from "../../api/client";
+import { ApiError, apiFetch } from "../../api/client";
 import { queuedJobs } from "../../api/errorDetail";
 import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
@@ -135,12 +135,27 @@ export const useResolveCells = () =>
  * The plan for a print onto sheets, rendered by the server. The key sits outside `["printers", …]`
  * (see keys.ts); `sheet.updated` refreshes it only when a placement names that sheet.
  */
+/** How often a preview refused with `too-many-previews` is asked again before the refusal is shown (#339). */
+export const PREVIEW_RETRIES = 5;
+
+const isTooManyPreviews = (error: unknown) => error instanceof ApiError && error.code === "too-many-previews";
+
+/** Only `too-many-previews` is asked again: one preview per key runs at a time, so the next one is a moment away. */
+export const previewRetry = (failures: number, error: unknown) => isTooManyPreviews(error) && failures < PREVIEW_RETRIES;
+
+/** The wait the server names (`Retry-After`), 2 s without one; never under 1 s, never over 30 s. */
+export const previewRetryDelay = (_failures: number, error: unknown) => {
+  const seconds = error instanceof ApiError && error.retryAfterSeconds !== null ? error.retryAfterSeconds : 2;
+  return Math.min(30, Math.max(1, seconds)) * 1000;
+};
+
 export const useSheetPreview = (printerId: string, request: SheetPrintRequest, enabled = true) =>
   useQuery({
     queryKey: sheetPreviewKey(printerId, request),
     queryFn: () => post<SheetPreview>(`/api/v1/print/${encode(printerId)}/sheet/preview`, request),
     enabled,
-    retry: false,
+    retry: previewRetry,
+    retryDelay: previewRetryDelay,
     refetchOnWindowFocus: false,
     staleTime: 60_000,
     placeholderData: keepPreviousData,

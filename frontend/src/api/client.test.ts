@@ -145,6 +145,32 @@ describe("apiFetch", () => {
     expect(err).toMatchObject({ status: 0, code: "network_error" });
   });
 
+  describe("retryAfterSeconds", () => {
+    it("reads the Retry-After header of a refusal (#339)", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ detail: { error_code: "too-many-previews", error_message: "Busy.", retry_after_seconds: 9 } }), {
+          status: 429,
+          headers: { "Content-Type": "application/json", "Retry-After": "2" },
+        }),
+      );
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ status: 429, code: "too-many-previews", retryAfterSeconds: 2 });
+    });
+
+    it("falls back to retry_after_seconds of the body, and is null without either", async () => {
+      fetchMock.mockResolvedValueOnce(respond(429, { detail: { error_code: "too-many-previews", error_message: "Busy.", retry_after_seconds: 3 } }));
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ retryAfterSeconds: 3 });
+      fetchMock.mockResolvedValueOnce(respond(409, { detail: { error_code: "a", error_message: "b" } }));
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ retryAfterSeconds: null });
+    });
+
+    it("ignores a Retry-After that is not a number of seconds", async () => {
+      fetchMock.mockResolvedValue(
+        new Response("{}", { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" } }),
+      );
+      expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ retryAfterSeconds: null });
+    });
+  });
+
   describe("errorDetail", () => {
     it("keeps detail.error_detail from the envelope shape", async () => {
       fetchMock.mockResolvedValue(

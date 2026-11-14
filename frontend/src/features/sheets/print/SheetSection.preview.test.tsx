@@ -125,6 +125,23 @@ describe("the preview", () => {
     expect(rows[2]).toMatch(/^L4736-0002.*2026 ?9 ?1$/);
   });
 
+  it("too many previews at once shows a readable wait, then the preview replaces it (#339)", async () => {
+    let answers = 0;
+    const preview = () =>
+      ++answers === 1
+        ? new Response(JSON.stringify({ detail: { error_code: "too-many-previews", error_message: "Busy.", retry_after_seconds: 1 } }), {
+            status: 429,
+            headers: { "Content-Type": "application/json", "Retry-After": "1" },
+          })
+        : new Response(JSON.stringify(previewFor("L4736-0001", NEW_9, USED_17)), { status: 200, headers: { "Content-Type": "application/json" } });
+    const { calls } = await itemView(routes({ preview }));
+    expect(await screen.findByText("Too many previews at once. The preview updates in a moment.")).toBeVisible();
+    expect(screen.queryByText(/too-many-previews/)).toBeNull();
+    expect(await screen.findByText("9 printed now", undefined, { timeout: 5000 })).toBeVisible();
+    expect(screen.queryByText(/Too many previews/)).toBeNull();
+    expect(previews(calls)).toHaveLength(2);
+  });
+
   it("shows the feed mark entry, the margin ID with its band, and the not-printed warning", async () => {
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {}, { feed_mark: true, margin_id: true, margin_band: "bottom" }) }));
     expect(await screen.findByText("Top-edge mark")).toBeVisible();

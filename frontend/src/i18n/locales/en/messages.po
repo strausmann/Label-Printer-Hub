@@ -4715,6 +4715,10 @@ msgstr "toner low"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
 
+#: src/features/sheets/print/errors.ts
+msgid "Too many previews at once. The preview updates in a moment."
+msgstr "Too many previews at once. The preview updates in a moment."
+
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "too small"
 msgstr "too small"

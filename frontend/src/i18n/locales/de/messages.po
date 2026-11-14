@@ -4715,6 +4715,10 @@ msgstr "Toner fast leer"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 
+#: src/features/sheets/print/errors.ts
+msgid "Too many previews at once. The preview updates in a moment."
+msgstr "Gerade laufen zu viele Vorschauen. Die Vorschau kommt gleich."
+
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "too small"
 msgstr "zu klein"
