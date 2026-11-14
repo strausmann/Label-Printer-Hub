@@ -223,6 +223,24 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.keyboard.press("Escape");
       });
 
+      test("Printer form: the community field and the Save button can be brought into sight (inline form, page scrolls)", async () => {
+        await prepare(mode);
+        await page.goto("/settings/printers");
+        await page.getByRole("button", { name: "Add printer" }).click();
+        const form = page.getByRole("form", { name: "Add a printer" });
+        const field = form.getByLabel("SNMP community");
+        await field.click();
+        await keyboard(mode);
+        await page.keyboard.type("bench");
+        // The browser scrolls the focused field into the visible area; the stand-in for a "covered" keyboard does not, so the
+        // test does it: the page must be able to scroll far enough for the field (and then the button) to reach the top.
+        await field.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, field, "the SNMP community field");
+        const save = form.getByRole("button", { name: "Create printer" });
+        await save.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, save, "the Create printer button");
+      });
+
       /** New sheet with a type chosen: the tallest state of the form, with the keyboard still open. */
       async function openTallAddSheet() {
         const dialog = await openAddSheet();

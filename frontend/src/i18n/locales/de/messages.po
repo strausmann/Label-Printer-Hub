@@ -347,6 +347,10 @@ msgstr "+ = zu tief gedruckt"
 msgid "+ = rotated clockwise"
 msgstr "+ = im Uhrzeigersinn gedreht"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "A community is stored. Leave the field empty to keep it."
+msgstr "Eine Community ist gespeichert. Lass das Feld leer, um sie zu behalten."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
 msgstr "Ein Schlüssel öffnet die API und die Anmeldung im Browser. read schaut nur, print druckt auch, admin ändert auch die Einstellungen."
@@ -1364,6 +1368,14 @@ msgstr "Bitte erneut eingeben"
 #: src/features/settings/PrinterForm.tsx
 msgid "Enter the printer's address."
 msgstr "Gib die Adresse des Druckers ein."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Enter the SNMP community, or turn status discovery off."
+msgstr "Gib die SNMP-Community ein oder schalte die Statuserkennung aus."
+
+#: src/features/settings/feedback.tsx
+msgid "Enter the SNMP community. A stored community is not reused for another host or port."
+msgstr "Gib die SNMP-Community ein. Eine gespeicherte Community wird für einen anderen Host oder Port nicht weiterverwendet."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
@@ -2835,6 +2847,10 @@ msgstr "Messwert {n} nennt eine Lücke, die dieser Bogen nicht hat."
 msgid "Reading the printer…"
 msgstr "Der Drucker wird ausgelesen…"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "Reads the printer's state and tape over SNMP. Printing works without it."
+msgstr "Liest Zustand und Band des Druckers über SNMP. Drucken funktioniert auch ohne."
+
 #: src/features/printers/model.ts
 #: src/features/settings/System.tsx
 msgid "Ready"
@@ -3430,6 +3446,10 @@ msgstr "Kleiner QR-Code"
 msgid "Snipe-IT"
 msgstr "Snipe-IT"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "SNMP community"
+msgstr "SNMP-Community"
+
 #: src/features/printers/MarkerSwatch.tsx
 msgid "some remaining"
 msgstr "Rest vorhanden"
@@ -3496,6 +3516,10 @@ msgstr "Zustand"
 #: src/features/printers/reasons.ts
 msgid "state unknown"
 msgstr "Zustand unbekannt"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Status discovery"
+msgstr "Statuserkennung"
 
 #: src/features/printers/PageStatus.tsx
 msgid "Status discovery is off for this printer. An admin can turn it on through the admin API."
@@ -3714,6 +3738,10 @@ msgstr "Die Richtung „Quer“ gibt es nur für 62-mm-Band. Wähle „Längs“
 msgid "The address can be at most 1023 characters."
 msgstr "Die Adresse darf höchstens 1023 Zeichen lang sein."
 
+#: src/features/settings/PrinterForm.tsx
+msgid "The address changed, so the stored community is not reused. Enter it again."
+msgstr "Die Adresse hat sich geändert, deshalb wird die gespeicherte Community nicht weiterverwendet. Gib sie erneut ein."
+
 #: src/features/settings/feedback.tsx
 msgid "The address did not answer like an IPP printer."
 msgstr "Die Adresse hat nicht wie ein IPP-Drucker geantwortet."
@@ -3875,6 +3903,10 @@ msgstr "Der horizontale Abstand"
 #: src/features/archive/errors.ts
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "Der horizontale Abstand darf nicht kleiner sein als die Etikettenbreite."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "The host or port changed. Enter the SNMP community again, or restore the old address."
+msgstr "Host oder Port haben sich geändert. Gib die SNMP-Community erneut ein oder stelle die alte Adresse wieder her."
 
 #: src/features/sheets/print/errors.ts
 msgid "The hub cannot draw a preview right now. Try again later."
@@ -4395,6 +4427,10 @@ msgstr "Der Kurzname in Adressen und in der API. Er lässt sich später nicht ä
 msgid "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 msgstr "Der Slug besteht aus Kleinbuchstaben, Ziffern und Bindestrichen, 3 bis 64 Zeichen."
 
+#: src/features/settings/PrinterForm.tsx
+msgid "The SNMP community has at most 64 characters."
+msgstr "Die SNMP-Community hat höchstens 64 Zeichen."
+
 #: src/features/archive/errors.ts
 msgid "The source address"
 msgstr "Die Quelladresse"
@@ -4825,6 +4861,10 @@ msgstr "Benutzt"
 msgctxt "sheet state"
 msgid "used up"
 msgstr "aufgebraucht"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Usually public."
+msgstr "Meist public."
 
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeForm.tsx

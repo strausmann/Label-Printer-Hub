@@ -37,6 +37,8 @@ export function useErrorText(): (error: unknown, fallback?: string) => string {
           return t`The address saved for this printer is not valid. Enter the address again and save.`;
         case "invalid_connection":
           return t`The address or the certificate setting is not valid.`;
+        case "snmp_community_required":
+          return t`Enter the SNMP community. A stored community is not reused for another host or port.`;
         case "scope_too_low":
           return t`You need an admin key for this.`;
       }

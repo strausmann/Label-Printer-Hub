@@ -186,6 +186,61 @@ test.describe.serial("settings", () => {
     }
   });
 
+  test("printers: create a PT printer with status discovery on", async () => {
+    // The hub never returns the community, so the check reads `community_set`. There is no delete route: the printer is
+    // switched off again, whatever happens (it is wired at once, so it must not stay on for later specs).
+    test.setTimeout(60_000);
+    const stamp = `${test.info().retry}-${Date.now().toString(36)}`;
+    const slug = `snmp-pt-${stamp}`;
+    const name = `SNMP bench ${stamp}`;
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/printers");
+      await page.getByRole("button", { name: "Add printer" }).click();
+      const form = page.getByRole("form", { name: "Add a printer" });
+      await form.getByRole("textbox", { name: "Name" }).fill(name);
+      await form.getByRole("textbox", { name: "Slug" }).fill(slug);
+      await form.getByRole("textbox", { name: "Host" }).fill("192.0.2.31");
+      const community = form.getByLabel("SNMP community");
+      await expect(community).toHaveAttribute("type", "password");
+      // The switch input is visually hidden: a person clicks its label.
+      await form.getByText("Status discovery", { exact: true }).click();
+      await expect(form.getByRole("switch", { name: "Status discovery" })).toBeChecked();
+      await community.fill("bench-community");
+      await shot(page, "task-2-snmp-form-desktop.png", true);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => noSideScroll(page)).toBe(true);
+      await shot(page, "task-2-snmp-form-phone.png", true);
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await form.getByRole("button", { name: "Create printer" }).click();
+      await expect(page.getByRole("listitem").filter({ hasText: name })).toBeVisible();
+
+      const response = await page.request.get(`/api/v1/admin/printers/${slug}`);
+      expect(response.status()).toBe(200);
+      const text = await response.text();
+      const connection = (JSON.parse(text) as { connection: { snmp: { discover: boolean; community_set: boolean } } }).connection;
+      expect(connection.snmp.discover).toBe(true);
+      expect(connection.snmp.community_set).toBe(true);
+      expect(text).not.toContain("bench-community");
+
+      // Editing: the field starts empty and says a community is stored; a new host asks for it again before the submit.
+      await page.getByRole("button", { name: `Edit ${name}` }).click();
+      const edit = page.getByRole("form", { name: `Edit ${name}` });
+      await expect(edit.getByLabel("SNMP community")).toHaveValue("");
+      await expect(edit.getByText("A community is stored. Leave the field empty to keep it.")).toBeVisible();
+      await expect(edit.getByRole("switch", { name: "Status discovery" })).toBeChecked();
+      await edit.getByRole("textbox", { name: "Host" }).fill("192.0.2.32");
+      await expect(edit.getByText("The address changed, so the stored community is not reused. Enter it again.")).toBeVisible();
+      await shot(page, "task-2-snmp-form-new-host-desktop.png", true);
+      await edit.getByRole("button", { name: "Save printer" }).click();
+      await expect(edit.getByRole("alert")).toContainText("Enter the SNMP community again");
+      expect((await (await page.request.get(`/api/v1/admin/printers/${slug}`)).json()).connection.host).toBe("192.0.2.31");
+    } finally {
+      // 404 when the printer was never created; both are fine.
+      await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`);
+    }
+  });
+
   // What a printer can report at its worst: a very long make and model, more trays than a form should
   // hold (20 reported, 16 kept), 40 media sizes and a tray key as long as real firmware makes them.
   const WORST_PROBE = {

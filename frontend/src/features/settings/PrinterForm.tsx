@@ -7,13 +7,17 @@ import { layoutDefaultFor, QL_WIDE_MM, type LayoutChoice } from "../layout/ql";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { usePrinterAdmin, type AdminPrinter, type PrinterCreate } from "./api";
 import { SelectField, SwitchField, TextInput } from "./controls";
+import { ApiError } from "../../api/client";
 import { SaveFeedback, useErrorText } from "./feedback";
+import { snmpPayload, storedSnmp, supportsDiscovery, targetChanged, type SnmpProblem } from "./snmp";
 import { IppPrinterFields, trayPayload, trayProblem, useIppDraft, useTrayProblemText, useUriProblemText } from "./IppPrinterFields";
 
 const SLUG = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 const MODELS: Record<string, string[]> = { ptouch: ["PT-P750W"], brother_ql: ["QL-820NWB"] };
 
 const connectionOf = (printer: AdminPrinter | null) => (printer?.connection ?? {}) as { host?: string; port?: number; snmp?: unknown };
+/** The hub's refusal of a changed target without a community (R-296-5a). */
+const isCommunityRequired = (error: unknown) => error instanceof ApiError && error.code === "snmp_community_required";
 const numberIn = (obj: Record<string, unknown> | undefined, key: string, fallback: number) => {
   const v = obj?.[key];
   return typeof v === "number" ? v : fallback;
@@ -51,6 +55,10 @@ export function PrinterForm({
   // The 62 mm default is only sent when it was touched: saving the form must not pin the tape default.
   const [layoutDraft, setLayoutDraft] = useState<LayoutChoice | null>(null);
   const layoutShown = layoutDraft ?? storedLayout;
+  const stored = storedSnmp(conn);
+  // The community is write-only: the field starts empty, whatever is stored (R-296-2).
+  const [discover, setDiscover] = useState(stored.discover);
+  const [community, setCommunity] = useState("");
   const ipp = useIppDraft(printer);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -58,6 +66,10 @@ export function PrinterForm({
   const isQl = backend === "brother_ql";
   const pending = admin.create.isPending || admin.update.isPending;
   const serverError = admin.create.error ?? admin.update.error;
+  const showSnmp = supportsDiscovery(backend);
+  // A stored community is kept only for the host and port it was stored for (R-296-5a): say so before the submit.
+  const communityAgain = editing && stored.communitySet && targetChanged(conn, host, port);
+  const communityMissing = community === "" && (communityAgain || isCommunityRequired(serverError));
 
   function submitIpp() {
     const timeoutNumber = Number(timeout);
@@ -79,6 +91,9 @@ export function PrinterForm({
     }
   }
 
+  const snmpText = (problem: SnmpProblem) =>
+    problem === "community_required" ? t`Enter the SNMP community, or turn status discovery off.` : t`The SNMP community has at most 64 characters.`;
+
   function submit() {
     if (isIpp) return submitIpp();
     const portNumber = Number(port);
@@ -87,8 +102,12 @@ export function PrinterForm({
     if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) return setFormError(t`The port must be between 1 and 65535.`);
     if (!Number.isInteger(timeoutNumber) || timeoutNumber < 1 || timeoutNumber > 600) return setFormError(t`The queue timeout must be between 1 and 600 seconds.`);
     if (!editing && !SLUG.test(slug)) return setFormError(t`The slug uses lowercase letters, digits and dashes, 3 to 64 characters.`);
+    const snmp = showSnmp ? snmpPayload(stored.communitySet, { discover, community }) : null;
+    if (snmp && "problem" in snmp) return setFormError(snmpText(snmp.problem));
+    if (communityAgain && community === "") return setFormError(t`The host or port changed. Enter the SNMP community again, or restore the old address.`);
     setFormError(null);
-    const connection = { ...(conn as object), host: host.trim(), port: portNumber } as PrinterCreate["connection"];
+    // Rebuilt, not spread from the stored connection: the stored `snmp` carries `community_set`, never the community.
+    const connection = { host: host.trim(), port: portNumber, ...(snmp ? snmp : {}) } as PrinterCreate["connection"];
     const queue = { timeout_s: timeoutNumber };
     // A QL printer always cuts fully: it has no half cut to default, so the form sends none (263-63).
     const cut_defaults = isQl ? undefined : { half_cut: halfCut };
@@ -151,6 +170,33 @@ export function PrinterForm({
           <TextInput label={t`Port`} value={port} onChange={setPort} mono inputMode="numeric" />
         </div>
       )}
+      {showSnmp ? (
+        <div className="flex flex-col gap-4">
+          <SwitchField
+            label={t`Status discovery`}
+            isSelected={discover}
+            onChange={setDiscover}
+            description={t`Reads the printer's state and tape over SNMP. Printing works without it.`}
+          />
+          <TextInput
+            label={t`SNMP community`}
+            type="password"
+            autoComplete="off"
+            value={community}
+            onChange={setCommunity}
+            mono
+            invalid={communityMissing}
+            validationBehavior="aria"
+            description={
+              communityMissing ? (
+                <span className="font-bold text-bad">{t`The address changed, so the stored community is not reused. Enter it again.`}</span>
+              ) : stored.communitySet
+                  ? t`A community is stored. Leave the field empty to keep it.`
+                  : t`Usually public.`
+            }
+          />
+        </div>
+      ) : null}
       <TextInput label={t`Queue timeout (seconds)`} value={timeout} onChange={setTimeoutValue} inputMode="numeric" />
       {/* A QL printer always cuts fully; the half cut is a P-touch feature. */}
       {isIpp || isQl ? null : (

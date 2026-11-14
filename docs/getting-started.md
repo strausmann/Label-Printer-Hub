@@ -50,6 +50,7 @@ Printers are not configured in `.env`. Open **Settings > Printers** and add one:
 | Driver | *P-touch (PT)* for a PT-Series tape printer, *Brother QL* for a QL-Series printer, *Page printer (IPP)* for a printer of sheets of labels (it takes the printer's address and is read once before saving) |
 | Model | tape printers only, required; the form offers the model of the chosen driver |
 | Host and Port | tape printers only: the printer's address and TCP port `9100`, for example `192.0.2.20` |
+| Status discovery and SNMP community | tape printers only: reads the state and the tape over SNMP, see [Turn on status discovery](#turn-on-status-discovery) |
 | IPP address | page printers only: the printer's IPP address, for example `ipp://printer.example.invalid:631/ipp/print`; **Read printer** reads it once before saving |
 | Verify the printer certificate | page printers only, for an `ipps://` or `https://` address; leave it on unless the printer has no valid certificate |
 | Trays | page printers only, after **Read printer**: turn off the trays you do not use and choose the default tray |
@@ -59,7 +60,13 @@ A page printer appears on the overview with its state and supplies, read over IP
 
 ### Turn on status discovery
 
-The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off, and the form has no switch for it yet ([#296](https://github.com/strausmann/labelyard/issues/296)). Printing does not depend on it: a print or a test print checks the printer once when it is sent. What stays unknown is the state and the tape shown on the overview. An admin turns discovery on through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
+The hub reads a tape printer's status and tape over SNMP, but only when status discovery is on for that printer. A printer added under **Settings > Printers** has it off. Printing does not depend on it: a print or a test print checks the printer once when it is sent. What stays unknown is the state and the tape shown on the overview.
+
+To turn it on, open **Settings > Printers**, add or edit the tape printer, switch on **Status discovery** and save. The field **SNMP community** is the printer's SNMP read community, `public` unless you changed it on the printer (at most 64 characters). The hub never shows it again: the field stays empty, and the form says whether a community is stored. Leave the field empty to keep the stored one; type a new one to replace it. When you change the host or the port of a printer with a stored community, the form asks for the community again, because the hub does not send a stored community to another address. The hub re-wires the printer before it answers; the overview shows its state after the first reading, within about 30 seconds.
+
+#### From a script
+
+An admin can do the same through the admin API, with the printer's slug and its current host and port (the `connection` object is replaced as a whole):
 
 ```bash
 curl -X PUT http://localhost:8000/api/v1/admin/printers/<slug> \
@@ -69,7 +76,7 @@ curl -X PUT http://localhost:8000/api/v1/admin/printers/<slug> \
                       "snmp": {"discover": true, "community": "public"}}}'
 ```
 
-`snmp.discover` switches the status reading on; `snmp.community` is the printer's SNMP read community (`public` unless you changed it on the printer, at most 64 characters). It is write-only: leave it out to keep the stored one (`public` for a new printer), but send it again when you change the host or port (otherwise 422 `snmp_community_required`); responses report `snmp.community_set` instead of the value. The hub re-wires the printer before it answers; the overview shows its state after the first reading, within about 30 seconds. The full request body is in the interactive reference at `/docs` on a running hub (`PUT /api/v1/admin/printers/{slug}`).
+`snmp.discover` switches the status reading on; `snmp.community` is write-only: leave it out to keep the stored one (`public` for a new printer), but send it again when you change the host or port (otherwise 422 `snmp_community_required`). Responses report `snmp.community_set` instead of the value. The full request body is in the interactive reference at `/docs` on a running hub (`PUT /api/v1/admin/printers/{slug}`).
 
 A tape printer cannot report the tape colour over the network. When the roll changes, the hub asks you once which colour is loaded.
 

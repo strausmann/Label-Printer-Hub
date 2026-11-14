@@ -43,6 +43,7 @@ export function TextInput({
   inputMode,
   hideLabel,
   maxLength,
+  validationBehavior,
 }: {
   label: string;
   value: string;
@@ -58,9 +59,15 @@ export function TextInput({
   inputMode?: "numeric" | "decimal" | "url" | "text";
   hideLabel?: boolean;
   maxLength?: number;
+  /**
+   * `aria` marks the field invalid for assistive technology only. The default (`native`) also sets a custom validity, so
+   * the browser blocks the submit before the form's own check can say what is wrong.
+   */
+  validationBehavior?: "aria" | "native";
 }) {
   return (
     <TextField
+      validationBehavior={validationBehavior}
       value={value}
       onChange={onChange}
       isReadOnly={readOnly}

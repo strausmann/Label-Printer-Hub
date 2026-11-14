@@ -347,6 +347,10 @@ msgstr "+ = printed too low"
 msgid "+ = rotated clockwise"
 msgstr "+ = rotated clockwise"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "A community is stored. Leave the field empty to keep it."
+msgstr "A community is stored. Leave the field empty to keep it."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
 msgstr "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
@@ -1364,6 +1368,14 @@ msgstr "Enter it again"
 #: src/features/settings/PrinterForm.tsx
 msgid "Enter the printer's address."
 msgstr "Enter the printer's address."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Enter the SNMP community, or turn status discovery off."
+msgstr "Enter the SNMP community, or turn status discovery off."
+
+#: src/features/settings/feedback.tsx
+msgid "Enter the SNMP community. A stored community is not reused for another host or port."
+msgstr "Enter the SNMP community. A stored community is not reused for another host or port."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
@@ -2835,6 +2847,10 @@ msgstr "Reading {n} names a gap that this sheet does not have."
 msgid "Reading the printer…"
 msgstr "Reading the printer…"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "Reads the printer's state and tape over SNMP. Printing works without it."
+msgstr "Reads the printer's state and tape over SNMP. Printing works without it."
+
 #: src/features/printers/model.ts
 #: src/features/settings/System.tsx
 msgid "Ready"
@@ -3430,6 +3446,10 @@ msgstr "Small QR"
 msgid "Snipe-IT"
 msgstr "Snipe-IT"
 
+#: src/features/settings/PrinterForm.tsx
+msgid "SNMP community"
+msgstr "SNMP community"
+
 #: src/features/printers/MarkerSwatch.tsx
 msgid "some remaining"
 msgstr "some remaining"
@@ -3496,6 +3516,10 @@ msgstr "State"
 #: src/features/printers/reasons.ts
 msgid "state unknown"
 msgstr "state unknown"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Status discovery"
+msgstr "Status discovery"
 
 #: src/features/printers/PageStatus.tsx
 msgid "Status discovery is off for this printer. An admin can turn it on through the admin API."
@@ -3714,6 +3738,10 @@ msgstr "The across direction is only available for 62 mm tape. Pick along or loa
 msgid "The address can be at most 1023 characters."
 msgstr "The address can be at most 1023 characters."
 
+#: src/features/settings/PrinterForm.tsx
+msgid "The address changed, so the stored community is not reused. Enter it again."
+msgstr "The address changed, so the stored community is not reused. Enter it again."
+
 #: src/features/settings/feedback.tsx
 msgid "The address did not answer like an IPP printer."
 msgstr "The address did not answer like an IPP printer."
@@ -3875,6 +3903,10 @@ msgstr "The horizontal pitch"
 #: src/features/archive/errors.ts
 msgid "The horizontal pitch must not be smaller than the label width."
 msgstr "The horizontal pitch must not be smaller than the label width."
+
+#: src/features/settings/PrinterForm.tsx
+msgid "The host or port changed. Enter the SNMP community again, or restore the old address."
+msgstr "The host or port changed. Enter the SNMP community again, or restore the old address."
 
 #: src/features/sheets/print/errors.ts
 msgid "The hub cannot draw a preview right now. Try again later."
@@ -4395,6 +4427,10 @@ msgstr "The short name in addresses and in the API. It cannot be changed later."
 msgid "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 msgstr "The slug uses lowercase letters, digits and dashes, 3 to 64 characters."
 
+#: src/features/settings/PrinterForm.tsx
+msgid "The SNMP community has at most 64 characters."
+msgstr "The SNMP community has at most 64 characters."
+
 #: src/features/archive/errors.ts
 msgid "The source address"
 msgstr "The source address"
@@ -4825,6 +4861,10 @@ msgstr "Used"
 msgctxt "sheet state"
 msgid "used up"
 msgstr "used up"
+
+#: src/features/settings/PrinterForm.tsx
+msgid "Usually public."
+msgstr "Usually public."
 
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeForm.tsx

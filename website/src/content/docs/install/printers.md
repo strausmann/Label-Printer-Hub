@@ -22,6 +22,10 @@ snmpwalk -v 2c -c public <printer-address> 1.3.6.1.4.1.2435.2.3.9.1.1.7.0
 
 If SNMP does not answer, open the printer's own web page and enable SNMPv1/v2c with the community `public` (on many models under **Network > Protocols > SNMP**).
 
+### Status discovery
+
+The hub reads the state and the tape of a tape printer over SNMP only when **Status discovery** is on for that printer. In the printer form under **Settings > Printers**, switch it on and enter the **SNMP community** (`public` unless you changed it on the printer). The hub stores the community and never shows it again: the field stays empty, and a note says that one is stored. Leave the field empty to keep it, or type a new one to replace it. If you change the host or the port, enter the community again; the hub does not send a stored community to another address. Printing works without discovery; the overview then shows the printer as not monitored.
+
 ## Page printers
 
 Office printers that speak IPP print label sheets. Add them as **Page printer (IPP)** with their IPP address, for example `ipp://printer.example.invalid:631/ipp/print`. Read the printer once before saving, so the hub knows its trays; then enable the trays you use and choose a default. See [sheets and layouts](/using/sheets/) for what happens next.
