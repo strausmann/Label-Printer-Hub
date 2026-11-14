@@ -13,7 +13,7 @@ Image references on this page:
 | Registry | Reference |
 |---|---|
 | GitHub Container Registry | `ghcr.io/strausmann/labelyard:<version>` |
-| Docker Hub | `docker.io/<user>/labelyard:<version>` |
+| Docker Hub | `docker.io/bstrausmann/labelyard:<version>` |
 
 `<version>` is the exact version tag (for example `1.6.0`), not a floating tag such as `latest`. Both registries
 receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
@@ -59,7 +59,7 @@ On a multi-platform image, `.SBOM` and `.Provenance` are maps keyed by platform.
 read-only against the 1.5.0 image of the predecessor name: `{{ json .SBOM }}` has the keys `linux/amd64` and
 `linux/arm64`, and the indexed forms print the SPDX document and the SLSA provenance.
 
-The same commands work on Docker Hub with `docker.io/<user>/labelyard:<version>`; releases and pre-release
+The same commands work on Docker Hub with `docker.io/bstrausmann/labelyard:<version>`; releases and pre-release
 previews (`<version>-rc.N`) are published to both registries. If the platform-indexed command prints `null` or an
 error for a platform that `{{ json .SBOM }}` lists, report it; do not assume the image is clean.
 
@@ -97,7 +97,7 @@ cosign verify \
 cosign verify \
   --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  docker.io/<user>/labelyard@<digest>
+  docker.io/bstrausmann/labelyard@<digest>
 ```
 
 The digest is the same on both registries. `--certificate-oidc-issuer` requires a certificate issued for a GitHub

@@ -34,7 +34,7 @@ cosign verify \
   ghcr.io/strausmann/labelyard@<digest>
 ```
 
-The identity accepts only the image workflow of this repository (under its current and its former name), run from `main` or a milestone branch. `[b]` in the pattern matches the letter b. The digest is the same on Docker Hub; replace the last line with `docker.io/strausmann/labelyard@<digest>` to check the copy there. `cosign verify` exits with an error when no valid signature matches. The [supply-chain notes](https://github.com/strausmann/labelyard/blob/main/docs/supply-chain.md) cover the exact release identity, the SBOM and the provenance.
+The identity accepts only the image workflow of this repository (under its current and its former name), run from `main` or a milestone branch. `[b]` in the pattern matches the letter b. The digest is the same on Docker Hub; replace the last line with `docker.io/bstrausmann/labelyard@<digest>` to check the copy there. `cosign verify` exits with an error when no valid signature matches. The [supply-chain notes](https://github.com/strausmann/labelyard/blob/main/docs/supply-chain.md) cover the exact release identity, the SBOM and the provenance.
 
 ## Reporting a vulnerability
 

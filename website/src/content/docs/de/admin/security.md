@@ -34,7 +34,7 @@ cosign verify \
   ghcr.io/strausmann/labelyard@<digest>
 ```
 
-Die Identität lässt nur den Image-Workflow dieses Repositorys zu (unter seinem jetzigen und seinem früheren Namen), gestartet von `main` oder einem Milestone-Zweig. `[b]` im Muster steht für den Buchstaben b. Auf Docker Hub ist der Digest derselbe; ersetze die letzte Zeile durch `docker.io/strausmann/labelyard@<digest>`, um die Kopie dort zu prüfen. `cosign verify` endet mit einem Fehler, wenn keine gültige Signatur passt. Die [Hinweise zur Lieferkette](https://github.com/strausmann/labelyard/blob/main/docs/supply-chain.md) beschreiben die genaue Release-Identität, die SBOM und die Provenance (auf Englisch).
+Die Identität lässt nur den Image-Workflow dieses Repositorys zu (unter seinem jetzigen und seinem früheren Namen), gestartet von `main` oder einem Milestone-Zweig. `[b]` im Muster steht für den Buchstaben b. Auf Docker Hub ist der Digest derselbe; ersetze die letzte Zeile durch `docker.io/bstrausmann/labelyard@<digest>`, um die Kopie dort zu prüfen. `cosign verify` endet mit einem Fehler, wenn keine gültige Signatur passt. Die [Hinweise zur Lieferkette](https://github.com/strausmann/labelyard/blob/main/docs/supply-chain.md) beschreiben die genaue Release-Identität, die SBOM und die Provenance (auf Englisch).
 
 ## Eine Lücke melden
 

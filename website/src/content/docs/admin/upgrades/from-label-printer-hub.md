@@ -12,7 +12,7 @@ Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a 
 | Before | After |
 |---|---|
 | Image `ghcr.io/strausmann/label-printer-hub-backend` | `ghcr.io/strausmann/labelyard` |
-| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/<user>/labelyard` |
+| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/bstrausmann/labelyard` |
 | Command `printer-hub` | `labelyard` (the old command stays as an alias) |
 | Environment prefix `PRINTER_HUB_` | `LABELYARD_` (the old prefix is still read, see [environment variables](#environment-variables)) |
 | PDF font override `PRINTHUB_PDF_FONT` | `LABELYARD_PDF_FONT` (the old name is still read) |
@@ -24,7 +24,7 @@ Label Printer Hub is now **Labelyard** (release 1.6.0). This is a rename, not a 
 
 Using a page printer? Let its queue drain first. 1.6.0 still knows the print jobs 1.5.x sent as its own, but it asks about them under the new user name. A print server that lets only a job's owner cancel it (the CUPS default) may then refuse to cancel a running 1.5.x job.
 
-1. Change `image:` in your compose file to `ghcr.io/strausmann/labelyard:1.6.0` (or `docker.io/<user>/labelyard:1.6.0`).
+1. Change `image:` in your compose file to `ghcr.io/strausmann/labelyard:1.6.0` (or `docker.io/bstrausmann/labelyard:1.6.0`).
 2. Pull the image: `docker compose pull`.
 3. Restart: `docker compose up -d`.
 

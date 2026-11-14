@@ -12,7 +12,7 @@ Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umben
 | Vorher | Nachher |
 |---|---|
 | Image `ghcr.io/strausmann/label-printer-hub-backend` | `ghcr.io/strausmann/labelyard` |
-| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/<user>/labelyard` |
+| Image `docker.io/<user>/label-printer-hub-backend` | `docker.io/bstrausmann/labelyard` |
 | Befehl `printer-hub` | `labelyard` (der alte Befehl bleibt als Alias) |
 | Umgebungspräfix `PRINTER_HUB_` | `LABELYARD_` (das alte Präfix wird weiter gelesen, siehe [Umgebungsvariablen](#umgebungsvariablen)) |
 | PDF-Schriftart `PRINTHUB_PDF_FONT` | `LABELYARD_PDF_FONT` (der alte Name wird weiter gelesen) |
@@ -24,7 +24,7 @@ Label Printer Hub heißt jetzt **Labelyard** (Version 1.6.0). Das ist eine Umben
 
 Du nutzt einen Seitendrucker? Lass zuerst seine Warteschlange leerlaufen. 1.6.0 erkennt die Aufträge aus 1.5.x weiter als eigene, fragt aber unter dem neuen Benutzernamen nach ihnen. Ein Druckserver, der nur den Besitzer eines Auftrags abbrechen lässt (bei CUPS der Standard), kann den Abbruch eines laufenden Auftrags aus 1.5.x verweigern.
 
-1. Ändere `image:` in deiner Compose-Datei auf `ghcr.io/strausmann/labelyard:1.6.0` (oder `docker.io/<user>/labelyard:1.6.0`).
+1. Ändere `image:` in deiner Compose-Datei auf `ghcr.io/strausmann/labelyard:1.6.0` (oder `docker.io/bstrausmann/labelyard:1.6.0`).
 2. Hol das Image: `docker compose pull`.
 3. Starte neu: `docker compose up -d`.
 

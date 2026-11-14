@@ -24,7 +24,7 @@ We change everything we own and keep everything that users' data or clients depe
 
 | Surface | New | Old | Compatibility |
 |---|---|---|---|
-| Image | `ghcr.io/strausmann/labelyard`, `docker.io/<user>/labelyard` | `ghcr.io/strausmann/label-printer-hub-backend`, `docker.io/<user>/label-printer-hub-backend` | Old images are not updated. Users change `image:` once |
+| Image | `ghcr.io/strausmann/labelyard`, `docker.io/bstrausmann/labelyard` | `ghcr.io/strausmann/label-printer-hub-backend`, `docker.io/<user>/label-printer-hub-backend` | Old images are not updated. Users change `image:` once |
 | Repository | `strausmann/labelyard` | `strausmann/Label-Printer-Hub` | GitHub redirects the old address |
 | Environment prefix | `LABELYARD_` | `PRINTER_HUB_` | Old prefix still read as a fallback; the new one wins; empty values are ignored on both; one startup warning lists the names; kept until at least 2.0.0 |
 | PDF font variable | `LABELYARD_PDF_FONT` | `PRINTHUB_PDF_FONT` | Same rules as the prefix |

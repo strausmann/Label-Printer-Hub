@@ -436,8 +436,8 @@ Patch releases come from `main`. Minor and major releases come from a **mileston
 **Preview images.** Before a milestone is released, a maintainer can build a preview image from the milestone branch with the **Preview image** workflow (Actions → Preview image → Run workflow, branch `milestone/x.y.0`, version `x.y.0`). Each run publishes the next tag `x.y.0-rc.N` to GHCR and Docker Hub (the same tag on both; the rc number is counted from the GHCR tags):
 
 ```bash
-docker pull ghcr.io/strausmann/labelyard:1.6.0-rc.1
-docker pull docker.io/strausmann/labelyard:1.6.0-rc.1
+docker pull ghcr.io/strausmann/labelyard:1.7.0-rc.1
+docker pull docker.io/bstrausmann/labelyard:1.7.0-rc.1
 ```
 
 A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags. Previews are removed from both registries once their release exists.
