@@ -243,7 +243,7 @@ async def render_preview(
         )
     except ContentTypeDataMismatchError as exc:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 # R2-4: align with the print endpoint (_SYNC_ERROR_MAP) which uses
                 # "content_type_data_mismatch" — was inconsistently "data_mismatch"
@@ -256,7 +256,7 @@ async def render_preview(
         )
     except QrPayloadTooLongError as exc:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_qr_too_long_body(exc),
         )
 
