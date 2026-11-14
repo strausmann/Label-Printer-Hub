@@ -16,3 +16,5 @@ LICENSE                          @strausmann
 .releaserc*                      @strausmann
 docs/architecture.md             @strausmann
 docs/plugin-development.md       @strausmann
+website/src/content/docs/developers/     @strausmann
+website/src/content/docs/de/developers/  @strausmann

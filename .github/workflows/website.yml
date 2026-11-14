@@ -12,6 +12,7 @@ on:
       - "docs/brand/labelyard/**"
       - "backend/app/**"
       - "backend/scripts/export_openapi.py"
+      - "backend/pyproject.toml"
       - "frontend/src/design/**"
       - ".github/workflows/website.yml"
   push:
@@ -21,6 +22,7 @@ on:
       - "docs/brand/labelyard/**"
       - "backend/app/**"
       - "backend/scripts/export_openapi.py"
+      - "backend/pyproject.toml"
       - "frontend/src/design/**"
       - ".github/workflows/website.yml"
 
