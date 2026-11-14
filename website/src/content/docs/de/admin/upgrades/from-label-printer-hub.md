@@ -42,7 +42,7 @@ Du kommst von 1.4.x? Bring deine API-Clients zuerst auf 1.5.0 (`/api/v1`-Pfade, 
 
 ## Verhaltensänderungen
 
-- **Die Port-Variable wirkt jetzt.** `LABELYARD_SERVER_PORT` (und das alte `PRINTER_HUB_SERVER_PORT`) war dokumentiert, wurde aber ignoriert. Der Container lauscht jetzt auf dem genannten Port und fällt auf `PORT`, dann auf `8000` zurück. Eine `.env`-Datei, die du aus einer älteren `.env.example` kopiert hast, kann noch `LABELYARD_SERVER_PORT=8090` enthalten: Lösche die Zeile oder setze den Port, den deine Compose-Datei abbildet (standardmäßig `8000`). Danach muss `/healthz` auf dem abgebildeten Port antworten. Ist der Port nicht `8000`, schreibt der Hub beim Start eine Warnung ins Log, die die Variable nennt.
+- **Die Port-Variable wirkt jetzt.** `LABELYARD_SERVER_PORT` (und das alte `PRINTER_HUB_SERVER_PORT`) war dokumentiert, wurde aber ignoriert. Der Container lauscht jetzt auf dem genannten Port und fällt auf `PORT`, dann auf `8000` zurück. Eine `.env`-Datei, die du aus einer älteren `.env.example` kopiert hast, kann noch `LABELYARD_SERVER_PORT=8090` enthalten: Lösche die Zeile oder setze den Port, den deine Compose-Datei abbildet (standardmäßig `8000`). Danach muss `/healthz` auf dem abgebildeten Port antworten. Ist der Port nicht `8000`, schreibt der Hub beim Start eine Warnung, die die Variable nennt, in die Container-Ausgabe (`docker logs`) und in die Log-Ansicht des Hubs.
 - **Installierte Web-Apps behalten das alte Symbol noch eine Weile.** Eine App, die du vor 1.6.0 auf dem Startbildschirm installiert hast, zeigt den alten Namen und das alte Symbol, bis der Browser ihr Manifest neu lädt. Unter iOS passiert das nie von selbst: Entferne die App vom Startbildschirm und füge sie neu hinzu.
 
 ## Umgebungsvariablen
@@ -51,7 +51,7 @@ Umbenennen musst du vorerst nicht. Der Hub liest `LABELYARD_*`; die früheren Na
 
 - Eine `LABELYARD_`-Variable gewinnt immer gegen ihren `PRINTER_HUB_`-Zwilling.
 - Leere Werte werden bei beiden Präfixen ignoriert, eine Compose-Zeile wie `PRINTER_HUB_X=${PRINTER_HUB_X:-}` überschreibt also nie etwas.
-- Beim Start schreibt der Hub eine Warnzeile, die die alten Namen auflistet, die noch wirken, damit du weißt, was du umbenennen solltest. Wird ein alter Name von einem `LABELYARD_`-Zwilling überstimmt, listet eine zweite Zeile diese ignorierten Namen. Beide Zeilen enthalten nur **Namen**, nie Werte.
+- Beim Start schreibt der Hub eine Warnzeile, die die alten Namen auflistet, die noch wirken, damit du weißt, was du umbenennen solltest. Du findest sie in der Container-Ausgabe (`docker logs`) und in der Log-Ansicht des Hubs auf der Seite System. Wird ein alter Name von einem `LABELYARD_`-Zwilling überstimmt, listet eine zweite Zeile diese ignorierten Namen. Beide Zeilen enthalten nur **Namen**, nie Werte.
 - Die alten Namen werden mindestens bis 2.0.0 gelesen.
 - Die PDF-Schriftart folgt demselben Muster: `LABELYARD_PDF_FONT` wird zuerst gelesen, das alte `PRINTHUB_PDF_FONT`, wenn das neue nicht gesetzt oder leer ist, mit einer Warnung, die die Variable nennt.
 
