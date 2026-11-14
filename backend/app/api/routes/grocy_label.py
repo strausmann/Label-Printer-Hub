@@ -59,8 +59,10 @@ from app.schemas.grocy_label import (
 from app.schemas.webhook import WebhookAcceptedResponse
 from app.settings_store.registry import (
     GROCY_LABEL_DEFAULT_PRINTER_KEY,
+    GROCY_LABEL_DEFAULT_SHEET_TYPE_KEY,
     grocy_label_content_type_key,
     grocy_label_printer_key,
+    grocy_label_sheet_type_key,
 )
 
 router = APIRouter(prefix="/api/v1/webhook", tags=["webhooks"])
@@ -132,6 +134,18 @@ def resolve_grocy_target(settings: Any, label_type: GrocyLabelType) -> str | Non
         if slug:
             return slug
     return None
+
+
+def resolve_grocy_sheet_type(settings: Any, label_type: GrocyLabelType) -> str | None:
+    """The sheet type key of the target a label of ``label_type`` goes to; ``None``: unset.
+
+    A target is a unit (R-281-13): a type with its own printer uses its own sheet type, a type
+    without one uses the default target's printer **and** sheet type. The two keys are never
+    mixed. Only meaningful when that target's printer is a page printer.
+    """
+    own = str(settings.get(grocy_label_printer_key(label_type)) or "").strip()
+    key = grocy_label_sheet_type_key(label_type) if own else GROCY_LABEL_DEFAULT_SHEET_TYPE_KEY
+    return str(settings.get(key) or "").strip() or None
 
 
 async def _target_printer(

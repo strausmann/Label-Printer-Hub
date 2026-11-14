@@ -68,14 +68,26 @@ def test_registry_has_exactly_the_specified_keys() -> None:
         "jobs.retention_days",
         "integrations.grocy.label.enabled",
         "integrations.grocy.label.printer",
+        "integrations.grocy.label.sheet_type",
         *(
             f"integrations.grocy.label.{t}.{f}"
             for t in ("product", "stock_entry", "chore", "battery", "recipe")
-            for f in ("content_type", "printer")
+            for f in ("content_type", "printer", "sheet_type")
         ),
     }
     assert SETTINGS["general.language"].choices == ("en", "de")
     assert SETTINGS["jobs.retention_days"].default == 30
+
+
+def test_grocy_sheet_type_settings_default_empty() -> None:
+    """R-281-13: the default target and every type have a sheet type key, unset."""
+    keys = ["integrations.grocy.label.sheet_type"] + [
+        f"integrations.grocy.label.{t}.sheet_type"
+        for t in ("product", "stock_entry", "chore", "battery", "recipe")
+    ]
+    for key in keys:
+        d = SETTINGS[key]
+        assert (d.kind, d.default, d.env_field, d.choices) == ("str", "", None, ())
 
 
 def test_grocy_label_settings_have_defaults() -> None:

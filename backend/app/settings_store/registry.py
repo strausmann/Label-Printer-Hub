@@ -40,6 +40,7 @@ GROCY_LABEL_CONTENT_TYPES: tuple[str, ...] = (
 
 
 GROCY_LABEL_DEFAULT_PRINTER_KEY = "integrations.grocy.label.printer"
+GROCY_LABEL_DEFAULT_SHEET_TYPE_KEY = "integrations.grocy.label.sheet_type"
 
 
 def grocy_label_content_type_key(label_type: str) -> str:
@@ -50,16 +51,22 @@ def grocy_label_printer_key(label_type: str) -> str:
     return f"integrations.grocy.label.{label_type}.printer"
 
 
+def grocy_label_sheet_type_key(label_type: str) -> str:
+    return f"integrations.grocy.label.{label_type}.sheet_type"
+
+
 def _grocy_label() -> list[SettingDef]:
     """#281 R-281-7: the Grocy label printer webhook, one content type and printer per type.
 
     Printers are printer slugs. A type's ``""`` uses the default target
     (``integrations.grocy.label.printer``), whose ``""`` is the first enabled tape printer
-    (maintainer ruling on #281, 2026-11-14).
+    (maintainer ruling on #281, 2026-11-14). A target on a page printer also names a sheet
+    type key (R-281-13); it is read only for a page printer and checked at request time.
     """
     defs = [
         SettingDef("integrations.grocy.label.enabled", "bool", False, None),
         SettingDef(GROCY_LABEL_DEFAULT_PRINTER_KEY, "str", "", None),
+        SettingDef(GROCY_LABEL_DEFAULT_SHEET_TYPE_KEY, "str", "", None),
     ]
     for label_type in GROCY_LABEL_TYPES:
         default = "qr_three_lines" if label_type == "stock_entry" else "qr_two_lines"
@@ -73,6 +80,7 @@ def _grocy_label() -> list[SettingDef]:
             )
         )
         defs.append(SettingDef(grocy_label_printer_key(label_type), "str", "", None))
+        defs.append(SettingDef(grocy_label_sheet_type_key(label_type), "str", "", None))
     return defs
 
 
