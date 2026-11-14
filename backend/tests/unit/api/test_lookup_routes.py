@@ -11,7 +11,7 @@ Test mapping:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.api.routes.lookup import router
@@ -187,15 +187,24 @@ def test_grocy_object_routes_reject_non_numeric_ids(bad: str) -> None:
 
 @pytest.mark.asyncio
 async def test_service_wraps_unexpected_plugin_errors_and_lets_known_ones_through() -> None:
-    import app.integrations  # noqa: F401
-    from app.integrations.registry import IntegrationRegistry
     from app.services.lookup_service import AppLookupService
 
-    plugin = IntegrationRegistry.get("grocy")
+    # A stand-in registered nowhere: the global registry is other tests' to clear.
+    plugin = MagicMock()
+    plugin.battery = AsyncMock(side_effect=RuntimeError("boom"))
+    plugin.chore = AsyncMock(side_effect=AppLookupNotFoundError("x"))
     service = AppLookupService()
-    boom = AsyncMock(side_effect=RuntimeError("boom"))
-    with patch.object(plugin, "battery", new=boom), pytest.raises(LookupFailedError):
+    registry = "app.services.lookup_service.IntegrationRegistry.get"
+    with patch(registry, return_value=plugin), pytest.raises(LookupFailedError):
         await service.grocy_battery("4")
-    missing = AsyncMock(side_effect=AppLookupNotFoundError("x"))
-    with patch.object(plugin, "chore", new=missing), pytest.raises(AppLookupNotFoundError):
+    with patch(registry, return_value=plugin), pytest.raises(AppLookupNotFoundError):
         await service.grocy_chore("7")
+
+
+@pytest.mark.asyncio
+async def test_service_rejects_an_integration_that_cannot_read_batteries() -> None:
+    from app.services.lookup_service import AppLookupService, UnknownAppError
+
+    registry = "app.services.lookup_service.IntegrationRegistry.get"
+    with patch(registry, return_value=object()), pytest.raises(UnknownAppError):
+        await AppLookupService().grocy_battery("4")
