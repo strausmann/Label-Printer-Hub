@@ -44,6 +44,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.identity_hold import ensure_not_held
@@ -56,7 +57,9 @@ from app.db.session import get_session
 from app.models.job import Job, JobState, is_page_payload
 from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
+from app.schemas.content_type import ContentType
 from app.schemas.job import JobRead
+from app.schemas.print_request import RawLabelData
 from app.schemas.problem import ProblemDetail
 from app.services.page_jobs import IDENTITY_HELD_KINDS, PagePayload
 from app.services.print_queue import UnrenderableJobError
@@ -374,7 +377,10 @@ async def resume_job(
         "queue immediately — no restart needed.  Returns 409 when the original job "
         "is still in an active state (``queued`` or ``printing``) or its printer is "
         "not available, and 422 when the stored payload cannot be re-rendered "
-        "(e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from "
+        "(e.g. webhook-created jobs).  A Grocy label job that failed before its render "
+        "(printer offline, no tape) is accepted again on its printer and completes in the "
+        "background, like the webhook; a Grocy label that could not be built answers 422 "
+        "and creates no row.  Page jobs: a calibration page is re-submitted from "
         "its payload, so retry prints the same page again with its original calibration "
         "snapshot and date; a fresh check print with the current calibration is a new "
         "calibration-page request.  A sheet page is retried onto the same cells of the same "
@@ -417,6 +423,8 @@ async def retry_job(
     queue = getattr(request.app.state, "print_queue", None)
     if is_page_payload(job.payload):
         return await _retry_page_job(request, session, queue, job, _auth)
+    if _is_unfinished_deferred(job.payload):
+        return await _retry_deferred_job(request, session, job, _auth)
     new_job = await jobs_repo.create_queued(
         session,
         printer_id=job.printer_id,
@@ -449,6 +457,70 @@ async def retry_job(
                 "Printer is not available to the print queue",
                 f"Printer {job.printer_id} is not known to the print queue",
             ) from exc
+    return JobRead.model_validate(new_job, from_attributes=True)
+
+
+def _is_unfinished_deferred(payload: dict[str, Any]) -> bool:
+    """A Grocy label job (#281) that ended before its render, or a label that was never built."""
+    if payload.get("content_error"):
+        return True
+    return payload.get("deferred") is True and "rendered_tape_mm" not in payload
+
+
+async def _retry_deferred_job(
+    request: Request, session: AsyncSession, job: Job, auth: AuthContext | None
+) -> JobRead:
+    """Accept the label of a deferred job again, on its printer (#281, R-281-11).
+
+    A deferred job that failed before its render (printer offline, no tape) has no rendered
+    tape fields to re-render from: it goes through ``accept_deferred_job`` again, which
+    answers at once and completes in the background. A label that could not be built (a
+    content error) has nothing to print and answers 422. No extra row is created on refusal.
+    """
+    payload = job.payload
+    label_data = payload.get("label_data")
+    raw: RawLabelData | None = None
+    content_type: ContentType | None = None
+    if not payload.get("content_error") and isinstance(label_data, dict):
+        try:
+            raw = RawLabelData.model_validate(
+                {k: v for k, v in label_data.items() if k in RawLabelData.model_fields}
+            )
+            content_type = ContentType(str(payload.get("content_type")))
+        except (ValidationError, ValueError):
+            raw = None
+    if raw is None or content_type is None or not isinstance(label_data, dict):
+        raise _retry_rejected(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "job-not-retryable",
+            "Job payload cannot be re-rendered",
+            "The label of this job could not be built; send it again from its source",
+        )
+    runtime = getattr(request.app.state, "printer_runtime", None)
+    service = runtime.print_service_for(job.printer_id) if runtime is not None else None
+    if service is None:
+        raise _retry_rejected(
+            status.HTTP_409_CONFLICT,
+            "printer-unavailable",
+            "Printer is not available to the print queue",
+            f"Printer {job.printer_id} is not known to the print queue",
+        )
+    new_id = await service.accept_deferred_job(
+        raw,
+        content_type=content_type,
+        source_app=str(label_data.get("source_app") or "manual"),
+        # #294: the new job belongs to the caller that asked for it.
+        api_key_id=auth.api_key_id if auth is not None else None,
+        source_ip=auth.ip if auth is not None else None,
+    )
+    new_job = await jobs_repo.get(session, new_id)
+    if new_job is None:  # evicted or failed before the read: report the accepted id anyway
+        raise _retry_rejected(
+            status.HTTP_409_CONFLICT,
+            "printer-unavailable",
+            "Printer is not available to the print queue",
+            f"Job {new_id} could not be read back",
+        )
     return JobRead.model_validate(new_job, from_attributes=True)
 
 

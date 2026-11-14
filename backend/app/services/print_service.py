@@ -331,7 +331,8 @@ class PrintService:
                 printer_id=self._printer_id,
                 template_key=None,
                 state=JobState.FAILED.value,
-                payload={"label_data": {"source_app": source_app}},
+                # ``content_error`` tells a retry there is no label to print again.
+                payload={"label_data": {"source_app": source_app}, "content_error": error_code},
                 error=f"{error_code}: {message}",
                 api_key_id=api_key_id,
                 source_ip=source_ip,

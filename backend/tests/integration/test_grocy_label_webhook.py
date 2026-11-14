@@ -669,3 +669,45 @@ async def test_deferred_job_interrupted_by_restart_fails_once(hub: Hub) -> None:
     assert row.state == "failed_restart"
     assert (await _row(job_id)).state == "failed_restart"
     assert hub.backend.printed_images == []
+
+
+# --- retry (review F1) -----------------------------------------------------------------------
+
+
+async def test_retry_of_an_offline_failed_label_prints_it(hub: Hub) -> None:
+    original = hub.backend.preflight_check
+    hub.slow_preflight(0.0, error=PrinterOfflineError("offline"))
+    async with hub.running() as (client, _app):
+        r = await _post(client)
+        assert r.status_code == 202, r.text
+        failed_id = r.json()["job_id"]
+        await _ends(failed_id, "failed")
+        before = await _row_count()
+        hub.backend.preflight_check = original  # type: ignore[method-assign]  # printer is back
+        retry = await client.post(
+            f"/api/v1/jobs/{failed_id}/retry", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert retry.status_code == 201, retry.text
+        new_id = retry.json()["id"]
+        assert new_id != failed_id
+        row = await _ends(new_id, "done")
+        assert await _row_count() == before + 1  # only the new job, no failed clone
+    assert len(hub.backend.printed_images) == 1
+    assert row.payload["label_data"]["qr_payload"] == "grcy:p:12"
+    assert row.payload["content_type"] == "qr_two_lines"
+    assert row.printer_id == hub.printer_id
+    assert row.api_key_id == hub.keys["print"]
+    assert (await _row(failed_id)).state == "failed"  # the original stays as history
+
+
+async def test_retry_of_a_content_error_is_422_without_a_new_row(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        r = await _post(client, {"product": "Oat", "grocycode": "grcy:x:1"})
+        assert r.status_code == 202, r.text
+        before = await _row_count()
+        retry = await client.post(
+            f"/api/v1/jobs/{r.json()['job_id']}/retry", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert retry.status_code == 422, retry.text
+        assert await _row_count() == before
+    assert hub.backend.printed_images == []
