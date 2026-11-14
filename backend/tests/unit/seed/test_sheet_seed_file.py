@@ -12,7 +12,13 @@ from pathlib import Path
 from app.seed.sheet_seed import SEED_FILE, load_seed
 from app.sheets.exchange import geometry_from_doc
 from app.sheets.geometry import validate_geometry
-from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN, derive_key, derive_prefix
+from app.sheets.naming import (
+    KEY_PATTERN,
+    PREFIX_PATTERN,
+    default_allow_qr,
+    derive_key,
+    derive_prefix,
+)
 
 HELD_BACK = {"7163", "8658", "L4730", "L4770", "7161", "3475"}
 ALLOWED_NON_ASCII = {chr(c) for c in (0xD7, 0xB7, 0x2013, 0x2014)}  # x-sign, dot, dashes
@@ -74,7 +80,7 @@ def test_seed_first_types_exact() -> None:
     assert (g.label_w, g.label_h, g.cols, g.rows) == (25.4, 10.0, 7, 27)
     assert (g.pitch_x, g.pitch_y, g.margin_top, g.margin_left) == (27.9, 10.0, 13.5, 8.6)
     assert g.corner_radius == 1.5 and g.page_size == "A4" and g.shape == "rectangle"
-    assert a.type.allow_qr is False  # type: ignore[attr-defined]
+    assert a.type.allow_qr is True  # type: ignore[attr-defined]
     assert a.type.source_name == "Labelplanet LP189/25; MR-Label MR111"  # type: ignore[attr-defined]
     b = by_key["avery-zweckform-l4736rev"]
     g = b.version.geometry  # type: ignore[attr-defined]
@@ -84,6 +90,17 @@ def test_seed_first_types_exact() -> None:
     assert b.type.allow_qr is True  # type: ignore[attr-defined]
     assert b.type.source_name == "Labelplanet LP48/45"  # type: ignore[attr-defined]
     assert b.type.notes.startswith("Vendor page not reachable;")  # type: ignore[attr-defined]
+
+
+def test_seed_allow_qr_follows_the_creation_default() -> None:
+    """Every seeded type starts with the QR switch the 10 mm rule gives it (OC-28, #330)."""
+    _, docs = load_seed()
+    differ = {
+        d.type.key
+        for d in docs
+        if d.type.allow_qr is not default_allow_qr(geometry_from_doc(d.version.geometry))
+    }
+    assert differ == set()
 
 
 def _strings(node: object) -> list[str]:

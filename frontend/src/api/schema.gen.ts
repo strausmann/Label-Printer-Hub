@@ -3488,7 +3488,7 @@ export interface components {
         SheetTypeCreate: {
             /**
              * Allow Qr
-             * @description Left out: true when the shorter label side is at least 15 mm.
+             * @description Left out: true when the shorter label side is at least 10 mm.
              */
             allow_qr?: boolean | null;
             /** Description */

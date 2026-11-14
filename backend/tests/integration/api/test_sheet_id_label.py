@@ -23,6 +23,7 @@ from app.models.sheet import Sheet
 from app.printer_backends.ipp.attributes import Margins
 from app.sheets import planner
 from app.sheets import print_service as print_service_module
+from app.sheets import type_service as ts
 from app.sheets.geometry import Geometry
 from app.sheets.print_service import scan_payload_builder
 
@@ -34,6 +35,7 @@ from tests.integration.api.test_sheet_print_api import (
     _cells,
     _count,
     _err,
+    _factory,
     _printer,
     _set_margins,
     _sheet,
@@ -55,7 +57,7 @@ G_MARK_30 = Geometry(
 
 
 QR_KEY = "avery-zweckform-l4736rev"  # seeded: 4 x 12 cells, QR allowed
-TEXT_KEY = "avery-zweckform-l4731rev"  # seeded: 7 x 27 cells, text only
+TEXT_KEY = "avery-zweckform-l4731rev"  # seeded: 7 x 27 cells of 25.4 x 10 mm, QR on (#330)
 
 
 def _scan(code: str) -> str:
@@ -109,6 +111,15 @@ async def test_create_cell_queues_id_label() -> None:
         (printed,) = [r for r in rig.fake.received if r.operation == "Print-Job"]
         assert printed.document.startswith(b"%PDF")
 
+        small = await _create(rig, _create_body(TEXT_KEY))
+
+        assert small.status_code == 201, small.text  # the ID QR fits a 25.4 x 10 mm cell
+        id_cell = (await rig.job_payload(small.json()["job_id"]))["detail"]["id_cell"]
+        assert id_cell["content_type"] == "qr_two_lines" and id_cell["mapped"] is False
+        assert id_cell["cell"] == 1
+
+        async with _factory()() as s:
+            await ts.patch_type(s, TEXT_KEY, {"allow_qr": False}, actor="t")
         text_only = await _create(rig, _create_body(TEXT_KEY))
 
         assert text_only.status_code == 201, text_only.text

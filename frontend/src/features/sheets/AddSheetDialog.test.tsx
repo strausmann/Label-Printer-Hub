@@ -232,13 +232,18 @@ describe("the add-a-sheet dialog", () => {
     expect(screen.queryByText(/another sheet was added/)).toBeNull();
   });
 
-  it("tells that the labels of a type are too small for a QR code", async () => {
+  it("says that QR is switched off for the type and links to the type in the archive", async () => {
     setup();
     await openDialog();
     await chooseType();
-    expect(screen.queryByText(/too small for a QR code/)).toBeNull();
+    expect(screen.queryByText(/QR codes are switched off/)).toBeNull();
     await pick(/Sheet type/, /my-small/);
-    expect(screen.getByText("The labels of this type are too small for a QR code, so the ID is printed as text only.")).toBeVisible();
+    const note = screen.getByText(/QR codes are switched off for this sheet type, so the ID is printed as text only\./);
+    expect(note).toBeVisible();
+    // the type's switch, not a measurement: no claim about the size of the labels
+    expect(note.textContent).not.toMatch(/small|size|mm/i);
+    const link = within(note).getByRole("link", { name: "this type in the sheet archive" });
+    expect(link.getAttribute("href")).toBe("/sheets/archive?type=my-small");
   });
 
   it("keeps the measurements of the type one tap away", async () => {

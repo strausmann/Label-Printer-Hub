@@ -104,6 +104,27 @@ async def test_seeder_treats_an_allow_qr_edit_as_a_local_edit(
         assert (await ts.current_version(s, t.id)).version == 1
 
 
+async def test_seeder_keeps_the_stored_allow_qr_of_an_existing_install(
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#330 turned QR on in the seed for 25.4 x 10 mm types. An install seeded before keeps its
+    stored value: the seeder never writes the switch of a type that exists."""
+    _, docs = load_seed()
+    before = [
+        d.model_copy(update={"type": d.type.model_copy(update={"allow_qr": False})})
+        if d.type.key == "avery-zweckform-l4731rev"
+        else d
+        for d in docs
+    ]
+    monkeypatch.setattr(sheet_seed, "load_seed", lambda: (1, before))
+    await run_sheet_seed(async_session_factory)
+    monkeypatch.undo()
+    report = await run_sheet_seed(async_session_factory)
+    assert not report.inserted and not report.versions_added
+    async with async_session_factory() as s:
+        assert (await ts.get_type(s, "avery-zweckform-l4731rev")).allow_qr is False
+
+
 async def test_seeder_does_not_mistake_a_user_named_seed_for_itself(
     async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

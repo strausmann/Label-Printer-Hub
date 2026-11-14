@@ -11,6 +11,8 @@ Ein **Bogentyp** beschreibt ein Produkt: Seitengröße, Zahl der Zeilen und Spal
 
 Einen Bogentyp kannst du in eine Datei exportieren und in diesem oder einem anderen Hub importieren, damit ein Produkt nur einmal vermessen werden muss.
 
+Jeder Bogentyp hat einen eigenen Schalter **QR-Codes auf Etiketten**, in den Details des Typs im **Bogenarchiv**. Ein neuer Typ beginnt mit eingeschaltetem Schalter, wenn die kürzere Seite eines Etiketts mindestens 10 mm misst: Auf Etiketten mit 25,4 × 10 mm lässt sich ein QR-Code mit einer kurzen Nummer daneben drucken und scannen. Ist der Schalter aus, werden die Etiketten dieses Typs ohne QR-Code gedruckt, auch das ID-Etikett des Bogens, und die Druckvorschau kennzeichnet diese Felder mit „Nur der Code auf diesem Bogentyp“. Bereits angelegte Typen behalten ihre Einstellung.
+
 ## Bögen und ihr ID-Etikett
 
 Jeder echte Bogen bekommt einen eigenen Code. Wenn du einen Bogen hinzufügst, kannst du gleich ein ID-Etikett dafür drucken, damit du ihn später scannen kannst. Ein Bogen weiß, welche seiner Felder frei und welche belegt sind.
@@ -27,4 +29,4 @@ Hat ein anderes Gerät Felder desselben Bogens belegt, während du geschaut hast
 
 ## Layouts
 
-Ein Layout bestimmt, was ein Etikett zeigt: einen QR-Code, einen Code, einen Titel und eine Detailzeile, in Kombinationen von „Nur Code“ bis „QR-Code, Code, Titel und Detail“. Layouts, die ein Feld brauchen, das der Eintrag nicht hat, werden vor dem Druck abgelehnt, mit dem fehlenden Feld benannt. Auf Etiketten, die zu klein zum Scannen sind, lässt sich der QR-Code abschalten.
+Ein Layout bestimmt, was ein Etikett zeigt: einen QR-Code, einen Code, einen Titel und eine Detailzeile, in Kombinationen von „Nur Code“ bis „QR-Code, Code, Titel und Detail“. Layouts, die ein Feld brauchen, das der Eintrag nicht hat, werden vor dem Druck abgelehnt, mit dem fehlenden Feld benannt. Auf einem Bogentyp mit ausgeschalteten QR-Codes druckt ein QR-Layout nur seinen Text (siehe [Bogentypen](#bogentypen)).

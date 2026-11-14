@@ -66,7 +66,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 G48 = Geometry("A4", 21000, 29700, 4570, 2120, 4, 12, 4850, 2120, 2150, 840, None, "rectangle")
 G_SMALL = Geometry("A4", 21000, 29700, 2540, 1000, 7, 27, 2790, 1000, 1350, 860, 150, "rectangle")
 KEY = "avery-l4736rev"
-KEY_SMALL = "avery-l4731rev"
+KEY_SMALL = "avery-l4731rev"  # QR switched off on the type: QR content types are mapped
+KEY_SMALL_QR = "small-with-qr"  # the same 25.4 x 10 mm geometry, QR from the default (#330)
 
 
 # ---------------------------------------------------------------------------- doubles
@@ -173,7 +174,13 @@ async def session(async_session_factory: async_sessionmaker[AsyncSession]) -> As
         )
         await ts.create_type(
             s,
-            ts.TypeFields(KEY_SMALL, "L4731", "Avery", ["L4731REV-25"], None, None),
+            ts.TypeFields(KEY_SMALL, "L4731", "Avery", ["L4731REV-25"], None, False),
+            G_SMALL,
+            actor="t",
+        )
+        await ts.create_type(
+            s,
+            ts.TypeFields(KEY_SMALL_QR, "Q4731", "Avery", ["L4731REV-10"], None, None),
             G_SMALL,
             actor="t",
         )
@@ -363,6 +370,34 @@ async def test_preview_marks_mapped_cells(session: AsyncSession) -> None:
 
     new = [c for c in out.pages[0].cells if c.state == "new"]
     assert [(c.cell, c.mapped) for c in new] == [(1, True), (2, False)]
+
+
+async def test_preview_keeps_qr_content_types_on_a_25_by_10_mm_type_with_qr(
+    session: AsyncSession,
+) -> None:
+    """Issue #330: on 25.4 x 10 mm labels with QR on, a QR content type stays a QR in the
+    preview, drawn as the symbol the job prints, with the number beside it."""
+    t = await ts.get_type(session, KEY_SMALL_QR)
+    assert t.allow_qr is True  # derived from the geometry: the shorter side is 10 mm
+    printer = await make_printer(session, record(dpis=[600]))
+    code = await make_sheet(session, key=KEY_SMALL_QR)
+    asn = raw(0, ContentType.QR_ONE_LINE, primary_id="ASN00123", qr_payload="ASN00123")
+
+    out = await run_preview(session, printer, req([asn], [on(code)]))
+
+    (cell,) = [c for c in out.pages[0].cells if c.state == "new"]
+    assert cell.mapped is False and cell.truncated is False
+    box = content_box(G_SMALL, cell.cell)
+    symbol = cell_render.build_qr_preview(
+        "ASN00123", box.w / 100, box.h / 100, 600, 150, mask=cell_render.PREVIEW_QR_MASK
+    )
+    assert symbol is not None
+    page = png_of(out.pages[0]).convert("1")
+    left, top = px(box.x), px(box.y)
+    drawn = page.crop((left, top, left + symbol.width, top + symbol.height))
+    assert drawn.tobytes() == symbol.convert("1").tobytes()  # the QR, pixel for pixel
+    beside = page.crop((left + symbol.width, top, left + px(box.w), top + px(box.h))).convert("L")
+    assert beside.histogram()[0] > 0  # the number is printed next to it
 
 
 async def test_preview_flags_truncated_and_hardware_margin_cells(session: AsyncSession) -> None:
