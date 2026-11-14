@@ -18,7 +18,7 @@ Each scope includes the ones above it. A `read` or `print` key can also be limit
 ## Creating a key
 
 1. Sign in with an admin key and open **Settings > Access and keys**.
-2. Create a key with a name that says who uses it, its scope, printers (not for `admin`) and rate limit.
+2. Create a key with a name that says who uses it and its scope. The form sets no printer list or rate limit; set `allowed_printer_ids` (not for `admin`) and `rate_limit_per_minute` through the API, with `POST /api/v1/admin/api-keys` or `PATCH /api/v1/admin/api-keys/{id}`.
 3. Copy the key. It is shown **once**; the hub stores only a bcrypt hash of it.
 
 Create one key per caller, so you can revoke one without touching the others.

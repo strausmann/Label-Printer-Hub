@@ -106,7 +106,7 @@ def _refuse_restricted_admin_key(scopes: list[str], printer_ids: list[str] | Non
     """#283: an admin key acts on every printer, so a printer list on it is refused (422)."""
     if "admin" in scopes and printer_ids:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={
                 "error_code": "admin_key_not_restrictable",
                 "error_message": "A key with the admin scope cannot be restricted to printers.",

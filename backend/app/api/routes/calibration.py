@@ -113,6 +113,7 @@ async def put_calibration(
 async def delete_calibration(
     printer_id: PrinterPath, tray: TrayPath, session: SessionDep, auth: AdminDep
 ) -> Response:
+    # No-op here: deleting needs the admin scope, and an admin key is never restricted (#283).
     check_printer_access(auth, printer_id)
     with mapped():
         await service.delete(session, printer_id, tray, actor=actor(auth))

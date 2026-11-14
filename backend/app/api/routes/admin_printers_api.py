@@ -579,7 +579,9 @@ async def resolve_identity(
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
-    check_printer_access(_auth, printer_id)  # a key restricted to other printers: 403
+    # No-op for every key that can reach this admin route (an admin key is never restricted,
+    # #283); kept as defence in depth.
+    check_printer_access(_auth, printer_id)
     svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
     try:
         printer = await svc.resolve_identity(

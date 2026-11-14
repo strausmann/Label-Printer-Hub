@@ -18,7 +18,7 @@ Jeder Bereich schließt die darüber ein. Ein `read`- oder `print`-Schlüssel l�
 ## Einen Schlüssel anlegen
 
 1. Melde dich mit einem Admin-Schlüssel an und öffne **Einstellungen > Zugang und Schlüssel**.
-2. Leg einen Schlüssel an, mit einem Namen, der sagt, wer ihn nutzt, mit Bereich, Druckern (nicht bei `admin`) und Ratenlimit.
+2. Leg einen Schlüssel an, mit einem Namen, der sagt, wer ihn nutzt, und einem Bereich. Das Formular setzt weder eine Druckerliste noch ein Ratenlimit; setze `allowed_printer_ids` (nicht bei `admin`) und `rate_limit_per_minute` über die API, mit `POST /api/v1/admin/api-keys` oder `PATCH /api/v1/admin/api-keys/{id}`.
 3. Kopier den Schlüssel. Er wird **einmal** angezeigt; der Hub speichert nur einen bcrypt-Hash davon.
 
 Leg einen Schlüssel je Aufrufer an, damit du einen widerrufen kannst, ohne die anderen anzufassen.

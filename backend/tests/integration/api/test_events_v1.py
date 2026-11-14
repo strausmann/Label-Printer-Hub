@@ -462,6 +462,42 @@ async def test_valid_session_gets_keepalive_not_auth_expired(hub_app, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_legacy_admin_key_stream_is_not_cut_by_the_recheck(hub_app, monkeypatch):
+    """#283, API-key path: the heartbeat re-check (``usable_key_printer_ids``) must agree with
+    the initial list, or the stream ends with ``auth.expired`` on every heartbeat."""
+    app, _ = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    printer = await _insert_printer("alpha")
+    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(printer)])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        assert await stream.frame() == ": keepalive"
+        assert await stream.frame() == ": keepalive"
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_admin_session_stream_is_not_cut_by_the_recheck(hub_app, monkeypatch):
+    """#283, session path: the re-check (``load_valid``) reads the key's current list, which
+    must be ignored for an admin key, or the stream ends on every heartbeat."""
+    app, client = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    printer = await _insert_printer("alpha")
+    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(printer)])
+    assert (await _sign_in(client, key)).status_code == 204
+    cookie = f"lph_session={client.cookies.get('lph_session')}"
+    stream = await _open(app, {"Cookie": cookie})
+    try:
+        await _connected(stream)
+        assert await stream.frame() == ": keepalive"
+        assert await stream.frame() == ": keepalive"
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
 async def test_restricted_key_stream_excludes_other_printers(hub_app):
     app, _ = hub_app
     allowed = await _insert_printer("alpha")
