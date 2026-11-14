@@ -63,10 +63,12 @@ on:
         description: "Image tag (without v prefix), e.g. 0.1.0. Leave empty to build a dev/branch image instead."
         required: false
 
+# The build legs push by digest and need no OIDC token. Only the merge job
+# signs, so only it asks for `id-token: write`. A caller (release.yml,
+# preview-image.yml) caps these grants and must grant at least the same.
 permissions:
   contents: read
   packages: write
-  id-token: write
 
 # Per-ref grouping: cancel an older in-progress run on the same branch when
 # a new push arrives. Release and manually-dispatched builds are NEVER
@@ -319,6 +321,11 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     runs-on: ubuntu-24.04
     needs: build
+    # A job-level block replaces the workflow default, so all three are listed.
+    permissions:
+      contents: read
+      packages: write
+      id-token: write   # keyless cosign signature (Sigstore with the job's OIDC token)
     # Read by the sbom job (one matrix entry today). The tag is the validated,
     # v-stripped release version; the ref is the lowercase GHCR repository.
     outputs:

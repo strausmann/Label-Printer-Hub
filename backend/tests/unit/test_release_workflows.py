@@ -692,9 +692,16 @@ def test_signing_is_keyless() -> None:
     for needle in ("COSIGN_KEY", "COSIGN_PASSWORD", "--key"):
         assert needle not in text, needle
     wf = _load("docker-publish.yml")
-    assert wf["permissions"]["id-token"] == "write"
-    merge_permissions = wf["jobs"]["merge"].get("permissions")
-    assert merge_permissions is None or merge_permissions.get("id-token") == "write"
+    # Only the job that signs can mint an OIDC token; the build legs cannot.
+    assert wf["permissions"] == {"contents": "read", "packages": "write"}
+    assert wf["jobs"]["merge"]["permissions"] == {
+        "contents": "read",
+        "packages": "write",
+        "id-token": "write",
+    }
+    for job_name, job in wf["jobs"].items():
+        if job_name != "merge":
+            assert "id-token" not in job.get("permissions", {}), job_name
     # The caller caps the permissions of the called workflow.
     assert _load("release.yml")["jobs"]["images"]["permissions"]["id-token"] == "write"
     assert _load("preview-image.yml")["jobs"]["publish"]["permissions"]["id-token"] == "write"
