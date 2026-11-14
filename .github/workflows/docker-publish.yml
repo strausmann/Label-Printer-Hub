@@ -482,11 +482,24 @@ jobs:
       # workflow file as the identity. Signed is the index digest, once per
       # repository the index was pushed to (GHCR, and Docker Hub when its tags are
       # in the list); the index carries the platform images and their attestations.
+      #
+      # Only refs the project publishes from are signed, the same list as the
+      # identity in docs/supply-chain.md: main (dev, releases, previews),
+      # milestone/x.y.0 and milestone/x.y.x (previews), and a v<semver> tag
+      # (manual dispatch). A called workflow sees the caller's ref, and Fulcio
+      # writes that ref into the certificate. A build from any other branch is
+      # published unsigned, so its certificate can never match the identity.
       - name: Sign the index by digest
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
+          REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          signed_refs='^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$'
+          if ! [[ "$REF" =~ $signed_refs ]]; then
+            echo "::notice::Not signed: images from this ref are not signed"
+            exit 0
+          fi
           DIGEST=$(jq -r '."containerimage.descriptor".digest' "$RUNNER_TEMP/index-meta.json")
           if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "::error::No valid index digest in the imagetools metadata file"

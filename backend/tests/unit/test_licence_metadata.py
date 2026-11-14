@@ -14,11 +14,13 @@ SPDX = "AGPL-3.0-or-later"
 AGPL_TEXT_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
 SUPPLY_CHAIN_DOC = "docs/supply-chain.md"
 # The certificate identity users verify against (#311): the image workflow of this repository,
-# under the old and the new repository name. `[b]` matches the letter b; it keeps the old name
+# under the old and the new repository name, on the refs the workflow signs from (the same list
+# as SIGNED_REFS in test_release_workflows.py). `[b]` matches the letter b; it keeps the old name
 # out of the text for scripts/brand_guard.py.
 COSIGN_IDENTITY_REGEXP = (
     r"^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)"
-    r"/\.github/workflows/docker-publish\.yml@refs/(heads|tags)/"
+    r"/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)"
+    r"|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$"
 )
 
 
@@ -95,17 +97,36 @@ def test_notices_name_copyleft_dependencies() -> None:
 def test_cosign_identity_regexp() -> None:
     rule = re.compile(COSIGN_IDENTITY_REGEXP)
     old = "Label-Printer-Hu" + "b"
+    prefix = "https://github.com/strausmann/{repo}/.github/workflows/docker-publish.yml@"
+    signed = (
+        "refs/heads/main",
+        "refs/heads/milestone/1.6.0",
+        "refs/heads/milestone/2.0.0",
+        "refs/heads/milestone/1.5.x",
+        "refs/tags/v1.6.0",
+        "refs/tags/v1.6.0-rc.1",
+    )
     for repo in (old, "labelyard"):
-        for ref in ("refs/tags/v1.6.0", "refs/heads/main", "refs/heads/milestone/1.6.0"):
-            identity = (
-                f"https://github.com/strausmann/{repo}/.github/workflows/docker-publish.yml@{ref}"
-            )
+        for ref in signed:
+            identity = prefix.format(repo=repo) + ref
             assert rule.match(identity), identity
+    unsigned = (
+        "refs/heads/feat/x",
+        "refs/heads/main-x",
+        "refs/heads/milestone/1.6.1",
+        "refs/heads/milestone/1.6.0/x",
+        "refs/heads/mainx",
+        "refs/tags/v1.6",
+        "refs/tags/1.6.0",
+        "refs/pull/1/merge",
+    )
+    for ref in unsigned:
+        identity = prefix.format(repo="labelyard") + ref
+        assert not rule.match(identity), identity
     for identity in (
         "https://github.com/strausmann/labelyard/.github/workflows/release.yml@refs/heads/main",
         "https://github.com/someone-else/labelyard/.github/workflows/docker-publish.yml@refs/heads/main",
         "https://github.com/strausmann/labelyard-fork/.github/workflows/docker-publish.yml@refs/heads/main",
-        "https://github.com/strausmann/labelyard/.github/workflows/docker-publish.yml@refs/pull/1/merge",
     ):
         assert not rule.match(identity), identity
 
@@ -125,8 +146,14 @@ def test_supply_chain_doc() -> None:
         "cosign verify",
         "token.actions.githubusercontent.com",
         COSIGN_IDENTITY_REGEXP,
+        "--certificate-oidc-issuer",
+        "--certificate-github-workflow-ref",
     ):
         assert needle in doc, needle
+    # Every command uses the one identity, no wider variant.
+    identities = re.findall(r"--certificate-identity-regexp '([^']*)'", doc)
+    assert identities, "no cosign verify identity in the doc"
+    assert set(identities) == {COSIGN_IDENTITY_REGEXP}
     # On a multi-platform image the short form prints null; it must not be recommended.
     assert "--format '{{ json .SBOM.SPDX }}'" not in doc
     # The README only points here; it does not repeat the text.

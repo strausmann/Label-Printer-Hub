@@ -619,6 +619,12 @@ def test_release_sbom_job() -> None:
 # Keyless cosign signing (#311). Pins re-resolved on 2026-11-14.
 _COSIGN_INSTALLER = "sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532"
 _DIGEST_CHECK = "^sha256:[0-9a-f]{64}$"
+# The refs that are signed; the certificate identity in docs/supply-chain.md ends with the same
+# group (test_licence_metadata.COSIGN_IDENTITY_REGEXP).
+SIGNED_REFS = (
+    r"^refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x)"
+    r"|tags/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$"
+)
 
 
 def _merge_steps() -> list[dict[str, Any]]:
@@ -693,3 +699,52 @@ def test_cleanup_keeps_signature_children() -> None:
         prune[0]["uses"] == "dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f"
     )
     assert prune[0]["with"]["delete-orphaned-images"] is True
+
+
+def test_signing_only_on_publishing_refs() -> None:
+    steps = _merge_steps()
+    sign = steps[_signing_step_index(steps)]
+    run = str(sign["run"])
+    assert sign["env"]["REF"] == "${{ github.ref }}"
+    assert f"signed_refs='{SIGNED_REFS}'" in run
+    gate = run.index('[[ "$REF" =~ $signed_refs ]]')
+    assert gate < run.index("cosign sign")
+    # The gate as bash runs it: a ref outside the list exits 0 before any cosign call.
+    check = run[: run.index("DIGEST=")]
+    for ref in (
+        "refs/heads/main",
+        "refs/heads/milestone/1.6.0",
+        "refs/heads/milestone/1.5.x",
+        "refs/tags/v1.6.0",
+        "refs/tags/v1.6.0-rc.1",
+    ):
+        result = subprocess.run(
+            ["bash", "-c", check + "\necho SIGN"],
+            env={**os.environ, "REF": ref},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0 and "SIGN" in result.stdout, ref
+    for ref in (
+        "refs/heads/feat/x",
+        "refs/heads/main-x",
+        "refs/heads/milestone/1.6.1",
+        "refs/tags/v1.6",
+        "refs/pull/1/merge",
+        "",
+    ):
+        result = subprocess.run(
+            ["bash", "-c", check + "\necho SIGN"],
+            env={**os.environ, "REF": ref},
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0 and "SIGN" not in result.stdout, ref
+    # Same refs as the identity users verify against.
+    doc = (REPO_ROOT / "docs" / "supply-chain.md").read_text(encoding="utf-8")
+    identities = set(re.findall(r"--certificate-identity-regexp '([^']*)'", doc))
+    assert identities
+    for identity in identities:
+        assert identity.endswith("docker-publish\\.yml@" + SIGNED_REFS[1:]), identity
