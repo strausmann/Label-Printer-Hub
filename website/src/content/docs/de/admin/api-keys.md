@@ -13,12 +13,12 @@ Alles, was kein Browser hinter einem SSO-Proxy ist, meldet sich mit einem API-Sc
 | `print` | Lesen und drucken | Apps und Skripte, die drucken |
 | `admin` | Alles, auch Einstellungen und Schlüssel | Menschen, die den Hub verwalten |
 
-Jeder Bereich schließt die darüber ein. Ein Schlüssel lässt sich außerdem auf einzelne Drucker beschränken; eine leere Liste erlaubt alle.
+Jeder Bereich schließt die darüber ein. Ein `read`- oder `print`-Schlüssel lässt sich außerdem auf einzelne Drucker beschränken; eine leere Liste erlaubt alle. Ein Schlüssel mit dem Bereich `admin` wirkt immer auf jeden Drucker und lässt sich deshalb nicht beschränken: Eine Druckerliste an einem Admin-Schlüssel lehnt der Hub mit `422` und `admin_key_not_restrictable` ab.
 
 ## Einen Schlüssel anlegen
 
 1. Melde dich mit einem Admin-Schlüssel an und öffne **Einstellungen > Zugang und Schlüssel**.
-2. Leg einen Schlüssel an, mit einem Namen, der sagt, wer ihn nutzt, mit Bereich, Druckern und Ratenlimit.
+2. Leg einen Schlüssel an, mit einem Namen, der sagt, wer ihn nutzt, mit Bereich, Druckern (nicht bei `admin`) und Ratenlimit.
 3. Kopier den Schlüssel. Er wird **einmal** angezeigt; der Hub speichert nur einen bcrypt-Hash davon.
 
 Leg einen Schlüssel je Aufrufer an, damit du einen widerrufen kannst, ohne die anderen anzufassen.

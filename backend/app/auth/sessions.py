@@ -229,7 +229,7 @@ async def load_valid(db: AsyncSession, token: str, settings: Settings) -> ValidS
         if key is None or not _key_is_usable(key, now):
             return None
         # The key's current restriction wins over the copy taken at sign-in.
-        allowed = list(key.allowed_printer_ids or [])
+        allowed = [] if "admin" in (key.scopes or []) else list(key.allowed_printer_ids or [])
         rate_limit = key.rate_limit_per_minute
         key_name = key.name
     if row.source == "bootstrap":
@@ -252,6 +252,8 @@ async def usable_key_printer_ids(db: AsyncSession, key_id: UUID) -> list[str] | 
     key = await db.get(ApiKey, key_id)
     if key is None or not _key_is_usable(key, _now()):
         return None
+    if "admin" in (key.scopes or []):
+        return []  # #283: an admin key acts on every printer
     return list(key.allowed_printer_ids or [])
 
 

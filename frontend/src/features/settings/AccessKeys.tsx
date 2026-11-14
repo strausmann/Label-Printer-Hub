@@ -118,6 +118,9 @@ function KeyList() {
                 </span>
               ))}
             </span>
+            {key.scopes.includes("admin") && key.allowed_printer_ids.length > 0 ? (
+              <p className="basis-full text-small text-ink-2">{t`A printer list is stored on this key. Ignored for admin keys: an admin key acts on every printer.`}</p>
+            ) : null}
             {key.enabled ? (
               <Button aria-label={t`Revoke ${key.name}`} onPress={() => setRevoking(key)} className={SECONDARY_BUTTON}>
                 {t`Revoke`}

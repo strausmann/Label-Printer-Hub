@@ -145,7 +145,7 @@ async def test_scopes_and_printer_restriction(api_client_with_seed: httpx.AsyncC
     refused(await c.post(url, json=body), 401, "missing_credentials")
     refused(await c.get(f"{url}/pdf?type=cal-sc"), 401, "missing_credentials")
     # A key bound to another printer is refused on both routes, with the stable error code.
-    bound = await _key(["admin"], allowed=[str(other)])
+    bound = await _key(["print"], allowed=[str(other)])
     refused(await c.post(url, json=body, headers=bound), 403, "printer_not_allowed")
     refused(await c.get(f"{url}/pdf?type=cal-sc", headers=bound), 403, "printer_not_allowed")
     # The download needs only read, and print implies read.

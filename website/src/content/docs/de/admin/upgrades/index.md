@@ -36,4 +36,4 @@ Datenbankmigrationen laufen beim Start. Dein Daten-Volume, deine Schlüssel und 
 
 - [Du kommst von Label Printer Hub](/de/admin/upgrades/from-label-printer-hub/): Labelyard 1.6.0 ist das umbenannte Projekt. Images, Befehl und Umgebungspräfix sind neu; Daten und API bleiben.
 - Von 1.4.x: Version 1.5.0 hat alle API-Routen ohne Aliase unter `/api/v1/` verschoben. Passe zuerst Skripte, Proxy-Regeln und Lesezeichen an; die [Versionshinweise zu 1.5.0](https://github.com/strausmann/labelyard/releases/tag/v1.5.0) listen die verschobenen Pfade.
-- [Aktualisieren auf 1.7.0](/de/admin/upgrades/to-1-7-0/): Drucker-Antworten melden `connection.snmp.community_set` statt der SNMP-Community.
+- [Aktualisieren auf 1.7.0](/de/admin/upgrades/to-1-7-0/): Drucker-Antworten melden `connection.snmp.community_set` statt der SNMP-Community, und ein Admin-Schlüssel lässt sich nicht mehr auf Drucker beschränken (`422` `admin_key_not_restrictable`).

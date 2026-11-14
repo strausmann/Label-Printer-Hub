@@ -102,6 +102,18 @@ def _key_to_read(key: ApiKey) -> ApiKeyRead:
     )
 
 
+def _refuse_restricted_admin_key(scopes: list[str], printer_ids: list[str] | None) -> None:
+    """#283: an admin key acts on every printer, so a printer list on it is refused (422)."""
+    if "admin" in scopes and printer_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_code": "admin_key_not_restrictable",
+                "error_message": "A key with the admin scope cannot be restricted to printers.",
+            },
+        )
+
+
 def _require_bootstrap_admin_key(body: ApiKeyCreate) -> None:
     """D7: a bootstrap session exists to create the first admin key and nothing else.
 
@@ -152,7 +164,9 @@ async def list_api_keys(session: SessionDep, _auth: AdminAuthDep) -> list[ApiKey
     description=(
         "Creates a new API key. The ``plaintext`` field in the response is the "
         "full key — it is shown ONCE and never stored. Copy it before closing "
-        "this response. Subsequent GETs return only the prefix."
+        "this response. Subsequent GETs return only the prefix. A key with the admin scope "
+        "always acts on every printer: a non-empty ``allowed_printer_ids`` on it is "
+        "422 ``admin_key_not_restrictable``."
     ),
 )
 async def create_api_key(
@@ -162,6 +176,7 @@ async def create_api_key(
 ) -> ApiKeyCreateResponse:
     if _auth.source == "bootstrap":
         _require_bootstrap_admin_key(body)
+    _refuse_restricted_admin_key(body.scopes, body.allowed_printer_ids)
     plaintext, prefix, hashed = generate_api_key()
     key = ApiKey(
         name=body.name,
@@ -211,7 +226,8 @@ async def get_api_key(
     description=(
         "Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or "
         "``allowed_printer_ids``. Cannot change scopes or the key value itself — "
-        "revoke and recreate for that."
+        "revoke and recreate for that. A key with the admin scope refuses a non-empty "
+        "``allowed_printer_ids`` (422 ``admin_key_not_restrictable``)."
     ),
 )
 async def update_api_key(
@@ -226,6 +242,7 @@ async def update_api_key(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"error_code": "not_found", "error_message": f"API key {key_id} not found"},
         )
+    _refuse_restricted_admin_key(key.scopes, body.allowed_printer_ids)  # before any write
     if body.enabled is not None:
         key.enabled = body.enabled
         if not body.enabled:

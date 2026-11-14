@@ -2,8 +2,10 @@
 
 Foreign jobs/batches answer 404 (not 403) so their existence is not leaked.
 Covers restricted and unrestricted API keys and a browser session. The job and batch tests use
-admin keys: a plain key sees only the jobs and batches it submitted (#294,
-test_job_ownership.py, test_batch_run_auth.py), and the printer ACL applies to admin keys too.
+print keys that own every job and batch below, so the printer list is the only thing that
+separates what they see: a plain key sees only what it submitted (#294, test_job_ownership.py,
+test_batch_run_auth.py). An admin key is never restricted to printers (#283,
+test_admin_key_restrictions.py).
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from app.models.api_key import ApiKey
 from app.models.job import Job, JobState
 from app.models.print_batch import PrintBatch
 from app.models.printer import Printer
+from sqlalchemy import select
 
 
 def _factory():
@@ -69,6 +72,25 @@ async def _printer_with_job(state: str = JobState.FAILED.value) -> tuple[UUID, U
         return printer.id, job.id, batch.id
 
 
+async def _owning_key(world, allowed: list[str]) -> str:
+    """A print key restricted to ``allowed`` that owns every job and batch of ``world``."""
+    from sqlalchemy import update
+
+    plaintext = await _insert_key(["print"], allowed)
+    async with _factory()() as s:
+        key = (
+            await s.execute(select(ApiKey).where(ApiKey.key_prefix == plaintext[:16]))  # type: ignore[arg-type]
+        ).scalar_one()
+        job_ids = [j for _, j, _ in world]
+        batch_ids = [b for _, _, b in world]
+        await s.execute(update(Job).where(Job.id.in_(job_ids)).values(api_key_id=key.id))  # type: ignore[attr-defined]
+        await s.execute(
+            update(PrintBatch).where(PrintBatch.id.in_(batch_ids)).values(created_by=str(key.id))  # type: ignore[attr-defined]
+        )
+        await s.commit()
+    return plaintext
+
+
 @pytest.fixture
 async def world():
     a = await _printer_with_job()
@@ -83,7 +105,7 @@ def _job_ids(resp) -> set[str]:
 @pytest.mark.asyncio
 async def test_job_list_filtered_to_allowed_printers(api_client_with_seed, world):
     (pa, ja, _), (pb, jb, _) = world
-    key = await _insert_key(["admin"], [str(pa)])
+    key = await _owning_key(world, [str(pa)])
     h = {"X-Label-Hub-Key": key}
     resp = await api_client_with_seed.get("/api/v1/jobs?limit=200", headers=h)
     assert resp.status_code == 200, resp.text
@@ -106,7 +128,7 @@ async def test_job_list_unrestricted_sees_all(api_client_with_seed, world):
 @pytest.mark.asyncio
 async def test_job_detail_and_mutations_of_foreign_job_404(api_client_with_seed, world):
     (pa, ja, _), (_, jb, _) = world
-    key = await _insert_key(["admin"], [str(pa)])
+    key = await _owning_key(world, [str(pa)])
     h = {"X-Label-Hub-Key": key}
     own = await api_client_with_seed.get(f"/api/v1/jobs/{ja}", headers=h)
     assert own.status_code == 200, own.text
@@ -134,7 +156,7 @@ def _pb(world) -> UUID:
 @pytest.mark.asyncio
 async def test_batch_of_foreign_printer_404(api_client_with_seed, world):
     (pa, _, ba), (_, _, bb) = world
-    key = await _insert_key(["admin"], [str(pa)])
+    key = await _owning_key(world, [str(pa)])
     h = {"X-Label-Hub-Key": key}
     assert (await api_client_with_seed.get(f"/api/v1/batches/{ba}", headers=h)).status_code == 200
     assert (await api_client_with_seed.get(f"/api/v1/batches/{bb}", headers=h)).status_code == 404
@@ -148,7 +170,7 @@ async def test_batch_of_foreign_printer_404(api_client_with_seed, world):
 @pytest.mark.asyncio
 async def test_session_job_and_batch_acl(api_client_with_seed, world):
     (pa, ja, ba), (_, jb, bb) = world
-    key = await _insert_key(["admin"], [str(pa)])
+    key = await _owning_key(world, [str(pa)])
     signed = await api_client_with_seed.post("/api/v1/auth/session", json={"key": key})
     assert signed.status_code in (200, 201, 204), signed.text
     jobs = await api_client_with_seed.get("/api/v1/jobs?limit=200")

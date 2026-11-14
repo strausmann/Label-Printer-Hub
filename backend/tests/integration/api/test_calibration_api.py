@@ -202,28 +202,44 @@ async def test_scope_matrix(api_client_with_seed):
 
 
 async def test_printer_restricted_key_gets_403_on_another_printer(api_client_with_seed):
+    """A key restricted to a printer is refused on another one, with the stable error code.
+
+    Calibration writes need the admin scope, and an admin key is never restricted (#283), so
+    only the read routes can show the printer ACL; the write routes are covered below.
+    """
     c = api_client_with_seed
     mine, other = await _printer(), await _printer()
     await _type()
-    admin_r = await _key(["admin"], [str(mine)])
     read_r = await _key(["read"], [str(mine)])
     for method, path, kwargs in [
         ("GET", f"/api/v1/printers/{other}/calibration", {}),
-        ("PUT", f"/api/v1/printers/{other}/calibration/auto", {"json": BODY}),
-        ("DELETE", f"/api/v1/printers/{other}/calibration/auto", {}),
         (
             "POST",
             f"/api/v1/printers/{other}/calibration/auto/fit",
             {"json": _fit_body(Deviation())},
         ),
     ]:
-        resp = await c.request(
-            method, path, headers=admin_r if method in ("PUT", "DELETE") else read_r, **kwargs
-        )
+        resp = await c.request(method, path, headers=read_r, **kwargs)
         assert resp.status_code == 403, (method, resp.text)
         assert resp.json()["detail"]["error_code"] == "printer_not_allowed"
-    own = await c.put(f"/api/v1/printers/{mine}/calibration/auto", json=BODY, headers=admin_r)
+    # A restricted key cannot write at all: the write routes need the admin scope.
+    for method in ("PUT", "DELETE"):
+        resp = await c.request(
+            method,
+            f"/api/v1/printers/{mine}/calibration/auto",
+            headers=read_r,
+            **({"json": BODY} if method == "PUT" else {}),
+        )
+        assert resp.status_code == 403, (method, resp.text)
+        assert resp.json()["detail"]["error_code"] == "insufficient_scope"
+    # An admin key acts on every printer, even one that an older version restricted (#283).
+    legacy_admin = await _key(["admin"], [str(mine)])
+    own = await c.put(f"/api/v1/printers/{mine}/calibration/auto", json=BODY, headers=legacy_admin)
     assert own.status_code == 200
+    elsewhere = await c.put(
+        f"/api/v1/printers/{other}/calibration/auto", json=BODY, headers=legacy_admin
+    )
+    assert elsewhere.status_code == 200, elsewhere.text
 
 
 def _fit_body(dev: Deviation, type_key: str = "cal-test") -> dict[str, Any]:

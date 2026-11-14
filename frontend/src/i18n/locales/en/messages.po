@@ -367,6 +367,10 @@ msgstr "A name that tells you who uses it, for example “Kept”."
 msgid "a new sheet"
 msgstr "a new sheet"
 
+#: src/features/settings/AccessKeys.tsx
+msgid "A printer list is stored on this key. Ignored for admin keys: an admin key acts on every printer."
+msgstr "A printer list is stored on this key. Ignored for admin keys: an admin key acts on every printer."
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "A printer rarely prints exactly where the page says. Measure how far it is off on a real sheet, and the hub moves every print by the opposite."
 msgstr "A printer rarely prints exactly where the page says. Measure how far it is off on a real sheet, and the hub moves every print by the opposite."

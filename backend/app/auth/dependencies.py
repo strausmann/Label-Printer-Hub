@@ -290,7 +290,8 @@ async def _validate_api_key(
 
     # Read before the update: a rollback expires the row's attributes.
     key_id = key_row.id
-    allowed_printer_ids = key_row.allowed_printer_ids or []
+    # #283: an admin key acts on every printer; a list stored by an older version is ignored.
+    allowed_printer_ids = [] if effective_scope == "admin" else key_row.allowed_printer_ids or []
 
     # Best-effort last-used update (don't fail auth if this errors)
     try:
@@ -355,7 +356,8 @@ def _session_context(
         scope=cast(Scope, row.scope),
         api_key_id=row.api_key_id,
         ip=client_ip,
-        allowed_printer_ids=valid.allowed_printer_ids,
+        # #283: an admin session is never restricted, whatever a stored copy says.
+        allowed_printer_ids=[] if row.scope == "admin" else valid.allowed_printer_ids,
         user=row.user,
         session_id=row.id,
     )

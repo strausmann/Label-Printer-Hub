@@ -13,12 +13,12 @@ Everything that is not a browser behind an SSO proxy signs in with an API key: t
 | `print` | Reading and printing | Apps and scripts that print |
 | `admin` | Everything, including settings and keys | People who manage the hub |
 
-Each scope includes the ones above it. A key can also be limited to some printers; an empty list allows all of them.
+Each scope includes the ones above it. A `read` or `print` key can also be limited to some printers; an empty list allows all of them. A key with the `admin` scope always acts on every printer, so it cannot be limited: a printer list on an admin key is refused with `422` and `admin_key_not_restrictable`.
 
 ## Creating a key
 
 1. Sign in with an admin key and open **Settings > Access and keys**.
-2. Create a key with a name that says who uses it, its scope, printers and rate limit.
+2. Create a key with a name that says who uses it, its scope, printers (not for `admin`) and rate limit.
 3. Copy the key. It is shown **once**; the hub stores only a bcrypt hash of it.
 
 Create one key per caller, so you can revoke one without touching the others.

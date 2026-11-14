@@ -293,6 +293,42 @@ describe("AccessKeys", () => {
     expect(await screen.findByText("lph_kept…")).toBeVisible();
   });
 
+  it("an admin key with a stored printer list shows it as ignored", async () => {
+    mockApi({
+      "GET /api/v1/settings": settingsList(),
+      "GET /api/v1/admin/api-keys": [{ ...KEY_ADMIN, allowed_printer_ids: [PRINTER_A.id] }, { ...KEY_KEPT, allowed_printer_ids: [PRINTER_A.id] }],
+    });
+    await renderApp({ path: "/settings/access" });
+    const adminRow = (await screen.findByText("First admin key")).closest("li") as HTMLElement;
+    expect(within(adminRow).getByText(/Ignored for admin keys/)).toBeVisible();
+    // A print key keeps its restriction, so nothing is marked as ignored on its row.
+    const printRow = screen.getByText("Kept").closest("li") as HTMLElement;
+    expect(within(printRow).queryByText(/Ignored for admin keys/)).toBeNull();
+  });
+
+  it("an admin key without a stored printer list shows no ignored note", async () => {
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [KEY_ADMIN] });
+    await renderApp({ path: "/settings/access" });
+    await screen.findByText("First admin key");
+    expect(screen.queryByText(/Ignored for admin keys/)).toBeNull();
+  });
+
+  it("the create form offers no printer restriction next to the admin scope", async () => {
+    const { calls } = mockApi({
+      "GET /api/v1/settings": settingsList(),
+      "GET /api/v1/admin/api-keys": [],
+      "POST /api/v1/admin/api-keys": () => ({ key_id: KEY_ADMIN.id, name: "Boss", plaintext: "lph_fake-plaintext-for-tests", prefix: "lph_boss", scopes: ["admin"] }),
+    });
+    await renderApp({ path: "/settings/access" });
+    const form = (await screen.findByRole("form", { name: "Create an API key" })) as HTMLElement;
+    await userEvent.click(within(form).getByRole("checkbox", { name: "admin" }));
+    expect(within(form).queryByText(/printer/i)).toBeNull();
+    await userEvent.type(within(form).getByRole("textbox", { name: "Key name" }), "Boss");
+    await userEvent.click(within(form).getByRole("button", { name: "Create key" }));
+    await screen.findByRole("dialog", { name: "Your new key" });
+    expect(lastBody(calls, "POST", "/api/v1/admin/api-keys")).not.toHaveProperty("allowed_printer_ids");
+  });
+
   it("revokes a key after a confirmation", async () => {
     const { calls } = mockApi({
       "GET /api/v1/settings": settingsList(),
