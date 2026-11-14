@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The app the browser tests (Playwright) run against.
 
 ``uvicorn tests.e2e_app:app`` serves the real FastAPI app and the built web UI

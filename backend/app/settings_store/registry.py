@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Definition of every runtime setting: kind, default and the env field that locks it."""
 
 from __future__ import annotations

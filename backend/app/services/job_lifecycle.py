@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Job-lifecycle finite-state machine for the print queue.
 
 Brother PT/QL printers have no multi-job queue (TCP/9100 is a single stream).

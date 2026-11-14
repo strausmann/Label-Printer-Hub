@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: Plugin request — new printer model
 description: Add support for a new printer model
 title: "feat(printer-models): add <Model> plugin"

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``_limiter_key`` decides which sign-in rate-limit bucket a client address lands in (263-81).
 
 One /64 is one subscriber, so a client rotating through its IPv6 addresses must not mint a

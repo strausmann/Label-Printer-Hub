@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Fixtures for async DB tests.
 
 Uses an in-memory SQLite database so tests are fast and isolated.

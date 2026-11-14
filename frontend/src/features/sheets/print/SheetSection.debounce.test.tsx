@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { USED_17, body, previewFor, routes } from "./testkit";

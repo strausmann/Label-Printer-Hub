@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Typed errors of the hub's own IPP client.
 
 ``IppDecodeError`` carries a stable, machine-readable ``reason`` so callers and

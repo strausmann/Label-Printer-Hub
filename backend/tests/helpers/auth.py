@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Shared auth bypass helpers for unit tests — Phase 7c.
 
 Route unit tests call these helpers to override the require_scope dependency

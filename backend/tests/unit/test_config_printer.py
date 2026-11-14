@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1i CA-1: Tests für entfernte drucker-spezifische Settings-Felder.
 
 Die 9 Felder (ql820_host, ql820_port, pt750w_host, pt750w_port,

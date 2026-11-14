@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """AES-256-GCM box for secrets stored in the database.
 
 D5: secrets are encrypted with LABELYARD_SECRET_KEY and are write-only in the UI.

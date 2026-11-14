@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import { queuedJobs } from "../../api/errorDetail";

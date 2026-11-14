@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0024 — Printers are wired at runtime through one code path and identified by hardware
 
 - **Status:** Accepted

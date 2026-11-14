@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """API key generation for Phase 7c — generates bcrypt-hashed keys with prefix.
 
 Key format: ``lh_pat_<43-char-urlsafe-base64>``

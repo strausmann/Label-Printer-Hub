@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#277: a sheet print run plans at most one sheet; the items that do not fit are left out.
 
 The cart is not limited. One run takes the free cells of one sheet, the first items in order; the

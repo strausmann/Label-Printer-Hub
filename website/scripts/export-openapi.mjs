@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Writes the backend's OpenAPI document to openapi/labelyard.json for the API reference.
 // Runs backend/scripts/export_openapi.py (no server, placeholder settings). The interpreter is
 // $PYTHON, else python3; the backend and its dependencies must be installed in it

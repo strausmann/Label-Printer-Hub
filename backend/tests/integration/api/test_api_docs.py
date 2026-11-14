@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The interactive API reference at ``/docs`` (Scalar, served by the hub itself).
 
 Covers issue #171: the page shows the running release instead of the package

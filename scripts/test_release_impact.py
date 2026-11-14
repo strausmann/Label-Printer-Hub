@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for scripts/release_impact.py.
 
 Run with: python3 -m unittest discover -s scripts -p 'test_*.py' -v

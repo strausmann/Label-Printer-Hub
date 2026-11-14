@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for app.api.dependencies.webhook_auth.require_webhook_key.
 
 Three scenarios are tested:

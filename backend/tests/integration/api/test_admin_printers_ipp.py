@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Admin configuration of IPP page printers: probe, save rules, trays, URI visibility.
 
 The hub never reaches a real printer here: ``app.state.ipp_transport_factory`` hands the

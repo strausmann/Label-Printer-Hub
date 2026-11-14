@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Build a preview image of a milestone before its release, e.g. 1.5.0-rc.3.
 #
 # Run it by hand on the branch that holds the milestone's work (or on main).

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """LABELYARD_* is the settings prefix; PRINTER_HUB_* still works as a deprecated fallback.
 
 Every assertion looks at the effect (the resolved ``Settings`` value or the lock state),

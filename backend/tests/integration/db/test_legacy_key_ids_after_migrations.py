@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """An API key written by the old phase-7c seed (hyphenated UUID text) still works after upgrade.
 
 SQLModel binds UUIDs as 32-char hex, the old seed stored ``str(uuid4())``. SQLite compares

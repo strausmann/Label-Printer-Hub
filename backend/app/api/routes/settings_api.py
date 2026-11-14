@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Runtime settings API (admin scope).
 
 The request bodies are parsed by hand on purpose: FastAPI's default 422 body echoes the

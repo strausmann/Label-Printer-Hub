@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Protocol contract for printer-model plugins.
 
 Each printer-model family (PT-Series, QL-Series, future series) lives in its

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Every API route lives under ``/api/v1`` (#226).
 
 The app is built with the ``dist`` fixture so the SPA catch-all exists and the walk sees the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Named scope dependency singletons — Phase 7c.
 
 Using named module-level dependency functions instead of inline require_scope()

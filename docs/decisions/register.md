@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Decision register
 
 Short, stable labels for decisions that code follows. A comment such as `# D4` or `// D5` marks a line that exists because of that decision, so related code can be found by searching for the label. Architecture decisions with a full rationale live in the [ADRs](README.md); the register is the index from label to decision.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";

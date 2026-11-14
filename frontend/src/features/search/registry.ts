@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { QueryClient } from "@tanstack/react-query";
 
 /** One line in the global search list; `href` is an in-app path. */

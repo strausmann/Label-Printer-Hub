@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Manual calibration of a page printer's tray (spec 7.1, 13.1).
 
 All values are integers so stored values stay exact on SQLite (plan decision):

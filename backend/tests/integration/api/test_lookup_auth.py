@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The lookup endpoint needs a key or session (read scope); it is no longer public.
 
 The server-rendered QR pages that justified an anonymous lookup are gone: the browser

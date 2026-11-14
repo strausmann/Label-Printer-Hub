@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for ``scripts.licence_report`` (hand-written records, no network)."""
 
 from __future__ import annotations
@@ -379,7 +382,9 @@ def test_holder_bearing_licence_has_no_borrowed_fallback(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (tmp_path / "fallback").mkdir()
+    # REUSE-IgnoreStart
     (tmp_path / "fallback" / "MIT.txt").write_text("Copyright (c) Someone Else", "utf-8")
+    # REUSE-IgnoreEnd
     entry = _record("holderless", expression="MIT", text="UNKNOWN")
     [record] = to_records([entry], _policy(), tmp_path / "fallback")
     assert record["licenseText"] is None

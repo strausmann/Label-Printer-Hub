@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Sheet archive, Plan 1 of 4: archive, seed, physical sheets and their API
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -251,6 +256,8 @@ Tests mirror this under `backend/tests/unit/sheets/` (new package: add `__init__
 - Consumes: Tasks 3–4.
 - Produces (`sheet_seed.py`): `SEED_FILE = importlib.resources.files("app.seed") / "sheet_types.json"`; `def load_seed() -> tuple[int, list[ExportDoc]]`; `async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> SeedReport` with `SeedReport(inserted: list[str], versions_added: list[str], skipped: dict[str, str])`. Rules (OC-14): insert missing keys with `origin="seed"`; for an existing key add a new version only if every version of the type has `origin="seed"`-provenance (`created_by == "seed"`), no sheet uses the type, and the seed geometry hash differs from the current version; otherwise leave it and log at INFO. A seed whose prefix is taken by another type is skipped with `skipped[key] = "prefix_taken"` and a WARNING. The seeder keeps no state of its own: every start compares the 36 keys and hashes (one query per table), which is cheap; `seed_revision` is logged and only changes when the file's geometry does.
 
+<!-- REUSE-IgnoreStart -->
+
 - [ ] **Step 1: Write the failing tests**
   - `test_seed_has_36_valid_documents` — `load_seed()` returns 36 docs, each parses as `ExportDoc`, each geometry passes `validate_geometry`, keys and prefixes unique and pattern-valid, `verified` all false.
   - `test_seed_excludes_held_back_types` — no doc has first product code in `{"7163","8658","L4730","L4770","7161","3475"}`.
@@ -266,6 +273,8 @@ Tests mirror this under `backend/tests/unit/sheets/` (new package: add `__init__
 - [ ] **Step 3: Implement** the converted seed file, seeder, lifespan call (failures are logged, never block startup), and a "Sheet type data" section in `THIRD_PARTY_NOTICES.md`: project URL `https://github.com/j-evins/glabels-qt`, commit `37901c1`, the copyright line, the full MIT text; a line that L4731REV/L4736REV cite Labelplanet and MR-Label as sources of facts only.
 - [ ] **Step 4: Run, expect PASS** — `pytest tests/unit/seed -v`.
 - [ ] **Step 5: Commit** — `git add backend/app/seed/sheet_types.json backend/app/seed/sheet_seed.py backend/app/main.py THIRD_PARTY_NOTICES.md backend/tests/unit/seed && git commit -m "feat(api): seed 36 sheet types from gLabels-qt and third-party sources"`
+
+<!-- REUSE-IgnoreEnd -->
 
 ---
 

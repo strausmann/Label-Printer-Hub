@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Build-time only: the licence check, the licence list and the CycloneDX document of the web bundle.
 // Nothing here is imported by the app; `vite.config.ts` feeds it to `rollup-license-plugin`.
 import { existsSync, readFileSync, realpathSync } from "node:fs";

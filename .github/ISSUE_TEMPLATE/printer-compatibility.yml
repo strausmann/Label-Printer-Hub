@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: Printer compatibility report
 description: Tell us how a printer works with the hub — tested, partly working or not working
 title: "[printer] <vendor> <model>"

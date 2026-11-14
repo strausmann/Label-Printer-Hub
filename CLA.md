@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Contributor License Agreement (CLA)
 
 Thank you for your interest in contributing to **Labelyard** ("the
@@ -11,7 +16,11 @@ This license is for your protection as a Contributor as well as the protection
 of the Maintainer and its users; it does not change your rights to use your
 own Contributions for any other purpose.
 
+<!-- REUSE-IgnoreStart -->
+
 ## 1. Grant of Copyright License
+
+<!-- REUSE-IgnoreEnd -->
 
 Subject to the terms and conditions of this Agreement, You hereby grant to the
 Maintainer and to recipients of software distributed by the Maintainer a

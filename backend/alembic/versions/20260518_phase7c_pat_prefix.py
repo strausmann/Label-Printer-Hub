@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7c — update key_prefix to VARCHAR(16) for lh_pat_ format.
 
 Revision ID: 20260518_phase7c_pat_prefix

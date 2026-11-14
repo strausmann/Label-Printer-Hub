@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { describe, expect, it, vi } from "vitest";
 import { createDecoder, type DecoderDeps, type WorkerLike } from "./decoder";
 

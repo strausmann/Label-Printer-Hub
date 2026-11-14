@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The Spoolman and Grocy webhooks hand their job to the print queue (#188).
 
 The real app and lifespan run against a temp database with one tape printer. Its backend is a

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { PRIMARY_BUTTON } from "../features/ui";
 import { useLingui } from "@lingui/react/macro";
 import { useState, type FormEvent } from "react";

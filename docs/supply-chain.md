@@ -235,10 +235,16 @@ default. See `CONTRIBUTING.md` for the steps.
 
 ## SPDX headers
 
-Every file the project owns carries an SPDX header (`SPDX-FileCopyrightText` and `SPDX-License-Identifier:
-AGPL-3.0-or-later`), checked in CI with `reuse lint`. Files that cannot carry a comment (data files, binaries,
-generated files) are covered by `REUSE.toml`. This lands with the header sweep (B9) at the end of milestone 1.6.0;
-until then not every file has a header.
+<!-- REUSE-IgnoreStart -->
+
+Every file the project owns carries an SPDX header (`SPDX-FileCopyrightText` and
+`SPDX-License-Identifier: AGPL-3.0-or-later`) in its own comment syntax, checked in CI with `reuse lint` (job
+`reuse`). Files that cannot carry a comment (data files, binaries, generated files, website pages with front matter)
+and third-party files with their own licence are covered by `REUSE.toml`; the licence texts are in `LICENSES/`. The
+backend test `tests/unit/test_spdx_headers.py` checks that the header sits in the file itself wherever a comment is
+possible. How to head a new file: `CONTRIBUTING.md`, section "Licence headers".
+
+<!-- REUSE-IgnoreEnd -->
 
 ## What is not provided
 

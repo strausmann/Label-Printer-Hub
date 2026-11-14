@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Shared fixtures for API integration tests.
 
 Phase 1k.1a (Task 25): Removed template_loader and seed_templates references.

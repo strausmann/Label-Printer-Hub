@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Calibration API for page printers (spec 15, 18).
 
 Reads and the fit need ``read`` scope, writes need ``admin``; every route also checks the

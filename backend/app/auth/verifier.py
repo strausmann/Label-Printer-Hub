@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """bcrypt verifier with LRU cache to avoid slow re-verification on every request.
 
 bcrypt.checkpw takes ~100-200ms per call (by design — work factor 12).  For a

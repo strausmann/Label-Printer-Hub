@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/strausmann/labelyard/main/docs/brand/labelyard/icon-192.png" alt="Labelyard" width="96">
 </p>

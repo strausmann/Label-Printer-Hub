@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integrations and the webhook key follow the runtime settings store (D4/D5)."""
 
 from __future__ import annotations

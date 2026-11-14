@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """FastAPI startup/shutdown helpers — DB-layer concerns only.
 
 Each function here is a focused async helper that the FastAPI lifespan

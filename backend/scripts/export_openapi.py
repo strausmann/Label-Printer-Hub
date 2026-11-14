@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print the backend's OpenAPI document to stdout (``pnpm gen:api`` in ``frontend/``).
 
 Needs no running server and no real settings: the app factory is imported with

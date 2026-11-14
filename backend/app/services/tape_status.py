@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The one status-cache schema for tape printers, and its only reader (#229).
 
 ``StatusProbeProducer`` writes it, the status, tape and capabilities routes read it through

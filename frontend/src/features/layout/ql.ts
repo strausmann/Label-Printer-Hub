@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useEffect, useState } from "react";
 import type { components } from "../../api/schema.gen";
 import { tapeMmOf } from "../lookup/apps";

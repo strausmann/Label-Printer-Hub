@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Integration tests for per-key rate limiting — Phase 7c Step 5.
 
 Tests the 429 response when a key exceeds its rate limit.

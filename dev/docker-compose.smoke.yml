@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Local smoke test — build and start the hub (one container: API and web UI).
 #
 #   docker compose -f dev/docker-compose.smoke.yml up --build

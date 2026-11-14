@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pydantic v2-Schemas für die Admin-API der Drucker-Verwaltung (Task 2.1).
 
 Referenzen:

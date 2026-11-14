@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The lifespan warns once, by name only, about variables that still use the old prefix."""
 
 from __future__ import annotations

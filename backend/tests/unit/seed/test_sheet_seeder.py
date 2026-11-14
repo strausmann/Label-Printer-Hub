@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The sheet type seeder (Plan 1, Task 5; OC-14)."""
 
 from __future__ import annotations
@@ -172,7 +175,9 @@ async def test_notices_list_glabels() -> None:
     for needle in (
         "gLabels-qt",
         "37901c1",
+        # REUSE-IgnoreStart
         "Copyright (C) 2001-2026 Jaye Evins",
+        # REUSE-IgnoreEnd
         "Permission is hereby granted, free of charge",
     ):
         assert needle in text

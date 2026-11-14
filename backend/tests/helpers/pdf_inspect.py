@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Read back what ``write_pdf`` produced, without a PDF library.
 
 These helpers are regular expressions and a tiny content-stream interpreter over the output of

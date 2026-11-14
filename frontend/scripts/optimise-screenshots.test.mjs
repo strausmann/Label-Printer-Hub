@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // node --test frontend/scripts/optimise-screenshots.test.mjs
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { defineConfig, devices } from "@playwright/test";
 import { BOOTSTRAP, FAKE_CAMERA, MAIN } from "./e2e/env";
 

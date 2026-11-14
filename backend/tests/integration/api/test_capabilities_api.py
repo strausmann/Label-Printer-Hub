@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """GET /api/v1/printers/{id}/capabilities: tape and page printers, cache only, no connection."""
 
 from __future__ import annotations

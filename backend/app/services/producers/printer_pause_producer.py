@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Publishes ``printer.status`` on the printer state channel when the queue
 pauses or resumes a printer, so the UI shows the stuck state live."""
 

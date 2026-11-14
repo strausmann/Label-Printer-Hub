@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Integration Plugins
 
 Lookup clients for external apps (Snipe-IT, Spoolman, Grocy,

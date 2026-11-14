@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """OpenAPI completeness gate for Phase 6a + 6b REST API surface.
 
 Walks ``app.openapi()`` and asserts the API surface is complete and

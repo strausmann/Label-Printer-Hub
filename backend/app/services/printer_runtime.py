@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrinterRuntime (#224): the one code path that wires a printer into the running hub.
 
 The lifespan attaches every enabled printer at startup; an admin change calls ``reconcile``

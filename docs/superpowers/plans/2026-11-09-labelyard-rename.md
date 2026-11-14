@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Rename "Label Printer Hub" to Labelyard — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -604,8 +609,7 @@ Order of the items below (Blocker 1 of the plan review): Docker Hub, domain veri
 
 GitHub (after the milestone merge):
 - [ ] Rename the repo `strausmann/Label-Printer-Hub` → `strausmann/labelyard` (lowercase, matching the image). GitHub redirects web, API and git URLs; update local remotes anyway (`git remote set-url origin git@github.com:strausmann/labelyard.git`). Then start the release run (`gh workflow run release.yml`) if the nightly one is not imminent; it publishes `labelyard:1.6.0`.
-- [ ] Right after the rename and before the first release run, in **one commit**: `.releaserc.json` `repositoryUrl` → `git@github.com:strausmann/labelyard.git`, the pin in `backend/tests/unit/test_release_workflows.py::test_semantic_release_pushes_over_ssh`, and the two temporary entries `TEMPORARY_REPO_URL_LINES` in `scripts/brand_guard.py` (with their tests). The root `package.json` already points to the new repository. (Not in Task 6: until the rename the new address does not exist, and the release runs on merge.)
-- [ ] In that same commit, remove the temporary guard allowance for `.releaserc.json` and `test_release_workflows.py` after the rename (`TEMPORARY_REPO_URL_FILES` in `scripts/brand_guard.py` and its test `test_temporary_repo_url_allowance_covers_exactly_two_paths`); `python3 scripts/brand_guard.py` stays at exit 0.
+- [ ] Right after the rename and before the first release run, in **one commit**: `.releaserc.json` `repositoryUrl` → `git@github.com:strausmann/labelyard.git`, the pin in `backend/tests/unit/test_release_workflows.py::test_semantic_release_pushes_over_ssh`, and the two temporary entries `TEMPORARY_REPO_URL_LINES` in `scripts/brand_guard.py` with their tests (`test_temporary_repo_url_allowance_covers_exactly_two_lines`, `test_temporary_repo_url_allowance_is_the_line_not_the_file`); `python3 scripts/brand_guard.py` stays at exit 0. The root `package.json` already points to the new repository. (Not in Task 6: until the rename the new address does not exist, and the release runs on merge.)
 - [ ] Release checklist, every release: lift the example image default (`HUB_VERSION:-<version>`) in `examples/*.yml`, `examples/.env.example` and `examples/README.md` to the new version, or add a test that fails when the default differs from the current version.
 - [ ] Repository metadata, social preview and package pages: Task 12.
 - [ ] GHCR: the package `labelyard` exists since the first preview (Task 11 Step 5); set it to **public**, link it to the renamed repo, and grant the repo the Admin role under "Manage Actions access" (needed by `registry-cleanup.yml`).

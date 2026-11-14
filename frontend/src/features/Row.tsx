@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { ReactNode } from "react";
 
 /** One label/value line of a `<dl>` panel. On phones the label is narrower, so a value like a licence id stays beside it. */

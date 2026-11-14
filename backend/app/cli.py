@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Container command line: ``labelyard admin create-key`` (spec 8.2, D7).
 
 Recovery when every admin key is lost. Whoever can run commands in the container

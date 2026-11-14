@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # The former product name is an error unless the line also names Labelyard (the subtitle rule of
 # scripts/brand_guard.py). Vale has no per-line exception for a plain existence rule, so this is
 # a script over the raw file: it looks line by line and skips fenced and inline code.

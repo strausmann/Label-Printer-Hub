@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1f — /api/v1/printers/{id}/status reads cache, never blocks."""
 
 from __future__ import annotations

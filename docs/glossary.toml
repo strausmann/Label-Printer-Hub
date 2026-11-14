@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # One entry per concept. This file feeds three things, so they cannot drift apart:
 #   * the glossary pages of the website (using/glossary, en and de),
 #   * the Vale prose rules and vocabularies (.vale/),

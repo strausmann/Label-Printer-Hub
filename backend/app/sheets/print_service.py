@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Printing onto sheets: item resolution, the read-only preview and the print (spec 12.6, 15).
 
 ``resolve_items`` turns each requested item into label data, by an integration lookup or from

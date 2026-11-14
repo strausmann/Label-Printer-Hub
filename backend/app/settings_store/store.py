@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Runtime settings store.
 
 D4: an environment variable wins over a stored value; such a setting is *locked*.

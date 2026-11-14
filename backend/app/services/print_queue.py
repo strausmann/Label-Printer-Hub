@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Per-printer async work queue mit Persistierungs-Boundary.
 
 Brother PT/QL printers expose TCP/9100 as a single-stream channel — there is

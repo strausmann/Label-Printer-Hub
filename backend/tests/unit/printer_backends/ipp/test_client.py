@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """IPP client over httpx: URI rules, operations, errors and limits.
 
 Most tests drive ``FakeIppPrinter`` through ``httpx.ASGITransport``. Because the

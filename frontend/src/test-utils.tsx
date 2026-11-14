@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createMemoryHistory } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { act, render } from "@testing-library/react";

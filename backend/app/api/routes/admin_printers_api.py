@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """JSON-Admin-API für Drucker-Verwaltung (Issue #124, Task 3.1).
 
 Nur JSON — keine HTML-/Web-Routes, kein CSRF. Frontend (Go) folgt in Phase 7.

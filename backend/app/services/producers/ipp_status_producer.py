@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Polls an IPP page printer; writes the status cache and publishes ``printer.status`` on change.
 
 D18: chosen by backend kind (``ipp``); tape printers keep ``StatusProbeProducer``.

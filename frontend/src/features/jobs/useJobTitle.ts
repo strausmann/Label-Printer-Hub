@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { usePrinterStatus } from "../printers/api";
 import { useSheetType } from "../archive/api";
 import { typeLabel } from "../sheets/typeLabel";

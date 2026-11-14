@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet type export and import (spec 9.2, 9.3, OC-12).
 
 One JSON document per type and version, all lengths in millimetres. Import treats the document

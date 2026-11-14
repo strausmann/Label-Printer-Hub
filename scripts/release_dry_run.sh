@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Compute the version semantic-release would release for a commit message, without
 # publishing anything. Everything happens in a throw-away git repository with a local
 # bare repository as its "remote"; no network, no token, no tag leaves the temp dir.

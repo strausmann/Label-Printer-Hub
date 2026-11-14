@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Every API response names the version of the running hub (#288).
 
 A browser tab opened before an update compares this value with the version its own bundle

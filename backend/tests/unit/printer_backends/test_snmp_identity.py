@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``query_identity`` (#231): serial and MAC in one request, never raising; preflight unchanged."""
 
 from __future__ import annotations

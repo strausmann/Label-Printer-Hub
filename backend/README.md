@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Labelyard — backend
 
 Python/FastAPI backend for the [Labelyard](https://github.com/strausmann/labelyard), the self-hosted Label Printer Hub.

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#277: who may act on a held tape run — real API keys, no dependency overrides.
 
 A read key gets 403 on continue / reprint / discard; a print key limited to another printer

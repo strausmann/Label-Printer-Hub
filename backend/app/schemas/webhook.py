@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """API schemas for webhook endpoints (Phase 6a Task 5).
 
 Spoolman and Grocy both push event payloads when their data changes.  The hub

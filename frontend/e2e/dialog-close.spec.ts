@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { Browser, Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, signInWith, test } from "./fixtures";
@@ -63,7 +66,15 @@ test.describe("phone 390x844, touch", () => {
   // maintainer saw (#318); the other two are the ways out of the list the issue names.
   const ways = [
     { name: "with the list still open (the keyboard closed)", leave: async () => {} },
-    { name: "after Escape on the list", leave: () => page.keyboard.press("Escape") },
+    {
+      name: "after Escape on the list",
+      leave: async () => {
+        await page.keyboard.press("Escape");
+        // Escape closed the list (#322); the dialog is still open and the field keeps the focus.
+        await expect(page.locator('[role="listbox"]')).toHaveCount(0);
+        await expect(fieldIn(page)).toBeFocused();
+      },
+    },
     { name: "after a tap on the dialog heading", leave: () => page.locator('[role="dialog"] :is(h1, h2, h3)').first().tap() },
   ];
   for (const way of ways) {

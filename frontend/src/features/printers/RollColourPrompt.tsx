@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";

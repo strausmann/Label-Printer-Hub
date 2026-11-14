@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Global FastAPI exception handlers for service-layer errors.
 
 Each handler maps a domain exception to an RFC 7807 ProblemDetail response.

@@ -1,4 +1,9 @@
 <!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!--
 Thanks for your contribution. Please fill in this template completely.
 The PR title MUST follow Conventional Commits — see CONTRIBUTING.md.
 -->

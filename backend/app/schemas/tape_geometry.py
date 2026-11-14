@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Brother printer tape geometry — pixel dimensions per supported tape width.
 
 Each TapeGeometry entry describes the printable area and layout parameters for

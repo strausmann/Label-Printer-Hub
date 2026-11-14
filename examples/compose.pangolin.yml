@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # ============================================================================
 # Labelyard — Pangolin
 # One container: the backend serves the API and the web UI (ADR 0015) and is

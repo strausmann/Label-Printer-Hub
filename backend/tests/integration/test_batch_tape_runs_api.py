@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#277 over HTTP: the run of a tape batch, continue, and reprint from label N.
 
 The batch row is real; the app's print queue is replaced by one whose printer is the

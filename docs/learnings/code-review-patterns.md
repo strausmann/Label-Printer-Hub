@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Code-review patterns and recurring findings
 
 This file collects recurring findings from PR reviews — both AI (Gemini Code Assist, GitHub Copilot) and human — so the same mistakes don't show up in PR after PR.

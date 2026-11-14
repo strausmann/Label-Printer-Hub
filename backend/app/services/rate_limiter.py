@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """In-memory token-bucket rate limiter — Phase 7c Step 5.
 
 Single-instance design (no Redis): suitable for HomeLab single-process

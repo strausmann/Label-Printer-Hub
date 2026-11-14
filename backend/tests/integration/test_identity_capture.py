@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Both status producers hand a hardware identity to the sink after a successful probe (#231).
 
 Real temp database (foreign keys on), SNMP and IPP faked; nothing touches the network.

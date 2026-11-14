@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLite-backed JobStore — delegates to jobs_repo for actual SQL.
 
 Uses async_sessionmaker für per-operation sessions so we get clean

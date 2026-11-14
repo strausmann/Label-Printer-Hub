@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guards for ``licence-policy.yml``, the one policy file every licence gate reads."""
 
 from __future__ import annotations

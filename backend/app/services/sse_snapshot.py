@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Initial state snapshot for SSE streams.
 
 On connect a stream emits the current state of a printer once, so a client does

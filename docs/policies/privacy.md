@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Privacy policy for this repository
 
 This is a public, open-source project. Nothing in this repository may reveal information about the maintainer's private network, infrastructure, or accounts.

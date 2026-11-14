@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for scripts/brand_guard.py.
 
 The old names are assembled from parts on purpose: this file is scanned by the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """GET /api/v1/printers/{id}/status for IPP page printers (cache written by IppStatusProducer)
 and the regression for tape printers (new fields stay null)."""
 

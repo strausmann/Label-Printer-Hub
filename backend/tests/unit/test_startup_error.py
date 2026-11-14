@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for F3 — friendly startup error when Settings validation fails.
 
 When a required env var is misconfigured (e.g. LABELYARD_WEBHOOK_API_KEY

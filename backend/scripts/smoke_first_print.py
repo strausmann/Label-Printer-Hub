@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Manual hardware smoke for First-Print.
 
 Run against a real Brother PT-P750W on the local network:

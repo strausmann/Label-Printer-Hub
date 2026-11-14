@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pure placement planner: which items go into which cells (spec 8, 10.1, 10.2).
 
 Decides ``first_free`` and explicit placements, skipped cells, overflow onto further sheets,

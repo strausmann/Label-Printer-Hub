@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: prose
 
 # Prose checks for the docs: Vale (v3.26.0, installed by scripts/vale_setup.sh with a verified

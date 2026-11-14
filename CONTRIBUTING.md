@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Contributing to Labelyard
 
 Thanks for your interest in contributing! This document explains how to participate effectively.
@@ -347,6 +352,62 @@ cd backend && /tmp/tool/bin/python -m scripts.licence_report \
   --python /tmp/rt/bin/python --policy ../licence-policy.yml \
   --own-project pyproject.toml --extra licences/extra-records.json --require-texts
 ```
+
+## Licence headers
+
+<!-- REUSE-IgnoreStart -->
+
+Every file the project owns starts with two SPDX lines in its own comment syntax:
+
+```text
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+Put them at the top, after a shebang (`#!`) or a `<!doctype html>` line if the file has one, and before the
+module docstring:
+
+```python
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+The same `#` form applies to shell, YAML, TOML, INI, `Dockerfile`, `Makefile`, `.gitignore` and `.env.example`.
+
+```ts
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+```
+
+The same `//` form applies to `.tsx`, `.js`, `.mjs`, `.cjs` and the front matter of an `.astro` component.
+
+```css
+/*
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+*/
+```
+
+```markdown
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+```
+
+The Markdown form also applies to HTML.
+
+- The year is the year the file was created. It is not bumped when the file changes.
+- You may add your own line `SPDX-FileCopyrightText: <year> <your name>` below the first one. This is voluntary;
+  the [CLA](CLA.md) stays as it is.
+- Files that cannot carry a comment (JSON, lockfiles, images, binary fixtures, generated files, the website pages
+  with front matter) and third-party files are covered by [`REUSE.toml`](REUSE.toml). A new path there needs a
+  comment that says why. Third-party files keep their own licence and copyright.
+- `reuse lint` must pass (CI job `reuse`, locally `pipx run reuse lint` from the repository root). The backend test
+  `tests/unit/test_spdx_headers.py` also checks that the header is in the file itself wherever a comment is
+  possible.
+
+<!-- REUSE-IgnoreEnd -->
 
 ## Milestones, branches and releases
 

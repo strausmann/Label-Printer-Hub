@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """IPP codec (RFC 8010) — fixtures, round trips and hostile input.
 
 The ``.bin`` fixtures are assembled by hand in ``fixtures/assemble.py`` from the

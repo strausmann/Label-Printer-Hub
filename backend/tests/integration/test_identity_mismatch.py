@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A different device behind a printer's address is flagged, never stored over (#231).
 
 Two layers, both on a real temp database:

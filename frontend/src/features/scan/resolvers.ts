@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { parseLabelPath } from "../lookup/labelUrl";
 import { sheetResolver } from "../sheets/resolver";
 import type { ScanHit } from "./decoder";

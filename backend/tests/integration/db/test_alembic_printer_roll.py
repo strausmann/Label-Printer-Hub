@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Migration 20261109a1: the printer_roll table (#229). Additive; 1.4.0 rows are kept."""
 
 from __future__ import annotations

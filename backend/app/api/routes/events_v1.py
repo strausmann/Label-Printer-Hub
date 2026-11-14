@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Global JSON event stream: ``GET /api/v1/events[?printer_id=<uuid>]`` (web UI).
 
 One ``EventSource`` per browser tab. Authenticates like every ``read`` route

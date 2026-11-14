@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Storage of the manual calibration per page printer and tray.
 
 The row stores the printer's deviation around the page centre; the hub applies the inverse

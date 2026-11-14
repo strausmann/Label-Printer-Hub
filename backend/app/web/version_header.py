@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Report the running hub version on every API response (#288).
 
 A browser tab that was opened before an update keeps running the old web app against the new
