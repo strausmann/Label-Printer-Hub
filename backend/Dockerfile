@@ -100,6 +100,13 @@ RUN mkdir -p app && touch app/__init__.py \
 COPY backend/app/ ./app/
 RUN pip install --no-deps --force-reinstall .
 
+# The runtime venv needs no installer. pip ships a vendored copy of setuptools/pkg_resources
+# 70.3.0 (and its bom.cdx.json lists it), which image scanners report as CVE-2025-47273 (#332).
+# Nothing at runtime imports pip, setuptools or wheel (entry points are read with the standard
+# importlib.metadata). Removing them here, before the licence report below, keeps backend.json
+# and the image SBOM consistent with what the venv really holds.
+RUN pip uninstall -y pip setuptools wheel
+
 # Licence check of what the image actually ships. Python has no lockfile, so the only
 # deterministic place to judge the backend's licences is here, against the packages that
 # were just installed. A violation fails the build. The policy is the repository's single
