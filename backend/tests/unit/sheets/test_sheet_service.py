@@ -20,12 +20,14 @@ from app.sheets.errors import (
     CellsNotUnconfirmedError,
     CellsTakenError,
     InvalidFieldError,
+    NoUnconfirmedCellsError,
     SheetBusyError,
     SheetDiscardedError,
     SheetNotFoundError,
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
+    UnconfirmedCountChangedError,
 )
 from app.sheets.geometry import Geometry
 from app.sheets.sheet_service import MarkedCell
@@ -366,6 +368,122 @@ async def test_resolve_not_printed_id_cell_keeps_id_unprinted(
     detail = await ss.resolve_cells(session, sheet.code, [1], "not_printed", actor="x")
     assert detail.sheet.id_printed is False
     assert detail.free == 48
+
+
+# --- resolve all -----------------------------------------------------------------------
+
+
+async def _three_unconfirmed(session: AsyncSession) -> str:
+    """Cells 2, 5 and 9 unconfirmed, cell 3 used."""
+    sheet = await _create(session, used_cells=[MarkedCell(3)])
+    job = uuid4()
+    await _add_cell(session, sheet.code, 2, "unconfirmed", job_id=job, source="grocy")
+    await _add_cell(session, sheet.code, 5, "unconfirmed", job_id=job, source="grocy")
+    await _add_cell(session, sheet.code, 9, "unconfirmed", job_id=job, source="hub")
+    return sheet.code
+
+
+async def test_resolve_all_printed_settles_every_unconfirmed_cell(
+    session: AsyncSession, l4736: str
+) -> None:
+    code = await _three_unconfirmed(session)
+    bus = FakeBus()
+    detail = await ss.resolve_all_cells(
+        session, code, "printed", expected_count=None, actor="person", bus=bus
+    )
+    states = {c.cell_no: c.state for c in detail.cells}
+    assert states == {2: "used", 3: "used", 5: "used", 9: "used"}
+    assert next(c for c in detail.cells if c.cell_no == 3).updated_by != "person"
+    assert detail.unconfirmed == 0
+    assert [e.data["changed"] for _, e in bus.events] == [[2, 5, 9]]
+    assert [e.event_type for _, e in bus.events] == ["sheet.updated"]
+
+
+async def test_resolve_all_not_printed_frees_them(session: AsyncSession, l4736: str) -> None:
+    code = await _three_unconfirmed(session)
+    before = await ss.get_sheet(session, code)
+    detail = await ss.resolve_all_cells(
+        session, code, "not_printed", expected_count=3, actor="person"
+    )
+    assert [c.cell_no for c in detail.cells] == [3]
+    assert detail.free == before.free + 3
+
+
+async def test_resolve_all_keeps_id_printed_rule(session: AsyncSession, l4736: str) -> None:
+    code = await _three_unconfirmed(session)  # cell 9 is the hub ID cell
+    detail = await ss.resolve_all_cells(
+        session, code, "printed", expected_count=None, actor="person"
+    )
+    assert detail.sheet.id_printed is True
+    code2 = (await _create(session)).code
+    await _add_cell(session, code2, 1, "unconfirmed", job_id=uuid4(), source="hub")
+    detail = await ss.resolve_all_cells(
+        session, code2, "not_printed", expected_count=None, actor="person"
+    )
+    assert detail.sheet.id_printed is False
+
+
+async def test_resolve_all_without_unconfirmed_is_409(session: AsyncSession, l4736: str) -> None:
+    sheet = await _create(session, used_cells=[MarkedCell(1)])
+    bus = FakeBus()
+    with pytest.raises(NoUnconfirmedCellsError) as info:
+        await ss.resolve_all_cells(
+            session, sheet.code, "printed", expected_count=None, actor="t", bus=bus
+        )
+    assert info.value.status == 409
+    assert info.value.error_code == "no_unconfirmed_cells"
+    assert bus.events == []
+    assert await _cell_rows(session) == 1
+
+
+async def test_resolve_all_refuses_changed_count(session: AsyncSession, l4736: str) -> None:
+    code = await _three_unconfirmed(session)
+    bus = FakeBus()
+    with pytest.raises(UnconfirmedCountChangedError) as info:
+        await ss.resolve_all_cells(session, code, "printed", expected_count=2, actor="t", bus=bus)
+    assert info.value.status == 409
+    assert info.value.error_code == "unconfirmed_count_changed"
+    assert info.value.detail == {"unconfirmed": 3}
+    assert bus.events == []
+    detail = await ss.get_sheet(session, code)
+    assert detail.unconfirmed == 3
+
+
+async def test_resolve_all_is_one_transaction(
+    async_session_factory: async_sessionmaker[AsyncSession],
+    l4736: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async with async_session_factory() as s:
+        code = await _three_unconfirmed(s)
+        calls = 0
+        real_delete = s.delete
+
+        async def flaky(obj: Any) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise RuntimeError("second cell fails")
+            await real_delete(obj)
+
+        monkeypatch.setattr(s, "delete", flaky)
+        with pytest.raises(RuntimeError):
+            await ss.resolve_all_cells(s, code, "not_printed", expected_count=None, actor="t")
+    async with async_session_factory() as fresh:
+        detail = await ss.get_sheet(fresh, code)
+        assert {c.cell_no: c.state for c in detail.cells} == {
+            2: "unconfirmed",
+            3: "used",
+            5: "unconfirmed",
+            9: "unconfirmed",
+        }
+
+
+async def test_resolve_all_on_discarded_sheet_is_409(session: AsyncSession, l4736: str) -> None:
+    sheet = await _create(session)
+    await ss.discard_sheet(session, sheet.code, actor="t")
+    with pytest.raises(SheetDiscardedError):
+        await ss.resolve_all_cells(session, sheet.code, "printed", expected_count=None, actor="t")
 
 
 # --- discard ---------------------------------------------------------------------------

@@ -167,6 +167,21 @@ class CellsNotUnconfirmedError(SheetApiError):
         super().__init__(detail={"cells": cells})
 
 
+class NoUnconfirmedCellsError(SheetApiError):
+    status = 409
+    error_code = "no_unconfirmed_cells"
+    message = "The sheet has no cells waiting for confirmation."
+
+
+class UnconfirmedCountChangedError(SheetApiError):
+    status = 409
+    error_code = "unconfirmed_count_changed"
+    message = "The number of cells waiting for confirmation has changed."
+
+    def __init__(self, unconfirmed: int) -> None:
+        super().__init__(detail={"unconfirmed": unconfirmed})
+
+
 class CellOutOfRangeError(SheetApiError):
     status = 422
     error_code = "cell_out_of_range"

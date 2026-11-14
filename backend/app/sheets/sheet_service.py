@@ -30,6 +30,7 @@ from app.sheets.errors import (
     CellsNotUnconfirmedError,
     CellsTakenError,
     InvalidFieldError,
+    NoUnconfirmedCellsError,
     SheetBusyError,
     SheetDiscardedError,
     SheetNotFoundError,
@@ -37,6 +38,7 @@ from app.sheets.errors import (
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
     TextTooLongError,
+    UnconfirmedCountChangedError,
 )
 from app.sheets.events import publish_sheet_updated
 from app.sheets.text import log_value, sanitise_text
@@ -461,6 +463,45 @@ async def unmark_cells(
     return detail
 
 
+async def _settle_unconfirmed(
+    session: AsyncSession,
+    before: SheetDetail,
+    wanted: list[int],
+    outcome: Literal["printed", "not_printed"],
+    actor: str,
+) -> SheetDetail:
+    """Settle ``wanted`` (all unconfirmed) inside the caller's write transaction.
+
+    Flushes but never commits: the caller commits once, so a failure on any cell leaves
+    every cell untouched.
+    """
+    rows = {c.cell_no: c for c in before.cells}
+    now = _now()
+    margin_jobs: dict[UUID, Job] = {}
+    if outcome == "printed":  # a job row already purged by retention carries no margin ID
+        job_ids = sorted({jid for n in wanted if (jid := rows[n].job_id) is not None})
+        margin_jobs = await repo.jobs_by_id(session, job_ids)
+    for n in wanted:
+        row = rows[n]
+        if outcome == "not_printed":
+            await session.delete(row)
+            continue
+        before.sheet.last_used_at = now
+        row.state = "used"  # source, purpose, ref and job id stay
+        row.updated_at = now
+        row.updated_by = actor
+        if row.source == "hub":  # the ID label is on the sheet now (spec 7.1)
+            before.sheet.id_printed = True
+        elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
+            before.sheet.id_printed = True  # the job carried the margin ID
+        # A separate check, not a third ``elif``: the ID-cell job of a ``cell`` sheet
+        # carries the mark too, and its hub cell must set both flags.
+        if row.job_id is not None and repo.feed_mark_sheet(margin_jobs.get(row.job_id)):
+            before.sheet.feed_mark_printed = True
+    await session.flush()
+    return await _detail(session, before.sheet)
+
+
 async def resolve_cells(
     session: AsyncSession,
     code: str,
@@ -483,33 +524,45 @@ async def resolve_cells(
         bad = [n for n in wanted if n not in rows or rows[n].state != "unconfirmed"]
         if bad:
             raise CellsNotUnconfirmedError(bad)
-        now = _now()
-        margin_jobs: dict[UUID, Job] = {}
-        if outcome == "printed":  # a job row already purged by retention carries no margin ID
-            job_ids = sorted({jid for n in wanted if (jid := rows[n].job_id) is not None})
-            margin_jobs = await repo.jobs_by_id(session, job_ids)
-        for n in wanted:
-            row = rows[n]
-            if outcome == "not_printed":
-                await session.delete(row)
-                continue
-            before.sheet.last_used_at = now
-            row.state = "used"  # source, purpose, ref and job id stay
-            row.updated_at = now
-            row.updated_by = actor
-            if row.source == "hub":  # the ID label is on the sheet now (spec 7.1)
-                before.sheet.id_printed = True
-            elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
-                before.sheet.id_printed = True  # the job carried the margin ID
-            # A separate check, not a third ``elif``: the ID-cell job of a ``cell`` sheet
-            # carries the mark too, and its hub cell must set both flags.
-            if row.job_id is not None and repo.feed_mark_sheet(margin_jobs.get(row.job_id)):
-                before.sheet.feed_mark_printed = True
-        await session.flush()
-        detail = await _detail(session, before.sheet)
+        detail = await _settle_unconfirmed(session, before, wanted, outcome, actor)
         await session.commit()
     logger.info(
         "sheet %s: %d cells resolved as %s", log_value(code), len(wanted), log_value(outcome)
+    )
+    _publish(bus, detail, wanted)
+    return detail
+
+
+async def resolve_all_cells(
+    session: AsyncSession,
+    code: str,
+    outcome: Literal["printed", "not_printed"],
+    *,
+    expected_count: int | None,
+    actor: str,
+    bus: EventBus | None = None,
+) -> SheetDetail:
+    """Settle every unconfirmed cell of a sheet in one transaction (#282).
+
+    The unconfirmed set is read under the write lock. ``expected_count`` lets a caller
+    that showed a number to a person refuse the call when the set has changed since.
+    """
+    if outcome not in ("printed", "not_printed"):
+        raise InvalidFieldError("outcome", "must be printed or not_printed")
+    async with write_transaction(session):
+        before = await _writable(session, code)
+        wanted = sorted(c.cell_no for c in before.cells if c.state == "unconfirmed")
+        if not wanted:
+            raise NoUnconfirmedCellsError()
+        if expected_count is not None and expected_count != len(wanted):
+            raise UnconfirmedCountChangedError(len(wanted))
+        detail = await _settle_unconfirmed(session, before, wanted, outcome, actor)
+        await session.commit()
+    logger.info(
+        "sheet %s: all %d unconfirmed cells resolved as %s",
+        log_value(code),
+        len(wanted),
+        log_value(outcome),
     )
     _publish(bus, detail, wanted)
     return detail

@@ -1242,6 +1242,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sheets/{code}/cells/resolve-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle every cell waiting for confirmation as printed or not printed */
+        post: operations["resolve_all_cells_api_v1_sheets__code__cells_resolve_all_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sheets/{code}/cells/unmark": {
         parameters: {
             query?: never;
@@ -3053,6 +3070,19 @@ export interface components {
              * @description Labels not re-queued because their stored job was cleaned up.
              */
             skipped_job_ids: string[];
+        };
+        /** ResolveAllRequest */
+        ResolveAllRequest: {
+            /**
+             * Expected Count
+             * @description The number of unconfirmed cells the caller saw. When the sheet has a different number now, nothing is settled (409 unconfirmed_count_changed).
+             */
+            expected_count?: number | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "printed" | "not_printed";
         };
         /** ResolveRequest */
         ResolveRequest: {
@@ -7079,6 +7109,60 @@ export interface operations {
                 };
             };
             /** @description Sheet is discarded, or the cells are in the wrong state. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    resolve_all_cells_api_v1_sheets__code__cells_resolve_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveAllRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, nothing is waiting for confirmation (no_unconfirmed_cells), or the count differs from expected_count (unconfirmed_count_changed, error_detail.unconfirmed holds the current number). */
             409: {
                 headers: {
                     [name: string]: unknown;

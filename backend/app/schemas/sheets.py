@@ -182,6 +182,19 @@ class ResolveRequest(CellNumbers):
     outcome: Literal["printed", "not_printed"]
 
 
+class ResolveAllRequest(_Body):
+    outcome: Literal["printed", "not_printed"]
+    expected_count: int | None = Field(
+        default=None,
+        ge=1,
+        le=100_000,
+        description=(
+            "The number of unconfirmed cells the caller saw. When the sheet has a different "
+            "number now, nothing is settled (409 unconfirmed_count_changed)."
+        ),
+    )
+
+
 def _drop_default(schema: dict[str, Any]) -> None:
     schema.pop("default", None)
 

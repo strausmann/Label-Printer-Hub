@@ -32,6 +32,7 @@ from app.schemas.sheets import (
     MarginCheckRead,
     MarkRequest,
     NextCode,
+    ResolveAllRequest,
     ResolveRequest,
     SheetCreate,
     SheetCreated,
@@ -414,6 +415,36 @@ async def resolve_cells(
     with mapped():
         detail = await ss.resolve_cells(
             session, code, body.cells, body.outcome, actor=actor(auth), bus=_bus(request)
+        )
+    return _read(detail)
+
+
+@router.post(
+    "/api/v1/sheets/{code}/cells/resolve-all",
+    response_model=SheetRead,
+    summary="Settle every cell waiting for confirmation as printed or not printed",
+    responses={
+        **_WRITE_ERRORS,
+        409: {
+            "description": (
+                "Sheet is discarded, nothing is waiting for confirmation "
+                "(no_unconfirmed_cells), or the count differs from expected_count "
+                "(unconfirmed_count_changed, error_detail.unconfirmed holds the current number)."
+            )
+        },
+    },
+)
+async def resolve_all_cells(
+    code: CodePath, body: ResolveAllRequest, request: Request, session: SessionDep, auth: PrintDep
+) -> SheetRead:
+    with mapped():
+        detail = await ss.resolve_all_cells(
+            session,
+            code,
+            body.outcome,
+            expected_count=body.expected_count,
+            actor=actor(auth),
+            bus=_bus(request),
         )
     return _read(detail)
 
