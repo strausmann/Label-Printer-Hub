@@ -212,11 +212,11 @@ def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> int:
     refused outright, so for N above the limit N lookups cost less than N single GET lookups.
     All or nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover
     it, raised before any lookup starts. Contexts without a key limit (SSO, bypass) are not
-    charged. Returns the tokens taken, for :func:`refund_lookup_fan_out`.
+    charged. Returns the tokens actually taken, for :func:`refund_lookup_fan_out`.
     """
     if auth.api_key_id is None or auth.rate_limit_per_minute is None:
         return 0
-    allowed, retry_after = _rate_limiter.try_consume(
+    allowed, retry_after, taken = _rate_limiter.try_consume(
         auth.api_key_id, lookups - 1, limit_per_minute=auth.rate_limit_per_minute
     )
     if not allowed:
@@ -232,7 +232,7 @@ def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> int:
             },
             headers={"Retry-After": str(retry_after)},
         )
-    return max(0, min(lookups - 1, auth.rate_limit_per_minute - 1))
+    return taken
 
 
 def refund_lookup_fan_out(auth: AuthContext, charged: int) -> None:

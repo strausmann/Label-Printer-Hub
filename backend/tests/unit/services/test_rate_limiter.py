@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
+import pytest
+
 
 def test_rate_limiter_importable():
     from app.services.rate_limiter import RateLimiter
@@ -137,11 +139,11 @@ def test_try_consume_takes_all_or_nothing():
 
     rl = RateLimiter()
     assert rl.check_and_consume("k", limit_per_minute=10)  # 9 left
-    assert rl.try_consume("k", 5, limit_per_minute=10) == (True, 0)  # 4 left
-    allowed, retry_after = rl.try_consume("k", 5, limit_per_minute=10)
-    assert not allowed and retry_after >= 1
+    assert rl.try_consume("k", 5, limit_per_minute=10) == (True, 0, 5)  # 4 left
+    allowed, retry_after, taken = rl.try_consume("k", 5, limit_per_minute=10)
+    assert not allowed and retry_after >= 1 and taken == 0
     # the refusal took nothing: the 4 left can still be taken
-    assert rl.try_consume("k", 4, limit_per_minute=10) == (True, 0)
+    assert rl.try_consume("k", 4, limit_per_minute=10) == (True, 0, 4)
 
 
 def test_try_consume_cap_leaves_room_for_the_requests_own_token():
@@ -151,14 +153,14 @@ def test_try_consume_cap_leaves_room_for_the_requests_own_token():
 
     rl = RateLimiter()
     assert rl.check_and_consume("k", limit_per_minute=5)  # the request's own token: 4 left
-    assert rl.try_consume("k", 9, limit_per_minute=5) == (True, 0)  # capped at 4
+    assert rl.try_consume("k", 9, limit_per_minute=5) == (True, 0, 4)  # capped at 4
 
 
 def test_try_consume_creates_a_missing_bucket_and_charges_it():
     from app.services.rate_limiter import RateLimiter
 
     rl = RateLimiter()
-    assert rl.try_consume("evicted", 3, limit_per_minute=5) == (True, 0)  # 2 left
+    assert rl.try_consume("evicted", 3, limit_per_minute=5) == (True, 0, 3)  # 2 left
     assert rl.try_consume("evicted", 3, limit_per_minute=5)[0] is False
 
 
@@ -166,18 +168,94 @@ def test_try_consume_of_nothing_is_free():
     from app.services.rate_limiter import RateLimiter
 
     rl = RateLimiter()
-    assert rl.try_consume("k", 0, limit_per_minute=5) == (True, 0)
-    assert rl.try_consume("k", -1, limit_per_minute=5) == (True, 0)
+    assert rl.try_consume("k", 0, limit_per_minute=5) == (True, 0, 0)
+    assert rl.try_consume("k", -1, limit_per_minute=5) == (True, 0, 0)
 
 
 def test_refund_gives_tokens_back_up_to_capacity():
     from app.services.rate_limiter import RateLimiter
 
     rl = RateLimiter()
-    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0)  # 1 left
+    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0, 4)  # 1 left
     rl.refund("k", 4)
-    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0)  # all 4 back, none lost
+    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0, 4)  # all 4 back, none lost
     rl.refund("k", 100)  # never above the capacity
-    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0)
+    assert rl.try_consume("k", 4, limit_per_minute=5) == (True, 0, 4)
     assert rl.try_consume("k", 4, limit_per_minute=5)[0] is False
     rl.refund("missing", 3)  # no bucket, nothing to do
+
+
+def test_refund_gives_back_exactly_what_was_taken_when_the_limit_changed():
+    """The key's limit is edited between charge and refund (mint attempt): the bucket follows
+    the new limit, never ends above its capacity, and never above what it held before."""
+    from app.services.rate_limiter import RateLimiter
+
+    rl = RateLimiter()
+    assert rl.check_and_consume("k", limit_per_minute=50)  # 49 left
+    allowed, _, taken = rl.try_consume("k", 40, limit_per_minute=50)  # 9 left
+    assert allowed and taken == 40
+    # An admin lowers the limit to 5; the next use resizes the bucket (9 -> 5, clamped).
+    assert rl.try_consume("k", 0, limit_per_minute=5) == (True, 0, 0)
+    bucket = rl._buckets["k"]
+    assert bucket.capacity == 5 and bucket.tokens <= 5
+    rl.refund("k", taken)  # exactly the 40 taken, but never above the capacity
+    assert bucket.tokens == 5.0
+    # ... which is not more than the 49 it held before the charge, and a recomputed refund of
+    # min(lookups - 1, new_limit - 1) = 4 could not have been distinguished here; so also check
+    # the raised-limit direction: raising the limit never tops the bucket up.
+    rl2 = RateLimiter()
+    assert rl2.check_and_consume("j", limit_per_minute=10)  # 9 left
+    _, _, took = rl2.try_consume("j", 9, limit_per_minute=10)  # 0 left
+    assert took == 9
+    assert rl2.try_consume("j", 0, limit_per_minute=1000) == (True, 0, 0)
+    assert rl2._buckets["j"].tokens < 1.0  # raised limit did not mint tokens
+    rl2.refund("j", took)
+    assert rl2._buckets["j"].tokens == pytest.approx(9.0, abs=0.5)
+
+
+def test_charge_returns_what_was_taken_and_refund_restores_exactly_that():
+    from uuid import uuid4
+
+    from app.auth.dependencies import AuthContext, charge_lookup_fan_out, refund_lookup_fan_out
+    from app.services.rate_limiter import _rate_limiter
+
+    key = uuid4()
+    ctx = AuthContext(
+        source="api-key", scope="print", api_key_id=key, ip="x", rate_limit_per_minute=100
+    )
+    try:
+        assert _rate_limiter.check_and_consume(key, limit_per_minute=100)  # the request's token
+        before = _rate_limiter._buckets[key].tokens
+        taken = charge_lookup_fan_out(ctx, 30)
+        assert taken == 29
+        # the limit drops to 10 before the refund: the context still says 100
+        _rate_limiter.try_consume(key, 0, limit_per_minute=10)
+        refund_lookup_fan_out(ctx, taken)
+        bucket = _rate_limiter._buckets[key]
+        assert bucket.tokens <= bucket.capacity == 10
+        assert bucket.tokens <= before
+    finally:
+        _rate_limiter.reset(key)
+
+
+def test_refund_never_exceeds_the_charge():
+    """30 lookups on a limit of 10 take only 9 tokens (the cap). Refunding the 29 asked for
+    instead of the 9 taken would end above the bucket's state before the charge."""
+    from uuid import uuid4
+
+    from app.auth.dependencies import AuthContext, charge_lookup_fan_out, refund_lookup_fan_out
+    from app.services.rate_limiter import _rate_limiter
+
+    key = uuid4()
+    ctx = AuthContext(
+        source="api-key", scope="print", api_key_id=key, ip="x", rate_limit_per_minute=10
+    )
+    try:
+        assert _rate_limiter.check_and_consume(key, limit_per_minute=10)  # 9 left
+        before = _rate_limiter._buckets[key].tokens
+        taken = charge_lookup_fan_out(ctx, 30)
+        assert taken == 9
+        refund_lookup_fan_out(ctx, taken)
+        assert _rate_limiter._buckets[key].tokens <= before + 0.1
+    finally:
+        _rate_limiter.reset(key)

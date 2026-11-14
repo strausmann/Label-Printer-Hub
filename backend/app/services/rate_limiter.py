@@ -70,6 +70,11 @@ class RateLimiter:
             self._evict()  # room for the new entry (at most max_buckets afterwards)
         else:
             self._buckets.move_to_end(key_id)
+            if bucket.capacity != limit_per_minute:
+                # The key's limit was edited: the bucket follows. Tokens are only ever clamped
+                # down, never topped up, so changing a limit cannot mint tokens.
+                bucket.capacity = limit_per_minute
+                bucket.tokens = min(bucket.tokens, float(limit_per_minute))
         return bucket
 
     def check_and_consume(self, key_id: Hashable, *, limit_per_minute: int) -> bool:
@@ -108,28 +113,30 @@ class RateLimiter:
 
     def try_consume(
         self, key_id: Hashable, tokens: int, *, limit_per_minute: int
-    ) -> tuple[bool, int]:
+    ) -> tuple[bool, int, int]:
         """Take ``tokens`` at once from the key's bucket, or none (all or nothing).
 
         Charges work a request fans out into, on top of the token the request itself took
         (which pays for the first lookup). The bucket is created when it was evicted, so the
         charge is never skipped. ``tokens`` is capped at ``capacity - 1``: the request's own
         token is already gone, so a full bucket holds at most that, and a larger ask would be
-        refused forever. Returns ``(allowed, retry_after_seconds)``.
+        refused forever. Returns ``(allowed, retry_after_seconds, taken)``; ``taken`` is exactly
+        what was removed from the bucket, and the only amount :meth:`refund` should give back.
         """
         rate_per_second = limit_per_minute / 60.0
         bucket = self._get_bucket(key_id, limit_per_minute)
-        needed = float(min(tokens, bucket.capacity - 1))
+        needed = min(tokens, bucket.capacity - 1)
         if needed <= 0:
-            return True, 0
+            return True, 0, 0
         bucket.refill(rate_per_second)
         if bucket.tokens >= needed:
             bucket.tokens -= needed
-            return True, 0
-        return False, int((needed - bucket.tokens) / rate_per_second) + 1
+            return True, 0, needed
+        return False, int((needed - bucket.tokens) / rate_per_second) + 1, 0
 
     def refund(self, key_id: Hashable, tokens: int) -> None:
-        """Give ``tokens`` back (at most up to the bucket's capacity); a missing bucket is full."""
+        """Give back ``tokens`` that :meth:`try_consume` reported as taken, never above the
+        bucket's current capacity. A missing (evicted) bucket starts full anyway."""
         bucket = self._buckets.get(key_id)
         if bucket is not None and tokens > 0:
             bucket.tokens = min(float(bucket.capacity), bucket.tokens + tokens)
