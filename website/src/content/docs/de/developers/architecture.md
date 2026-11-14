@@ -134,7 +134,7 @@ Der Hub nimmt Webhooks für Spulen aus Spoolman (`POST /api/v1/webhook/spoolman`
 - Eine `asyncio.Queue` und eine Worker-Koroutine **je Drucker**
 - In SQLite gespeichert (Aufträge überstehen einen Neustart des Hubs)
 - Zustände: `queued | paused | printing | completed | failed | cancelled`
-- Abbrechen mitten im Druck geht bei Banddruckern **nicht** (die Brother-Spezifikation verbietet Befehle während des Drucks). IPP-Seitendrucker können einen laufenden Auftrag abbrechen (Cancel-Job, [ADR 0020](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0020-backend-kinds-ipp-page-printers.md))
+- Abbrechen mitten im Druck geht bei Banddruckern **nicht** (die Brother-Spezifikation verbietet Befehle während des Drucks). IPP-Seitendrucker können einen laufenden Auftrag abbrechen (`Cancel-Job`, [ADR 0020](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0020-backend-kinds-ipp-page-printers.md))
 - Seitenaufträge (IPP-Drucker) verfolgt der Hub am Drucker bis zu einem Endzustand und rechnet sie nach einem Neustart nach dem ab, was der Drucker meldet; Bandaufträge in `printing` werden zu `failed_restart`
 - Aktionen: Pause/Fortsetzen/Abbrechen/Wiederholen/Priorität bei Aufträgen; Pause/Fortsetzen/Leeren beim Worker eines Druckers
 

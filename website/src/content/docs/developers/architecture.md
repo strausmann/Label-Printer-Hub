@@ -134,7 +134,7 @@ The hub takes webhooks for Spoolman spools (`POST /api/v1/webhook/spoolman`) and
 - One `asyncio.Queue` and one worker coroutine **per printer**
 - Persisted in SQLite (jobs survive hub restarts)
 - States: `queued | paused | printing | completed | failed | cancelled`
-- Mid-print cancel **not possible** for tape printers (Brother spec forbids commands during print). IPP page printers can cancel a printing job (Cancel-Job, [ADR 0020](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0020-backend-kinds-ipp-page-printers.md))
+- Mid-print cancel **not possible** for tape printers (Brother spec forbids commands during print). IPP page printers can cancel a printing job (`Cancel-Job`, [ADR 0020](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0020-backend-kinds-ipp-page-printers.md))
 - Page jobs (IPP printers) are tracked at the printer until a final state and are settled after a restart from what the printer reports; tape jobs in `printing` become `failed_restart`
 - Operations: pause/resume/cancel/retry/priority on jobs; pause/resume/clear on the printer worker
 
