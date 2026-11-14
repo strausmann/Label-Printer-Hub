@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 import yaml
@@ -256,7 +257,7 @@ def test_dockerhub_description_workflow() -> None:
         "docker pull docker.io/bstrausmann/labelyard:latest",
     }
     links = set(re.findall(r"https://[^\s)<>\"]+", text))
-    assert "https://labelyard.app" in links or "https://labelyard.app/" in links
+    assert [u for u in links if urlparse(u).hostname == "labelyard.app"], "website link"
     # Docker Hub resolves no relative paths: every image is an absolute URL.
     images = re.findall(r"!\[[^\]]*\]\(([^)]+)\)", text)
     images += re.findall(r'<img[^>]+src="([^"]+)"', text)
