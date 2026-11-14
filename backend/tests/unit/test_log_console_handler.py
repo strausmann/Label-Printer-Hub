@@ -3,7 +3,7 @@
 
 """Application log records reach the container output (stderr), not only the in-app buffer (#324).
 
-Without a stderr handler on the root logger, ``docker logs`` never shows the ``PRINTER_HUB_*``
+Without a stderr handler on the root logger, ``docker logs`` never shows the legacy-variable
 deprecation line even though the hub's own log view does.
 """
 
@@ -34,12 +34,12 @@ def test_warning_from_app_logger_is_written_to_stderr(
     clean_root: None, capsys: pytest.CaptureFixture[str]
 ) -> None:
     log_buffer.install_log_buffer()
-    logging.getLogger("app.main").warning("legacy names in use: PRINTER_HUB_X")
+    logging.getLogger("app.main").warning("legacy names in use: SOME_VARIABLE")
     lines = capsys.readouterr().err.splitlines()
     assert len(lines) == 1
     assert "WARNING" in lines[0]
     assert "app.main" in lines[0]
-    assert "legacy names in use: PRINTER_HUB_X" in lines[0]
+    assert "legacy names in use: SOME_VARIABLE" in lines[0]
 
 
 def test_info_record_is_not_written_to_stderr(
