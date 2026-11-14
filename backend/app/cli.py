@@ -1,4 +1,4 @@
-"""Container command line: ``printer-hub admin create-key`` (spec 8.2, D7).
+"""Container command line: ``labelyard admin create-key`` (spec 8.2, D7).
 
 Recovery when every admin key is lost. Whoever can run commands in the container
 already controls the hub, so this adds no new attack surface — unlike a long-lived
@@ -11,16 +11,19 @@ import argparse
 import asyncio
 import sys
 
-from app.auth.dependencies import _SCOPE_ORDER
+# Not imported from app.auth.dependencies: that module loads the settings, and ``--help`` and
+# argument errors must work without LABELYARD_SECRET_KEY / LABELYARD_PUBLIC_URL (for example
+# in ``docker run --rm``). A test keeps this list equal to the real one.
+_SCOPES = ["read", "print", "admin"]
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="printer-hub", description="Label Printer Hub admin")
+    parser = argparse.ArgumentParser(prog="labelyard", description="Labelyard admin")
     groups = parser.add_subparsers(dest="group", required=True)
     admin = groups.add_parser("admin", help="administrative commands")
     commands = admin.add_subparsers(dest="command", required=True)
     create = commands.add_parser("create-key", help="create an API key and print it once")
-    create.add_argument("--scope", required=True, choices=_SCOPE_ORDER)
+    create.add_argument("--scope", required=True, choices=_SCOPES)
     create.add_argument("--name", required=True)
     return parser
 
@@ -43,7 +46,7 @@ async def _create_key(scope: str, name: str) -> str:
                 scopes=[scope],
                 allowed_printer_ids=[],
                 enabled=True,
-                notes="created with: printer-hub admin create-key",
+                notes="created with: labelyard admin create-key",
             ),
         )
     return plaintext

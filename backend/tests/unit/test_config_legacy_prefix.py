@@ -83,7 +83,7 @@ def test_empty_legacy_alone_keeps_the_default(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("PRINTER_HUB_SERVER_PORT", "")
     s = Settings()  # type: ignore[call-arg]
     assert s.log_level == "INFO"
-    assert s.server_port == 8090
+    assert s.server_port == 8000
 
 
 def test_empty_legacy_dotenv_value_keeps_the_default(tmp_path: Path) -> None:

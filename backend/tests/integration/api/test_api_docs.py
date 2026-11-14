@@ -1,7 +1,7 @@
 """The interactive API reference at ``/docs`` (Scalar, served by the hub itself).
 
 Covers issue #171: the page shows the running release instead of the package
-placeholder, uses the "Label Printer Hub API" title, loads Scalar from the hub
+placeholder, uses the "Labelyard API" title, loads Scalar from the hub
 (no CDN) under a strict CSP.
 """
 
@@ -98,7 +98,7 @@ def test_hub_version_env_reaches_openapi_info_in_a_fresh_process() -> None:
 
 async def test_openapi_title_and_description_have_no_backend_wording(docs: AsyncClient) -> None:
     info = (await docs.get("/openapi.json")).json()["info"]
-    assert info["title"] == "Label Printer Hub API"
+    assert info["title"] == "Labelyard API"
     assert "backend" not in info["description"].lower()
     assert "/docs" in info["description"]
     assert "Scalar" in info["description"]
@@ -112,7 +112,7 @@ async def test_docs_page_is_scalar_from_the_hub(docs: AsyncClient) -> None:
     assert resp.headers["content-type"].startswith("text/html")
     assert resp.headers["cache-control"] == "no-cache"
     html = resp.text
-    assert "<title>Label Printer Hub API</title>" in html
+    assert "<title>Labelyard API</title>" in html
     assert 'data-url="/openapi.json"' in html
     assert 'src="/docs/scalar.js"' in html
     assert "swagger" not in html.lower()

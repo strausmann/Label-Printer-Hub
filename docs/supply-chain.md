@@ -32,6 +32,7 @@ receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
 | BuildKit provenance | How and where the image was built | registry, read without pulling | published today, with `mode=max` content by the build action's default; the attestation step (B5) makes it explicit |
 | Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | lands with the release SBOM step (B6); the first release that carries it is 1.6.0 |
 | SPDX headers in every own file | `reuse lint` clean | repository | lands with the header sweep (B9) |
+| Image signature | Keyless cosign signature of the image index | registry, next to the image | from release 1.6.0 and its previews; see "Verify the signature" |
 
 ## Read the SBOM and provenance without pulling the image
 
@@ -76,6 +77,62 @@ Two limits you should know before relying on the BuildKit SBOM:
   default for a public repository. The attestation step (B5) sets `mode=max` explicitly so that it no longer
   depends on that default. It contains no secrets by design (the workflow passes none as build arguments), but
   read it before you share it.
+
+## Verify the signature
+
+Every image the image workflow publishes is signed with [cosign](https://docs.sigstore.dev/) without a key.
+The workflow signs with its GitHub OIDC token, and the certificate names the workflow file of this repository as
+the signer. What is signed is the digest of the multi-arch index, once on each registry. The index contains the
+platform images and the BuildKit attestation manifests (SBOM and provenance), so one signature covers them too.
+A tag is never signed, because a tag can move.
+
+Resolve the tag to its digest first, then verify the digest:
+
+```bash
+docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
+
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/strausmann/labelyard@<digest>
+
+cosign verify \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  docker.io/<user>/labelyard@<digest>
+```
+
+The digest is the same on both registries. `--certificate-oidc-issuer` requires a certificate issued for a GitHub
+Actions token. The identity accepts `docker-publish.yml` of this repository only, and only on the refs the
+workflow signs from:
+
+| Ref | Images signed from it |
+|---|---|
+| `refs/heads/main` | releases, `dev`, previews built on main |
+| `refs/heads/milestone/<x.y.0>`, `refs/heads/milestone/<x.y.x>` | previews of a milestone |
+
+A release is signed from `refs/heads/main`: the release workflow runs on main and calls the image workflow, and
+the certificate carries the caller's ref. Tags are not a publishing ref: images from a tag or from any other
+branch are published unsigned. The identity
+allows the current and the former repository name, because previews built before the rename carry the former
+name in their certificate. `[b]` in the pattern matches the letter b.
+
+For a release after the rename, you can verify against the exact identity instead of the pattern:
+
+```bash
+cosign verify \
+  --certificate-identity https://github.com/strausmann/labelyard/.github/workflows/docker-publish.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/strausmann/labelyard@<digest>
+```
+
+With the pattern, `--certificate-github-workflow-ref refs/heads/main` also pins the ref, but it reads a deprecated
+certificate extension; the exact identity is the sturdier pin. `cosign verify` exits with an error when no valid
+signature matches; a successful run prints the verified signature payload.
+
+Where the signature is stored differs per registry. Docker Hub keeps it as an OCI referrer of the index, without a
+tag. GHCR has no referrers support, so cosign stores it under a tag `sha256-<index digest>`. That tag is not an
+image; the registry cleanup treats it as part of its image and removes it only together with the image.
 
 ## The web bundle: `frontend.cdx.json`
 
@@ -188,6 +245,5 @@ until then not every file has a header.
 - **VEX.** There is no VEX statement (no machine-readable "this vulnerability does not affect this image").
   A vulnerability scanner will report findings in the base image that do not affect Labelyard, and this release
   cannot say which. A follow-up issue is planned.
-- **Signatures.** Provenance attestations are stored in the registry; the image itself is not signed with a key.
 - **Legal advice.** The lists and documents are generated from package metadata. They are as good as that
   metadata; the exceptions in the policy mark the known gaps.

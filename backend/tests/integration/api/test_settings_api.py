@@ -57,7 +57,7 @@ async def test_put_locked_key_returns_409_and_writes_nothing(client, monkeypatch
     assert resp.status_code == 409
     assert resp.json()["detail"]["error_code"] == "setting_locked"
     by_key = _by_key(await client.get("/api/v1/settings"))
-    assert by_key["general.display_name"]["value"] == "Label Printer Hub"
+    assert by_key["general.display_name"]["value"] == "Labelyard"
     assert by_key["integrations.snipeit.url"]["locked"] is True
 
 

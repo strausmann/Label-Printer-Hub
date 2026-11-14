@@ -13,6 +13,18 @@ SPDX = "AGPL-3.0-or-later"
 # The verbatim https://www.gnu.org/licenses/agpl-3.0.txt, 661 lines.
 AGPL_TEXT_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0"
 SUPPLY_CHAIN_DOC = "docs/supply-chain.md"
+# The certificate identity users verify against (#311): the image workflow of this repository,
+# under the old and the new repository name, on the refs the workflow signs from (the same list
+# as SIGNED_REFS in test_release_workflows.py). `[b]` matches the letter b; it keeps the old name
+# out of the text for scripts/brand_guard.py.
+COSIGN_IDENTITY_REGEXP = (
+    r"^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)"
+    r"/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$"
+)
+# The exact identity for releases after the rename (they are signed from main).
+COSIGN_RELEASE_IDENTITY = (
+    "https://github.com/strausmann/labelyard/.github/workflows/docker-publish.yml@refs/heads/main"
+)
 
 
 def _read(relative: str) -> str:
@@ -85,6 +97,44 @@ def test_notices_name_copyleft_dependencies() -> None:
         assert f"`{package}`" in notices, package
 
 
+def test_cosign_identity_regexp() -> None:
+    rule = re.compile(COSIGN_IDENTITY_REGEXP)
+    old = "Label-Printer-Hu" + "b"
+    prefix = "https://github.com/strausmann/{repo}/.github/workflows/docker-publish.yml@"
+    signed = (
+        "refs/heads/main",
+        "refs/heads/milestone/1.6.0",
+        "refs/heads/milestone/2.0.0",
+        "refs/heads/milestone/1.5.x",
+    )
+    for repo in (old, "labelyard"):
+        for ref in signed:
+            identity = prefix.format(repo=repo) + ref
+            assert rule.match(identity), identity
+    unsigned = (
+        "refs/heads/feat/x",
+        "refs/heads/main-x",
+        "refs/heads/milestone/1.6.1",
+        "refs/heads/milestone/1.6.0/x",
+        "refs/heads/mainx",
+        # Tags are not a publishing ref (no tag ruleset; releases are built on main).
+        "refs/tags/v1.6.0",
+        "refs/tags/v1.6.0-rc.1",
+        "refs/tags/v1.6",
+        "refs/tags/1.6.0",
+        "refs/pull/1/merge",
+    )
+    for ref in unsigned:
+        identity = prefix.format(repo="labelyard") + ref
+        assert not rule.match(identity), identity
+    for identity in (
+        "https://github.com/strausmann/labelyard/.github/workflows/release.yml@refs/heads/main",
+        "https://github.com/someone-else/labelyard/.github/workflows/docker-publish.yml@refs/heads/main",
+        "https://github.com/strausmann/labelyard-fork/.github/workflows/docker-publish.yml@refs/heads/main",
+    ):
+        assert not rule.match(identity), identity
+
+
 def test_supply_chain_doc() -> None:
     doc = _read(SUPPLY_CHAIN_DOC)
     for needle in (
@@ -97,8 +147,21 @@ def test_supply_chain_doc() -> None:
         ".cdx.json",
         "licence-policy.yml",
         "/usr/share/doc",
+        "cosign verify",
+        "token.actions.githubusercontent.com",
+        COSIGN_IDENTITY_REGEXP,
+        "--certificate-oidc-issuer",
+        "--certificate-github-workflow-ref",
     ):
         assert needle in doc, needle
+    # Every command uses the one identity, no wider variant.
+    identities = re.findall(r"--certificate-identity-regexp '([^']*)'", doc)
+    assert identities, "no cosign verify identity in the doc"
+    assert set(identities) == {COSIGN_IDENTITY_REGEXP}
+    # The exact release identity is offered as well, and it is covered by the regexp.
+    exact = re.findall(r"--certificate-identity (\S+)", doc)
+    assert exact == [COSIGN_RELEASE_IDENTITY] * len(exact) and exact
+    assert re.match(COSIGN_IDENTITY_REGEXP, COSIGN_RELEASE_IDENTITY)
     # On a multi-platform image the short form prints null; it must not be recommended.
     assert "--format '{{ json .SBOM.SPDX }}'" not in doc
     # The README only points here; it does not repeat the text.

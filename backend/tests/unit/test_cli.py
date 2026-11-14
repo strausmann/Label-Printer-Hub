@@ -1,4 +1,4 @@
-"""Recovery command: printer-hub admin create-key (spec 8.2, D7)."""
+"""Recovery command: labelyard admin create-key (spec 8.2, D7)."""
 
 from __future__ import annotations
 

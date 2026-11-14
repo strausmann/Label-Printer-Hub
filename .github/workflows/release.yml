@@ -141,3 +141,40 @@ jobs:
       contents: write
       packages: write
       id-token: write
+
+  # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced.
+  # Only GITHUB_TOKEN, no checkout, no other secret. The version reaches the
+  # shell through env and is validated first.
+  release-sbom:
+    name: Release SBOM
+    needs: [release, images]
+    if: needs.release.outputs.new-release-published == 'true' && !inputs.dry_run
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download the SBOM
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: release-sbom
+          path: sbom
+
+      - name: Attach the SBOM to the release
+        working-directory: sbom
+        env:
+          VERSION: ${{ needs.release.outputs.new-release-version }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # A whole-string match: `printf | grep` would accept a value with an
+          # embedded newline (each line is checked on its own).
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::Invalid release version: not a semantic version"
+            exit 1
+          fi
+          VERSION="${VERSION#v}"
+          gh release upload "v${VERSION}" ./*.cdx.json --clobber
+          count=$(gh release view "v${VERSION}" --json assets --jq '[.assets[].name | select(endswith(".cdx.json"))] | length')
+          test "$count" -eq 1

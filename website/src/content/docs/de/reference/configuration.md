@@ -161,9 +161,9 @@ Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sper
 
 ### `LABELYARD_SERVER_PORT`
 
-Standard: `8090`
+Standard: `8000`
 
-Derzeit ohne Wirkung: Die Anwendung liest sie nicht. Im Container kommt der Port aus der Variablen `PORT` (Standard `8000`), die der Startbefehl als `--port` an uvicorn übergibt.
+Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT`, dann `PRINTER_HUB_SERVER_PORT`, dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.
 
 ### `LABELYARD_LOG_LEVEL`
 

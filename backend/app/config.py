@@ -128,7 +128,7 @@ class Settings(BaseSettings):
     spoolman_timeout: float = 5.0
 
     # Server
-    server_port: int = 8090
+    server_port: int = 8000
     log_level: LogLevel = "INFO"
     """Python-Loglevel — auf die fünf dokumentierten Werte beschränkt
     (Issue #46). Ungültige Werte (Tippfehler, lowercase) erzeugen einen

@@ -372,15 +372,16 @@ Patch releases come from `main`. Minor and major releases come from a **mileston
 
 **Fixes while a milestone is open.** Fixes go to `main` and ship as nightly patch releases. When `main` moves, the [Milestone sync](.github/workflows/milestone-sync.yml) workflow opens a PR `main` → `milestone/x.y.0` (`chore: sync main into milestone/x.y.0`) for every milestone branch that does not contain `main` yet. Merge it with a merge commit. The workflow opens these PRs with `GITHUB_TOKEN`, and GitHub does not start other workflows for them: close and reopen the PR to run the checks.
 
-**Preview images.** Before a milestone is released, a maintainer can build a preview image from the milestone branch with the **Preview image** workflow (Actions → Preview image → Run workflow, branch `milestone/x.y.0`, version `x.y.0`). Each run publishes the next tag `x.y.0-rc.N` to GHCR only:
+**Preview images.** Before a milestone is released, a maintainer can build a preview image from the milestone branch with the **Preview image** workflow (Actions → Preview image → Run workflow, branch `milestone/x.y.0`, version `x.y.0`). Each run publishes the next tag `x.y.0-rc.N` to GHCR and Docker Hub (the same tag on both; the rc number is counted from the GHCR tags):
 
 ```bash
 docker pull ghcr.io/strausmann/labelyard:1.6.0-rc.1
+docker pull docker.io/strausmann/labelyard:1.6.0-rc.1
 ```
 
-A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags and nothing on Docker Hub. Previews are removed from GHCR once their release exists.
+A preview is not a release: it gets no Git tag, no GitHub Release, no changelog entry, no `latest` / `x.y` / `x` tags. Previews are removed from both registries once their release exists.
 
-For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<next free patch>-rc.N`. A weekly **GHCR cleanup** run prunes the package to the releases from 1.4.0, their floating tags, `dev` and open previews, and never touches anything younger than a day. It only deletes when the repository variable `GHCR_CLEANUP_ENABLED` is `true`; a manual run defaults to dry-run. Cleanup and preview runs share one concurrency group, so they never overlap, and a newer queued run replaces an older *pending* one: a skipped cleanup or preview run is expected, so re-dispatch it if needed. The rules live in `scripts/ghcr_rules.py` (tests: `scripts/test_ghcr_rules.py`).
+For a patch milestone `x.y.x` use version `x.y.x`: the workflow builds `x.y.<next free patch>-rc.N`. A weekly **Registry cleanup** run prunes `labelyard` on both registries with one rule: it keeps the releases from 1.4.0, their floating tags, `dev` and open previews. On GHCR it also removes every other tag and untagged images, and never touches anything younger than a day; on Docker Hub it deletes closed previews and only lists tags the rule does not know (untagged images there age out by Docker Hub's own policy). It only deletes when the repository variable `GHCR_CLEANUP_ENABLED` is `true`; a manual run defaults to dry-run. Cleanup and preview runs share one concurrency group, so they never overlap, and a newer queued run replaces an older *pending* one: a skipped cleanup or preview run is expected, so re-dispatch it if needed. The rules live in `scripts/ghcr_rules.py` (tests: `scripts/test_ghcr_rules.py`).
 
 **Two guards keep the numbering honest.**
 

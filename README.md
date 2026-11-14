@@ -349,6 +349,7 @@ Full reference lives in [`backend/.env.example`](backend/.env.example). The most
 | **`LABELYARD_PUBLIC_URL`** | _required_ | Any `http(s)` URL, local ones included (`http://localhost:8000`, `http://labelyard:8000`, a LAN IP). Set it to the address people open the UI at if you use the browser UI; decides cookie security (`Secure` and `__Host-` prefix when `https`) and the allowed `Origin` |
 | `LABELYARD_BOOTSTRAP_ADMIN_KEY` | _empty_ | One-time key (32+ characters) that signs you in while no admin key exists; empty disables it |
 | `LABELYARD_DATABASE_URL` | `sqlite+aiosqlite:////data/printer-hub.db` | Database |
+| `LABELYARD_SERVER_PORT` | `8000` | Port the container listens on (read by the container start command and healthcheck; falls back to `PRINTER_HUB_SERVER_PORT`, then `PORT`). Match the published port in your compose file |
 | `LABELYARD_SSO_TRUST_TOKEN` | _empty_ | Shared secret the proxy sends as `X-Pangolin-Token`; without it `Remote-User` is ignored |
 | `LABELYARD_TRUST_LEGACY_PANGOLIN_USER` | `false` | Opt in to the legacy `X-Pangolin-User` header |
 | `LABELYARD_TRUST_PANGOLIN_BASIC_BYPASS` | `false` | Opt in to the `Authorization: Basic` bypass credential |

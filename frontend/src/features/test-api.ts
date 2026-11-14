@@ -123,7 +123,7 @@ export const settingView = (key: string, kind: SettingKind, over: Partial<Settin
 /** The full list the registry produces, with obviously fake values. */
 export const settingsList = (over: Record<string, Partial<SettingFixture>> = {}): SettingFixture[] =>
   [
-    settingView("general.display_name", "str", { value: "Label Printer Hub", is_set: true }),
+    settingView("general.display_name", "str", { value: "Labelyard", is_set: true }),
     settingView("general.language", "enum", { value: "en", choices: ["en", "de"] }),
     settingView("general.time_zone", "str", { value: "UTC" }),
     settingView("general.public_url", "url", { value: "https://hub.example.invalid", is_set: true, locked: true }),

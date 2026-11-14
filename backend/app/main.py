@@ -124,7 +124,7 @@ from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.build_info import PROJECT_LICENSE, public_repo_url
 from app.calibration.page import render_calibration_page
 from app.config import get_settings
-from app.config_legacy import report_from_process, warn_legacy_env
+from app.config_legacy import listen_port_warning, report_from_process, warn_legacy_env
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
@@ -173,9 +173,7 @@ OPENAPI_VERSION = "3.1.0"
 HUB_VERSION: str = os.environ.get("HUB_VERSION") or __version__
 HUB_REVISION: str = os.environ.get("HUB_REVISION", "unknown")
 HUB_BUILD_DATE: str = os.environ.get("HUB_BUILD_DATE", "1970-01-01T00:00:00Z")
-HUB_REPO_URL: str = os.environ.get(
-    "HUB_REPO_URL", "https://github.com/strausmann/label-printer-hub"
-)
+HUB_REPO_URL: str = os.environ.get("HUB_REPO_URL", "https://github.com/strausmann/labelyard")
 
 _log = logging.getLogger(__name__)
 
@@ -282,6 +280,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     warn_legacy_env(report_from_process(), _log)
+    if (port_warning := listen_port_warning(os.environ)) is not None:
+        _log.warning(port_warning)
     warn_if_insecure_cookies(settings)
     # 266-14: the PDF font is registered before any planner or renderer thread can need it.
     # A missing font is reported where it is used (the sheet print answers with it).
@@ -604,9 +604,10 @@ def create_app() -> _LifespanManager:
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
     app = FastAPI(
         lifespan=lifespan,
-        title="Label Printer Hub API",
+        title="Labelyard API",
         description=(
-            "REST + SSE API of the Label Printer Hub, which also serves the web UI. "
+            "REST + SSE API of Labelyard, the self-hosted Label Printer Hub, "
+            "which also serves the web UI. "
             "The OpenAPI spec is at /openapi.json; humans browse the interactive "
             "reference (Scalar) at /docs."
         ),

@@ -1747,12 +1747,6 @@ msgstr "Etikettenlayout auf 62-mm-Band"
 msgid "Label preview"
 msgstr "Etikettenvorschau"
 
-#: src/i18n/messages.ts
-#: src/shell/Sidebar.tsx
-#: src/shell/SignIn.tsx
-msgid "Label Printer Hub"
-msgstr "Label Printer Hub"
-
 #: src/features/archive/TypeForm.tsx
 msgid "Label shape"
 msgstr "Etikettenform"
@@ -1773,6 +1767,10 @@ msgstr "Etiketten"
 #: src/features/jobs/RunControls.tsx
 msgid "Labels {unknownFrom} to {unknownTo} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
 msgstr "Ob die Etiketten {unknownFrom} bis {unknownTo} gedruckt wurden, ist unklar. Zähle sie auf dem Band nach, lege ein neues Band ein und drucke ab dem ersten fehlenden Etikett neu."
+
+#: src/i18n/messages.ts
+msgid "Labelyard"
+msgstr "Labelyard"
 
 #: src/features/settings/sections.tsx
 msgid "Language"
@@ -4364,6 +4362,10 @@ msgstr "Die Rolle wurde gewechselt"
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
 msgstr "Das Geheimnis kommt vom Container, die URL aber nicht. Setze die URL ebenfalls im Container."
+
+#: src/i18n/messages.ts
+msgid "The self-hosted Label Printer Hub for all your labels"
+msgstr "Der selbst gehostete Label Printer Hub für all deine Etiketten"
 
 #: src/app/router.tsx
 #: src/features/archive/errors.ts

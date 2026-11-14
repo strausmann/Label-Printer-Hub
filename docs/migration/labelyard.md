@@ -34,6 +34,10 @@ Coming from 1.4.x? Upgrade your API clients for 1.5.0 first (`/api/v1` paths, wi
 - All `/api/v1` paths and the event stream.
 - The registered name of the exported sheet-type file format (`.sheet-type`).
 
+## Behaviour changes
+
+- **The server port variable now takes effect.** `LABELYARD_SERVER_PORT` (and the old `PRINTER_HUB_SERVER_PORT`) was documented but ignored. The container now listens on the port it names and falls back to `PORT`, then `8000`. A `.env` file copied from an older `.env.example` may still contain `LABELYARD_SERVER_PORT=8090`: delete that line, or set it to the port your compose file maps (`8000` by default). Afterwards `/healthz` on the mapped port must answer. If the port is not `8000`, the hub logs one warning at startup that names the variable.
+
 ## Environment variables
 
 Renaming is optional for now. The hub reads `LABELYARD_*`; the former `PRINTER_HUB_*` names are still read as a deprecated fallback.

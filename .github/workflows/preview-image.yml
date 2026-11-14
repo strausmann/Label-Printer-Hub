@@ -2,10 +2,12 @@
 #
 # Run it by hand on the branch that holds the milestone's work (or on main).
 # Version is x.y.z or, for a patch milestone, x.y.x (next free patch).
-# The rc number counts up from the tags already in GHCR. A preview gets only
-# its exact tag: no `latest`, no x.y / x, no Docker Hub (docker-publish.yml
-# treats every version with a `-` as a pre-release). ghcr-cleanup.yml keeps
-# previews while their release does not exist and removes them afterwards.
+# The rc number counts up from the tags already in GHCR
+# (ghcr.io/strausmann/labelyard); the same tag goes to GHCR and Docker Hub
+# (docker.io/<DOCKERHUB_USERNAME>/labelyard). A preview gets only its exact
+# tag: no `latest`, no x.y / x (docker-publish.yml treats every version with a
+# `-` as a pre-release). registry-cleanup.yml keeps previews on both registries
+# while their release does not exist and removes them afterwards.
 
 name: Preview image
 
@@ -20,7 +22,7 @@ on:
 permissions: {}
 
 concurrency:
-  # Shared with ghcr-cleanup.yml (see there).
+  # Shared with registry-cleanup.yml (see there).
   group: ghcr-${{ github.repository }}
   cancel-in-progress: false
 
@@ -45,7 +47,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           ACTOR: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE_PATH: ${{ github.repository_owner }}/label-printer-hub-backend
+          IMAGE_PATH: strausmann/labelyard
         run: |
           set -euo pipefail
           # 1.5.x -> 1.5.<next free patch>-rc.N; 1.6.0 -> 1.6.0-rc.N; a released
@@ -62,6 +64,10 @@ jobs:
     with:
       tag: ${{ needs.next-tag.outputs.tag }}
       ref: ${{ github.sha }}
+    # By name, as release.yml does: no `inherit`, and never the admin token.
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     permissions:
       contents: read
       packages: write
