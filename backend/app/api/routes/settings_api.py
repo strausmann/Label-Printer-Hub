@@ -12,6 +12,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.bounded_body import read_bounded
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin
 from app.db.session import get_session
@@ -30,6 +31,13 @@ router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 AdminDep = Annotated[AuthContext, Depends(require_admin)]
+
+# The largest settings body is a handful of short values; 64 KiB matches the sheet type
+# import limit and leaves ample room (R-281-3 Global Constraint: bounded reads only).
+MAX_SETTINGS_BODY_BYTES = 65_536
+_TOO_LARGE_RESPONSE: dict[int | str, dict[str, Any]] = {
+    413: {"description": "Request body larger than 64 KiB."}
+}
 
 _BODY_EXTRA_UPDATE = {
     "requestBody": {
@@ -64,8 +72,18 @@ def _bad_body(message: str) -> HTTPException:
     )
 
 
+def _too_large() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        detail={
+            "error_code": "body_too_large",
+            "error_message": "The request body is larger than 64 KiB.",
+        },
+    )
+
+
 async def _values_from_body(request: Request, *, required: bool) -> dict[str, Any]:
-    raw = await request.body()
+    raw = await read_bounded(request, MAX_SETTINGS_BODY_BYTES, _too_large)
     if not raw.strip():
         if required:
             raise _bad_body("a JSON body with a 'values' object is required")
@@ -92,6 +110,7 @@ async def list_settings(request: Request, _auth: AdminDep) -> list[SettingView]:
     response_model=list[SettingView],
     summary="Update settings",
     openapi_extra=_BODY_EXTRA_UPDATE,
+    responses=_TOO_LARGE_RESPONSE,
 )
 async def update_settings(
     request: Request, session: SessionDep, _auth: AdminDep
@@ -129,6 +148,7 @@ async def export_settings(request: Request, _auth: AdminDep) -> Response:
     response_model=IntegrationTestResult,
     summary="Test an integration with unsaved form values",
     openapi_extra=_BODY_EXTRA_TEST,
+    responses=_TOO_LARGE_RESPONSE,
 )
 async def test_integration(name: str, request: Request, _auth: AdminDep) -> IntegrationTestResult:
     if name not in INTEGRATIONS:

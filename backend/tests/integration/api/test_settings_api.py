@@ -440,3 +440,38 @@ async def test_integration_probe_reports_invalid_url_instead_of_crashing(
     body = resp.json()
     assert body["ok"] is False and body["status"] is None
     assert body["detail"] == "invalid URL"
+
+
+# --- bounded body (#281 Global Constraint: raw bodies only via read_bounded) ------------
+
+
+async def test_put_over_the_body_limit_is_413_and_writes_nothing(client) -> None:
+    from app.api.routes.settings_api import MAX_SETTINGS_BODY_BYTES
+
+    assert MAX_SETTINGS_BODY_BYTES == 65_536
+    name = "x" * (MAX_SETTINGS_BODY_BYTES + 1)
+    resp = await _put(client, {"general.display_name": name})
+    assert resp.status_code == 413
+    assert resp.json()["detail"] == {
+        "error_code": "body_too_large",
+        "error_message": "The request body is larger than 64 KiB.",
+    }
+    assert name not in resp.text
+    by_key = _by_key(await client.get("/api/v1/settings"))
+    assert by_key["general.display_name"]["value"] == "Labelyard"
+
+
+async def test_integration_test_over_the_body_limit_is_413(client) -> None:
+    body = b'{"values": {"integrations.grocy.url": "' + b"a" * 70_000 + b'"}}'
+    resp = await client.post(
+        "/api/v1/settings/integrations/grocy/test",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 413
+    assert resp.json()["detail"]["error_code"] == "body_too_large"
+
+
+async def test_put_just_under_the_limit_is_not_refused_for_size(client) -> None:
+    resp = await _put(client, {"general.display_name": "y" * 60_000})
+    assert resp.status_code != 413

@@ -9764,6 +9764,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "413": {
+            "description": "Request body larger than 64 KiB."
           }
         },
         "security": [
@@ -9846,6 +9849,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "413": {
+            "description": "Request body larger than 64 KiB."
           },
           "422": {
             "content": {

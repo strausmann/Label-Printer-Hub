@@ -6204,6 +6204,13 @@ export interface operations {
                     "application/json": components["schemas"]["SettingView"][];
                 };
             };
+            /** @description Request body larger than 64 KiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     export_settings_api_v1_settings_export_get: {
@@ -6254,6 +6261,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["IntegrationTestResult"];
                 };
+            };
+            /** @description Request body larger than 64 KiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
