@@ -2762,6 +2762,10 @@ class PrintQueue:
         if not await self._wait_until_active(printer_id):
             return
         run = self._runs.get(batch.run_id) if batch.run_id is not None else None
+        # #347: the run moves on (waits for the next confirmation, or ends) in the same step as the
+        # last group's labels turn done, before their rows are written: a client that sees every
+        # label of the part done may continue at once, and the hub must already take it.
+        held: list[bool] = []
         for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
             if start > 0 and (
                 self._stopping
@@ -2801,11 +2805,25 @@ class PrintQueue:
                         printer_id, batch, run, active, later, exc, nothing_sent=False
                     )
                     return
-            await self._complete_group(printer_id, batch, active)
+            last = group.stop >= len(batch.job_ids)
+            await self._complete_group(
+                printer_id,
+                batch,
+                active,
+                before_write=(lambda: held.append(self._advance_run_now(run))) if last else None,
+            )
             # Printed: the pictures are not needed any more (I3). A retry re-renders from the row.
             self._drop_pictures(run, [job.id for job in active])
         logger.info("Batch %s: sub-job done on %s", batch.batch_id, printer_id)
-        await self._advance_run(run)
+        if not held:  # the last group had nothing left to print (cancelled labels)
+            held.append(self._advance_run_now(run))
+        if (
+            held[0]
+            and run is not None
+            and self._runs.get(run.run_id) is run
+            and run.state == "awaiting_confirmation"
+        ):
+            await self._bound_held_runs(run)
 
     async def _wait_until_active(self, printer_id: UUID) -> bool:
         """Wait while the printer is paused; ``False`` when the worker must leave instead."""
@@ -2876,7 +2894,14 @@ class PrintQueue:
                 )
         return active_jobs, payloads
 
-    async def _complete_group(self, printer_id: UUID, batch: BatchJob, active: list[Job]) -> None:
+    async def _complete_group(
+        self,
+        printer_id: UUID,
+        batch: BatchJob,
+        active: list[Job],
+        *,
+        before_write: Callable[[], None] | None = None,
+    ) -> None:
         # Every printed label is completed in memory first (no await), then the rows are written
         # as one step that a removal timeout cannot cut short: the rest of the group printed
         # too and must not be reported ``failed_restart`` (263-64).
@@ -2899,6 +2924,8 @@ class PrintQueue:
                 queue_depth=self._queue_depth(printer_id),
             )
             completed.append(job)
+        if before_write is not None:
+            before_write()  # still the step that announced the labels done (#347)
         await self._persist_through_cancel(lambda: self._mark_done_all(completed))
 
     async def _mark_done_all(self, pending: list[Job]) -> None:
@@ -3015,10 +3042,14 @@ class PrintQueue:
         if run is not None and run.state == "stopped":
             await self._bound_held_runs(run)
 
-    async def _advance_run(self, run: TapeRun | None) -> None:
-        """After a sub-job: wait for the confirmation of the next one, or forget a finished run."""
+    def _advance_run_now(self, run: TapeRun | None) -> bool:
+        """After a sub-job: wait for the confirmation of the next one, or forget a finished run.
+
+        No await (#347): it runs in the step that announces the sub-job's last labels done.
+        Returns whether the run now waits; the caller then bounds the held runs.
+        """
         if run is None or self._runs.get(run.run_id) is not run or run.state != "printing":
-            return
+            return False
         nxt = run.current + 1
         while nxt < len(run.sub_jobs):
             s, e = run.sub_jobs[nxt]
@@ -3032,10 +3063,10 @@ class PrintQueue:
                 # No job event follows this state: the jobs page learns of the waiting run here.
                 self._notify_run_change(run, "awaiting_confirmation")
                 logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
-                await self._bound_held_runs(run)
-                return
+                return True
             nxt += 1
         del self._runs[run.run_id]
+        return False
 
 
 def _state_of(job: Job) -> JobState:

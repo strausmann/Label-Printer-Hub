@@ -254,6 +254,59 @@ async def test_fifty_one_labels_wait_for_confirmation_before_the_second_sub_job(
         await queue.stop(timeout_s=2.0)
 
 
+class _SlowDoneStore(MemoryJobStore):
+    """A store whose ``mark_done`` of one label waits for ``release`` (a slow database write)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.slow: UUID | None = None
+        self.reached = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def mark_done(self, job_id: UUID) -> None:
+        if job_id == self.slow:
+            self.reached.set()
+            await self.release.wait()
+        await super().mark_done(job_id)
+
+
+async def test_a_part_whose_labels_are_done_takes_the_continue_while_its_rows_are_written() -> None:
+    """#347: the print status offers Continue as soon as every label of the part is done (the job
+    events say so). The rows of the last group are written after those events; the run must
+    already wait for the confirmation then, or the Continue gets ``run_not_awaiting_confirmation``.
+    """
+    printer = TapeRoll()
+    store = _SlowDoneStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    ids = [uuid4() for _ in range(51)]
+    store.slow = ids[MAX_LABELS_PER_TAPE_JOB - TAPE_GROUP_SIZE]  # the first row of the last group
+    for jid in ids:
+        await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={"tape_mm": 12}))
+    run_id = await queue.enqueue_batch(
+        printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+    )
+    try:
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        # What the client sees: labels 1-50 done, label 51 queued. The rows are still being written.
+        assert await _states(queue, ids[:MAX_LABELS_PER_TAPE_JOB]) == [JobState.COMPLETED] * 50
+        assert (await queue.get(ids[50])).state == JobState.QUEUED
+        info = queue.run_info(run_id)
+        assert info is not None and info.state == "awaiting_confirmation"
+
+        await queue.confirm_run(run_id)  # the Continue of the print status
+        store.release.set()
+
+        await _until(lambda: queue.run_info(run_id) is None)
+        await asyncio.sleep(0.1)
+        # the second part printed once: the end of the first part did not hold or start it again
+        assert printer.calls == [10] * 5 + [1]
+        assert (await queue.get(ids[50])).state == JobState.COMPLETED
+    finally:
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
 async def test_confirm_is_refused_unless_the_run_waits_for_it() -> None:
     printer = TapeRoll()
     printer.gate = asyncio.Event()
