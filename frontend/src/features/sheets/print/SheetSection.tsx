@@ -15,7 +15,7 @@ import { usePrinterStatus, type Printer } from "../../printers/api";
 import { describePrinter } from "../../printers/model";
 import { ReasonLine } from "../../printers/PageStatus";
 import { HINT, LABEL, SelectField } from "../../settings/controls";
-import { PANEL, SECTION_HEADING } from "../../ui";
+import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../../ui";
 import { useNextCode, usePrintSheets, useSheet, useSheetPreview, useSheets, type SheetPrintRequest, type SheetPrintResponse } from "../api";
 import type { GridCell } from "../cellState";
 import { SheetGrid } from "../SheetGrid";
@@ -445,12 +445,19 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
               }}
             />
           ) : previewError ? (
-            <p role="alert" className="[overflow-wrap:anywhere]">{errorText(previewError)}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p role="alert" className="min-w-0 [overflow-wrap:anywhere]">{errorText(previewError)}</p>
+              {previewError instanceof ApiError && previewError.code === "too-many-previews" && (
+                <Button className={SECONDARY_BUTTON} onPress={() => void preview.refetch()}>
+                  {t`Try again`}
+                </Button>
+              )}
+            </div>
           ) : null}
           {fitNote && <p role="status" className="font-bold [overflow-wrap:anywhere]">{fitNote}</p>}
           {busy && !previewError && (
             <p role="status" className="text-ink-2 [overflow-wrap:anywhere]">
-              {previewWait ? errorText(preview.failureReason) : shownData ? t`Updating the preview…` : t`Drawing the sheet…`}
+              {previewWait ? t`Too many previews at once. The preview updates in a moment.` : shownData ? t`Updating the preview…` : t`Drawing the sheet…`}
             </p>
           )}
           {shownData && !insufficient && (

@@ -4723,9 +4723,13 @@ msgstr "toner low"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
 
-#: src/features/sheets/print/errors.ts
+#: src/features/sheets/print/SheetSection.tsx
 msgid "Too many previews at once. The preview updates in a moment."
 msgstr "Too many previews at once. The preview updates in a moment."
+
+#: src/features/sheets/print/errors.ts
+msgid "Too many previews right now. Try again in a moment."
+msgstr "Too many previews right now. Try again in a moment."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "too small"
@@ -4775,6 +4779,7 @@ msgstr "Trays are listed once the printer has answered."
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/sheets/print/SheetSection.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Try again"

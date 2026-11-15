@@ -165,6 +165,26 @@ describe("the preview", () => {
     expect(previews(calls)).toHaveLength(2);
   });
 
+  it("after the last automatic try, too many previews says to try again and a button asks again (#339)", async () => {
+    let busy = true;
+    const preview = () =>
+      busy
+        ? new Response(JSON.stringify({ detail: { error_code: "too-many-previews", error_message: "Busy.", retry_after_seconds: 1 } }), {
+            status: 429,
+            headers: { "Content-Type": "application/json", "Retry-After": "1" },
+          })
+        : new Response(JSON.stringify(previewFor("L4736-0001", NEW_9, USED_17)), { status: 200, headers: { "Content-Type": "application/json" } });
+    const { calls } = await itemView(routes({ preview }));
+    const alert = await screen.findByRole("alert", undefined, { timeout: 9000 });
+    expect(alert).toHaveTextContent("Too many previews right now. Try again in a moment.");
+    // The first ask and five automatic ones, then it stops.
+    expect(previews(calls)).toHaveLength(6);
+    busy = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("9 printed now")).toBeVisible();
+    expect(screen.queryByText(/Too many previews/)).toBeNull();
+  }, 20_000);
+
   it("shows the feed mark entry, the margin ID with its band, and the not-printed warning", async () => {
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {}, { feed_mark: true, margin_id: true, margin_band: "bottom" }) }));
     expect(await screen.findByText("Top-edge mark")).toBeVisible();
