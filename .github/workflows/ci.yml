@@ -59,6 +59,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      # The calibration page test that measures the rendered image needs pdftoppm. In CI a missing
+      # pdftoppm fails that test (it does not skip), so a runner without poppler cannot hide it.
+      - name: Install poppler (pdftoppm for the rendered-page test)
+        if: steps.pyproject.outputs.exists == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils
+          pdftoppm -v
+
       - name: Ruff lint
         if: steps.pyproject.outputs.exists == 'true'
         working-directory: ${{ steps.pyproject.outputs.path }}
@@ -99,6 +108,16 @@ jobs:
         env:
           LABELYARD_PUBLIC_URL: http://localhost:8000
         run: pytest -m "not slow" --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
+
+      # Shown on its own so the log proves the image-measured test ran (-rA lists its PASSED line).
+      - name: Rendered calibration page test ran
+        if: steps.pyproject.outputs.exists == 'true'
+        working-directory: ${{ steps.pyproject.outputs.path }}
+        env:
+          LABELYARD_PUBLIC_URL: http://localhost:8000
+        run: |
+          pytest tests/unit/calibration/test_page.py -k a_corner_mark_never_comes_within -rA -p no:cacheprovider --no-cov | tee image-test.log
+          grep -q "PASSED.*a_corner_mark_never_comes_within" image-test.log
 
       - name: Alembic — no pending migrations
         if: steps.pyproject.outputs.exists == 'true'

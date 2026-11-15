@@ -320,12 +320,16 @@ def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
     for y in row_y:
         page.run(y, x0, x0 + gw, vertical=False, dash=DASHED if row_gap else DOTTED)
 
-    scales: list[_Seg] = []
-    for x in col_x:
-        for y in row_y:
+    # The ticks of every crossing, by (column line, row line): a corner is checked only against
+    # the crossings next to it, not against every tick of the page.
+    scales: dict[tuple[int, int], list[_Seg]] = {}
+    for i, x in enumerate(col_x):
+        for j, y in enumerate(row_y):
             _mini_scale(page, x, y, along_x=True)
             _mini_scale(page, x, y, along_x=False)
-            scales += _scale_segments(x, y, along_x=True) + _scale_segments(x, y, along_x=False)
+            scales[i, j] = _scale_segments(x, y, along_x=True) + _scale_segments(
+                x, y, along_x=False
+            )
 
     for x in col_x:
         _ruler(page, x, y0, horizontal=True, outward=-1)
@@ -340,12 +344,15 @@ def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
             ly0 = (g.margin_top + r * g.pitch_y) / 100
             lx1 = (g.margin_left + c * g.pitch_x + g.label_w) / 100
             ly1 = (g.margin_top + r * g.pitch_y + g.label_h) / 100
-            # Only the scales within reach of this label's corners matter.
-            near = [t for t in scales if lx0 - 4 <= t[0] <= lx1 + 4 and ly0 - 4 <= t[1] <= ly1 + 4]
-            _corner_mark(page, lx0, ly0, 1, 1, ticks=near)
-            _corner_mark(page, lx1, ly0, -1, 1, ticks=near)
-            _corner_mark(page, lx0, ly1, 1, -1, ticks=near)
-            _corner_mark(page, lx1, ly1, -1, -1, ticks=near)
+            # A label's left edge borders column line c - 1, its right edge line c; its top edge
+            # borders row line r - 1, its bottom edge line r (the outer edges border none).
+            left, top = c - 1, r - 1
+            tl, tr = scales.get((left, top), []), scales.get((c, top), [])
+            bl, br = scales.get((left, r), []), scales.get((c, r), [])
+            _corner_mark(page, lx0, ly0, 1, 1, ticks=tl)
+            _corner_mark(page, lx1, ly0, -1, 1, ticks=tr)
+            _corner_mark(page, lx0, ly1, 1, -1, ticks=bl)
+            _corner_mark(page, lx1, ly1, -1, -1, ticks=br)
 
     for i, x in enumerate(col_x, start=1):
         page.text(x, y0 - _RULER_TICK_MM - 0.6, f"S{i}", size_pt=LABEL_PT, anchor="middle")

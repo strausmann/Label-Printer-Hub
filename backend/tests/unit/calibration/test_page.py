@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import math
+import os
 import shutil
 from collections import Counter
 from dataclasses import asdict
@@ -209,7 +210,15 @@ def _render_crop(pdf: bytes, cx: float, cy: float, half_mm: float, dpi: int = 60
             return im.convert("L").copy(), ppm
 
 
-@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs poppler's pdftoppm")
+def _need_pdftoppm() -> None:
+    """Skip locally without poppler; in CI (``CI`` set) a missing pdftoppm is a failure."""
+    if shutil.which("pdftoppm") is not None:
+        return
+    if os.environ.get("CI"):
+        pytest.fail("pdftoppm is missing in CI: install poppler-utils (the image test must run)")
+    pytest.skip("needs poppler's pdftoppm")
+
+
 def test_a_corner_mark_never_comes_within_the_white_of_a_tick() -> None:
     """Measured on the 600 dpi image of a 2.5 mm gap sheet (#348), not from the constants.
 
@@ -217,6 +226,7 @@ def test_a_corner_mark_never_comes_within_the_white_of_a_tick() -> None:
     1.0 and 1.5 mm. Every ink pixel that is neither tick nor on the gap lines through the crossing
     must keep ``MIN_GAP_MM`` from the ticks.
     """
+    _need_pdftoppm()
     half = 4.0
     cx, cy = crossing_point(L4736, 2, 5)
     im, ppm = _render_crop(_pdf(L4736), cx, cy, half)
@@ -250,6 +260,42 @@ def test_a_corner_mark_never_comes_within_the_white_of_a_tick() -> None:
         default=math.inf,
     )
     assert clearance >= scale.MIN_GAP_MM, f"other ink {clearance:.2f} mm from a tick"
+
+
+# The worst case for the corner check: 20 x 20 labels a hundredth of a millimetre apart, so every
+# crossing is near every label. Geometry is admin-written, but the PDF route renders on request.
+TINY = Geometry("A4", 21000, 29700, 1, 1, 20, 20, 1, 1, 5000, 5000, None, "rectangle")
+
+
+def test_a_corner_is_checked_against_the_ticks_of_its_own_crossing_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Counts what each corner is checked against instead of timing it: one crossing's ticks."""
+    from app.calibration import page
+
+    sizes: list[int] = []
+    real = page._corner_mark
+
+    def recording(*args: object, ticks: list[tuple[float, float, float, float]] = (), **kw: object):  # type: ignore[no-untyped-def]
+        sizes.append(len(ticks))
+        return real(*args, ticks=ticks, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(page, "_corner_mark", recording)
+    _pdf(TINY)
+    one_crossing = 2 * len(page._scale_segments(0.0, 0.0, along_x=True))
+    assert len(sizes) == 20 * 20 * 4
+    # Never the ticks of the page (361 crossings x 18 x 2), and not of a neighbourhood either.
+    assert max(sizes) == one_crossing
+    assert sum(sizes) <= len(sizes) * one_crossing
+
+
+def test_the_worst_case_page_renders_in_reasonable_time() -> None:
+    """A rough bound only (10 s where it takes well under 2 s), so a slow runner cannot flake it."""
+    import time
+
+    start = time.perf_counter()
+    _pdf(TINY)
+    assert time.perf_counter() - start < 10
 
 
 def test_page_line_counts_gapped_type() -> None:
