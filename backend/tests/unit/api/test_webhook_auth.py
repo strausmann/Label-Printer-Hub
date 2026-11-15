@@ -14,7 +14,8 @@ the key now lives in the runtime settings store, each test puts a stub store on
 
 from __future__ import annotations
 
-from app.api.dependencies.webhook_auth import require_webhook_key
+import pytest
+from app.api.dependencies.webhook_auth import enforce_webhook_rate_limit, require_webhook_key
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
@@ -86,3 +87,78 @@ def test_correct_key_passes_through() -> None:
     r = client.get("/guarded", headers={"X-API-Key": _VALID_KEY})
     assert r.status_code == 200
     assert r.json() == {"ok": "true"}
+
+
+# ---------------------------------------------------------------------------
+# Test: non-ASCII key → 401, never 500 (#301)
+# ---------------------------------------------------------------------------
+
+# Sent as raw UTF-8 bytes, the way a real client would; the server decodes the header
+# to a ``str`` that holds non-ASCII characters (``hmac.compare_digest`` rejects those).
+_NON_ASCII_KEYS = [
+    pytest.param("ключ-é-" + "a" * 32, id="cyrillic-latin1-mix"),
+    pytest.param("é" * 32, id="latin1-only"),
+    pytest.param("🔑" * 8, id="emoji"),
+]
+
+
+def _make_chained_app(key: str) -> FastAPI:
+    """App guarded by both webhook dependencies, in the order the real routes use."""
+    app = FastAPI()
+    app.state.settings_store = _StubStore(key)
+
+    @app.get(
+        "/chained",
+        dependencies=[Depends(require_webhook_key), Depends(enforce_webhook_rate_limit)],
+    )
+    async def chained() -> dict[str, str]:
+        return {"ok": "true"}
+
+    return app
+
+
+@pytest.mark.parametrize("bad_key", _NON_ASCII_KEYS)
+def test_non_ascii_key_returns_401_on_require_webhook_key(bad_key: str) -> None:
+    """A key with non-ASCII characters is just a wrong key: 401 with the normal message."""
+    client = TestClient(_make_app(_VALID_KEY), raise_server_exceptions=False)
+    r = client.get("/guarded", headers={"X-API-Key": bad_key.encode()})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Invalid API key"
+
+
+@pytest.mark.parametrize("bad_key", _NON_ASCII_KEYS)
+def test_non_ascii_key_returns_401_through_both_dependencies(bad_key: str) -> None:
+    """The real route chain (key check, then rate limit) also answers 401, not 500."""
+    client = TestClient(_make_chained_app(_VALID_KEY), raise_server_exceptions=False)
+    r = client.get("/chained", headers={"X-API-Key": bad_key.encode()})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Invalid API key"
+
+
+@pytest.mark.parametrize("bad_key", _NON_ASCII_KEYS)
+def test_non_ascii_key_does_not_crash_enforce_webhook_rate_limit(bad_key: str) -> None:
+    """The rate-limit dependency alone must not raise on a non-ASCII key (it hashes the key)."""
+    app = FastAPI()
+
+    @app.get("/limited", dependencies=[Depends(enforce_webhook_rate_limit)])
+    async def limited() -> dict[str, str]:
+        return {"ok": "true"}
+
+    client = TestClient(app, raise_server_exceptions=False)
+    r = client.get("/limited", headers={"X-API-Key": bad_key.encode()})
+    assert r.status_code == 200
+
+
+def test_valid_key_still_passes_both_dependencies() -> None:
+    """The correct key still gets through the whole chain after the encoding change."""
+    client = TestClient(_make_chained_app(_VALID_KEY), raise_server_exceptions=False)
+    r = client.get("/chained", headers={"X-API-Key": _VALID_KEY})
+    assert r.status_code == 200
+
+
+def test_wrong_ascii_key_still_returns_401_through_both_dependencies() -> None:
+    """A wrong ASCII key of the right length keeps answering 401 through the chain."""
+    client = TestClient(_make_chained_app(_VALID_KEY), raise_server_exceptions=False)
+    r = client.get("/chained", headers={"X-API-Key": "b" * 32})
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Invalid API key"
