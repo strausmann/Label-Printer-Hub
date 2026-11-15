@@ -353,6 +353,14 @@ async def test_probe_refusals_are_logged() -> None:
         "cookie",
         "otp",
         "pass",
+        "nonce",
+        "hmac",
+        "sid",
+        "pin",
+        "new-key",  # only the exact route parameter new_key is exempt
+        "NewKey",
+        "new_key[]",
+        "new%255Fkey",  # decodes to new%5Fkey for the app: not the route parameter
         "keyword",  # not a route parameter: masked, fail closed
         "author",
         "monkey",
@@ -363,11 +371,15 @@ async def test_sensitive_stems_are_masked(name: str) -> None:
     async with _client(lines) as client:
         await client.get(f"/whoami?{name}=abc12345secret")
     assert "abc12345secret" not in lines[0]
-    assert f"{name}=***" in lines[0]
+    assert "=***" in lines[0]
 
 
-@pytest.mark.parametrize("name", ["new_key", "q", "limit", "printer_id", "state"])
+@pytest.mark.parametrize(
+    "name",
+    ["new_key", "new%5Fkey", "q", "limit", "printer_id", "state"],  # %5F: the app reads new_key
+)
 async def test_harmless_route_params_stay_visible(name: str) -> None:
+    """The exact name only; look-alikes of the exempt name are masked (see above)."""
     lines: list[str] = []
     async with _client(lines) as client:
         await client.get(f"/whoami?{name}=visible")

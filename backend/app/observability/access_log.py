@@ -76,20 +76,25 @@ _SENSITIVE_STEMS = (
     "bearer",
     "cookie",
     "cred",
+    "hmac",
     "jwt",
     "key",
+    "nonce",
     "otp",
     "pass",
+    "pin",
     "pwd",
     "secret",
     "session",
+    "sid",
     "sig",
     "token",
 )
 # The only exemptions: query parameters of the hub's own API whose name contains a stem but
 # never carries a secret. ``new_key`` is the new sheet type key of an import
-# (``POST /api/v1/sheet-types/import``, pattern-checked identifier).
-_HARMLESS_NAMES = frozenset({"newkey"})
+# (``POST /api/v1/sheet-types/import``, pattern-checked identifier). Compared with the name as
+# the app decodes it, exactly: ``new-key``, ``NewKey`` or ``new_key[]`` are masked.
+_HARMLESS_NAMES = frozenset({"new_key"})
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
 _KEY_CHARS = re.compile(r"[A-Za-z0-9_-]+")
 _NGINX_VERSIONS = {"2": "2.0", "3": "3.0"}  # ASGI writes "2", nginx "HTTP/2.0"
@@ -138,9 +143,11 @@ def _escape(text: str) -> str:
     return "".join(out)
 
 
-def _is_sensitive_name(name: str) -> bool:
-    flat = _NON_ALNUM.sub("", name.lower())
-    return flat not in _HARMLESS_NAMES and any(stem in flat for stem in _SENSITIVE_STEMS)
+def _is_sensitive_name(raw_name: str) -> bool:
+    if unquote(raw_name) in _HARMLESS_NAMES:
+        return False
+    flat = _NON_ALNUM.sub("", unquote(unquote(raw_name)).lower())
+    return any(stem in flat for stem in _SENSITIVE_STEMS)
 
 
 def _mask_param(part: str) -> str:
@@ -150,7 +157,7 @@ def _mask_param(part: str) -> str:
     if name == TOKEN_PARAM:
         prefix = visible_key(unquote(value))
         return f"{name}={prefix}{MASK}" if prefix else f"{name}={MASK}"
-    if _is_sensitive_name(unquote(unquote(name))):
+    if _is_sensitive_name(name):
         return f"{name}={MASK}"
     return hide_key_shapes(part)
 
