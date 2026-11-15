@@ -5686,6 +5686,47 @@
         "title": "SheetTypeDetail",
         "type": "object"
       },
+      "SheetTypeNotice": {
+        "description": "A shipped sheet type was marked verified or got new dimensions (spec 10i, R-334-4).\n\nInformation only: it carries no secret and no write path. ``code`` is the type's product\ncode without its pack-size suffix, as it stood when the notice was written.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "code": {
+            "description": "Product code of the type, or its key when it has none.",
+            "title": "Code",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable id of the notice; a browser keeps its read state under it.",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "Key of the sheet type the notice is about.",
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "sheet_type_verified",
+              "sheet_type_updated"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "key",
+          "code",
+          "at"
+        ],
+        "title": "SheetTypeNotice",
+        "type": "object"
+      },
       "SheetTypePatch": {
         "additionalProperties": false,
         "description": "Only the fields the client sends change. ``null`` clears a nullable field.",
@@ -8728,6 +8769,37 @@
         "summary": "Resolve an integration entity",
         "tags": [
           "lookup"
+        ]
+      }
+    },
+    "/api/v1/notices": {
+      "get": {
+        "description": "Notices of the last 30 days, newest first (sheet types marked verified or updated).",
+        "operationId": "list_notices_api_v1_notices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SheetTypeNotice"
+                  },
+                  "title": "Response List Notices Api V1 Notices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List the hub's recent notices",
+        "tags": [
+          "notices"
         ]
       }
     },

@@ -106,6 +106,7 @@ from app.api.routes import grocy_label as grocy_label_routes
 from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
+from app.api.routes import notices as notices_routes
 from app.api.routes import printer_roll as printer_roll_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
@@ -724,6 +725,7 @@ def create_app() -> _LifespanManager:
     app.include_router(test_print_routes.router)
     app.include_router(capabilities_router)
     app.include_router(info_routes.router)
+    app.include_router(notices_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.

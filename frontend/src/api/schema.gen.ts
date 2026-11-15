@@ -535,6 +535,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the hub's recent notices
+         * @description Notices of the last 30 days, newest first (sheet types marked verified or updated).
+         */
+        get: operations["list_notices_api_v1_notices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/print": {
         parameters: {
             query?: never;
@@ -3903,6 +3923,37 @@ export interface components {
             versions: components["schemas"]["VersionRead"][];
         };
         /**
+         * SheetTypeNotice
+         * @description A shipped sheet type was marked verified or got new dimensions (spec 10i, R-334-4).
+         *
+         *     Information only: it carries no secret and no write path. ``code`` is the type's product
+         *     code without its pack-size suffix, as it stood when the notice was written.
+         */
+        SheetTypeNotice: {
+            /** At */
+            at: string;
+            /**
+             * Code
+             * @description Product code of the type, or its key when it has none.
+             */
+            code: string;
+            /**
+             * Id
+             * @description Stable id of the notice; a browser keeps its read state under it.
+             */
+            id: string;
+            /**
+             * Key
+             * @description Key of the sheet type the notice is about.
+             */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "sheet_type_verified" | "sheet_type_updated";
+        };
+        /**
          * SheetTypePatch
          * @description Only the fields the client sends change. ``null`` clears a nullable field.
          */
@@ -5582,6 +5633,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    list_notices_api_v1_notices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetTypeNotice"][];
+                };
             };
         };
     };

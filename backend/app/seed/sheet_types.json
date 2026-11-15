@@ -1,5 +1,5 @@
 {
-  "seed_revision": 1,
+  "seed_revision": 2,
   "types": [
     {
       "format": "label-printer-hub.sheet-type",
@@ -522,22 +522,22 @@
         ],
         "description": "Mini labels, removable",
         "allow_qr": true,
-        "verified": false,
+        "verified": true,
         "source_name": "Labelplanet LP189/25; MR-Label MR111",
         "source_url": "https://labelplanet.co.uk/label-templates-for-rounded-rectangle-labels/label-templates-189-per-sheet-lp189-25/",
-        "notes": "Vendor page not reachable; values agree between two third-party sources for this size (Labelplanet LP189/25, MR-Label MR111, listed there as the L4731 size; second source: http://mr-label.com/articles/3884). Corner radius 1.47 mm from MR-Label MR111, rounded to 1.5. No vertical gap (pitch 10 = label height). Material: removable."
+        "notes": "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print with correction. The earlier geometry (top margin 13.5 mm, rows 10.0 mm) put every row line 0.7–1.3 mm low; corrected to top 12.54 mm and 9.98 mm rows. Vendor page not reachable; values agree between two third-party sources for this size (Labelplanet LP189/25, MR-Label MR111, listed there as the L4731 size; second source: http://mr-label.com/articles/3884). Corner radius 1.47 mm from MR-Label MR111, rounded to 1.5. No vertical gap (pitch 10 = label height). Material: removable."
       },
       "version": {
-        "version": 1,
+        "version": 2,
         "geometry": {
           "page_size": "A4",
           "label_w": 25.4,
-          "label_h": 10.0,
+          "label_h": 9.98,
           "cols": 7,
           "rows": 27,
           "pitch_x": 27.9,
-          "pitch_y": 10.0,
-          "margin_top": 13.5,
+          "pitch_y": 9.98,
+          "margin_top": 12.54,
           "margin_left": 8.6,
           "corner_radius": 1.5,
           "shape": "rectangle",
@@ -1528,6 +1528,146 @@
       },
       "exported_at": "2026-11-05T00:00:00Z",
       "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-6121",
+        "prefix": "A6121",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "6121",
+          "6121-65"
+        ],
+        "description": "Universal labels",
+        "allow_qr": true,
+        "verified": true,
+        "source_name": "Avery Zweckform Word template 6121",
+        "source_url": null,
+        "notes": "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print within +0.3 / ±0.2 mm. 5 columns of 38.1 mm with no horizontal gap (190.5 mm), rows 21.18 mm (275.34 mm); left edge 9.9 mm from the template, top 10.8 mm confirmed by the calibration print. Corner radius unknown. 65 labels per sheet; `-65` is the pack of 65 sheets."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "page_w": 210.0,
+          "page_h": 297.0,
+          "shape": "rectangle",
+          "label_w": 38.1,
+          "label_h": 21.18,
+          "cols": 5,
+          "rows": 13,
+          "pitch_x": 38.1,
+          "pitch_y": 21.18,
+          "margin_top": 10.8,
+          "margin_left": 9.9,
+          "corner_radius": null
+        }
+      },
+      "exported_at": "2026-11-15T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-3490",
+        "prefix": "A3490",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "3490"
+        ],
+        "description": "Universal labels, 70 x 36 mm, square cut",
+        "allow_qr": true,
+        "verified": true,
+        "source_name": "Labelplanet LP24/70SS; glabels-qt Zweckform 3490",
+        "source_url": "https://www.labelplanet.co.uk/label-templates-for-square-cut-rectangle-labels/label-templates-24-per-sheet-lp24-70ss/",
+        "notes": "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print within −0.33 to −0.50 mm across and ±0.3 mm down. Square-cut labels edge to edge, no side margin, top margin 4.5 mm. No usable margin: the sheet code is not printed in the margin (until #350)."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "page_w": 210.0,
+          "page_h": 297.0,
+          "shape": "rectangle",
+          "label_w": 70,
+          "label_h": 36,
+          "cols": 3,
+          "rows": 8,
+          "pitch_x": 70,
+          "pitch_y": 36,
+          "margin_top": 4.5,
+          "margin_left": 0,
+          "corner_radius": null
+        }
+      },
+      "exported_at": "2026-11-15T00:00:00Z",
+      "exported_by_hub": "seed"
+    },
+    {
+      "format": "label-printer-hub.sheet-type",
+      "format_version": 1,
+      "type": {
+        "key": "avery-zweckform-l4737rev",
+        "prefix": "L4737",
+        "vendor": "Avery Zweckform",
+        "product_codes": [
+          "L4737REV-25",
+          "L4737REV-10",
+          "L4737REV-100",
+          "L4737"
+        ],
+        "description": "Universal labels, removable",
+        "allow_qr": true,
+        "verified": true,
+        "source_name": "Labelplanet LP27/63; Avery Zweckform catalogue 2022 (size only)",
+        "source_url": "https://www.labelplanet.co.uk/label-templates-for-rounded-rectangle-labels/label-templates-27-per-sheet-lp27-63/",
+        "notes": "Vendor template pages not reachable (HTTP 403). Size 63.5 x 29.6 mm and 27 per sheet confirmed by the Avery Zweckform catalogue 2022 (https://www.avery-zweckform.com/sites/default/files/2022-01/X93000-2022_Hauptkatalog_deutsch.pdf); grid, pitch and margins from Labelplanet LP27/63 only (same size and count, listed there without the L4737 code). Corner radius not stated anywhere; measure. No vertical gap (pitch 29.6 = label height). Labelplanet notes the height is sometimes manufactured slightly below 29.6 mm. Material: removable. Left margin measured 6.95 mm on two check prints (Labelplanet: 7.25); the die cut sits off-centre."
+      },
+      "version": {
+        "version": 1,
+        "geometry": {
+          "page_size": "A4",
+          "page_w": 210.0,
+          "page_h": 297.0,
+          "shape": "rectangle",
+          "label_w": 63.5,
+          "label_h": 29.6,
+          "cols": 3,
+          "rows": 9,
+          "pitch_x": 66.0,
+          "pitch_y": 29.6,
+          "margin_top": 15.3,
+          "margin_left": 6.95,
+          "corner_radius": null
+        }
+      },
+      "exported_at": "2026-11-15T00:00:00Z",
+      "exported_by_hub": "seed"
     }
-  ]
+  ],
+  "adopt": {
+    "avery-zweckform-6121": {
+      "revision": 2,
+      "change_note": "Verified geometry shipped with Labelyard 1.7.0"
+    },
+    "avery-zweckform-3490": {
+      "revision": 2,
+      "change_note": "Verified geometry shipped with Labelyard 1.7.0"
+    },
+    "avery-zweckform-l4737rev": {
+      "revision": 2,
+      "change_note": "Verified geometry shipped with Labelyard 1.7.0"
+    }
+  },
+  "corrections": {
+    "avery-zweckform-l4731rev": {
+      "revision": 2,
+      "previous_geometry_hash": "6bd4184640be593fc62e1f994173d53156f1494e99536b391510626916035033",
+      "previous_notes_sha256": "405856ac2aa22e2aac0afdfe74d9cd1119bd1da3811a40a950192f5823cfb044",
+      "change_note": "Verified geometry shipped with Labelyard 1.7.0 (top margin 13.5 → 12.54 mm, row pitch 10.0 → 9.98 mm)"
+    }
+  }
 }

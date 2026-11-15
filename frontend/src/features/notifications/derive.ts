@@ -5,21 +5,32 @@ import { jobTitle } from "../jobs/model";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import { describePrinter, isFailed, type PrinterKind } from "../printers/model";
 import type { SheetSummary } from "../sheets/api";
+import type { components } from "../../api/schema.gen";
+
+export type SheetTypeNotice = components["schemas"]["SheetTypeNotice"];
+
+/** Query key of the hub's notices (`GET /api/v1/notices`). */
+export const NOTICES_KEY = ["notices"] as const;
 
 export type Severity = "error" | "warning" | "success" | "info";
 
 export interface Notification {
-  /** `job:<id>:<state>`, `printer:<id>:<kind>` or `sheet:<code>:unconfirmed`: a new state is a new entry. */
+  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `sheet:<code>:unconfirmed` or `sheet-type-verified:<key>:<revision>`: a new state is a new entry. */
   id: string;
   severity: Severity;
-  kind: "job" | "printer" | "sheet";
+  kind: "job" | "printer" | "sheet" | "sheet_type";
   /** Which sentence the component says (`job.failed`, `printer.offline` …); the words live in the component, so they are translated. */
   textKey: string;
   /** The names and numbers the sentence is made of. Empty text means "not known"; the component then says it its own way. */
   values: Record<string, string>;
   /** ISO time: the job's last change, or the moment this browser first saw the condition. */
   at: string;
-  target: { to: "/jobs/$jobId" | "/printers/$printerId" | "/sheets/$code"; params: Record<string, string> };
+  target: {
+    to: "/jobs/$jobId" | "/printers/$printerId" | "/sheets/$code" | "/sheets/archive";
+    params: Record<string, string>;
+    /** Search parameters of the target page (the sheet archive filters by `type`). */
+    search?: { type: string };
+  };
   /** A failed job that a later retry printed: information now, and no longer "needs attention". */
   resolved?: boolean;
 }
@@ -170,6 +181,25 @@ function sheetEntry(sheet: SheetSummary, firstSeen: Record<string, string>, now:
   };
 }
 
+export const newestFirst = (a: Notification, b: Notification) => time(b.at) - time(a.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+
+/**
+ * The hub's own notices as entries: a shipped sheet type was marked verified or got new dimensions. Information,
+ * not a standing condition, so they join the feed after `deriveNotifications` and are never part of its cap. The
+ * `code` is the one the hub stored when it wrote the notice (the type's own product code), not derived here.
+ */
+export function deriveNotices(notices: readonly SheetTypeNotice[]): Notification[] {
+  return notices.map((n) => ({
+    id: n.id,
+    severity: "info",
+    kind: "sheet_type",
+    textKey: n.kind === "sheet_type_updated" ? "sheet_type.updated" : "sheet_type.verified",
+    values: { code: n.code },
+    at: n.at,
+    target: { to: "/sheets/archive", params: {}, search: { type: n.key } },
+  }));
+}
+
 /**
  * Everything the notification centre and the overview's "Needs attention" show, from data the server already serves:
  * the print jobs of the last day, the printers with their status, and the sheets. Newest first; at most 100, standing conditions (printer, sheet, unresolved errors) never cut.
@@ -193,7 +223,6 @@ export function deriveNotifications(input: DeriveInput): Notification[] {
     if (entry) entries.push(entry);
   }
 
-  const newestFirst = (a: Notification, b: Notification) => time(b.at) - time(a.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   // A standing condition (a printer or sheet entry, an unresolved error) is never displaced by finished or queued
   // jobs: on a busy install 100 newer done jobs would otherwise push it out of the bell and the overview card, and
   // its first-seen time would start over when they aged out. The cap applies to the remainder.

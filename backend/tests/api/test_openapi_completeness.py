@@ -152,6 +152,7 @@ def test_endpoint_count_in_range(openapi_schema: dict[str, Any]) -> None:
       + /api/templates/{key}/preview-png (1) = Phase-1i A
       + /api/templates/{key}/preview-svg (1) = Phase-1i D
       + 1.7.0: sheet resolve-all, render check, Grocy label (3)
+      + notices (1)
       Total = 29+
 
     The range 28-96 is intentionally wide to tolerate minor additions

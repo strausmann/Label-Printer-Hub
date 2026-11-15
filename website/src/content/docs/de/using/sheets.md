@@ -9,6 +9,8 @@ Ein Seitendrucker bedruckt Etikettenbögen: A4- oder Letter-Seiten mit einem Ras
 
 Ein **Bogentyp** beschreibt ein Produkt: Seitengröße, Zahl der Zeilen und Spalten und die Maße eines Felds. Unter **Bögen** legst du einen an oder importierst einen. Bogentypen haben Versionen: Wenn du ein Maß korrigierst, fügst du eine Version hinzu, und Bögen, die schon in Gebrauch sind, behalten die Version, mit der sie gedruckt wurden.
 
+Bogentypen mit dem Vermerk **geprüft** wurden auf echten Bögen vermessen. Labelyard 1.7.0 bringt Avery Zweckform 6121, 3490 und L4737REV mit (3490 druckt keinen Bogencode in den Rand; das kommt mit #350) und korrigiert L4731REV (Bögen, die du schon hast, behalten die alte Messung). Einen Typ, den du unter demselben Schlüssel selbst angelegt oder importiert hast, übernimmt Labelyard mit deinem Präfix und behält die älteren Versionen; die Glocke sagt es dir einmal. Ein übernommener Typ gilt ab dann als mitgeliefert: Du kannst ihn archivieren, aber nicht löschen.
+
 Einen Bogentyp kannst du in eine Datei exportieren und in diesem oder einem anderen Hub importieren, damit ein Produkt nur einmal vermessen werden muss.
 
 Jeder Bogentyp hat einen eigenen Schalter **QR-Codes auf Etiketten**, in den Details des Typs im **Bogenarchiv**. Ein neuer Typ beginnt mit eingeschaltetem Schalter, wenn die kürzere Seite eines Etiketts mindestens 10 mm misst: Auf Etiketten mit 25,4 × 10 mm lässt sich ein QR-Code mit einer kurzen Nummer daneben drucken und scannen. Ist der Schalter aus, werden die Etiketten dieses Typs ohne QR-Code gedruckt, auch das ID-Etikett des Bogens, und die Druckvorschau kennzeichnet diese Felder mit „Nur der Code auf diesem Bogentyp“. Bereits angelegte Typen behalten ihre Einstellung.

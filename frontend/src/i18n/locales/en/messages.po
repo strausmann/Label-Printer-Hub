@@ -125,6 +125,10 @@ msgstr "{cells} on sheet {code}"
 msgid "{code} could not be checked. Try again."
 msgstr "{code} could not be checked. Try again."
 
+#: src/features/notifications/useEntryText.ts
+msgid "{code} dimensions updated (verified)"
+msgstr "{code} dimensions updated (verified)"
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "{code} has {free} free cells: choose them for the first {free} of {labels} labels. The rest goes onto the next sheet."
 msgstr "{code} has {free} free cells: choose them for the first {free} of {labels} labels. The rest goes onto the next sheet."
@@ -140,6 +144,10 @@ msgstr "{code} is discarded and cannot take labels any more."
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} is not a sheet of this type. This print uses {typeLabel} sheets."
 msgstr "{code} is not a sheet of this type. This print uses {typeLabel} sheets."
+
+#: src/features/notifications/useEntryText.ts
+msgid "{code} marked as verified"
+msgstr "{code} marked as verified"
 
 #: src/features/jobs/JobDetail.tsx
 msgid "{copyNo} of {copyTotal}"
@@ -3875,6 +3883,7 @@ msgstr "Sheet print"
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/notifications/NotificationCentre.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx

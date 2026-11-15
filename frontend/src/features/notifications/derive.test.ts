@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { job, PAGE_PRINTER, pageStatus, PRINTER_A, PRINTER_B, status } from "../test-api";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { SheetSummary } from "../sheets/api";
-import { deriveNotifications } from "./derive";
+import { deriveNotices, deriveNotifications, newestFirst, type SheetTypeNotice } from "./derive";
 
 const NOW = Date.parse("2026-11-14T12:00:00Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -279,5 +279,51 @@ describe("deriveNotifications: the list", () => {
 
   it("makes no entry for printer B when only A is listed (unknown printer ids are not invented)", () => {
     expect(run({ printers: [A], statuses: { [B.id]: okStatus(B, { online: false }) } })).toEqual([]);
+  });
+});
+
+const notice = (key: string, over: Partial<SheetTypeNotice> = {}): SheetTypeNotice => ({
+  id: `sheet-type-verified:${key}:2`,
+  kind: "sheet_type_verified",
+  key,
+  code: "6121",
+  at: minutesAgo(10),
+  ...over,
+});
+
+describe("deriveNotices", () => {
+  it("a sheet-type notice becomes an info entry linking to the type", () => {
+    const [entry, ...rest] = deriveNotices([notice("avery-zweckform-6121")]);
+    expect(rest).toEqual([]);
+    expect(entry).toEqual({
+      id: "sheet-type-verified:avery-zweckform-6121:2",
+      severity: "info",
+      kind: "sheet_type",
+      textKey: "sheet_type.verified",
+      values: { code: "6121" },
+      at: minutesAgo(10),
+      target: { to: "/sheets/archive", params: {}, search: { type: "avery-zweckform-6121" } },
+    });
+  });
+
+  it("an updated notice names the other sentence and keeps the stored code", () => {
+    const [entry] = deriveNotices([notice("avery-zweckform-l4731rev", { kind: "sheet_type_updated", code: "L4731REV" })]);
+    expect(entry).toMatchObject({ textKey: "sheet_type.updated", values: { code: "L4731REV" } });
+  });
+
+  it("notices are merged newest first and never cut by the job cap", () => {
+    const jobs = Array.from({ length: 100 }, (_, i) => mkJob(`aaaaaaaa-0000-4000-8000-${String(i).padStart(12, "0")}`, "done", { updated_at: minutesAgo(60 + i) }));
+    const base = run({ jobs, printers: [A] });
+    expect(base).toHaveLength(100);
+    const merged = [...base, ...deriveNotices([notice("a", { id: "n1", at: minutesAgo(1) }), notice("b", { id: "n2", at: minutesAgo(200) })])].sort(newestFirst);
+    expect(merged).toHaveLength(102);
+    expect(merged[0]?.id).toBe("n1");
+    expect(merged[101]?.id).toBe("n2");
+  });
+
+  it("a notice is information, not attention", () => {
+    const [entry] = deriveNotices([notice("a")]);
+    expect(entry?.severity).toBe("info");
+    expect(entry?.resolved).toBeUndefined();
   });
 });

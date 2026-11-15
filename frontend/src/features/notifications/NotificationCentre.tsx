@@ -78,7 +78,7 @@ function useBellName(badge: Feed["badge"]): string {
 
 /** A link to the entry's page; one branch per route so the router keeps its types. */
 function EntryLink({ entry, className, onClick, title, children }: { entry: Notification; className: string; onClick: () => void; title?: string; children: ReactNode }) {
-  const { to, params } = entry.target;
+  const { to, params, search } = entry.target;
   const common = { className, onClick, title };
   switch (to) {
     case "/jobs/$jobId":
@@ -87,6 +87,8 @@ function EntryLink({ entry, className, onClick, title, children }: { entry: Noti
       return <Link to="/printers/$printerId" params={{ printerId: params.printerId ?? "" }} {...common}>{children}</Link>;
     case "/sheets/$code":
       return <Link to="/sheets/$code" params={{ code: params.code ?? "" }} {...common}>{children}</Link>;
+    case "/sheets/archive":
+      return <Link to="/sheets/archive" search={search ? { type: search.type } : undefined} {...common}>{children}</Link>;
   }
 }
 
@@ -118,7 +120,7 @@ function Entry({ entry, unread, now, onNavigate }: { entry: Notification; unread
   const sentence = text(entry);
   const at = Date.parse(entry.at);
   const bold = unread ? "font-bold" : "";
-  const source = entry.kind === "job" ? entry.values.printer || "" : entry.kind === "printer" ? t`Printer` : t`Sheet`;
+  const source = entry.kind === "job" ? entry.values.printer || "" : entry.kind === "printer" ? t`Printer` : entry.kind === "sheet_type" ? t`Sheet type` : t`Sheet`;
   return (
     <li className="border-b border-line last:border-b-0" data-unread={unread || undefined}>
       <EntryLink

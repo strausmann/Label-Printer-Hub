@@ -8,7 +8,7 @@ import { queryString } from "../../api/queryString";
 import { useFeature } from "../../app/session";
 import { printerStatusQuery, usePrinters, type Job, type PrinterStatus } from "../printers/api";
 import { useSheets } from "../sheets/api";
-import { deriveNotifications, WINDOW_MS, type Notification } from "./derive";
+import { deriveNotices, deriveNotifications, newestFirst, NOTICES_KEY, WINDOW_MS, type Notification, type SheetTypeNotice } from "./derive";
 import { badgeOf, clearAll, dismiss, isVisible, markAllRead, notificationStore, trackFirstSeen, type StoredState } from "./store";
 
 /** Under `["jobs"]`, the prefix every job event invalidates (and the reconnect resync re-reads). */
@@ -52,6 +52,9 @@ export function useNotifications(): Feed {
   const printers = usePrinters();
   const statusResults = useQueries({ queries: (printers.data ?? []).map((p) => printerStatusQuery(p.id)) });
   const sheets = useSheets({}, sheetsOn);
+  // The hub's notices (a sheet type marked verified or updated). A failed read is no feed error: the bell
+  // then simply has none of them.
+  const notices = useQuery({ queryKey: NOTICES_KEY, queryFn: () => apiFetch<SheetTypeNotice[]>("/api/v1/notices"), enabled: sheetsOn });
 
   const stamps = statusResults.map((r) => r.dataUpdatedAt).join(",");
   const statuses = useMemo(() => {
@@ -67,15 +70,19 @@ export function useNotifications(): Feed {
 
   const entries = useMemo(
     () =>
-      deriveNotifications({
-        jobs: jobs.data ?? [],
-        printers: printers.data ?? [],
-        statuses,
-        sheets: sheetsOn ? (sheets.data ?? []) : [],
-        firstSeen: state.firstSeen,
-        now,
-      }),
-    [jobs.data, printers.data, statuses, sheets.data, sheetsOn, state.firstSeen, now],
+      [
+        ...deriveNotifications({
+          jobs: jobs.data ?? [],
+          printers: printers.data ?? [],
+          statuses,
+          sheets: sheetsOn ? (sheets.data ?? []) : [],
+          firstSeen: state.firstSeen,
+          now,
+        }),
+        // Joined after the derivation: outside its 100-entry cap and its standing rule.
+        ...deriveNotices(sheetsOn ? (notices.data ?? []) : []),
+      ].sort(newestFirst),
+    [jobs.data, printers.data, statuses, sheets.data, sheetsOn, notices.data, state.firstSeen, now],
   );
 
   // A condition's time is the moment this browser first saw it. Only kinds whose source has been read are tracked,
@@ -98,11 +105,15 @@ export function useNotifications(): Feed {
   const refetch = jobs.refetch;
   const refetchPrinters = printers.refetch;
   const refetchSheets = sheets.refetch;
+  const refetchNotices = notices.refetch;
   const retry = useCallback(() => {
     void refetch();
     void refetchPrinters();
-    if (sheetsOn) void refetchSheets();
-  }, [refetch, refetchPrinters, refetchSheets, sheetsOn]);
+    if (sheetsOn) {
+      void refetchSheets();
+      void refetchNotices();
+    }
+  }, [refetch, refetchPrinters, refetchSheets, refetchNotices, sheetsOn]);
 
   return {
     entries,

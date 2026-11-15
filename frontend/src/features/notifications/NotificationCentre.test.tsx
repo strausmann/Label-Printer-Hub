@@ -24,6 +24,17 @@ const routes = (jobs: unknown[] = [], printers: unknown[] = [PRINTER_A]) => ({
   "GET /api/v1/jobs": jobs,
 });
 
+const notices = (...records: Record<string, unknown>[]) => ({ "GET /api/v1/notices": records });
+const noticeRecord = (key: string, code: string, kind: string, ageMinutes = 5) => ({
+  id: `sheet-type-verified:${key}:2`,
+  kind,
+  key,
+  code,
+  at: minutesAgo(ageMinutes),
+});
+
+const SHEETS_ON = { features: { sheets: true } };
+
 const bell = () => screen.findByRole("button", { name: /^Notifications/ });
 
 describe("NotificationCentre: the bell", () => {
@@ -131,6 +142,66 @@ describe("NotificationCentre: the panel", () => {
     await userEvent.click(await bell());
     await userEvent.click(await screen.findByRole("link", { name: /Workshop PT-P750W: Paused/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/printers/${PRINTER_A.id}`));
+  });
+
+  it("a sheet-type entry links to the archive filtered by its type", async () => {
+    mockApi({ ...routes(), ...notices(noticeRecord("avery-zweckform-6121", "6121", "sheet_type_verified")) });
+    const { router } = await renderApp({ path: "/printers", info: SHEETS_ON });
+    await userEvent.click(await bell());
+    const link = await screen.findByRole("link", { name: /6121 marked as verified/ });
+    expect(link).toHaveAttribute("href", "/sheets/archive?type=avery-zweckform-6121");
+    await userEvent.click(link);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sheets/archive"));
+    expect(router.state.location.search).toMatchObject({ type: "avery-zweckform-6121" });
+  });
+
+  it("the updated notice reads \"6121 dimensions updated (verified)\"", async () => {
+    mockApi({
+      ...routes(),
+      ...notices(
+        noticeRecord("avery-zweckform-6121", "6121", "sheet_type_updated", 5),
+        noticeRecord("avery-zweckform-l4731rev", "L4731REV", "sheet_type_updated", 6),
+      ),
+    });
+    await renderApp({ path: "/printers", info: SHEETS_ON });
+    await userEvent.click(await bell());
+    expect(await screen.findByRole("link", { name: /6121 dimensions updated \(verified\)/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /L4731REV dimensions updated \(verified\)/ })).toBeVisible();
+  });
+
+  it("says the notices in German", async () => {
+    mockApi({
+      ...routes(),
+      ...notices(
+        noticeRecord("avery-zweckform-6121", "6121", "sheet_type_updated", 5),
+        noticeRecord("avery-zweckform-3490", "3490", "sheet_type_verified", 6),
+      ),
+    });
+    await renderApp({ path: "/printers", language: "de", info: SHEETS_ON });
+    await userEvent.click(await screen.findByRole("button", { name: /^Benachrichtigungen/ }));
+    expect(await screen.findByRole("link", { name: /Maße von 6121 aktualisiert \(geprüft\)/ })).toBeVisible();
+    expect(screen.getByRole("link", { name: /3490 als geprüft markiert/ })).toBeVisible();
+  });
+
+  it("a read notice stays read after a reload", async () => {
+    mockApi({ ...routes(), ...notices(noticeRecord("avery-zweckform-6121", "6121", "sheet_type_verified")) });
+    const first = await renderApp({ path: "/printers", info: SHEETS_ON });
+    await userEvent.click(await bell());
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("New")).toBeVisible();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Mark all as read" }));
+    first.unmount();
+    mockApi({ ...routes(), ...notices(noticeRecord("avery-zweckform-6121", "6121", "sheet_type_verified")) });
+    await renderApp({ path: "/printers", info: SHEETS_ON });
+    expect(await screen.findByRole("button", { name: "Notifications, nothing unread" })).toBeVisible();
+  });
+
+  it("a failed notices read is no feed error", async () => {
+    mockApi({ ...routes([job(J1, PRINTER_A.id, "done", { updated_at: minutesAgo(3) })]) });
+    await renderApp({ path: "/printers" });
+    await userEvent.click(await bell());
+    expect(await screen.findByRole("link", { name: /printed/ })).toBeVisible();
+    expect(screen.queryByText(/Could not load/i)).toBeNull();
   });
 
   it("marks entries as new until Mark all as read, which keeps them and clears the dot", async () => {

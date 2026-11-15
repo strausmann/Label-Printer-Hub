@@ -125,6 +125,10 @@ msgstr "{cells} auf Bogen {code}"
 msgid "{code} could not be checked. Try again."
 msgstr "{code} konnte nicht geprüft werden. Versuche es noch einmal."
 
+#: src/features/notifications/useEntryText.ts
+msgid "{code} dimensions updated (verified)"
+msgstr "Maße von {code} aktualisiert (geprüft)"
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "{code} has {free} free cells: choose them for the first {free} of {labels} labels. The rest goes onto the next sheet."
 msgstr "{code} hat {free} freie Zellen: Wähle sie für die ersten {free} von {labels} Etiketten. Der Rest kommt auf den nächsten Bogen."
@@ -140,6 +144,10 @@ msgstr "{code} ist verworfen und nimmt keine Etiketten mehr auf."
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} is not a sheet of this type. This print uses {typeLabel} sheets."
 msgstr "{code} ist kein Bogen dieses Typs. Dieser Druck verwendet Bögen vom Typ {typeLabel}."
+
+#: src/features/notifications/useEntryText.ts
+msgid "{code} marked as verified"
+msgstr "{code} als geprüft markiert"
 
 #: src/features/jobs/JobDetail.tsx
 msgid "{copyNo} of {copyTotal}"
@@ -3875,6 +3883,7 @@ msgstr "Bogendruck"
 
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/notifications/NotificationCentre.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx

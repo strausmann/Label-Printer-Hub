@@ -54,6 +54,14 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
         const code = values.code ?? "";
         return t`${cells} on sheet ${code}`;
       }
+      case "sheet_type.updated": {
+        const code = values.code ?? "";
+        return t`${code} dimensions updated (verified)`;
+      }
+      case "sheet_type.verified": {
+        const code = values.code ?? "";
+        return t`${code} marked as verified`;
+      }
       default: {
         if (textKey.startsWith("printer.")) {
           const kind = kinds[textKey.slice("printer.".length) as PrinterKind];
