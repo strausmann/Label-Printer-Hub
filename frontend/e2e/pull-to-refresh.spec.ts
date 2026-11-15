@@ -103,7 +103,10 @@ test.describe.serial("pull to refresh", () => {
     await app.page.getByRole("button", { name: "Menu", exact: true }).click();
     await expect(app.page.getByRole("dialog", { name: "Menu" })).toBeVisible();
     await mark(app.page);
-    await drag(app.cdp, 340, 200, 200); // on the dim area beside the sheet
+    // On the heading of the sheet: a touch on the dim area would only close the menu (and its target is gone, so the
+    // rest of the gesture never reaches the page); here the touch stays inside the dialog and only the guard stops it.
+    const heading = (await app.page.getByRole("dialog", { name: "Menu" }).getByRole("heading", { name: "Menu" }).boundingBox())!;
+    await drag(app.cdp, heading.x + heading.width / 2, heading.y + heading.height / 2, 200);
     await app.page.waitForTimeout(800);
     expect(await markerSurvives(app.page)).toBe(true);
     await app.page.keyboard.press("Escape");

@@ -9,7 +9,7 @@
  * overscroll there. Everything that decides is pure and lives here; `PullToRefresh.tsx` only wires events to it.
  */
 
-import { applyUpdate, updateIsWaiting } from "../app/updates";
+import { applyUpdate, updateIsReloading, updateIsWaiting } from "../app/updates";
 
 /** Distance of the indicator (px, after resistance) at which letting go reloads. */
 export const PULL_THRESHOLD = 72;
@@ -82,7 +82,12 @@ export function isTextField(el: Element | null): boolean {
  * With a new version waiting this applies it: a plain reload would be answered by the old service worker from its
  * precache and show the old app again (see `applyUpdate`). Without one it is a plain reload.
  */
-export function reloadApp(): void {
-  if (updateIsWaiting()) void applyUpdate();
-  else window.location.reload();
+export async function reloadApp(): Promise<boolean> {
+  if (updateIsWaiting()) {
+    await applyUpdate();
+    // `applyUpdate` can give up without reloading (the banner stays); the caller must not keep showing a reload then.
+    return updateIsReloading();
+  }
+  window.location.reload();
+  return true;
 }

@@ -20,7 +20,7 @@ let reduced = false;
 beforeEach(() => {
   standalone = true;
   reduced = false;
-  vi.mocked(ptr.reloadApp).mockClear();
+  vi.mocked(ptr.reloadApp).mockReset().mockResolvedValue(true);
   window.matchMedia = ((query: string) => ({
     matches: query === "(display-mode: standalone)" ? standalone : query === "(prefers-reduced-motion: reduce)" ? reduced : false,
     media: query,
@@ -70,6 +70,28 @@ describe("PullToRefresh", () => {
     expect(ptr.reloadApp).toHaveBeenCalledTimes(1);
     touch("touchend", []);
     expect(ptr.reloadApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("the spinner goes away when the update gave up without reloading", async () => {
+    vi.mocked(ptr.reloadApp).mockResolvedValue(false);
+    render(<Mount />);
+    touch("touchstart", [[100, 100]]);
+    touch("touchmove", [[100, 160]]);
+    touch("touchmove", [[100, 300]]);
+    touch("touchend", []);
+    expect(ptr.reloadApp).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(indicator()!.style.opacity).toBe("0"));
+    expect(indicator()).not.toHaveAttribute("data-reloading");
+  });
+
+  it("the spinner stays while the page is on its way out", async () => {
+    render(<Mount />);
+    touch("touchstart", [[100, 100]]);
+    touch("touchmove", [[100, 160]]);
+    touch("touchmove", [[100, 300]]);
+    touch("touchend", []);
+    await act(async () => {});
+    expect(indicator()).toHaveAttribute("data-reloading", "true");
   });
 
   it("the pull takes the touch away from the browser", () => {

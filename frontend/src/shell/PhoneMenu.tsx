@@ -104,7 +104,7 @@ function ReloadEntry({ onNavigate }: { onNavigate: () => void }) {
         onClick={() => {
           if (busy) return;
           onNavigate();
-          reloadApp();
+          void reloadApp();
         }}
         className={`${ROW} w-full ${busy ? "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-ink-2" : ""}`}
       >

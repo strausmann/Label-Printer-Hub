@@ -254,6 +254,11 @@ export function updateIsWaiting(): boolean {
   return waitingWorker || versionMismatch;
 }
 
+/** Is the page on its way out because `applyUpdate` told it to reload? */
+export function updateIsReloading(): boolean {
+  return reloading;
+}
+
 export function useUpdating(): boolean {
   return useSyncExternalStore(
     (listener) => {

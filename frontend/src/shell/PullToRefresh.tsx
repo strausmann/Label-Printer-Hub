@@ -84,7 +84,10 @@ export function PullToRefresh() {
       // A write that started during the pull (or a dialog that opened) is as good a reason as one that was there before.
       if (outcome === "reload" && pendingRef.current === 0 && !dialogOpen()) {
         setPull({ distance, reloading: true });
-        reloadApp();
+        // The spinner stays while the page goes; when the update gives up instead, it goes away.
+        void Promise.resolve(reloadApp()).then((goingAway) => {
+          if (!goingAway) setPull({ distance: 0, reloading: false });
+        });
       } else {
         reset();
       }
