@@ -1502,6 +1502,9 @@ class PrintQueue:
                     continue
                 new_id = uuid4()
                 payload = dict(row.payload)
+                # The reprint repeats its own source, like every retry; a ``retry_of`` copied
+                # from the source (itself a retry) would name the wrong job.
+                payload["retry_of"] = old
                 payload["tape_run"] = {
                     "run_id": str(run.run_id),
                     "awaits_confirmation": len(new_ids) >= MAX_LABELS_PER_TAPE_JOB,

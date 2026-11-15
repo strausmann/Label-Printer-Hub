@@ -447,7 +447,8 @@ async def resume_job(
         "``printer_disabled`` for a disabled printer (a calibration page too), 422 "
         "``tray_unknown`` when the tray was removed or disabled since, and 409 "
         "``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of "
-        "these cases."
+        "these cases.  The new job's payload carries ``retry_of``, the id of the job it "
+        "repeats; that job may have been cleaned up since, so the id may no longer resolve."
     ),
 )
 async def retry_job(

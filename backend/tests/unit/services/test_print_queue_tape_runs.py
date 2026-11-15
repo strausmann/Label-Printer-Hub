@@ -299,6 +299,27 @@ async def test_reprint_from_n_requeues_n_to_the_end_of_the_group_and_the_not_sta
         await queue.stop(timeout_s=2.0)
 
 
+async def test_reprint_of_a_retried_label_points_at_its_own_source() -> None:
+    printer = TapeRoll(15)
+    queue, run_id, ids, store = await _run(printer, 30)
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = None
+        stale = str(uuid4())  # what a retried source carries: the id of ITS parent
+        row = await store.get(ids[13])
+        assert row is not None
+        row.payload["retry_of"] = stale
+
+        result = await queue.reprint_from(run_id, 14)
+
+        first = await store.get(result.new_job_ids[0])
+        assert first is not None and first.payload["label_data"]["title"] == "L14"
+        assert first.payload["retry_of"] == str(ids[13])  # the reprint repeats the source
+        assert first.payload["retry_of"] != stale  # not the source's own parent
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
 @pytest.mark.parametrize("label", [10, 22, 0])
 async def test_reprint_from_outside_the_unknown_group_is_refused(label: int) -> None:
     printer = TapeRoll(15)

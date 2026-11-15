@@ -1922,6 +1922,8 @@ async def retry_sheet_page(
                     "render_dpi": facts.render_dpi,
                     "calibration": snapshot,
                     "detail": new_detail.model_dump(mode="json"),
+                    # model_copy(update=) skips validation: a UUID is what the field holds,
+                    # and the payload is dumped with mode="json" (a str in the row).
                     "retry_of": job.id,
                 }
             )

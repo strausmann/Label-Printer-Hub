@@ -733,6 +733,15 @@ async def test_deferred_retry_records_retry_of_and_a_retry_of_a_retry_points_to_
     assert row_c.payload["rendered_tape_mm"]  # and the label was rendered and printed
 
 
+async def test_deferred_job_that_is_not_a_retry_has_no_retry_of_key(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        r = await _post(client)
+        job_id = r.json()["job_id"]
+        row = await _ends(job_id, "done")
+    assert "retry_of" not in row.payload
+    assert row.payload["rendered_tape_mm"]  # the completed payload, not only the first one
+
+
 async def test_retry_of_a_content_error_is_422_without_a_new_row(hub: Hub) -> None:
     async with hub.running() as (client, _app):
         r = await _post(client, {"product": "Oat", "grocycode": "grcy:x:1"})

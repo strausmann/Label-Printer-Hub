@@ -54,7 +54,13 @@ async def list_by_filter(
     if since is not None:
         stmt = stmt.where(col(Job.created_at) >= since)
     created = col(Job.created_at)
-    stmt = stmt.order_by(created.desc() if order == "newest" else created).limit(limit)
+    # ``id`` breaks ties, so equal timestamps keep one stable order and a ``limit`` cut is exact.
+    ident = col(Job.id)
+    if order == "newest":
+        stmt = stmt.order_by(created.desc(), ident.desc())
+    else:
+        stmt = stmt.order_by(created, ident)
+    stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars())
 

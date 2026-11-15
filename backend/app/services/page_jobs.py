@@ -85,6 +85,8 @@ class PagePayload(BaseModel):
     calibration: CalibrationSnapshot | None = None
     detail: dict[str, Any] = {}
     # The job this one repeats (a retry); set by the retry route, never copied from the source.
+    # No foreign key: the source job may have been cleaned up since, so readers must tolerate
+    # an id that no longer resolves.
     retry_of: UUID | None = None
 
 

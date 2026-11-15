@@ -201,3 +201,26 @@ async def test_list_by_filter_newest_returns_the_latest_first(session):
 
     assert [j.id for j in newest] == [ids[4], ids[3]]
     assert [j.id for j in oldest] == [ids[0], ids[1]]  # the default stays oldest first
+
+
+@pytest.mark.asyncio
+async def test_list_by_filter_equal_timestamps_keep_a_stable_order_by_id(session):
+    from datetime import UTC, datetime
+
+    printer = await _make_printer(session)
+    same = datetime(2026, 1, 1, tzinfo=UTC)
+    made = []
+    for i in range(6):
+        job = await _queued(session, printer, key=f"k{i}")
+        job.created_at = same
+        session.add(job)
+        await session.commit()
+        made.append(job.id)
+
+    oldest = [j.id for j in await jobs.list_by_filter(session)]
+    newest = [j.id for j in await jobs.list_by_filter(session, order="newest")]
+    cut = [j.id for j in await jobs.list_by_filter(session, order="newest", limit=3)]
+
+    assert oldest == sorted(made)
+    assert newest == sorted(made, reverse=True)
+    assert cut == newest[:3]
