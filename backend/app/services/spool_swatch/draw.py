@@ -188,7 +188,9 @@ def place_swatch(
         )
         free = rows_top - lay.colour_bottom
         hex_w = round(_width(hexes.lines, 400, m.row_cap_mm))
-        vendor_slot = lay.box_w - hex_w - m.hex_gap if hexes.lines else lay.box_w
+        # Without colour codes the vendor runs to the box edge: its slot keeps the run margin.
+        edge_slot = math.floor(lay.box_w - m.run_margin)
+        vendor_slot = lay.box_w - hex_w - m.hex_gap if hexes.lines else edge_slot
         baselines = lay.vendor_row_baselines[2 - len(hexes.lines) :]
         for text, base in zip(hexes.lines, baselines, strict=True):
             right = lay.box_w - text_mm(text, 400, m.row_cap_mm) * 100 - m.run_margin
@@ -238,8 +240,14 @@ def place_swatch(
 
     footer: FittedText | None = None
     if lay.footer_baseline is not None:
+        # The footer runs to the box edge: its slot keeps the run margin.
         footer = fit_text(
-            "footer", texts.footer, slot_hmm=lay.box_w, free_lines=1, metrics=m, language=lang
+            "footer",
+            texts.footer,
+            slot_hmm=math.floor(lay.box_w - m.run_margin),
+            free_lines=1,
+            metrics=m,
+            language=lang,
         )
         for text in footer.lines:
             runs.append(Run(0, lay.footer_baseline, text, 400, m.row_cap_mm, 0))

@@ -114,7 +114,18 @@ def test_l4737rev_worst_case_fits_at_every_dpi(dpi: int) -> None:
     assert placement.layout.footer_rule is None
     last = max(b for column in placement.columns for row in column.rows for b in row.baselines)
     assert last == 2640 - 75
-    image, _ = _render(spool, box, SHEET_METRICS, dpi)
+    # The drawn last row sits on its pixel baseline: the y every glyph of "Ort" is drawn at.
+    ys: list[int] = []
+    real_text = ImageDraw.ImageDraw.text
+
+    def spy(self: ImageDraw.ImageDraw, xy: Any, text: str, *args: Any, **kw: Any) -> None:
+        if text in "Ort":
+            ys.append(xy[1])
+        real_text(self, xy, text, *args, **kw)
+
+    with patch.object(ImageDraw.ImageDraw, "text", spy):
+        image, _ = _render(spool, box, SHEET_METRICS, dpi)
+    assert to_px(2640 - 75, dpi) in ys
     ink = ink_bbox(image)
     assert ink is not None
     assert ink[3] - 1 <= image.height - 2
@@ -618,3 +629,27 @@ def test_tape_hex_block_sits_beside_the_first_vendor_line() -> None:
     vendor_run = next(r for r in placement.runs if r.text == "TecBears")
     assert hex_run.baseline == 480 - 55
     assert abs(hex_run.baseline - vendor_run.baseline) < 100
+
+
+def test_runs_that_end_at_the_box_edge_keep_their_margin() -> None:
+    """Review M4: the footer and a vendor without colour codes end at the content-box edge, so
+    their slot keeps the run margin; the slots that end at a gap do not need it."""
+    layout = swatch_layout(SwatchTier.FULL, *QL_BOX, TAPE_METRICS)
+    plain = _place(swatch(color_hexes=()), QL_BOX, TAPE_METRICS)
+    assert plain.vendor_slot == int(QL_BOX[0] - TAPE_METRICS.run_margin)
+    lot = "WWWWWWWWWii"  # whole footer 56.86 mm: between the slot with and without margin
+    placement = place_swatch(every_row(lot=lot), layout, TAPE_METRICS)
+    assert placement.footer is not None
+    footer = placement.footer.lines[0]
+    assert text_mm(footer, 400, 1.25) * 100 <= QL_BOX[0] - TAPE_METRICS.run_margin
+    image, _ = _render(every_row(lot=lot), QL_BOX, TAPE_METRICS, 300)
+    rows = image.crop((0, to_px(3395 - 190, 300), image.width, image.height))
+    ink = ink_bbox(rows)
+    assert ink is not None and ink[2] < image.width
+
+
+def test_a_title_of_invisible_characters_falls_back_to_the_id() -> None:
+    """Review M8: a bar title made only of default-ignorable characters draws nothing; the bar
+    shows the spool id instead."""
+    placement = _place(swatch(title="\u200b\u2060"), seed_box(L4737REV), SHEET_METRICS)
+    assert placement.title.lines == ("#12",)

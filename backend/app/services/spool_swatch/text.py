@@ -193,7 +193,8 @@ def swatch_text(swatch: SpoolSwatch) -> SwatchText:
     hexes = tuple(f"#{code}" for code in swatch.color_hexes)
     return SwatchText(
         vendor=swatch.vendor or "",
-        title=swatch.title or f"#{swatch.spool_id}",
+        # A title that draws nothing (only invisible characters) falls back to the id.
+        title=swatch.title if swatch.title and drawable(swatch.title) else f"#{swatch.spool_id}",
         color_name=swatch.color_name or "",
         hexes=hexes,
         hex_line=_JOIN.join(hexes),

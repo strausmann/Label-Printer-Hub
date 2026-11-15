@@ -1470,3 +1470,33 @@ async def test_too_small_swatch_cell_reserves_nothing(
     assert err.value.detail == {"item_index": 0, "missing_fields": ["label_size"]}
     assert await cell_rows(factory) == []
     assert queue.submitted == []
+
+
+async def test_raw_swatch_item_prints_into_a_sheet_cell(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """Review M9: a raw sheet item carries ``data.swatch`` into the stored cell and the PDF."""
+    from app.sheets.sheet_page import render_sheet_page
+
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row, seed_geometry
+
+    await ts.create_type(
+        session,
+        ts.TypeFields("acme-4737", "A4737", "Acme", ["L4737REV"], None, True),
+        seed_geometry("avery-zweckform-l4737rev"),
+        actor="t",
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-4737")
+    queue = FakeQueue()
+    swatch = every_row()
+    item = raw(0, ContentType.SPOOL_SWATCH, qr_payload=SAMPLE_URL, swatch=swatch)
+
+    await run_print(factory, printer, req([item], [on(code)]), queue=queue)
+
+    detail = queue.detail()
+    (cell,) = detail.cells
+    assert cell.content_type is ContentType.SPOOL_SWATCH
+    assert cell.label_data["swatch"] == swatch.model_dump(mode="json")
+    (_, payload, _) = queue.submitted[0]
+    assert render_sheet_page(payload, compress=False).startswith(b"%PDF")
