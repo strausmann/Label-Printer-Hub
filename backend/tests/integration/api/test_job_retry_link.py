@@ -198,3 +198,11 @@ async def test_sheet_page_retry_records_retry_of() -> None:
         assert (await rig.job_payload(resp.json()["id"]))["retry_of"] == first_id
         await _retried_detail(rig, resp)
         assert (await _job(first_id)).payload.get("retry_of") is None
+
+
+async def test_first_submitted_page_payload_has_no_retry_of_key(env: Env) -> None:
+    r = await env.post(env.page_id)
+    first = str(r.json()["job_id"])
+    await env.done(first)
+
+    assert "retry_of" not in await _payload(env, first)

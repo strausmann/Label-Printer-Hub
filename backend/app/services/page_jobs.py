@@ -88,6 +88,11 @@ class PagePayload(BaseModel):
     retry_of: UUID | None = None
 
 
+def unset_retry_of(payload: PagePayload) -> set[str]:
+    """``model_dump(exclude=...)`` set that leaves ``retry_of`` out of a first submit's payload."""
+    return set() if payload.retry_of is not None else {"retry_of"}
+
+
 # ---------------------------------------------------------------------------- renderers
 
 PageRenderer = Callable[[PagePayload], bytes]

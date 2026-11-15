@@ -567,6 +567,7 @@ async def _retry_deferred_job(
         # #294: the new job belongs to the caller that asked for it.
         api_key_id=auth.api_key_id if auth is not None else None,
         source_ip=auth.ip if auth is not None else None,
+        retry_of=job.id,
     )
     new_job = await jobs_repo.get(session, new_id)
     if new_job is None:  # evicted or failed before the read: report the accepted id anyway

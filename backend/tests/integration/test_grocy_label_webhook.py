@@ -705,6 +705,34 @@ async def test_retry_of_an_offline_failed_label_prints_it(hub: Hub) -> None:
     assert (await _row(failed_id)).state == "failed"  # the original stays as history
 
 
+async def test_deferred_retry_records_retry_of_and_a_retry_of_a_retry_points_to_its_parent(
+    hub: Hub,
+) -> None:
+    original = hub.backend.preflight_check
+    hub.slow_preflight(0.0, error=PrinterOfflineError("offline"))
+    async with hub.running() as (client, _app):
+        r = await _post(client)
+        a = r.json()["job_id"]
+        await _ends(a, "failed")
+        retry_b = await client.post(
+            f"/api/v1/jobs/{a}/retry", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert retry_b.status_code == 201, retry_b.text
+        b = retry_b.json()["id"]
+        await _ends(b, "failed")  # still offline
+        hub.backend.preflight_check = original  # type: ignore[method-assign]
+        retry_c = await client.post(
+            f"/api/v1/jobs/{b}/retry", headers={"X-Label-Hub-Key": PRINT_KEY}
+        )
+        assert retry_c.status_code == 201, retry_c.text
+        c = retry_c.json()["id"]
+        row_c = await _ends(c, "done")
+    assert "retry_of" not in (await _row(a)).payload  # a first submit repeats nothing
+    assert (await _row(b)).payload["retry_of"] == a
+    assert row_c.payload["retry_of"] == b  # kept through the completed payload, not a
+    assert row_c.payload["rendered_tape_mm"]  # and the label was rendered and printed
+
+
 async def test_retry_of_a_content_error_is_422_without_a_new_row(hub: Hub) -> None:
     async with hub.running() as (client, _app):
         r = await _post(client, {"product": "Oat", "grocycode": "grcy:x:1"})

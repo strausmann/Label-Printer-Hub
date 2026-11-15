@@ -74,6 +74,7 @@ from app.services.page_jobs import (
     may_recover,
     notify_ended,
     outcome_handler,
+    unset_retry_of,
 )
 from app.sheets.errors import MediaKindMismatchError
 
@@ -1891,7 +1892,7 @@ class PrintQueue:
             id=job_id or uuid4(),
             printer_id=printer_id,
             template_key=None,
-            payload=payload.model_dump(mode="json"),
+            payload=payload.model_dump(mode="json", exclude=unset_retry_of(payload)),
             api_key_id=api_key_id,
             source_ip=source_ip,
         )
@@ -1948,7 +1949,9 @@ class PrintQueue:
             raise KeyError(f"Unknown printer: {printer_id}")
         job = self._new_page_job(job_id, printer_id, payload)
         try:
-            swapped = await self._store.set_queued_payload(job_id, payload.model_dump(mode="json"))
+            swapped = await self._store.set_queued_payload(
+                job_id, payload.model_dump(mode="json", exclude=unset_retry_of(payload))
+            )
         except BaseException:
             # A committed swap leaves a ``queued`` page row: the caller keeps its cells (T7-1)
             # and the next start prints it onto them. This process forgets it.

@@ -272,6 +272,7 @@ class PrintService:
         source_app: str,
         api_key_id: UUID | None,
         source_ip: str | None,
+        retry_of: UUID | None = None,
     ) -> UUID:
         """Store a ``queued`` job and complete it after the caller has answered (R-281-11).
 
@@ -281,7 +282,8 @@ class PrintService:
         completes the payload -> hands it to the queue. Any failure there sets the job
         ``failed`` with the code ``POST /api/v1/print`` would answer and publishes
         ``job.state_changed``. A restart before the hand-off ends the job ``failed_restart``
-        (the queue's recovery); it is never printed twice.
+        (the queue's recovery); it is never printed twice. ``retry_of`` names the job this one
+        repeats (a retry) and is kept in the payload through the completion.
         """
         label = LabelData(
             source_app=source_app,
@@ -301,13 +303,14 @@ class PrintService:
                     "deferred": True,
                     "label_data": label.model_dump(),
                     "content_type": str(content_type),
+                    **({"retry_of": str(retry_of)} if retry_of is not None else {}),
                 },
                 api_key_id=api_key_id,
                 source_ip=source_ip,
             )
         )
         task = asyncio.create_task(
-            self._complete_deferred(job_id, label, content_type),
+            self._complete_deferred(job_id, label, content_type, retry_of),
             name=f"deferred-job-{job_id}",
         )
         self._deferred[task] = job_id
@@ -402,7 +405,11 @@ class PrintService:
             )
 
     async def _complete_deferred(
-        self, job_id: UUID, label: LabelData, requested: ContentType
+        self,
+        job_id: UUID,
+        label: LabelData,
+        requested: ContentType,
+        retry_of: UUID | None = None,
     ) -> None:
         try:
             if not self._printer_enabled:
@@ -439,6 +446,7 @@ class PrintService:
                     "rendered_tape_mm": tape_mm,
                     "tape_mm": tape_mm,
                     "options": options.model_dump(mode="json"),
+                    **({"retry_of": str(retry_of)} if retry_of is not None else {}),
                 },
             )
             self._unhanded.discard(job_id)
