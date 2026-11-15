@@ -90,7 +90,10 @@ describe("the preview", () => {
 
   it("lists what was printed before", async () => {
     await itemView(
-      routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: [{ item_index: 0, sheet_code: "L4736-0002", cell: 5, printed_at: "2026-11-01T08:00:00Z" }] }) }),
+      routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {
+        reprint_hints: [{ item_index: 0, sheet_code: "L4736-0002", cell: 5, printed_at: "2026-11-01T08:00:00Z" }],
+        reprint_totals: [{ item_index: 0, total: 1, sheets: { "L4736-0002": 1 } }],
+      }) }),
       1,
     );
     expect(await screen.findByText(/^Flour: printed before on L4736-0002 on .*2026, cell 5$/)).toBeVisible();
@@ -100,7 +103,7 @@ describe("the preview", () => {
     // The server lists the earlier prints once, on the first copy (backend test_preview_reprint_hints_once_per_item_not_per_copy).
     const earlier = [2, 3, 4, 5, 6].map((cell) => ({ item_index: 0, sheet_code: "L4736-0001", cell, printed_at: "2026-11-14T08:00:00Z" }));
     const fresh = [18, 19, 20, 21, 22, 23, 24, 25, 26, 27];
-    await itemView(routes({ preview: previewFor("L4736-0001", fresh, USED_17, { reprint_hints: earlier }) }), 10);
+    await itemView(routes({ preview: previewFor("L4736-0001", fresh, USED_17, { reprint_hints: earlier, reprint_totals: [{ item_index: 0, total: 5, sheets: { "L4736-0001": 5 } }] }) }), 10);
     const preview = await screen.findByRole("region", { name: "Preview" });
     const lines = await within(preview).findAllByText(/printed before/);
     expect(lines).toHaveLength(1);
@@ -114,7 +117,7 @@ describe("the preview", () => {
       { item_index: 0, sheet_code: "L4736-0001", cell: 3, printed_at: "2026-11-14T08:00:00Z" },
       { item_index: 0, sheet_code: "L4736-0002", cell: 9, printed_at: "2026-11-01T08:00:00Z" },
     ];
-    await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: hints }) }), 1);
+    await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: hints, reprint_totals: [{ item_index: 0, total: 3, sheets: { "L4736-0001": 2, "L4736-0002": 1 } }] }) }), 1);
     const preview = await screen.findByRole("region", { name: "Preview" });
     const summary = await within(preview).findByText(/^Flour: printed before 3× on 2 sheets, last on .*2026$/);
     await userEvent.click(summary);
@@ -123,6 +126,26 @@ describe("the preview", () => {
     expect(rows).toHaveLength(3);
     expect(rows[1]).toMatch(/^L4736-0001.*2026 ?2–3 ?2$/);
     expect(rows[2]).toMatch(/^L4736-0002.*2026 ?9 ?1$/);
+  });
+
+  it("says the true count of eight earlier prints when only the newest five are listed (#340)", async () => {
+    const listed = [2, 3, 4, 5, 6].map((cell) => ({ item_index: 0, sheet_code: "L4736-0001", cell, printed_at: "2026-11-14T08:00:00Z" }));
+    const totals = [{ item_index: 0, total: 8, sheets: { "L4736-0001": 8 } }];
+    await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: listed, reprint_totals: totals }) }), 1);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    const summary = await within(preview).findByText("Flour: printed before 8× on L4736-0001, the last 5 listed");
+    expect(within(preview).queryByText(/5× on/)).toBeNull();
+    await userEvent.click(summary);
+    const rows = within(within(preview).getByRole("table", { name: "Earlier prints of Flour" })).getAllByRole("row").map((r) => r.textContent);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toMatch(/^L4736-0001.*2026 ?2–6 ?5$/);
+  });
+
+  it("says the true count over several sheets when the list is cut (#340)", async () => {
+    const listed = [2, 3, 4, 5, 6].map((cell) => ({ item_index: 0, sheet_code: "L4736-0001", cell, printed_at: "2026-11-14T08:00:00Z" }));
+    const totals = [{ item_index: 0, total: 9, sheets: { "L4736-0001": 6, "L4736-0002": 3 } }];
+    await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { reprint_hints: listed, reprint_totals: totals }) }), 1);
+    expect(await screen.findByText("Flour: printed before 9× on 2 sheets, the last 5 listed")).toBeVisible();
   });
 
   it("too many previews at once shows a readable wait, then the preview replaces it (#339)", async () => {
@@ -141,6 +164,26 @@ describe("the preview", () => {
     expect(screen.queryByText(/Too many previews/)).toBeNull();
     expect(previews(calls)).toHaveLength(2);
   });
+
+  it("after the last automatic try, too many previews says to try again and a button asks again (#339)", async () => {
+    let busy = true;
+    const preview = () =>
+      busy
+        ? new Response(JSON.stringify({ detail: { error_code: "too-many-previews", error_message: "Busy.", retry_after_seconds: 1 } }), {
+            status: 429,
+            headers: { "Content-Type": "application/json", "Retry-After": "1" },
+          })
+        : new Response(JSON.stringify(previewFor("L4736-0001", NEW_9, USED_17)), { status: 200, headers: { "Content-Type": "application/json" } });
+    const { calls } = await itemView(routes({ preview }));
+    const alert = await screen.findByRole("alert", undefined, { timeout: 9000 });
+    expect(alert).toHaveTextContent("Too many previews right now. Try again in a moment.");
+    // The first ask and five automatic ones, then it stops.
+    expect(previews(calls)).toHaveLength(6);
+    busy = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("9 printed now")).toBeVisible();
+    expect(screen.queryByText(/Too many previews/)).toBeNull();
+  }, 20_000);
 
   it("shows the feed mark entry, the margin ID with its band, and the not-printed warning", async () => {
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {}, { feed_mark: true, margin_id: true, margin_band: "bottom" }) }));

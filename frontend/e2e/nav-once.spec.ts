@@ -5,9 +5,11 @@ import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, signInWith, test } from "./fixtures";
 
-// #341: on an Android tablet (installed app, landscape) the lower part of the sidebar was drawn again below it while
-// the item page of a spool scrolled. The DOM held one sidebar; the sidebar was a sticky box with a scrolling list
-// inside it, the pattern Chrome on Android repaints stale. The sidebar is now one fixed box that scrolls as a whole.
+// Guards the navigation layout chosen for #341, not the fault itself. On an Android tablet (installed app, landscape)
+// the lower sidebar sections were seen drawn again below the sidebar on the item page of a spool. Headless Chromium
+// never shows that: the DOM always held one sidebar, and the "each entry once" checks below were green before the
+// change too. The layout checks (fixed box, one scroller instead of a nested one, last entry reachable) pin what was
+// changed; whether it ends the repaint on the device is confirmed there, not here.
 const SIDEBAR = ["Overview", "Printers", "Jobs", "Sheets", "Sheet archive", "Calibration", "Snipe-IT", "Grocy", "Spoolman", "Settings"];
 const TABS = ["Overview", "Printers", "Scan", "Jobs", "Sheets"];
 const PAGES = ["/spool/7", "/", "/printers", "/jobs", "/sheets"];
@@ -31,7 +33,7 @@ const linkCounts = (page: Page, nav: string) =>
     return counts;
   }, nav);
 
-test.describe.serial("each navigation entry is there once (#341)", () => {
+test.describe.serial("navigation layout: each entry once, one sidebar scroller (#341)", () => {
   let page: Page;
   test.beforeAll(async ({ browser }) => {
     page = await (await browser.newContext({ baseURL: MAIN.url, hasTouch: true })).newPage();
@@ -63,7 +65,7 @@ test.describe.serial("each navigation entry is there once (#341)", () => {
         for (const name of TABS) expect(tabs[name], `${path}: ${name}`).toBe(1);
         if (!wide) continue;
 
-        // The sidebar is one box that does not move with the page and holds no scroller of its own inside.
+        // The sidebar is one fixed box: one scroller instead of a nested one, and it does not move with the page.
         const aside = page.locator("aside", { has: page.locator('nav[aria-label="Main"]') });
         const shape = await aside.evaluate((el) => ({
           position: getComputedStyle(el).position,
@@ -72,10 +74,13 @@ test.describe.serial("each navigation entry is there once (#341)", () => {
         expect(shape, path).toEqual({ position: "fixed", nested: false });
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
         expect((await aside.boundingBox())!.y, path).toBe(0);
-        // Every entry can be reached, on a short screen by scrolling the sidebar itself.
+        // Every entry and the status line can be reached, on a short screen by scrolling the sidebar itself.
         const settings = page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings", exact: true });
         await settings.scrollIntoViewIfNeeded();
         await expect(settings).toBeInViewport({ ratio: 1 });
+        const about = aside.getByRole("link", { name: "About and licences" });
+        await about.scrollIntoViewIfNeeded();
+        await expect(about).toBeInViewport({ ratio: 1 });
         await page.evaluate(() => window.scrollTo(0, 0));
       }
     });

@@ -181,6 +181,14 @@ msgid "{hiddenTypes, plural, one {# more layout is not shown.} other {# more lay
 msgstr "{hiddenTypes, plural, one {# weiteres Layout wird nicht gezeigt.} other {# weitere Layouts werden nicht gezeigt.}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {only}, the last {count} listed"
+msgstr "{item}: schon {all}× auf {only} gedruckt, die letzten {count} aufgeführt"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+msgstr "{item}: schon {all}× auf {sheetCount} Bögen gedruckt, die letzten {count} aufgeführt"
+
+#: src/features/sheets/print/SheetPreview.tsx
 msgid "{item}: printed before {count}× on {only}, last on {last}"
 msgstr "{item}: schon {count}× auf {only} gedruckt, zuletzt am {last}"
 
@@ -5036,9 +5044,13 @@ msgstr "Toner fast leer"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Zu viele Versuche. Warte eine Minute und versuche es erneut."
 
-#: src/features/sheets/print/errors.ts
+#: src/features/sheets/print/SheetSection.tsx
 msgid "Too many previews at once. The preview updates in a moment."
 msgstr "Gerade laufen zu viele Vorschauen. Die Vorschau kommt gleich."
+
+#: src/features/sheets/print/errors.ts
+msgid "Too many previews right now. Try again in a moment."
+msgstr "Gerade laufen zu viele Vorschauen. Versuch es gleich noch einmal."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "too small"
@@ -5089,6 +5101,7 @@ msgstr "Die Fächer erscheinen, sobald der Drucker geantwortet hat."
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
 #: src/features/scan/GrocycodePage.tsx
+#: src/features/sheets/print/SheetSection.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Erneut versuchen"

@@ -181,6 +181,14 @@ msgid "{hiddenTypes, plural, one {# more layout is not shown.} other {# more lay
 msgstr "{hiddenTypes, plural, one {# more layout is not shown.} other {# more layouts are not shown.}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {only}, the last {count} listed"
+msgstr "{item}: printed before {all}× on {only}, the last {count} listed"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+msgstr "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+
+#: src/features/sheets/print/SheetPreview.tsx
 msgid "{item}: printed before {count}× on {only}, last on {last}"
 msgstr "{item}: printed before {count}× on {only}, last on {last}"
 
@@ -5036,9 +5044,13 @@ msgstr "toner low"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
 
-#: src/features/sheets/print/errors.ts
+#: src/features/sheets/print/SheetSection.tsx
 msgid "Too many previews at once. The preview updates in a moment."
 msgstr "Too many previews at once. The preview updates in a moment."
+
+#: src/features/sheets/print/errors.ts
+msgid "Too many previews right now. Try again in a moment."
+msgstr "Too many previews right now. Try again in a moment."
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "too small"
@@ -5089,6 +5101,7 @@ msgstr "Trays are listed once the printer has answered."
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
 #: src/features/scan/GrocycodePage.tsx
+#: src/features/sheets/print/SheetSection.tsx
 #: src/i18n/messages.ts
 msgid "Try again"
 msgstr "Try again"

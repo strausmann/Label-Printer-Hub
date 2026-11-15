@@ -15,8 +15,10 @@ import { messages } from "../i18n/messages";
 /**
  * Desktop navigation (>= 1024 px): groups as in spec 5.3, hidden entries removed.
  *
- * A fixed box that scrolls as a whole on a short screen. It was a sticky box with a scrolling list inside, and on an
- * Android tablet Chrome drew the lower part of that list again below it while the page scrolled (#341).
+ * A fixed box with one scroller instead of a nested one: on a short screen the whole box scrolls, so the status and the
+ * About link come after the entries and stay reachable. It was a sticky box with a second scroller (the list) inside;
+ * on an Android tablet the lower sections were seen drawn again below it (#341). That paint fault is not reproducible
+ * headless, so whether this layout avoids it is to be confirmed on the device.
  */
 export function Sidebar() {
   const { t, i18n } = useLingui();

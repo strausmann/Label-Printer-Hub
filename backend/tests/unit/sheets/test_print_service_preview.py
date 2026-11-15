@@ -566,6 +566,27 @@ async def test_preview_reprint_hints_once_per_item_not_per_copy(session: AsyncSe
     ]
 
 
+async def test_preview_reprint_totals_count_every_earlier_print(session: AsyncSession) -> None:
+    # #340 fix round 1: eight earlier prints, five listed; the total says eight, per sheet too.
+    printer = await make_printer(session, record())
+    old = await make_sheet(session)
+    other = await make_sheet(session)
+    for cell in range(2, 8):
+        await _printed_before(session, old, cell, "used", "42")
+    for cell in (10, 11):
+        await _printed_before(session, other, cell, "used", "42")
+    await _printed_before(session, other, 12, "reserved", "42")
+    target = await make_sheet(session)
+
+    out = await run_preview(session, printer, req([grocy(7)] + [grocy(42)] * 3, [on(target)]))
+
+    assert len(out.reprint_hints) == 5
+    assert {h.item_index for h in out.reprint_hints} == {1}
+    (total,) = out.reprint_totals
+    assert (total.item_index, total.total) == (1, 8)
+    assert total.sheets == {old: 6, other: 2}
+
+
 async def test_preview_reprint_hint_only_from_used_cells(session: AsyncSession) -> None:
     printer = await make_printer(session, record())
     old = await make_sheet(session)

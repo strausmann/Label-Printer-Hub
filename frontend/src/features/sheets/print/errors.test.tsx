@@ -39,10 +39,10 @@ describe("print dialog error words", () => {
     );
   });
 
-  it("too many previews at once says the preview comes in a moment, never the code (#339), en and de", async () => {
+  it("too many previews, once the preview stopped asking, says to try again, never the code (#339), en and de", async () => {
     const error = new ApiError(429, "too-many-previews", "server words");
-    expect(await textFor(error)).toBe("Too many previews at once. The preview updates in a moment.");
-    expect(await textFor(error, "de")).toBe("Gerade laufen zu viele Vorschauen. Die Vorschau kommt gleich.");
+    expect(await textFor(error)).toBe("Too many previews right now. Try again in a moment.");
+    expect(await textFor(error, "de")).toBe("Gerade laufen zu viele Vorschauen. Versuch es gleich noch einmal.");
   });
 
   it("an unknown error ends in the fallback, never in the server's words", async () => {
