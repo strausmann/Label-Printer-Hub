@@ -1616,6 +1616,10 @@ msgstr "Every sheet is used up."
 msgid "Every tray needs a label."
 msgstr "Every tray needs a label."
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it. The scale reads +0.6 and +0.4 there, so across is +0.6 and down is +0.4."
+msgstr "Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it. The scale reads +0.6 and +0.4 there, so across is +0.6 and down is +0.4."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Export"
 msgstr "Export"
@@ -4274,10 +4278,6 @@ msgstr "The app of this item is not known."
 #: src/features/lookup/CartPage.tsx
 msgid "The app of this item is not set up."
 msgstr "The app of this item is not set up."
-
-#: src/features/calibration/guide/ReadingGuide.tsx
-msgid "The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4."
-msgstr "The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4."
 
 #: src/shell/SignIn.tsx
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."

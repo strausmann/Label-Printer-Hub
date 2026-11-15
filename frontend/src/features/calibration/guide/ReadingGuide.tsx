@@ -72,7 +72,7 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
                   <li>{t`Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing).`}</li>
                   <li>{t`The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there.`}</li>
                   <li>{t`The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm.`}</li>
-                  <li>{t`The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4.`}</li>
+                  <li>{t`Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it. The scale reads +0.6 and +0.4 there, so across is +0.6 and down is +0.4.`}</li>
                 </ul>
               </>
             }

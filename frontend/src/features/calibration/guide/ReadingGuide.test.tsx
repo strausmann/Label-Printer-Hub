@@ -123,7 +123,6 @@ describe("the reading guide", () => {
     // The guide's own panel ids are not part of the figures; the figures' ids must be unique among all.
     expect(new Set(ids).size).toBe(ids.length);
     const figureIds = [...container.querySelectorAll("svg [id]")].map((e) => e.id);
-    expect(figureIds.length).toBeGreaterThan(0);
     for (const id of figureIds) expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
@@ -160,6 +159,14 @@ describe("the crossing figure's scale labels are the value to enter", () => {
     // value to enter = - position on the scale (the position is the offset of the gap middle from the printed line).
     for (const l of across) expect(num(l.text)).toBe(-(l.x - 120) / 40);
     for (const l of down) expect(num(l.text)).toBe(-(l.y - 3.5 - 100) / 40);
+  });
+
+  it("no element of the figure states a sign except the scale labels", () => {
+    const { container } = render(<CrossingFigure />);
+    const signed = labels(container).filter((l) => /[+−]/.test(l.text));
+    expect(signed).toHaveLength(8);
+    for (const l of signed) expect(l.y === 128 || l.x === 142).toBe(true);
+    expect(container.querySelector("marker")).toBeNull();
   });
 
   it("the legend says the numbers are the value to enter", async () => {

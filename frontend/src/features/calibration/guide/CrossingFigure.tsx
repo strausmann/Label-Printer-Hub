@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useId } from "react";
-
 /**
  * Figure 1 of the reading guide: one crossing of the calibration page, drawn the way it looks on paper.
  * Black only (`currentColor`); the lines are told apart by style and number, never by colour. The drawing
@@ -17,24 +15,17 @@ import { useId } from "react";
  * of it, so the left side is + and the right side −; likewise the top is + and the bottom −. The Z line is
  * dotted because the drawn sheet has no gap between its rows, as the printed page does.
  *
+ * The scale numbers are the only sign in the drawing: no arrow or mark states a plus side.
+ *
  * Without `title` the drawing has no role and no name: the website page sets its own, localised ones.
  */
-export function CrossingFigure({ title, idPrefix }: { title?: string; idPrefix?: string }) {
-  const generated = useId().replace(/[^A-Za-z0-9_-]/g, "");
-  const prefix = idPrefix ?? `crossing-${generated}`;
-  const arrow = `${prefix}-arrow`;
+export function CrossingFigure({ title }: { title?: string; /** Accepted for symmetry with the export; this drawing has no ids. */ idPrefix?: string }) {
   const ticks = Array.from({ length: 21 }, (_, i) => i - 10);
   const half = (k: number) => (k === 0 ? 9 : k % 5 === 0 ? 6 : 3);
   const a11y = title ? ({ role: "img", "aria-label": title } as const) : {};
 
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="-8 -16 262 220" {...a11y}>
-      <defs>
-        <marker id={arrow} viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-          <path d="M1 1L7 4L1 7" fill="none" stroke="currentColor" strokeWidth="1.2" />
-        </marker>
-      </defs>
-
       {/* The labels: their outlines are the edges of the gap (1) and the cut (3). */}
       <g fill="none" stroke="currentColor" strokeWidth="0.8">
         <rect x="12" y="10" width="56" height="74" />
@@ -57,12 +48,6 @@ export function CrossingFigure({ title, idPrefix }: { title?: string; idPrefix?:
             <line x1={120 - half(k)} x2={120 + half(k)} y1={100 + 8 * k} y2={100 + 8 * k} />
           </g>
         ))}
-      </g>
-
-      {/* The arrows "across" and "down", with their plus side. */}
-      <g fill="none" stroke="currentColor" strokeWidth="1.2">
-        <line x1="150" x2="202" y1="44" y2="44" markerEnd={`url(#${arrow})`} />
-        <line x1="22" x2="22" y1="116" y2="172" markerEnd={`url(#${arrow})`} />
       </g>
 
       {/* The callouts 1 to 3 (edges of the gap, middle of the gap, the cut). */}
@@ -98,10 +83,6 @@ export function CrossingFigure({ title, idPrefix }: { title?: string; idPrefix?:
         <text x="142" y="143.5" textAnchor="start">−1</text>
         <text x="142" y="183.5" textAnchor="start">−2</text>
         <text x="114" y="96" textAnchor="end">0</text>
-        <text x="140" y="48">−</text>
-        <text x="213" y="48">+</text>
-        <text x="22" y="110">−</text>
-        <text x="22" y="186">+</text>
       </g>
     </svg>
   );

@@ -1616,6 +1616,10 @@ msgstr "Alle Bögen sind aufgebraucht."
 msgid "Every tray needs a label."
 msgstr "Jedes Fach braucht eine Bezeichnung."
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it. The scale reads +0.6 and +0.4 there, so across is +0.6 and down is +0.4."
+msgstr "Beispiel: Die Mitte der Lücke liegt 0,6 mm links von der gedruckten Linie und der Schnitt 0,4 mm darüber. Die Skala zeigt dort +0,6 und +0,4, also ist quer +0,6 und abwärts +0,4."
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Export"
 msgstr "Exportieren"
@@ -4274,10 +4278,6 @@ msgstr "Die App dieses Eintrags ist nicht bekannt."
 #: src/features/lookup/CartPage.tsx
 msgid "The app of this item is not set up."
 msgstr "Die App dieses Eintrags ist nicht eingerichtet."
-
-#: src/features/calibration/guide/ReadingGuide.tsx
-msgid "The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4."
-msgstr "Die Pfeile zeigen zur Plusseite. Beispiel: Die Mitte der Lücke liegt 0,6 mm links von der gedruckten Linie und der Schnitt 0,4 mm darüber, also ist quer +0,6 und abwärts +0,4."
 
 #: src/shell/SignIn.tsx
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
