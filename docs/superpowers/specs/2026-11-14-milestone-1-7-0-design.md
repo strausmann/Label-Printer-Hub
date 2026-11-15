@@ -867,11 +867,11 @@ to swap them (R-346-3, R-346-5).
 **Reference medium (maintainer, 2026-11-15):** the **L4737REV sheet cell, 63.5 × 29.6 mm**. On it the label shows
 vendor, bar, colour line, QR and both value columns; the footer drops (tier `no_footer`). L4736REV and Avery Zweckform
 6121 (38.1 × 21.2 mm) print the short tier `core` (vendor, bar, colour, QR; the values are behind the QR). The 62 × 36 mm
-QL tape stays a supported form at full content, footer included. Neither L4737REV nor 6121 is in
-`backend/app/seed/sheet_types.json`; their content boxes follow the engine's rule for a rectangle with unknown corner
-radius (`content_box`, inset 160 hmm per side, `cell_render.py:78,143-151`): **L4737REV 6030 × 2640 hmm**, **6121
-3490 × 1800 hmm**; L4736REV (seed, radius unknown) 4250 × 1800 hmm. 6121's label size is **38.1 × 21.2 mm** (the
-official Avery template shows 38.1 × 21.18 mm cells with no horizontal gap, 65 per A4 sheet), not repo data (QU15).
+QL tape stays a supported form at full content, footer included. L4737REV is not in
+`backend/app/seed/sheet_types.json`; 6121 is seeded by Task 15i (section 10i, label 38.1 × 21.18 mm, verified). Their
+content boxes follow the engine's rule for a rectangle with unknown corner radius (`content_box`, inset 160 hmm per
+side, `cell_render.py:78,143-151`): **L4737REV 6030 × 2640 hmm**, **6121 3490 × 1798 hmm**; L4736REV (seed, radius
+unknown) 4250 × 1800 hmm.
 
 Findings: the Spoolman lookup builds `title = "{vendor} {name}"`, `primary_id = "#{id}"`, `qr_payload =
 "{base}/spool/show/{id}"` and the English `"{g}g remaining"` as `secondary` (`integrations/spoolman/plugin.py:66-93`);
@@ -1146,12 +1146,12 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   | L4737REV | 6030 × 2640 | `no_footer` | min(1580, 1280, 1550) = **12.8 mm** | 151 px box, 4 px modules → **9.8 mm** | 302 px box, 9 px modules → **11.1 mm** |
   | QL 62 × 36 | 5690 × 3395 | `full` | min(3395 − 820 − 250 − 190 = 2135, 5690 − 1660 − 100 − 1950 − 80 = 1900, 1550) = **15.5 mm** | 183 px, 5 px → **12.3 mm** | — (tape is 300 dpi) |
   | L4736REV | 4250 × 1800 | `core` | min(1560, 2970, 1550) = **15.5 mm** | 183 px, 5 px → **12.3 mm** | 366 px, 11 px → **13.5 mm** |
-  | 6121 | 3490 × 1800 | `core` | min(1560, 2210, 1550) = **15.5 mm** | 183 px, 5 px → **12.3 mm** | 366 px, 11 px → **13.5 mm** |
+  | 6121 | 3490 × 1798 | `core` | min(1558, 2210, 1550) = **15.5 mm** | 183 px, 5 px → **12.3 mm** | 366 px, 11 px → **13.5 mm** |
 
   L4737REV's margins: width **5.8 mm** over the `no_footer` threshold (6030 − 5450), height **0.6 mm** (2640 − 2580);
   `full` fails on both (6030 < 6050, 2640 < 2880). The 0.6 mm hold at every resolution because positions are absolute
   and baselines fixed (R-346-2): the lowest ink row is at most `height − 2` px. On `core` the QR box and caption take
-  17.9 of 18.0 mm (L4736REV, 6121); the caption has no descender. The strict order means a narrow but tall box drops the footer before it drops column 2, as
+  17.9 of 18.0 mm on L4736REV and of 17.98 mm on 6121; the caption has no descender. The strict order means a narrow but tall box drops the footer before it drops column 2, as
   the ruling orders. A payload whose symbol does not fit the box with modules of at least one device pixel is refused
   with `QrDoesNotFitError` on sheets (422 `content_type_data_mismatch`, `qr_payload`) and `QrPayloadTooLongError` on
   tape (422 `qr_payload_too_long`, with the byte capacity of the largest version that fits). On tape this is defence in
@@ -1213,6 +1213,64 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   It is a mockup and differs from the print in details (it writes „Empty spool“ on one line, „Grey“ for the colour,
   „lot“ in lower case, and a larger QR); that is accepted (coordinator, 2026-11-15).
 
+## 10i. #334 (part 1) — Ship the verified 6121
+
+Approved by the maintainer on 2026-11-15. #334 ships three measured sheet types; 1.7.0 ships the first, Avery Zweckform
+6121. L4737REV and 3490 follow after his test prints, so #334 stays open.
+
+Findings: the seed file `backend/app/seed/sheet_types.json` carries `seed_revision` 1 and 36 types; 6121 is not among
+them. The seeder (`app/seed/sheet_seed.py`, run in the lifespan at `app/main.py:305`) keeps no state: a missing key is
+inserted with `origin="seed"`; an existing key gets a new version only when every version came from the seeder
+(`created_by == "system:seed"`), no sheet uses it, the row was not edited and the seed's version number is not lower
+than the current one — otherwise it is left alone and logged at INFO. A seed whose prefix belongs to another type is
+skipped (`prefix_taken`). Versions are immutable rows; a sheet pins its version for life (`Sheet.type_version_id`, D14)
+and a new sheet takes the type's current (highest) version. `SheetType.origin` is `seed` / `custom` / `imported`;
+"shipped" means `origin="seed"`. There is no general audit table (only `printers_audit`); `app_settings` rows whose key
+the settings registry does not know are ignored by the store (`settings_store/store.py:278-281`). The website has no
+list of shipped sheet types (`using/sheets.md` describes sheet types in general).
+
+- **R-334-1 (the seed entry):** `seed_revision` 2 adds, as version 1:
+
+  | Field | Value |
+  |---|---|
+  | key / prefix | `avery-zweckform-6121` / `A6121` |
+  | vendor / product codes | `Avery Zweckform` / `6121`, `6121-65` |
+  | description | `Universal labels` |
+  | geometry | A4, label 38.1 × 21.18 mm, 5 × 13, pitch 38.1 / 21.18, margin left 9.9, top 10.8, corner radius unknown (`null`), rectangle |
+  | allow_qr / verified | `true` / `true` |
+  | source_name / source_url | `Avery Zweckform Word template 6121` / none |
+  | notes | "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print within +0.3 / ±0.2 mm. 5 columns of 38.1 mm with no horizontal gap (190.5 mm), rows 21.18 mm (275.34 mm); left edge 9.9 mm from the template, top 10.8 mm confirmed by the calibration print. Corner radius unknown. 65 labels per sheet; `-65` is the pack of 65 sheets." |
+
+  The geometry fits A4 (9.9 + 190.5 = 200.4 ≤ 210, 10.8 + 275.34 = 286.14 ≤ 297) and passes `validate_geometry`.
+- **R-334-2 (new installs):** inserted by the existing rule — version 1, `origin="seed"`, `verified=true`. If another
+  type already holds the prefix `A6121`, the existing rule applies: skipped and logged (`prefix_taken`).
+- **R-334-3 (adoption of an existing key):** the seed file gains a top-level `adopt` map, read by the seeder only:
+  `{"avery-zweckform-6121": {"revision": 2, "change_note": "Verified geometry shipped with Labelyard 1.7.0"}}`. For a
+  key in that map whose type already exists and that was not adopted at that revision yet, the seeder — inside the
+  entry's savepoint and the write lock — does:
+  - **same geometry** (the current version's `geometry_hash` equals the seed's): no new version;
+  - **different geometry:** adds the seed geometry as the next version (`add_version_locked`, actor `system:seed`, the
+    change note above), whatever the origin, the existing versions' authors, the sheets that use the type and the
+    seed's own version number — the adoption rule replaces the "left alone" rule for this key only. Old versions are
+    never deleted or changed; sheets keep their pinned version, new sheets take the new current one;
+  - in both cases sets `origin="seed"`, `verified=true`, `source_name`, `source_url` and `notes` to the seed's values
+    and keeps the local `prefix` (sheet codes depend on it, OC-5), `vendor`, `product_codes`, `description` and
+    `allow_qr`; a local prefix other than `A6121` is therefore fine.
+  - Then it records the adoption in `app_settings` under `internal.seed.adopted` (`{key: revision}`), so a second run
+    does nothing, and a later local edit of the type is again governed by the ordinary rules.
+- **R-334-4 (audit entry and notice):** each adoption writes a WARNING log line `sheet type adopted as shipped` with
+  key, previous origin, previous and new current version and geometry hash (no other data), and appends a notice to
+  `app_settings` `internal.notices`: `{"id": "sheet-type-verified:avery-zweckform-6121:2", "kind":
+  "sheet_type_verified" | "sheet_type_updated", "key": …, "at": …}` (`updated` when a version was added). The added
+  version row itself (`created_by`, `created_at`, `change_note`) is the persistent record of a geometry change. `GET
+  /api/v1/info` gains `notices: list[InfoNotice]` (notices of the last 30 days). The notification centre (#255) shows
+  each as an info entry once per browser (its read/cleared state, R-255): `sheet_type_updated` → "6121 dimensions
+  updated (verified)" / „Maße von 6121 aktualisiert (geprüft)“; `sheet_type_verified` → "6121 marked as verified" /
+  „6121 als geprüft markiert“ (QU17); the entry links to the type in the sheet archive.
+- **R-334-5 (scope):** L4737REV and 3490 are not part of 1.7.0; #334 stays open. `using/sheets.md` (en + de) gains one
+  sentence: shipped types marked verified were measured on real sheets, 1.7.0 adds Avery Zweckform 6121. No other
+  website list exists to extend.
+
 ## Additions to "11. Rulings index"
 
 | ID | Ruling |
@@ -1226,6 +1284,7 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
 | R-338-1…4 | Add to cart in the item view's sheet section; type via `lastType`, sheet and tray via `/cart?sheet=&tray=`; status line with Open cart; no cells, no server cart |
 | R-344-1…6 | `last_sheet_tray` and `last_calibration_print` on every page-printer status branch, from stored jobs (queued/printing/done); preselect address > last sheet tray > default > first, only after a status fetched after mount; the tray named in every step; warnings before saving, the requested-tray one only for a calibration print of the last 24 h newer than the stored values; status refreshed in `onSettled`; one statement on a new index |
 | R-346-1…14 | `spool_swatch` content type with `LabelData.swatch`, one `has_qr`, `check_required` accepts the model; layout of mockup v4 (QR under the bar beside colour and columns, hex line on the short tier) with one tab stop per column, Atkinson fonts on tape and sheets; data mapping with spool-over-filament overrides, every field validated on its own, `build_swatch` never fails the lookup, no remaining weight or price; bounded `SpoolSwatch` on preview and raw print; five extra-field keys and a title source (material or name); labels written out (PA (K), Location/Ort; long labels wrap at a space or soft hyphen onto a second line), number format in the hub language; tape and sheet metrics with column widths from the tab-stop rule and wrapped label lines counted in the heights (OC-27 kept); four tiers decided once from the hmm box, `Q_FULL` for the footer and `Q_MAX` 15.5 mm, L4737REV → `no_footer` with a 12.8 mm QR box, L4736REV and 6121 → `core`, QL 62 × 36 → `full` with a 15.5 mm QR box; a resolution-independent layout (BASIC text engine pinned, design-unit text extents, float font size from the design cap height, glyphs drawn at their design positions with a 1-px run margin, wrapping decided in mm), the text rule wrap → shrink → cut with `truncated` (R-346-7a), absolute hmm positions with fixed baselines; the preview at the job's print resolution, downscaled, cached by content hash; QR box fixed per tier, 2-module quiet zone, ink 2 modules under the bar; `QrPayloadTooLongError` on tape; the swatch ignores every orientation: a single job is `across`, an `along` batch turns it, and recovery and retry do the same from the stored job; `unsupported_tape` render-check verdict; preview QR sized and placed from the swatch box; picker hidden for the swatch; static sample image of four media |
+| R-334-1…5 | Avery Zweckform 6121 seeded verified (seed revision 2); an existing key is adopted once (`adopt` map, `internal.seed.adopted`): same geometry → no version, other geometry → new current version with the shipped note, old versions and pinned sheets kept, local prefix kept; WARNING log and a one-time notice in the notification centre via `/api/v1/info`; #334 stays open |
 
 ## Additions to "Questions for the maintainer"
 
@@ -1245,8 +1304,10 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
 | QU12 | #346: "62 × 36 mm" as the image length (36.0 mm) or as the cut label? The QL keeps about 3 mm feed at each end (`ql_layout.py` docstring). | **Accepted 2026-11-15** as recommended: the image is 36.0 mm; the real print (acceptance) decides whether to shorten it to 30 mm. |
 | QU13 | #346: the smallest QR box is 7.0 mm (sheets) / 8.0 mm (tape) with a 2-module quiet zone inside (maintainer ruling 2026-11-15). | **Accepted 2026-11-15**; the maintainer's real print on L4737REV (12.8 mm box, 11.1 mm ink at 600 dpi) is the scan check. |
 | QU14 | #346: the reference medium. | **Settled 2026-11-15 (maintainer):** the L4737REV cell (63.5 × 29.6 mm, both columns, no footer); L4736REV and 6121 short tier; QL 62 × 36 stays at full content. |
-| QU15 | #346: L4737REV and 6121 are not in `seed/sheet_types.json`. Add them as seed sheet types? | Recommendation: yes, in a separate task once their pitch, margins and corner radius are measured; Task 15h's tests build their cells from the label size with an unknown radius. |
+| QU15 | #346: L4737REV and 6121 are not in `seed/sheet_types.json`. Add them as seed sheet types? | **6121: settled 2026-11-15** — seeded verified by Task 15i (section 10i). L4737REV follows after the maintainer's test prints (#334). |
 | QU16 | #346: abbreviate labels to fit the v4 QR on L4737REV? | **Settled 2026-11-15 (maintainer):** no abbreviations. Worked instead: font floor (no gain), long labels wrap onto a second line (decided in mm), the layout in mm from design units, glyphs drawn at their design positions with a 1-px run margin, the preview at print resolution; the QR box on L4737REV is 12.8 mm (R-346-7/8). |
+| QU17 | #334: the notice text when 6121 is adopted without a geometry change. | Recommendation: "6121 marked as verified" / „6121 als geprüft markiert“; the ruled „Maße von 6121 aktualisiert (geprüft)“ only when a version was added (R-334-4). |
+| QU18 | #334: there is no general audit table; the audit entry is the WARNING log line, the notice record and, for a geometry change, the version row. A table of its own? | Recommendation: no new table in 1.7.0. |
 
 ---
 
