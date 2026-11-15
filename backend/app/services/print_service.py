@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintService — submit_print_job pipeline using LayoutEngine.
 
 Phase 1k.1a Task 15: TemplateLoader and LabelRenderer removed. The engine renders

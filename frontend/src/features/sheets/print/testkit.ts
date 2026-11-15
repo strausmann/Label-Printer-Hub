@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect } from "vitest";
@@ -61,6 +64,7 @@ export function previewFor(code: string | null, fresh: number[], used: number[] 
     free_after: [48 - used.length - fresh.length],
     expected_cells: [{ sheet: code ?? "new", cells: fresh, id_cell: null }],
     reprint_hints: [],
+    reprint_totals: [],
     placed: fresh.length,
     remaining: 0,
     ...over,

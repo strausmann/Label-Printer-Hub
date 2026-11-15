@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests für Migration #124: printers_audit-Tabelle + Schema-Erweiterung + Backfill.
 
 TDD-Failing-Tests — werden erst grün nach:

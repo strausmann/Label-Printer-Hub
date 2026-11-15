@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # ptouch library — entry points used by First-Print
 
 Version: `ptouch>=1.1.0` (pinned in pyproject.toml).

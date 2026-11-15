@@ -32,7 +32,9 @@
     "Zlib"
   ],
   "allow-dependencies-licenses": [
-    "pkg:npm/json-schema@0.4.0"
+    "pkg:npm/json-schema@0.4.0",
+    "pkg:npm/spdx-exceptions@2.5.0",
+    "pkg:npm/spdx-expression-validate@2.0.0"
   ],
   "fail-on-scopes": [
     "runtime",
@@ -42,6 +44,16 @@
   "vulnerability-check": false,
   "x-licence-text-sha256-refresh": "Python exceptions pin the reviewed licence file with licence-text-sha256 (SHA-256 of the pip-licenses LicenseText, UTF-8). When the gate reports 'the licence file has changed', read the new text, confirm the exception still holds, then run from backend/ in a venv with the runtime dependencies: python -c \"import sys; from scripts.licence_report import _collect, licence_text_sha256; [print(e['Name'], licence_text_sha256(e)) for e in _collect(sys.argv[1])]\" <runtime-python>, and replace the hash of that package.",
   "x-licence-exceptions": [
+    {
+      "purl": "pkg:npm/spdx-exceptions@2.5.0",
+      "licence": "CC-BY-3.0",
+      "reason": "SPDX licence-list data, build time only (dependency of rollup-license-plugin, not in the shipped web bundle), attribution kept."
+    },
+    {
+      "purl": "pkg:npm/spdx-expression-validate@2.0.0",
+      "licence": "CC-BY-3.0 AND MIT",
+      "reason": "SPDX licence-list data, build time only (dependency of rollup-license-plugin, not in the shipped web bundle), attribution kept."
+    },
     {
       "purl": "pkg:npm/json-schema@0.4.0",
       "licence": "AFL-2.1 OR BSD-3-Clause",

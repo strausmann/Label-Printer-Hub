@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of the calibration page: the job, the download, scopes and errors.
 
 Two apps: the full app (keys, scopes, printer restriction, error cases) and a small app with a

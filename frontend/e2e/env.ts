@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { resolve } from "node:path";
 
 /** Two throw-away hubs: one with an admin key, one waiting for its first admin key (D7). */

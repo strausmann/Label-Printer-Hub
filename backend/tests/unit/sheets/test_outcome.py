@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Outcome handler and orphan sweep: D15 transitions after a page job ends (Task 5)."""
 
 from __future__ import annotations

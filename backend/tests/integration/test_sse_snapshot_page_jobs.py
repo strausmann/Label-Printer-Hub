@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The reconnect snapshot carries a page job's sub-state at the printer (spec 16, C2).
 
 The sub-state lives only in the queue's in-memory job; a reloaded job page would otherwise show

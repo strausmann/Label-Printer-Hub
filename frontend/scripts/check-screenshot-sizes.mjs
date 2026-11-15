@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Fails when a README screenshot in docs/screenshots/ is over budget; it changes no file. The files are
 // deliberately not recompressed: an optimiser that ran in one place only would break the byte-identical regeneration.
 // Run by `pnpm screenshots` after the screenshots were taken.

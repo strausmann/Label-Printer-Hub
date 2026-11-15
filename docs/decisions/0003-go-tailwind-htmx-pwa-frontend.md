@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0003 — Go + Tailwind + HTMX + PWA for the frontend
 
 - **Status:** Superseded by ADR-0016

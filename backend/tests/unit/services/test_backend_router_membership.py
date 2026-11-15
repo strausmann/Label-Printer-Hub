@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """BackendRouter membership (#224): printers are registered and unregistered at runtime."""
 
 from __future__ import annotations

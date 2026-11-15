@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Browser sign-in for the web UI (spec 8.1, 8.2; D7, D10).
 
 Routes
@@ -27,6 +30,7 @@ from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext, _validate_api_key, trusted_sso_user
 from app.auth.scope_deps import require_read
 from app.config import get_settings
+from app.config_legacy import report_from_process, setting_variable_in_use, setting_variable_label
 from app.db.session import get_session
 from app.models.ui_session import UiSession
 from app.services.rate_limiter import _sign_in_rate_limiter
@@ -47,16 +51,25 @@ class SessionInfo(BaseModel):
     user: str | None = None
     # True for a bootstrap session: the UI leads straight to creating the first admin key.
     bootstrap: bool = False
+    # Bootstrap session only: the name (never the value) of the variable the deployment set, so
+    # the UI tells the operator which one to remove.
+    bootstrap_variable: str | None = None
     csrf_token: str | None = None
 
 
 def _info(row: UiSession) -> SessionInfo:
+    is_bootstrap = row.source == "bootstrap"
     return SessionInfo(
         signed_in=True,
         scope=row.scope,  # type: ignore[arg-type]
         source=row.source,  # type: ignore[arg-type]
         user=row.user,
-        bootstrap=row.source == "bootstrap",
+        bootstrap=is_bootstrap,
+        bootstrap_variable=(
+            setting_variable_in_use("bootstrap_admin_key", report_from_process())
+            if is_bootstrap
+            else None
+        ),
         csrf_token=row.csrf_token,
     )
 
@@ -146,10 +159,11 @@ async def sign_in(
     if bootstrap_key and hmac.compare_digest(body.key.encode(), bootstrap_key.encode()):
         # D7: one-time key, only while no admin key exists.
         if await ui_sessions.admin_key_exists(db):
+            # Name the variable the deployment set: the legacy one while it is in use.
+            variable = setting_variable_label("bootstrap_admin_key", report_from_process())
             raise _unauthorized(
                 "bootstrap_disabled",
-                "The bootstrap key is disabled because an admin key exists. "
-                "Remove PRINTER_HUB_BOOTSTRAP_ADMIN_KEY.",
+                f"The bootstrap key is disabled because an admin key exists. Remove {variable}.",
             )
         row, token = await ui_sessions.create_session(
             db, source="bootstrap", scope="admin", api_key_id=None, allowed_printer_ids=[]

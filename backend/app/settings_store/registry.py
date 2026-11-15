@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Definition of every runtime setting: kind, default and the env field that locks it."""
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ def _integration(
 
 
 _DEFS: list[SettingDef] = [
-    SettingDef("general.display_name", "str", "Label Printer Hub", None),
+    SettingDef("general.display_name", "str", "Labelyard", None),
     SettingDef("general.language", "enum", "en", None, choices=("en", "de")),
     SettingDef("general.time_zone", "str", "UTC", None),
     # D4: shown read-only, always taken from the environment.

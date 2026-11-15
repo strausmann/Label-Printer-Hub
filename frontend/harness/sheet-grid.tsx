@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 // Dev-only page for the real-browser checks of SheetGrid and GeometryDiagram (jsdom has no layout engine).
 // Served by `vite` for harness/*.spec.ts; never part of the production build (index.html is the only input).
 import { I18nProvider } from "@lingui/react";

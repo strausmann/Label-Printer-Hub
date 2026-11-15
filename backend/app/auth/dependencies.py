@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """FastAPI authentication dependency — ``require_scope()``.
 
 Paths, in this order (spec 8.1, 8.2; D7, D10):

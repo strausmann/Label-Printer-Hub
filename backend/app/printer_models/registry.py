@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Discover printer-model plugins by PJL or SNMP fingerprint."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A hub restart while a page job is at the printer: the real lifespan runs twice on one
 database, the fake IPP printer outlives both. The second run resumes the tracking and the job
 ends ``done`` — no second Print-Job, one ``on_completed``. A third case checks the unknown

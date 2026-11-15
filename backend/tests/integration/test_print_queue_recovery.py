@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintQueue.start() muss beim Neustart Recovery durchführen.
 
 Task 6 — Phase 2 Job Persistence.

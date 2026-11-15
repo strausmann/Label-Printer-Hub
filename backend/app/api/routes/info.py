@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Public shell info and the admin system-log view.
 
 ``GET /api/v1/info`` is public by design: the web shell and the sign-in screen need

@@ -521,7 +521,7 @@
           "L4731"
         ],
         "description": "Mini labels, removable",
-        "allow_qr": false,
+        "allow_qr": true,
         "verified": false,
         "source_name": "Labelplanet LP189/25; MR-Label MR111",
         "source_url": "https://labelplanet.co.uk/label-templates-for-rounded-rectangle-labels/label-templates-189-per-sheet-lp189-25/",
@@ -677,7 +677,7 @@
           "10001"
         ],
         "description": "Rectangular labels",
-        "allow_qr": false,
+        "allow_qr": true,
         "verified": false,
         "source_name": "gLabels-qt templates (MIT) @ 37901c1",
         "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/herma-iso-templates.xml#L445",
@@ -1425,7 +1425,7 @@
           "18667"
         ],
         "description": "Return address labels",
-        "allow_qr": false,
+        "allow_qr": true,
         "verified": false,
         "source_name": "gLabels-qt templates (MIT) @ 37901c1",
         "source_url": "https://github.com/j-evins/glabels-qt/blob/37901c153cf7f3abffe4e9355e00755d2b152b5b/templates/avery-us-templates.xml#L249",

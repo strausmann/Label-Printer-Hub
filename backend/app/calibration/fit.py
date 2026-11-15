@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Fit the deviation of a printer from readings taken on a printed test page.
 
 A reading says how far the ink landed from the nominal crossing between four labels

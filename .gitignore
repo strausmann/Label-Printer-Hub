@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Python
 __pycache__/
 *.py[cod]
@@ -68,3 +71,16 @@ secrets/
 backend/.venv/
 # The pinned release toolchain is installed with `npm ci`, so its lockfile is committed.
 !.github/release-tools/package-lock.json
+
+# Website (website/): build output, Astro cache, package caches
+website/.astro/
+website/.npm-cache/
+# The OpenAPI document is generated at build time from the backend; it is committed from the
+# website's freshness job on (Task 7, second part), when the backend is renamed.
+
+# Vale (.vale/): the binary and the styles installed by scripts/vale_setup.sh (or `vale sync`);
+# the styles we write ourselves (Labelyard, Labelyard-de, config/vocabularies) are committed.
+.vale/bin/
+.vale/styles/write-good/
+.vale/styles/MDX/
+.vale/styles/.vale-config/

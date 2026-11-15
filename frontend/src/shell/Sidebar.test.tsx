@@ -1,8 +1,21 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { renderApp, SIGNED_IN } from "../test-utils";
 
 describe("Sidebar", () => {
+  it("shows the Labelyard mark next to the display name", async () => {
+    await renderApp({ path: "/", info: { display_name: "Workshop" } });
+    const aside = screen.getByRole("complementary", { hidden: true });
+    const home = within(aside).getByRole("link", { name: "Workshop", hidden: true });
+    // One mark per colour scheme; the name next to it carries the meaning, so both are decorative.
+    const marks = Array.from(home.querySelectorAll("img"));
+    expect(marks.map((img) => img.getAttribute("src"))).toEqual(["/brand/mark.svg", "/brand/mark-dark.svg"]);
+    for (const img of marks) expect(img).toHaveAttribute("alt", "");
+  });
+
   it("shows the entries of the shipped modules", async () => {
     await renderApp({ path: "/" });
     const nav = screen.getByRole("navigation", { name: "Main" });

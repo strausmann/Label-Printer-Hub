@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLiteJobStore Protocol-Conformance Tests gegen echte SQLite-Session."""
 
 from __future__ import annotations

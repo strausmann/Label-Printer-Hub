@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /** A query string from the set values only; undefined, null and empty strings are left out (false and 0 are kept). */
 export function queryString(params: Record<string, string | number | boolean | null | undefined>): string {
   const query = new URLSearchParams();

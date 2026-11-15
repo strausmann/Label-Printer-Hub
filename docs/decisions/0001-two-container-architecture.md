@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0001 — Two-container architecture (separate backend and frontend)
 
 - **Status:** Superseded by ADR-0015

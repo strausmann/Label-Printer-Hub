@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Stored QL layout default per printer and tape width via the admin API (#258)."""
 
 from __future__ import annotations

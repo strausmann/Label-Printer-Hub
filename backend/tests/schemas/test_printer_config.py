@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests für PrinterYAMLConfig-Laufzeitkonfiguration.
 
 Phase 5 (#124): Importpfad von app.schemas.printer_config →

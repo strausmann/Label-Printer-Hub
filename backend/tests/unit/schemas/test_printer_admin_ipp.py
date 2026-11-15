@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Admin printer payloads for IPP page printers (spec 11.1, plan 2 task 5)."""
 
 from __future__ import annotations

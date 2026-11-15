@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1e — /readiness deep-check endpoint.
 
 Phase 1k.1a (Task 25): template_seed removed from required checks
@@ -15,7 +18,7 @@ def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
     counts only with the D10 opt-in (default off)."""
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
 import { renderHook } from "@testing-library/react";
@@ -34,6 +37,12 @@ describe("print dialog error words", () => {
     expect(await textFor(error, "de")).toBe(
       "Der Hub kann gerade keine Vorschau zeichnen. Versuch es später noch einmal.",
     );
+  });
+
+  it("too many previews, once the preview stopped asking, says to try again, never the code (#339), en and de", async () => {
+    const error = new ApiError(429, "too-many-previews", "server words");
+    expect(await textFor(error)).toBe("Too many previews right now. Try again in a moment.");
+    expect(await textFor(error, "de")).toBe("Gerade laufen zu viele Vorschauen. Versuch es gleich noch einmal.");
   });
 
   it("an unknown error ends in the fallback, never in the server's words", async () => {

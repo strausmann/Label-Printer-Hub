@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 1k.1 — Layout-Engine + TapeGeometry + ContentTypes (Design)
 
 **Datum:** 2026-06-05

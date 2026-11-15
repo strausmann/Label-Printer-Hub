@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A stale or unpolled cached status is reported as unknown, with its age (#227)."""
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ TAPE_PARSED = {
 def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

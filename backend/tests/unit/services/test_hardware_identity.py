@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hardware identity (#231): pick, normalise and the store/compare rules of ``record_identity``."""
 
 from __future__ import annotations

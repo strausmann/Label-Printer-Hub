@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # reportlab PDF output: spike S1
 
 Date: 2026-11-05. Spike for the sheet archive PDF writer (Plan 2, Task 10).

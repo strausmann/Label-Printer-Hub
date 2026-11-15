@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useSyncExternalStore } from "react";
 
 /** The version this bundle was built for (`HUB_VERSION` at build time, see vite.config.ts). */

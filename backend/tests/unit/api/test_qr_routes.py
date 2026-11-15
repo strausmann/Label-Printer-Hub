@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """QR paths serve the app shell and render nothing server-side (Task 7).
 
 The end-to-end behaviour (all four paths, API-only mode) is covered in

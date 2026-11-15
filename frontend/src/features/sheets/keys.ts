@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { components } from "../../api/schema.gen";
 
 export type SheetPrintRequest = components["schemas"]["SheetPrintRequest"];

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Spoolman REST API client — filament-spool lookup by id.
 
 Spoolman is intended for trusted-network deployment and requires no

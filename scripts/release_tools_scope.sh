@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Tell the release-tools workflow whether a change touches anything the release
 # dry run depends on. Prints `true` or `false`; the workflow runs the expensive
 # steps only on `true`, but the job itself always runs, so the check always reports

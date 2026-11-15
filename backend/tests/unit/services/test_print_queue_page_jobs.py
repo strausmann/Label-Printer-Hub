@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintQueue with page printers: submit, deferral into the held slot, cancel, clear, one job at
 the printer, and the media-kind guard. The printer is ``FakeIppPrinter``; waits are bounded."""
 

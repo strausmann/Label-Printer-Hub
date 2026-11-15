@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 version: 2
 updates:
   # Python dependencies (pyproject.toml / requirements*.txt)
@@ -40,6 +43,28 @@ updates:
       include: scope
     groups:
       npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+        applies-to: version-updates
+
+  # The Labelyard website (Astro Starlight)
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - javascript
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      website-minor-and-patch:
         update-types:
           - minor
           - patch

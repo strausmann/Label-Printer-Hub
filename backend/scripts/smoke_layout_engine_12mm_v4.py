@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """V4-Winner smoke script: LayoutEngine 12mm QR_TWO_LINES.
 
 Phase 1k.1a (Task 25): Verifies that the LayoutEngine renders a 12mm

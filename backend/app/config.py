@@ -1,18 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Runtime configuration via Pydantic Settings.
 
-All settings are read from environment variables prefixed with ``PRINTER_HUB_``
-(e.g. ``PRINTER_HUB_DATABASE_URL``). A ``.env`` file in the working directory is
-loaded automatically when present; values from the environment always take
-precedence over ``.env`` values.
+All settings are read from environment variables prefixed with ``LABELYARD_``
+(e.g. ``LABELYARD_DATABASE_URL``). The former ``PRINTER_HUB_`` prefix is still read as a
+deprecated fallback (see :mod:`app.config_legacy`). A ``.env`` file in the working directory
+is loaded automatically when present. The prefix decides first, the source second::
+
+    LABELYARD_ env -> LABELYARD_ .env -> PRINTER_HUB_ env -> PRINTER_HUB_ .env
+
+So a ``LABELYARD_`` value always wins, even one from ``.env`` over a ``PRINTER_HUB_``
+process variable; within one prefix the process environment beats ``.env``.
 
 Printers are managed in the database (UI/API); there is no printer configuration
 file and no printer-specific setting here.
 
 ``extra="forbid"`` rejects unknown CONSTRUCTOR KWARGS at instantiation time —
 NOT unknown environment variables. pydantic-settings silently ignores unknown
-env vars; leftover variables like the removed ``PRINTER_HUB_QL820_HOST`` etc.
-will be silently dropped on startup. Operators should rely on the changelog
-(or ``Settings(...)``-based init in tests) to detect leftover config.
+process environment variables, so leftovers of removed settings are dropped on
+startup. Operators should rely on the changelog (or ``Settings(...)``-based init
+in tests) to detect leftover config. Unknown keys in a ``.env`` file are different:
+a key that matches no field is rejected at startup, whatever its prefix.
 
 Usage::
 
@@ -38,7 +47,19 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    DotEnvSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
+
+from app.config_legacy import (
+    ENV_PREFIX,
+    LegacyPrefixDotEnvSource,
+    LegacyPrefixEnvSource,
+    PrefixFilteredDotEnvSource,
+)
 
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -56,13 +77,16 @@ MAX_HELD_RUNS_PER_KEY_PER_PRINTER = 2
 class Settings(BaseSettings):
     """Application-wide runtime configuration.
 
-    Every field maps to an environment variable with the ``PRINTER_HUB_``
+    Every field maps to an environment variable with the ``LABELYARD_``
     prefix.  See ``.env.example`` in the ``backend/`` directory for the full
     list of supported variables and their defaults.
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="PRINTER_HUB_",
+        env_prefix=ENV_PREFIX,
+        # An empty value (``${X:-}`` in a compose file) counts as not set for BOTH prefixes,
+        # so an empty LABELYARD_X never hides a PRINTER_HUB_X that is set.
+        env_ignore_empty=True,
         env_file=".env",
         extra="forbid",
     )
@@ -110,7 +134,7 @@ class Settings(BaseSettings):
     spoolman_timeout: float = 5.0
 
     # Server
-    server_port: int = 8090
+    server_port: int = 8000
     log_level: LogLevel = "INFO"
     """Python-Loglevel — auf die fünf dokumentierten Werte beschränkt
     (Issue #46). Ungültige Werte (Tippfehler, lowercase) erzeugen einen
@@ -159,7 +183,7 @@ class Settings(BaseSettings):
         """The printer's queued-run cap must not be below the runs it may hold (#277)."""
         if self.max_queued_runs_per_printer < MAX_HELD_RUNS_PER_PRINTER:
             raise ValueError(
-                "PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER must be at least "
+                "LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER must be at least "
                 f"{MAX_HELD_RUNS_PER_PRINTER} (the held runs a printer keeps), "
                 f"got {self.max_queued_runs_per_printer}"
             )
@@ -195,6 +219,32 @@ class Settings(BaseSettings):
         ),
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Order: init, LABELYARD_ env/.env, PRINTER_HUB_ env/.env, secrets.
+
+        The two ``.env`` readers are rebuilt with the same file settings as the default one
+        (so ``Settings(_env_file=...)`` keeps working) but filter the other prefix's keys.
+        """
+        assert isinstance(dotenv_settings, DotEnvSettingsSource)
+        env_file = dotenv_settings.env_file
+        encoding = dotenv_settings.env_file_encoding
+        return (
+            init_settings,
+            env_settings,
+            PrefixFilteredDotEnvSource(settings_cls, env_file=env_file, env_file_encoding=encoding),
+            LegacyPrefixEnvSource(settings_cls),
+            LegacyPrefixDotEnvSource(settings_cls, env_file=env_file, env_file_encoding=encoding),
+            file_secret_settings,
+        )
+
     @field_validator("secret_key")
     @classmethod
     def validate_secret_key(cls, v: SecretStr) -> SecretStr:
@@ -203,10 +253,10 @@ class Settings(BaseSettings):
         try:
             raw = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
         except (binascii.Error, ValueError) as exc:
-            raise ValueError("PRINTER_HUB_SECRET_KEY must be base64url text") from exc
+            raise ValueError("LABELYARD_SECRET_KEY must be base64url text") from exc
         if len(raw) != 32:
             raise ValueError(
-                "PRINTER_HUB_SECRET_KEY must decode to exactly 32 bytes "
+                "LABELYARD_SECRET_KEY must decode to exactly 32 bytes "
                 "(generate with: python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
             )
         return SecretStr(text)
@@ -246,7 +296,7 @@ class Settings(BaseSettings):
         stripped = secret.strip()
         if len(stripped) < 32:
             raise ValueError(
-                "PRINTER_HUB_WEBHOOK_API_KEY must be at least 32 non-whitespace characters"
+                "LABELYARD_WEBHOOK_API_KEY must be at least 32 non-whitespace characters"
             )
         return SecretStr(stripped)
 

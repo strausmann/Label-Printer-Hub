@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Model package — re-exports all SQLModel table classes.
 
 Every class listed here is registered with SQLModel.metadata, which is

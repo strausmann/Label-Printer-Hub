@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { ApiError } from "../../../api/client";
 import { contentTypeDataMismatch, itemIndexOf, trayUnknown } from "../../../api/errorDetail";
@@ -15,6 +18,10 @@ export function usePrintDialogErrorText(itemName: (index: number) => string): (e
     if (error instanceof ApiError) {
       if (error.code === "render-timeout") {
         return t`The preview took too long. Try again later.`;
+      }
+      if (error.code === "too-many-previews") {
+        // Reached only once the preview has stopped asking again by itself (`previewRetry`); the wait before is SheetSection's.
+        return t`Too many previews right now. Try again in a moment.`;
       }
       if (error.code === "render-unavailable") {
         return t`The hub cannot draw a preview right now. Try again later.`;

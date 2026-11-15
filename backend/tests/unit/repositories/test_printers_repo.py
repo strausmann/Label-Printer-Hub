@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit-Tests für printers_repo.list_all mit enabled-Filter (Issue #124, Task 2.6).
 
 TDD: Tests wurden vor der Implementation geschrieben.

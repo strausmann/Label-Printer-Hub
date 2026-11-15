@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SNMP query helpers — discovery (PJL string) + preflight.
 
 Uses pysnmp's asyncio API; the call is fully non-blocking, no thread

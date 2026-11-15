@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Licence constant and the source link of the running build (D20)."""
 
 from __future__ import annotations
@@ -17,7 +20,10 @@ def test_project_license() -> None:
     ("repo_url", "version", "revision", "expected"),
     [
         (R, "1.1.0", SHA, f"{R}/tree/v1.1.0"),
-        (R, "1.1.0-rc.1", SHA, f"{R}/tree/v1.1.0-rc.1"),
+        # A pre-release has no git tag (#327): link the commit it was built from.
+        (R, "1.1.0-rc.1", SHA, f"{R}/tree/{SHA}"),
+        (R, "1.6.0-rc.2", "70cf20a930d6", f"{R}/tree/70cf20a930d6"),
+        (R, "1.1.0-rc.1", "unknown", R),
         (R, "dev", SHA, f"{R}/tree/{SHA}"),
         (R, "feat-sheets", SHA, f"{R}/tree/{SHA}"),
         (R, "0.0.0-dev", "unknown", R),

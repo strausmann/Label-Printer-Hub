@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Async SQLAlchemy engine with SQLite pragma enforcement."""
 
 from __future__ import annotations
@@ -12,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import get_settings
 from app.sheets.locking import install_statement_counter
 
-# Single source of truth: Settings.database_url (env var PRINTER_HUB_DATABASE_URL).
-# The previous code read the old LABEL_HUB_DATABASE_URL env var which was a
+# Single source of truth: Settings.database_url (env var LABELYARD_DATABASE_URL).
+# The previous code read an older, undocumented database URL variable, a
 # rename relict — see Finding F2 in docs/decisions/.
 DATABASE_URL = get_settings().database_url
 

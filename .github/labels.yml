@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Labels are managed in this file and synced via .github/workflows/labels-sync.yml.
 # Do NOT create labels in the GitHub UI — they will be removed on the next sync.
 #

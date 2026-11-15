@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1k.1a: drop presets.template_id column and templates table
 
 The Template model and TemplateLoader were removed in Phase 1k.1a (layout

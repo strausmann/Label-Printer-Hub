@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Seed the sheet type archive from the shipped file (spec 9.5, OC-14).
 
 The seeder keeps no state of its own. Every start compares the seed keys and geometry hashes

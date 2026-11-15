@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { LookupApp } from "../lookup/cart";
 
 /** The deep links the plugins build (each plugin under `backend/app/integrations`), read back to the app's root. */

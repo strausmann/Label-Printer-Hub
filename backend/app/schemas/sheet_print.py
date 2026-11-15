@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Request and response models of the sheet print preview (spec 12.6, 15).
 
 Request bodies refuse fields they do not know, so ``options`` (copies, cut) is not accepted:
@@ -39,6 +42,7 @@ __all__ = [
     "PreviewPage",
     "PrintedPage",
     "ReprintHint",
+    "ReprintTotal",
     "SheetItem",
     "SheetPreview",
     "SheetPrintRequest",
@@ -189,14 +193,32 @@ class PreviewPage(BaseModel):
 
 
 class ReprintHint(BaseModel):
-    item_index: int
-    sheet_code: str
-    cell: int
-    printed_at: datetime
+    """One earlier print of a lookup item: a ``used`` cell it was printed into."""
+
+    item_index: int = Field(
+        description=(
+            "Index of the item in `items`. Only on the first copy of an item (the first item with "
+            "this source and ref): its other copies, and later cart lines of the same item, carry "
+            "no hints."
+        )
+    )
+    sheet_code: str = Field(description="The sheet the earlier print is on.")
+    cell: int = Field(description="The cell of the earlier print.")
+    printed_at: datetime = Field(description="When the cell was printed (UTC).")
 
     @field_serializer("printed_at")
     def _ser_printed(self, dt: datetime, info: Any) -> str:
         return serialize_datetime_utc(dt, info)
+
+
+class ReprintTotal(BaseModel):
+    """How often an item was printed before: all earlier prints, not only the listed ones."""
+
+    item_index: int = Field(description="The item the hints are on (see `ReprintHint.item_index`).")
+    total: int = Field(
+        description="Earlier prints of the item; `reprint_hints` lists the newest ones only."
+    )
+    sheets: dict[str, int] = Field(description="Earlier prints of the item per sheet code.")
 
 
 class SheetPreview(BaseModel):
@@ -205,7 +227,17 @@ class SheetPreview(BaseModel):
     expected_cells: list[ExpectedPageModel] = Field(
         description="Send this back as `expected_cells` when printing."
     )
-    reprint_hints: list[ReprintHint]
+    reprint_hints: list[ReprintHint] = Field(
+        description=(
+            "Where lookup items were printed before: the newest ones per item, on the first copy "
+            "of the item. `reprint_totals` has the full count."
+        )
+    )
+    reprint_totals: list[ReprintTotal] = Field(
+        description=(
+            "One entry per item that has `reprint_hints`: the count of all its earlier prints."
+        )
+    )
     placed: int = Field(
         description="Items this run places: the first ones of `items`, as many as the sheet takes."
     )

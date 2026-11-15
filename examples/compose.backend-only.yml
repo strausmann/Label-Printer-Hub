@@ -1,5 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # ============================================================================
-# Label Printer Hub — API only (no web UI, no reverse proxy)
+# Labelyard — API only (no web UI, no reverse proxy)
 #
 # For driving the REST API directly via curl/Postman/etc. Builds the image
 # from source on the host that runs `docker compose` (no GHCR pull) with
@@ -8,10 +11,10 @@
 #
 # Usage on any docker host:
 #
-#   git clone https://github.com/strausmann/Label-Printer-Hub.git
-#   cd Label-Printer-Hub
+#   git clone https://github.com/strausmann/labelyard.git
+#   cd labelyard
 #   cp examples/.env.example .env
-#   $EDITOR .env             # set PRINTER_HUB_SECRET_KEY and PRINTER_HUB_PUBLIC_URL
+#   $EDITOR .env             # set LABELYARD_SECRET_KEY and LABELYARD_PUBLIC_URL
 #   docker compose -f examples/compose.backend-only.yml up -d --build
 #
 # Then:
@@ -20,19 +23,19 @@
 #
 # Add printers through the API (POST /api/v1/admin/printers with an admin key); create
 # the first key with:
-#   docker exec label-printer-hub-backend printer-hub admin create-key --scope admin --name first-admin
+#   docker exec labelyard labelyard admin create-key --scope admin --name first-admin
 # ============================================================================
 
 services:
-  backend:
+  labelyard:
     build:
       # The repository root: the Dockerfile also builds the web app from frontend/.
       context: ..
       dockerfile: backend/Dockerfile
       args:
         WEB_SOURCE: web-stub
-    image: label-printer-hub-backend:dev
-    container_name: label-printer-hub-backend
+    image: labelyard:dev
+    container_name: labelyard
     user: "1000:1000"
     ports:
       # host:container — host port is what curl talks to.
@@ -45,8 +48,8 @@ services:
       # FORWARDED_ALLOW_IPS is left at the image default (127.0.0.1): never "*", which would let
       # any client forge X-Forwarded-For. See #160 for the trusted-proxy design.
       # Required since the settings rework; a missing value is a compose-time error.
-      PRINTER_HUB_SECRET_KEY: "${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
-      PRINTER_HUB_PUBLIC_URL: "${PRINTER_HUB_PUBLIC_URL:?set PRINTER_HUB_PUBLIC_URL, e.g. http://localhost:8090}"
+      LABELYARD_SECRET_KEY: "${LABELYARD_SECRET_KEY:?set LABELYARD_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      LABELYARD_PUBLIC_URL: "${LABELYARD_PUBLIC_URL:?set LABELYARD_PUBLIC_URL, e.g. http://localhost:8090}"
     volumes:
       # SQLite + future job-state persistence. Owned by UID 1000 on host.
       - ./data:/data

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Every print path records who printed and from where (263-79).
 
 Real lifespan, real API keys, a mock tape printer; no dependency overrides. The recorded

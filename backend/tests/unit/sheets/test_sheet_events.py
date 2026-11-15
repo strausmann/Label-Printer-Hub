@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``sheet.updated`` publisher on the ``sheets`` channel (Plan 1, Task 6, spec 16)."""
 
 from __future__ import annotations

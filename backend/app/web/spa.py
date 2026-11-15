@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Serve the built web app (single page application) from the backend.
 
 Decision D1: one process serves both the API and the UI, so there is no second

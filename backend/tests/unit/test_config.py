@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for app.config — Pydantic Settings."""
 
 from __future__ import annotations
@@ -9,14 +12,14 @@ from app.config import Settings
 
 
 def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Settings are read from PRINTER_HUB_* environment variables."""
-    monkeypatch.setenv("PRINTER_HUB_DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
-    monkeypatch.setenv("PRINTER_HUB_WEBHOOK_API_KEY", "test-key-32-bytes-long-enough-here")
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_URL", "https://snipe-it.example")
-    monkeypatch.setenv("PRINTER_HUB_SNIPEIT_API_KEY", "snipeit-key")
-    monkeypatch.setenv("PRINTER_HUB_GROCY_URL", "https://grocy.example")
-    monkeypatch.setenv("PRINTER_HUB_GROCY_API_KEY", "grocy-key")
-    monkeypatch.setenv("PRINTER_HUB_SPOOLMAN_URL", "https://spoolman.example")
+    """Settings are read from LABELYARD_* environment variables."""
+    monkeypatch.setenv("LABELYARD_DATABASE_URL", f"sqlite:///{tmp_path}/test.db")
+    monkeypatch.setenv("LABELYARD_WEBHOOK_API_KEY", "test-key-32-bytes-long-enough-here")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_URL", "https://snipe-it.example")
+    monkeypatch.setenv("LABELYARD_SNIPEIT_API_KEY", "snipeit-key")
+    monkeypatch.setenv("LABELYARD_GROCY_URL", "https://grocy.example")
+    monkeypatch.setenv("LABELYARD_GROCY_API_KEY", "grocy-key")
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_URL", "https://spoolman.example")
 
     settings = Settings(_env_file=None)
 
@@ -30,7 +33,7 @@ def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
 
 
 def test_settings_rejects_short_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PRINTER_HUB_WEBHOOK_API_KEY", "too-short")
+    monkeypatch.setenv("LABELYARD_WEBHOOK_API_KEY", "too-short")
     with pytest.raises(ValueError, match="at least 32"):
         Settings(_env_file=None)
 
@@ -100,16 +103,16 @@ def test_sse_settings_accept_positive_one() -> None:
 # ---------------------------------------------------------------------------
 
 _SSE_ENV_VARS = [
-    "PRINTER_HUB_SSE_QUEUE_SIZE",
-    "PRINTER_HUB_SSE_HEARTBEAT_S",
-    "PRINTER_HUB_SSE_IDLE_TIMEOUT_S",
-    "PRINTER_HUB_SSE_MAX_SUBSCRIBERS",
-    "PRINTER_HUB_SSE_PROBE_INTERVAL_S",
+    "LABELYARD_SSE_QUEUE_SIZE",
+    "LABELYARD_SSE_HEARTBEAT_S",
+    "LABELYARD_SSE_IDLE_TIMEOUT_S",
+    "LABELYARD_SSE_MAX_SUBSCRIBERS",
+    "LABELYARD_SSE_PROBE_INTERVAL_S",
 ]
 
 
 def test_env_example_contains_all_sse_vars() -> None:
-    """backend/.env.example must document every PRINTER_HUB_SSE_* variable.
+    """backend/.env.example must document every LABELYARD_SSE_* variable.
 
     Finding F5: the five SSE settings added in Phase 6b were missing from
     .env.example which claimed to list all supported variables.  Operators

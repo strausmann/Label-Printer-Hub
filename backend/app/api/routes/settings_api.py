@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Runtime settings API (admin scope).
 
 The request bodies are parsed by hand on purpose: FastAPI's default 422 body echoes the
@@ -120,7 +123,7 @@ async def export_settings(request: Request, _auth: AdminDep) -> Response:
     return Response(
         content=json.dumps(data, indent=2, sort_keys=True),
         media_type="application/json",
-        headers={"Content-Disposition": 'attachment; filename="printer-hub-settings.json"'},
+        headers={"Content-Disposition": 'attachment; filename="labelyard-settings.json"'},
     )
 
 

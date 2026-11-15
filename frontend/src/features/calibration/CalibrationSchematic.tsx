@@ -1,9 +1,36 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
+import { useCalibrationScale, type CalibrationScale } from "./api";
 import { crossingName } from "./model";
 import { cellRect, formatMm, pageSizeMm, type GeometryMm } from "../sheets/cellState";
 
 /** The edge a gap line sits on: the middle of the gap, or the cut between two labels where there is none. */
 const gapCentre = (start: number, pitch: number, size: number, k: number) => start + k * pitch - (pitch - size) / 2;
+
+/** The mini scale of the printed page, as the calibration routes hand it over (the numbers live in the backend). */
+export type MiniScaleMm = CalibrationScale;
+
+/** One tick of the mini scale: where it sits and how long it is, both across the whole scale, in mm. */
+export interface Tick {
+  offset: number;
+  length: number;
+}
+
+/**
+ * The ticks of the mini scale, exactly as the printed page lays them out: one every `step_mm` over ± `half_mm`, whole
+ * millimetres longer than half ones, the centre tick the longest.
+ */
+export function miniScaleTicks(scale: MiniScaleMm): Tick[] {
+  const count = Math.round(scale.half_mm / scale.step_mm);
+  const perMm = Math.round(1 / scale.step_mm);
+  return Array.from({ length: 2 * count + 1 }, (_, i) => {
+    const k = i - count;
+    const length = k === 0 ? scale.tick_centre_mm : k % perMm === 0 ? scale.tick_whole_mm : scale.tick_half_mm;
+    return { offset: k * scale.step_mm, length };
+  });
+}
 
 /**
  * A drawing of the calibration page of one sheet type, and its legend in words. The drawing is for
@@ -12,6 +39,9 @@ const gapCentre = (start: number, pitch: number, size: number, k: number) => sta
  */
 export function CalibrationSchematic({ geometry: g, typeName }: { geometry: GeometryMm; typeName: string }) {
   const { t, i18n } = useLingui();
+  const scale = useCalibrationScale().data;
+  // The overview is a schematic, NOT to scale (hair strokes, a cross per crossing). Only `GapCrossing` below is drawn
+  // to the scale of the print: its spacing, lengths and stroke come from the backend's constants.
   const page = pageSizeMm(g);
   const colGaps = Array.from({ length: g.cols - 1 }, (_, i) => i + 1);
   const rowGaps = Array.from({ length: g.rows - 1 }, (_, i) => i + 1);
@@ -25,6 +55,11 @@ export function CalibrationSchematic({ geometry: g, typeName }: { geometry: Geom
   const hair = 0.25;
   const labels = Array.from({ length: g.cols * g.rows }, (_, i) => cellRect(g, i + 1));
   const mm = (v: number) => formatMm(v, i18n.locale);
+  const num = (v: number) => new Intl.NumberFormat(i18n.locale).format(v);
+  const half = scale ? num(scale.half_mm) : "";
+  const step = scale ? num(scale.step_mm) : "";
+  // The cross at a crossing is as long as the printed scale (±2 mm).
+  const reach = scale?.half_mm ?? 2;
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
@@ -62,8 +97,8 @@ export function CalibrationSchematic({ geometry: g, typeName }: { geometry: Geom
             const y = gapCentre(top, g.pitch_y, g.label_h, z);
             return (
               <g key={`c${s}-${z}`} stroke="currentColor" strokeWidth={hair}>
-                <line x1={x - 2} x2={x + 2} y1={y} y2={y} />
-                <line x1={x} x2={x} y1={y - 2} y2={y + 2} />
+                <line x1={x - reach} x2={x + reach} y1={y} y2={y} />
+                <line x1={x} x2={x} y1={y - reach} y2={y + reach} />
               </g>
             );
           }),
@@ -73,8 +108,13 @@ export function CalibrationSchematic({ geometry: g, typeName }: { geometry: Geom
         <li>{t`Printed in black only: lines are told apart by number and line style, never by colour.`}</li>
         <li>{t`S1, S2 … number the gaps between columns (solid lines).`}</li>
         <li>{t`Z1, Z2 … number the gaps between rows (dashed lines).`}</li>
-        <li>{t`At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm.`}</li>
+        <li>
+          {scale
+            ? t`At every crossing sits a small scale: ±${half} mm, a tick every ${step} mm.`
+            : t`At every crossing sits a small scale.`}
+        </li>
         <li>{t`Rulers with a tick every 0.5 mm run along every gap line on all four edges of the grid.`}</li>
+        <li>{t`Where a label corner would touch the scale, its corner mark is left out; the gap lines and the scale show the cut.`}</li>
         {(noGapDown || noGapAcross) && (
           <li>
             {noGapDown && noGapAcross
@@ -95,16 +135,20 @@ export function GapCrossing({ colGap, rowGap }: { colGap: number; rowGap: number
   const name = crossingName(colGap, rowGap);
   const s = `S${colGap}`;
   const z = `Z${rowGap}`;
-  const ticks = Array.from({ length: 21 }, (_, i) => i - 10);
+  const scale = useCalibrationScale().data;
+  // Drawn at 5 units to the millimetre: the spacing, lengths and stroke are those of the print, only larger.
+  const m = 5;
+  const reach = (scale?.half_mm ?? 2) * m;
+  const ticks = scale ? miniScaleTicks(scale) : [];
   return (
     <section aria-label={t`Gap crossing ${name}`} className="flex flex-col gap-3 rounded-r2 bg-sunken p-3 sm:flex-row sm:items-center">
       <svg viewBox="-12 -12 24 24" aria-hidden="true" className="block w-full max-w-40 shrink-0 self-center text-ink">
-        <line x1={-10} x2={10} y1={0} y2={0} stroke="currentColor" strokeWidth={0.3} strokeDasharray="1.2 0.8" />
-        <line x1={0} x2={0} y1={-10} y2={10} stroke="currentColor" strokeWidth={0.3} />
-        {ticks.map((i) => (
-          <g key={i} stroke="currentColor" strokeWidth={0.15}>
-            <line x1={i} x2={i} y1={-(i % 5 === 0 ? 1.2 : 0.6)} y2={i % 5 === 0 ? 1.2 : 0.6} />
-            <line y1={i} y2={i} x1={-(i % 5 === 0 ? 1.2 : 0.6)} x2={i % 5 === 0 ? 1.2 : 0.6} />
+        <line x1={-reach} x2={reach} y1={0} y2={0} stroke="currentColor" strokeWidth={(scale?.line_mm ?? 0.1) * m} strokeDasharray="1.2 0.8" />
+        <line x1={0} x2={0} y1={-reach} y2={reach} stroke="currentColor" strokeWidth={(scale?.line_mm ?? 0.1) * m} />
+        {ticks.map(({ offset, length }) => (
+          <g key={offset} data-tick="" stroke="currentColor" strokeWidth={scale!.line_mm * m}>
+            <line x1={offset * m} x2={offset * m} y1={(-length / 2) * m} y2={(length / 2) * m} />
+            <line y1={offset * m} y2={offset * m} x1={(-length / 2) * m} x2={(length / 2) * m} />
           </g>
         ))}
         <path d="M3 -7 H9 M7.4 -8.4 L9 -7 L7.4 -5.6" fill="none" stroke="currentColor" strokeWidth={0.4} />

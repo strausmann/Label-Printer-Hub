@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrinterRuntime (#224): one code path wires a printer, at startup and on a runtime change.
 
 The page printer is ``FakeIppPrinter`` behind an ASGI transport and SNMP is patched, so no

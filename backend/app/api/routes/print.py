@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """POST /api/v1/print, POST /api/v1/printer/resume and POST /api/v1/render/preview."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Thin fetch wrapper for the backend API (D1: same origin, so the session cookie is enough).
  * Types come from `schema.gen.ts`, generated from the backend's OpenAPI (`pnpm gen:api`).
@@ -21,14 +24,23 @@ export class ApiError extends Error {
    * a problem): the free cells of `insufficient_cells`, the plan of `plan_changed`. Null when none.
    */
   readonly errorDetail: Record<string, unknown> | null;
+  /** How long the server asks to wait before asking again (`Retry-After`, else `retry_after_seconds`); null when it names no time. */
+  readonly retryAfterSeconds: number | null;
 
-  constructor(status: number, code: string | null, detail: string, errorDetail: Record<string, unknown> | null = null) {
+  constructor(
+    status: number,
+    code: string | null,
+    detail: string,
+    errorDetail: Record<string, unknown> | null = null,
+    retryAfterSeconds: number | null = null,
+  ) {
     super(detail);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.detail = detail;
     this.errorDetail = errorDetail;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -144,6 +156,15 @@ function parseProblem(status: number, body: unknown): ApiError {
   return new ApiError(status, code, title, extensions);
 }
 
+/** Seconds to wait: the `Retry-After` header when it is a number of seconds, else `retry_after_seconds` of the body. */
+function retryAfter(response: Response, body: unknown): number | null {
+  const header = response.headers?.get("Retry-After")?.trim() ?? "";
+  if (/^\d+$/.test(header)) return Number(header);
+  const d = isObject(body) && isObject(body.detail) ? body.detail : body;
+  const seconds = isObject(d) ? d.retry_after_seconds : undefined;
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
 async function readBody(response: Response): Promise<unknown> {
   const type = response.headers.get("Content-Type") ?? "";
   if (!/json/i.test(type)) return undefined;
@@ -185,7 +206,10 @@ export async function apiFetch<T>(path: string, init: ApiInit = {}): Promise<T> 
   noteServerVersion(response.headers?.get(VERSION_HEADER));
 
   if (!response.ok) {
-    const error = parseProblem(response.status, await readBody(response));
+    const body = await readBody(response);
+    const parsed = parseProblem(response.status, body);
+    const seconds = retryAfter(response, body);
+    const error = seconds === null ? parsed : new ApiError(parsed.status, parsed.code, parsed.detail, parsed.errorDetail, seconds);
     if (response.status === 401 && !skipUnauthorized) void onUnauthorized?.();
     throw error;
   }

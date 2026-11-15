@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1i Sub-Task G: BrotherQLBackend.
 
 C1-Fix: brother_ql v0.9.4 API (convert + helpers.send).

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { BOOTSTRAP } from "./env";
@@ -193,7 +196,7 @@ test.describe("bootstrap", () => {
 
     const field = page.getByLabel("Your new admin key");
     await expect(field).toHaveValue(/^lh_pat_/);
-    await expect(page.getByText("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY")).toBeVisible();
+    await expect(page.getByText("LABELYARD_BOOTSTRAP_ADMIN_KEY")).toBeVisible();
     await expect(page.getByText("shown only once")).toBeVisible();
     const key = await field.inputValue();
 

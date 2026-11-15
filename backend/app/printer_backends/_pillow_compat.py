@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pillow compatibility for the unmaintained ``brother_ql`` 0.9.x.
 
 ``brother_ql/conversion.py`` resizes mis-sized endless-label images with

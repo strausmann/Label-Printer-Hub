@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """App-agnostic label data passed from lookup-clients to the LayoutEngine.
 
 LabelData is what a `*_client.lookup(id)` call produces. It is the

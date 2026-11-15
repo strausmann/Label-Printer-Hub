@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Fixtures für Unit-Tests der Repository-Schicht.
 
 Stellt eine per-Test in-memory SQLite DB mit db_session-Fixture bereit.

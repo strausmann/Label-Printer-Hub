@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Server-side browser sessions for the web UI (spec 8.1, 8.2; D7, D10).
 
 The cookie carries ``secrets.token_urlsafe(32)``; only its SHA-256 is stored. Sessions

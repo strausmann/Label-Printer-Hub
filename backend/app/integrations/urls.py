@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Base-URL normalisation shared by the integration probes and clients.
 
 Users paste the address of an integration the way they see it in the browser:

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # IPP client interoperability check (spike S2)
 
 Date: 2026-11-05. Time box: 60 minutes. Outcome: no codec or client defect found.

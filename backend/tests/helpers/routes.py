@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Flatten FastAPI's route tree for tests that inspect every route.
 
 Included routers show up as opaque wrapper objects rather than being flattened into

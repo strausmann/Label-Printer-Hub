@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Decisions and data of the test print (#228).
 
 Pure helpers plus one async planner that reads the page printer's cached status. The route

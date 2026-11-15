@@ -1,4 +1,7 @@
-"""Label Printer Hub — backend application package."""
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Labelyard — backend application package."""
 
 from __future__ import annotations
 
@@ -15,7 +18,7 @@ def get_version() -> str:
     (typically ``"0.0.0-dev"``).
     """
     try:
-        return importlib.metadata.version("label-printer-hub-backend")
+        return importlib.metadata.version("labelyard")
     except importlib.metadata.PackageNotFoundError:
         return "0.0.0-dev"
 

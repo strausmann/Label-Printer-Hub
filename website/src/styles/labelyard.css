@@ -1,0 +1,354 @@
+/*
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+*/
+
+/*
+ * Labelyard site theme. The colours are the web app's own design tokens
+ * (frontend/src/design/tokens.css); this file only maps Starlight's variables onto them.
+ * Accent = the app's amber; the brand blue appears only in the logo files.
+ * Starlight always sets data-theme="light" or "dark" on <html>, which the tokens follow.
+ */
+@import "../../../frontend/src/design/tokens.css";
+
+:root,
+:root[data-theme="light"] {
+  --sl-font: "Atkinson Hyperlegible", system-ui, sans-serif;
+  --sl-font-mono: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+
+  --sl-color-white: var(--ink);
+  --sl-color-gray-1: var(--ink);
+  --sl-color-gray-2: var(--ink-2);
+  --sl-color-gray-3: var(--ink-3);
+  --sl-color-gray-4: var(--line-strong);
+  --sl-color-gray-5: var(--line);
+  --sl-color-gray-6: var(--sunken);
+  --sl-color-gray-7: var(--surface);
+  --sl-color-black: var(--bg);
+
+  --sl-color-accent-low: var(--accent-soft);
+  --sl-color-accent: var(--accent);
+  --sl-color-accent-high: var(--accent-ink);
+  /* Links and the current sidebar entry use the app's link colour: amber is too light as text. */
+  --sl-color-text-accent: var(--link);
+
+  --sl-color-bg: var(--bg);
+  --sl-color-bg-nav: var(--bg);
+  --sl-color-bg-sidebar: var(--bg);
+  --sl-color-bg-inline-code: var(--sunken);
+  --sl-color-hairline-light: var(--line);
+  --sl-color-hairline: var(--line);
+  --sl-color-hairline-shade: var(--line-strong);
+
+  --ly-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Running text in full ink, at a readable size. */
+.sl-markdown-content {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+.sl-markdown-content a {
+  color: var(--link);
+  text-underline-offset: 0.18em;
+}
+
+/* Current sidebar entry: a tone step, not a filled accent bar. */
+.sidebar-content a[aria-current="page"],
+.sidebar-content a[aria-current="page"]:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* --- Landing page -------------------------------------------------------- */
+
+.ly-home {
+  display: grid;
+  gap: clamp(4rem, 9vw, 8rem);
+  padding-block: clamp(1.5rem, 4vw, 3rem) clamp(3rem, 6vw, 5rem);
+}
+
+.ly-home h1,
+.ly-home h2,
+.ly-home h3 {
+  margin: 0;
+  color: var(--ink);
+}
+
+.ly-hero {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 46rem;
+}
+
+.ly-hero h1 {
+  font-size: clamp(3.25rem, 11vw, 7.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+}
+
+.ly-hero .ly-tagline {
+  font-size: clamp(1.25rem, 2.6vw, 1.75rem);
+  line-height: 1.3;
+  color: var(--ink);
+  margin: 0;
+  max-width: 30ch;
+}
+
+.ly-hero .ly-pitch {
+  font-size: 1.125rem;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0;
+  max-width: 60ch;
+}
+
+.ly-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.ly-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 3rem;
+  padding: 0 1.25rem;
+  border-radius: var(--r-1);
+  font-weight: 700;
+  text-decoration: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    transform 140ms var(--ly-ease-out),
+    background-color 140ms ease;
+}
+
+.ly-button:active {
+  transform: scale(0.97);
+}
+
+.ly-button-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.ly-button-secondary {
+  background: var(--sunken);
+  color: var(--ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sl-markdown-content .ly-button-primary:hover {
+    background: var(--amber-600);
+    color: var(--accent-ink);
+  }
+  .sl-markdown-content .ly-button-secondary:hover {
+    background: var(--line);
+    color: var(--ink);
+  }
+}
+
+/* What it prints: a list set as a two-column definition list, not cards. */
+.ly-section {
+  display: grid;
+  gap: 2rem;
+}
+
+.ly-section > h2 {
+  font-size: clamp(2rem, 4.5vw, 3rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  max-width: 22ch;
+}
+
+.ly-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 2.5rem 3rem;
+  margin: 0;
+}
+
+.ly-features div {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.ly-features dt {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ly-features dd {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.55;
+}
+
+/* Quick start: a field of tone, the command block inside. */
+.ly-start {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border-radius: var(--r-3);
+  background: var(--sunken);
+}
+
+@media (min-width: 64rem) {
+  .ly-start {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
+}
+
+.ly-start p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* The groups of the documentation, as a plain list of links with one line each. */
+.ly-groups {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1.75rem 3rem;
+}
+
+.ly-groups a {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--link);
+}
+
+.ly-groups p {
+  margin: 0.35rem 0 0;
+  color: var(--ink);
+}
+
+.ly-elsewhere {
+  color: var(--ink);
+}
+
+/* Screenshots of the web app: the file of the current theme (see components/Screenshot.astro).
+   A tone step frames them; no shadow, no rule. */
+.ly-shot {
+  display: block;
+}
+
+.ly-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--r-2);
+  background: var(--sunken);
+}
+
+:root[data-theme="dark"] .ly-shot-light,
+:root[data-theme="light"] .ly-shot-dark {
+  display: none;
+}
+
+.ly-hero-shot {
+  margin: 0;
+}
+
+/* The tour on the Try page: one shot per row, its caption beside it on wide screens. */
+.ly-tour {
+  display: grid;
+  gap: clamp(2.5rem, 6vw, 4.5rem);
+  margin-block: 2rem 0;
+}
+
+.ly-tour figure {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.ly-tour figcaption {
+  color: var(--ink);
+  line-height: 1.55;
+  max-width: 60ch;
+}
+
+.ly-tour figcaption strong {
+  display: block;
+  font-size: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.sl-markdown-content .ly-tour :is(figure, figcaption, span, img) {
+  margin-top: 0;
+}
+
+/* The landing page brings its own h1; hide Starlight's title panel there and its rules. */
+main:has(.ly-home) .content-panel:has(#_top) {
+  display: none;
+}
+
+main:has(.ly-home) .content-panel {
+  border: 0;
+}
+
+/* Markdown's flow spacing (margin-top on every sibling) does not apply inside the landing grid:
+   the grid gaps set the rhythm. */
+.sl-markdown-content .ly-home :is(section, div, dl, dt, dd, ul, li, p, h1, h2, figure, span, img) {
+  margin-top: 0;
+}
+
+.sl-markdown-content .ly-features dd {
+  margin-inline-start: 0;
+  padding-inline-start: 0;
+}
+
+.sl-markdown-content .ly-button,
+.sl-markdown-content .ly-button:hover {
+  text-decoration: none;
+}
+
+.sl-markdown-content .ly-button-primary {
+  color: var(--accent-ink);
+}
+
+.sl-markdown-content .ly-button-secondary {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ly-button {
+    transition: background-color 140ms ease;
+  }
+  .ly-button:active {
+    transform: none;
+  }
+}

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createMemoryHistory } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { act, render } from "@testing-library/react";
@@ -12,9 +15,9 @@ export const INFO: InfoData = {
   revision: "test",
   build_date: "1970-01-01T00:00:00Z",
   license: "AGPL-3.0-or-later",
-  source_url: "https://github.com/strausmann/label-printer-hub",
+  source_url: "https://github.com/strausmann/labelyard",
   default_language: "en",
-  display_name: "Label Printer Hub",
+  display_name: "Labelyard",
   auth: { sso_configured: false, bootstrap_open: false },
   features: { jobs: true, lookup: true, scan: true, sheets: false, calibration: false, asn: false, kept: false },
   integrations: [

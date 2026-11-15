@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Cancelling / clearing / retrying must reach the queue worker, not only the DB.
 
 Issue #184: the REST routes only wrote the database, so the worker (which gates

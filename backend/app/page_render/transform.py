@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The calibration correction as pure geometry.
 
 All maths here is in millimetres with y pointing down (the page as it is seen), unless a

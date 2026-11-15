@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0009 — Server-Sent Events over WebSockets for live updates
 
 - **Status:** Accepted (amended by ADR-0015/0016: the stream is JSON at `/api/v1/events`, consumed by the React UI; the HTML-fragment `/api/events` stream and the Go proxy described below no longer exist)

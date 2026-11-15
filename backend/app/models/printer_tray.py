@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Trays of a page printer (spec 7.1, 11.1): one row per IPP ``media-source`` or ``auto``.
 
 Rows are written when the printer is saved (replace-all). The foreign key has no

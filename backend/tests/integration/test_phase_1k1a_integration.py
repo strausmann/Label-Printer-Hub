@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1k.1a integration tests — LayoutEngine + /api/v1/render/preview endpoint.
 
 Task 25: End-to-end verification that the LayoutEngine-based pipeline

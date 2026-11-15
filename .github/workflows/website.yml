@@ -1,0 +1,186 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: website
+
+# Builds the Labelyard site (website/, Astro Starlight) and checks it. The built site is
+# uploaded as an artifact for review. Only a push to main (or a manual run on main) deploys it
+# to GitHub Pages; milestone pushes and pull requests build and check, never deploy.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "website/**"
+      - "docs/brand/labelyard/**"
+      - "backend/app/**"
+      - "backend/scripts/export_openapi.py"
+      - "backend/pyproject.toml"
+      - "frontend/src/design/**"
+      - ".github/workflows/website.yml"
+  push:
+    branches: [main, "milestone/**"]
+    paths:
+      - "website/**"
+      - "docs/brand/labelyard/**"
+      - "backend/app/**"
+      - "backend/scripts/export_openapi.py"
+      - "backend/pyproject.toml"
+      - "frontend/src/design/**"
+      - ".github/workflows/website.yml"
+
+permissions: {}
+
+jobs:
+  parity:
+    name: locale parity
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: website/.nvmrc
+      - name: Unit tests of the parity gate
+        run: node --test 'website/scripts/*.test.mjs'
+      - name: Every page in English and German
+        run: node website/scripts/check-locale-parity.mjs
+
+  # The committed API document and configuration reference must match the backend: a changed
+  # route or setting without regenerated site files fails here.
+  freshness:
+    name: freshness
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the backend
+        run: pip install -e ./backend
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: website/.nvmrc
+      - name: Regenerate the API document and the configuration reference
+        run: |
+          node website/scripts/export-openapi.mjs
+          python website/scripts/gen-config-reference.py
+      - name: The committed files are current
+        run: git diff --exit-code -- website/openapi website/src/content/docs/reference website/src/content/docs/de/reference
+
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Brand files are byte-identical to docs/brand/labelyard
+        run: |
+          set -eu
+          for f in mark.svg mark-dark.svg lockup.svg lockup-dark.svg; do
+            cmp "docs/brand/labelyard/$f" "website/src/assets/$f"
+          done
+          for f in favicon.svg favicon.ico social-card.png; do
+            cmp "docs/brand/labelyard/$f" "website/public/$f"
+          done
+
+      # The API reference is rendered from the backend's OpenAPI document, which the build
+      # exports with the backend installed (website/scripts/export-openapi.mjs).
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the backend
+        run: pip install -e ./backend
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: website/package.json
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: website/.nvmrc
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
+      - name: Install
+        run: pnpm -C website install --frozen-lockfile
+      # starlight-links-validator fails the build on a broken internal link or anchor.
+      - name: Build
+        run: |
+          set -o pipefail
+          pnpm -C website build 2>&1 | tee website-build.log
+      # A build that never reaches the validator (a hook that crashed after the pages were
+      # written) can still exit 0; only the validator's own success line proves it ran.
+      - name: The links validator ran
+        run: grep -q "All internal links are valid" website-build.log
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: website-dist
+          path: website/dist
+          retention-days: 7
+
+      # The Pages artifact is built on main only. The site sits at the domain root with a fixed
+      # `site` in astro.config.mjs, so there is no configure-pages step.
+      - name: Upload the Pages artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/dist
+
+  links:
+    name: external links
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: website-dist
+          path: website/dist
+      # Root-relative links resolve against the built site (internal links are already checked by
+      # the build). labelyard.app and github.com/strausmann/labelyard are excluded until the first Pages
+      # deploy is live with HTTPS and the repository is renamed (both in Task 13).
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --no-progress
+            --root-dir '${{ github.workspace }}/website/dist'
+            --index-files index.html
+            --exclude '^https://(www\.)?labelyard\.app'
+            --exclude '^https://github\.com/strausmann/labelyard'
+            'website/dist/**/*.html'
+          fail: true
+
+  # The external link job is not a gate: a third-party site being down must not stop a docs
+  # deploy. The environment `github-pages` additionally allows main only (a second layer).
+  deploy:
+    name: deploy
+    needs: [parity, freshness, build]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

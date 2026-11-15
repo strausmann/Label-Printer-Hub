@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 1i Task A — PT-P750W Layout-Diagnose
 
 **Datum:** 2026-06-02

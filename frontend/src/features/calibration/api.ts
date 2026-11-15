@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
@@ -15,9 +18,18 @@ export type FitRequest = Schemas["FitRequest"];
 export type FitResponse = Schemas["FitResponse"];
 export type CalibrationPageRequest = Schemas["PageRequest"];
 export type Capabilities = Schemas["Capabilities"];
+export type CalibrationScale = Schemas["CalibrationScale"];
 
 const encode = encodeURIComponent;
 const trayPath = (printerId: string, tray: string) => `/api/v1/printers/${encode(printerId)}/calibration/${encode(tray)}`;
+
+/** The mini scale of the printed page, for the figure on the page. Static, so it is fetched once; the figure waits for it. */
+export const useCalibrationScale = () =>
+  useQuery({
+    queryKey: ["calibration-scale"],
+    queryFn: () => apiFetch<CalibrationScale>("/api/v1/printers/calibration/scale"),
+    staleTime: Infinity,
+  });
 
 /** One calibration per tray of the printer. Nested under `["printers", id]`, so a printer event refreshes it. */
 export const useCalibration = (printerId: string) =>

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@lingui/core";
 import { initI18n, pickLanguage, readStoredLanguage, storeLanguage, LANG_KEY } from "./index";

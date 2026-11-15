@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 from __future__ import annotations
 
 import re
@@ -334,7 +337,7 @@ def test_title_is_taken_from_the_caller() -> None:
 
 
 def test_default_font_is_the_bundled_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("PRINTHUB_PDF_FONT", raising=False)
+    monkeypatch.delenv("LABELYARD_PDF_FONT", raising=False)
     path = resolve_font_path()
     assert path == Path(pdf_module.__file__).parent / "fonts" / "DejaVuSans.ttf"
     assert path.is_file()
@@ -344,23 +347,23 @@ def test_default_font_is_the_bundled_file(monkeypatch: pytest.MonkeyPatch) -> No
 def test_font_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     other = tmp_path / "Other.ttf"
     other.write_bytes(resolve_font_path().read_bytes())
-    monkeypatch.setenv("PRINTHUB_PDF_FONT", str(other))
+    monkeypatch.setenv("LABELYARD_PDF_FONT", str(other))
     assert resolve_font_path() == other
 
 
 def test_missing_font_names_both_remedies(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     missing = tmp_path / "nope.ttf"
-    monkeypatch.setenv("PRINTHUB_PDF_FONT", str(missing))
+    monkeypatch.setenv("LABELYARD_PDF_FONT", str(missing))
     with pytest.raises(FontNotFoundError) as err:
         resolve_font_path()
     assert str(missing) in str(err.value)
-    assert "PRINTHUB_PDF_FONT" in str(err.value)
+    assert "LABELYARD_PDF_FONT" in str(err.value)
 
 
 def test_missing_bundled_font_is_a_clear_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.delenv("PRINTHUB_PDF_FONT", raising=False)
+    monkeypatch.delenv("LABELYARD_PDF_FONT", raising=False)
     monkeypatch.setattr(pdf_module, "BUNDLED_FONT", tmp_path / "gone.ttf")
     with pytest.raises(FontNotFoundError, match=r"gone\.ttf"):
         resolve_font_path()
@@ -377,9 +380,9 @@ def test_override_font_is_used_when_rendering(
 ) -> None:
     other = tmp_path / "Copy.ttf"
     other.write_bytes(resolve_font_path().read_bytes())
-    monkeypatch.setenv("PRINTHUB_PDF_FONT", str(other))
+    monkeypatch.setenv("LABELYARD_PDF_FONT", str(other))
     assert inspect.texts(_render(texts=[PageText(1000, 2000, 10.0, "ok")])) == ["ok"]
-    monkeypatch.setenv("PRINTHUB_PDF_FONT", str(tmp_path / "missing.ttf"))
+    monkeypatch.setenv("LABELYARD_PDF_FONT", str(tmp_path / "missing.ttf"))
     with pytest.raises(FontNotFoundError):
         _render(texts=[PageText(1000, 2000, 10.0, "ok")])
 

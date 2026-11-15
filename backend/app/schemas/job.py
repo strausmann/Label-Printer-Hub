@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """API read schema for Job entities (Phase 6a).
 
 ``JobRead`` maps the ``jobs`` DB table to a JSON-serialisable Pydantic model

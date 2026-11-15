@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b — datetime data migration normalises naive rows to tz-aware UTC.
 
 Phase 1k.1a (Task 25): test_migration_adds_tz_to_naive_template_row and

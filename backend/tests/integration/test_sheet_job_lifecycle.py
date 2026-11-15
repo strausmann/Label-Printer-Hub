@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A sheet page job through the real lifespan: its reserved cells follow the outcome (D15).
 
 The real queue, the real ``SheetCellsOutcome`` (registered by the lifespan), the fake IPP

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { plural } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
@@ -229,7 +232,16 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
           </p>
         ) : null}
         {type && !type.allow_qr ? (
-          <p className="text-small text-ink">{t`The labels of this type are too small for a QR code, so the ID is printed as text only.`}</p>
+          <p className="text-small text-ink">
+            <Trans>
+              QR codes are switched off for this sheet type, so the ID is printed as text only. Switch on “QR codes on labels” in the
+              details of{" "}
+              <Link to="/sheets/archive" search={{ type: type.key }} className="text-link underline underline-offset-2">
+                this type in the sheet archive
+              </Link>
+              .
+            </Trans>
+          </p>
         ) : null}
       </div>
 

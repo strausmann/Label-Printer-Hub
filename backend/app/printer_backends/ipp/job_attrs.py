@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print-Job attributes from the probe summary, the tray and the paper (spec 11.2, OC-19). Pure.
 
 Only what the printer lists is sent: ``media-col`` when it accepts the attribute, with
@@ -13,7 +16,12 @@ from typing import Literal
 from app.printer_backends.ipp.attributes import ProbeSummary
 from app.printer_backends.ipp.codec import Attr, Collection, Tag, Value
 
-USER_NAME = "label-printer-hub"
+USER_NAME = "labelyard"
+"""``requesting-user-name`` of every job the hub sends."""
+LEGACY_IPP_USER_NAME = "label-printer-hub"  # jobs sent by 1.5.x, before the rename
+OWN_USER_NAMES = frozenset({USER_NAME, LEGACY_IPP_USER_NAME})
+"""Originating user names of the hub's own jobs: a job sent by 1.5.x may still be on the
+printer during the upgrade, so its old user name still counts as the hub's."""
 AUTO_TRAY = "auto"
 MAX_JOB_NAME_BYTES = 255
 """``name(MAX)`` of RFC 8011 3.1.5."""
@@ -54,7 +62,7 @@ def is_own_job(reported_name: str | None, reported_user: str | None, expected_na
     """
     if reported_name is not None and reported_name != expected_name:
         return False
-    return reported_user is None or reported_user == USER_NAME
+    return reported_user is None or reported_user in OWN_USER_NAMES
 
 
 def print_job_attributes(

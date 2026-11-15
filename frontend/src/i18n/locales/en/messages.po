@@ -30,6 +30,11 @@ msgstr "{0, plural, one {# column} other {# columns}}"
 msgid "{0, plural, one {# label} other {# labels}}"
 msgstr "{0, plural, one {# label} other {# labels}}"
 
+#. placeholder {0}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0, plural, one {# package} other {# packages}}"
+msgstr "{0, plural, one {# package} other {# packages}}"
+
 #. placeholder {0}: codes.length
 #: src/features/archive/TypeDetail.tsx
 msgid "{0, plural, one {# product code} other {# product codes}}"
@@ -71,6 +76,12 @@ msgstr "{0, plural, one {Un-mark # cell} other {Un-mark # cells}}"
 #: src/features/archive/TypeDetail.tsx
 msgid "{0} has no sheets. Deleting it removes it and all its versions for good."
 msgstr "{0} has no sheets. Deleting it removes it and all its versions for good."
+
+#. placeholder {0}: shown.length
+#. placeholder {1}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgid "{0} of {1} packages"
+msgstr "{0} of {1} packages"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/sheets/print/PrinterRow.tsx
@@ -151,8 +162,28 @@ msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hid
 msgstr "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
-msgid "{item} was already printed onto {where}, cell {cell} ({when})."
-msgstr "{item} was already printed onto {where}, cell {cell} ({when})."
+msgid "{item}: printed before {all}× on {only}, the last {count} listed"
+msgstr "{item}: printed before {all}× on {only}, the last {count} listed"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+msgstr "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {only}, last on {last}"
+msgstr "{item}: printed before {count}× on {only}, last on {last}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {sheet} on {when}, cells {cells}"
+msgstr "{item}: printed before {count}× on {sheet} on {when}, cells {cells}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {count}× on {sheetCount} sheets, last on {last}"
+msgstr "{item}: printed before {count}× on {sheetCount} sheets, last on {last}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before on {sheet} on {when}, cell {cells}"
+msgstr "{item}: printed before on {sheet} on {when}, cell {cells}"
 
 #: src/features/archive/TypeForm.tsx
 msgid "{label} is too long: at most {max} characters."
@@ -267,6 +298,10 @@ msgstr "{sentLabels, plural, one {# label sent to} other {# labels sent to}}"
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "{token}: licence text at SPDX"
+msgstr "{token}: licence text at SPDX"
+
 #: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "{unconfirmed} unconfirmed"
@@ -332,6 +367,10 @@ msgstr "+ = printed too low"
 msgid "+ = rotated clockwise"
 msgstr "+ = rotated clockwise"
 
+#: src/features/calibration/CalibrationPage.tsx
+msgid "A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. The stored values stay in place until you save a new measurement. To check the stored correction, print the check page."
+msgstr "A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. The stored values stay in place until you save a new measurement. To check the stored correction, print the check page."
+
 #: src/features/settings/AccessKeys.tsx
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
 msgstr "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."
@@ -347,6 +386,10 @@ msgstr "A name that tells you who uses it, for example “Kept”."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "a new sheet"
 msgstr "a new sheet"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "A print is already on its way."
+msgstr "A print is already on its way."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "A printer rarely prints exactly where the page says. Measure how far it is off on a real sheet, and the hub moves every print by the opposite."
@@ -604,8 +647,12 @@ msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link.
 msgstr "Asset tag (for example AT-0042), numeric ID (42) or a printed label link. Locations need the loc: prefix, for example loc:17."
 
 #: src/features/calibration/CalibrationSchematic.tsx
-msgid "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
-msgstr "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
+msgid "At every crossing sits a small scale: ±{half} mm, a tick every {step} mm."
+msgstr "At every crossing sits a small scale: ±{half} mm, a tick every {step} mm."
+
+#: src/features/calibration/CalibrationSchematic.tsx
+msgid "At every crossing sits a small scale."
+msgstr "At every crossing sits a small scale."
 
 #. placeholder {0}: MAX.codes
 #: src/features/archive/TypeForm.tsx
@@ -773,8 +820,12 @@ msgid "Cell {0}, {state}"
 msgstr "Cell {0}, {state}"
 
 #: src/features/sheets/print/SheetPreview.tsx
-msgid "Cell {cell} → {label}"
-msgstr "Cell {cell} → {label}"
+msgid "Cell {from} → {label}"
+msgstr "Cell {from} → {label}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cell {from} → {label} (shortened)"
+msgstr "Cell {from} → {label} (shortened)"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Cell {inspected} is chosen"
@@ -789,6 +840,7 @@ msgid "Cell {n} → {purpose} · {source}"
 msgstr "Cell {n} → {purpose} · {source}"
 
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Cells"
 msgstr "Cells"
@@ -800,6 +852,14 @@ msgstr "Cells {cells} are in use by something else now. Print the labels again a
 #: src/features/jobs/RetryError.tsx
 msgid "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
 msgstr "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cells {from}–{to} → {label} ({count}×, shortened)"
+msgstr "Cells {from}–{to} → {label} ({count}×, shortened)"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cells {from}–{to} → {label} ({count}×)"
+msgstr "Cells {from}–{to} → {label} ({count}×)"
 
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "cells {mapped}"
@@ -828,10 +888,6 @@ msgstr "Check page"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check page status"
 msgstr "Check page status"
-
-#: src/features/calibration/CalibrationPage.tsx
-msgid "Check print with correction"
-msgstr "Check print with correction"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "check this reading"
@@ -878,6 +934,11 @@ msgctxt "tape colour"
 msgid "Clear"
 msgstr "Clear"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Clear filter"
+msgstr "Clear filter"
+
 #: src/features/archive/ArchivePage.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Clear filters"
@@ -901,6 +962,7 @@ msgstr "Clients"
 
 #: src/features/archive/ImportDialog.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Close"
 msgstr "Close"
@@ -1036,6 +1098,11 @@ msgstr "Could not pause the printer."
 msgid "Could not resume the printer."
 msgstr "Could not resume the printer."
 
+#: src/features/sheets/print/SheetPreview.tsx
+msgctxt "number of earlier prints"
+msgid "Count"
+msgstr "Count"
+
 #: src/features/printers/PauseReason.tsx
 msgid "Cover is open"
 msgstr "Cover is open"
@@ -1101,6 +1168,10 @@ msgstr "Cuts the tape but leaves the backing, so a strip of labels stays togethe
 #: src/shell/ThemeSwitch.tsx
 msgid "Dark theme"
 msgstr "Dark theme"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Date"
+msgstr "Date"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "default"
@@ -1276,6 +1347,10 @@ msgstr "Drawing the sheet…"
 msgid "Driver"
 msgstr "Driver"
 
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Earlier prints of {item}"
+msgstr "Earlier prints of {item}"
+
 #: src/features/settings/Printers.tsx
 msgid "Edit"
 msgstr "Edit"
@@ -1349,6 +1424,10 @@ msgstr "Enter the printer's address."
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
 msgstr "Enter what the printer did wrong; the hub applies the opposite itself."
 
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Every crossing should be within 0.5 mm of the cut."
+msgstr "Every crossing should be within 0.5 mm of the cut."
+
 #: src/features/sheets/SheetsPage.tsx
 msgid "Every sheet is used up."
 msgstr "Every sheet is used up."
@@ -1381,9 +1460,18 @@ msgstr "Failed"
 msgid "Feed mark printed"
 msgstr "Feed mark printed"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "Filter by package or licence"
+msgstr "Filter by package or licence"
+
 #: src/features/jobs/JobsPage.tsx
 msgid "Filter by state"
 msgstr "Filter by state"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "field label"
+msgid "Filter packages"
+msgstr "Filter packages"
 
 #: src/features/archive/ArchivePage.tsx
 msgid "Filter the sheet types"
@@ -1512,6 +1600,12 @@ msgstr "Health"
 #: src/features/settings/System.tsx
 msgid "Healthy"
 msgstr "Healthy"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Hide licence text of {0}"
+msgstr "Hide licence text of {0}"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Hide used-up sheets"
@@ -1696,12 +1790,6 @@ msgstr "Label layout on 62 mm tape"
 msgid "Label preview"
 msgstr "Label preview"
 
-#: src/i18n/messages.ts
-#: src/shell/Sidebar.tsx
-#: src/shell/SignIn.tsx
-msgid "Label Printer Hub"
-msgstr "Label Printer Hub"
-
 #: src/features/archive/TypeForm.tsx
 msgid "Label shape"
 msgstr "Label shape"
@@ -1722,6 +1810,10 @@ msgstr "Labels"
 #: src/features/jobs/RunControls.tsx
 msgid "Labels {unknownFrom} to {unknownTo} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
 msgstr "Labels {unknownFrom} to {unknownTo} may or may not have printed. Count them on the tape, put in a new tape, then reprint from the first label that is missing."
+
+#: src/i18n/messages.ts
+msgid "Labelyard"
+msgstr "Labelyard"
 
 #: src/features/settings/sections.tsx
 msgid "Language"
@@ -1783,6 +1875,11 @@ msgstr "Legend"
 msgid "Level"
 msgstr "Level"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Licence"
+msgstr "Licence"
+
 #: src/features/about/AboutPage.tsx
 msgctxt "field label"
 msgid "Licence"
@@ -1792,6 +1889,21 @@ msgstr "Licence"
 msgctxt "heading"
 msgid "Licence"
 msgstr "Licence"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Licence text"
+msgstr "Licence text"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgid "Licence text of {0}"
+msgstr "Licence text of {0}"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "licence of a package"
+msgid "Licence unknown"
+msgstr "Licence unknown"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -1806,6 +1918,7 @@ msgid "Load hint"
 msgstr "Load hint"
 
 #: src/app/router.tsx
+#: src/features/about/DependencyLicences.tsx
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeDetail.tsx
 #: src/features/calibration/CalibrationPage.tsx
@@ -1891,6 +2004,18 @@ msgstr "May be cut off by the printer's unprintable margin: cells {cutOff}"
 #: src/features/archive/TypeForm.tsx
 msgid "Measure {0} again"
 msgstr "Measure {0} again"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Measure again"
+msgstr "Measure again"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Measure again anyway"
+msgstr "Measure again anyway"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Measure and save values first, then check."
+msgstr "Measure and save values first, then check."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Measure with the readings helper"
@@ -2062,6 +2187,10 @@ msgstr "No jobs."
 #: src/features/sheets/print/CapacityAlert.tsx
 msgid "No other sheet of this type has a free cell."
 msgstr "No other sheet of this type has a free cell."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "No package matches the filter."
+msgstr "No package matches the filter."
 
 #: src/features/lookup/CartPage.tsx
 msgid "No preview available."
@@ -2326,6 +2455,10 @@ msgstr "Only cells that were marked by hand can be un-marked."
 msgid "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
 msgstr "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
 
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Only needed when the check is off by more than 0.5 mm. Print it onto a real sheet of labels (the sheet is used up); it is always printed without correction."
+msgstr "Only needed when the check is off by more than 0.5 mm. Print it onto a real sheet of labels (the sheet is used up); it is always printed without correction."
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Only the first {listed} of {reported} trays are listed."
 msgstr "Only the first {listed} of {reported} trays are listed."
@@ -2377,6 +2510,10 @@ msgstr "Open the printer settings"
 msgid "Open the sheet"
 msgstr "Open the sheet"
 
+#: src/features/about/DependencyLicences.tsx
+msgid "Operating system packages of the image are listed in its SBOM; their licence texts are in /usr/share/doc inside the image."
+msgstr "Operating system packages of the image are listed in its SBOM; their licence texts are in /usr/share/doc inside the image."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Optional. It checks where the ID can go, and it is needed to print the ID label."
 msgstr "Optional. It checks where the ID can go, and it is needed to print the ID label."
@@ -2397,6 +2534,11 @@ msgstr "Other apps that print through this hub. They are recognised by the name 
 #: src/shell/labels.ts
 msgid "Overview"
 msgstr "Overview"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Package"
+msgstr "Package"
 
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Page"
@@ -2444,6 +2586,11 @@ msgstr "Paper size"
 #: src/shell/labels.ts
 msgid "Paperless ASN"
 msgstr "Paperless ASN"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Part"
+msgstr "Part"
 
 #: src/features/jobs/RunControls.tsx
 msgid "Part {done} of {parts} is done. Check the tape, then continue."
@@ -2513,10 +2660,6 @@ msgid "Print {0}"
 msgstr "Print {0}"
 
 #: src/features/calibration/CalibrationPage.tsx
-msgid "Print calibration page"
-msgstr "Print calibration page"
-
-#: src/features/calibration/CalibrationPage.tsx
 msgid "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
 msgstr "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
 
@@ -2549,12 +2692,24 @@ msgid "Print test page"
 msgstr "Print test page"
 
 #: src/features/calibration/CalibrationPage.tsx
-msgid "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
-msgstr "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
+msgid "Print the calibration page (without correction)"
+msgstr "Print the calibration page (without correction)"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Print the check page"
+msgstr "Print the check page"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Print the check page (with correction)"
+msgstr "Print the check page (with correction)"
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Print with the new plan"
 msgstr "Print with the new plan"
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Print without correction?"
+msgstr "Print without correction?"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "printed"
@@ -2700,6 +2855,10 @@ msgstr "QR code, code and title"
 msgid "QR code, code, title and detail"
 msgstr "QR code, code, title and detail"
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "QR codes are switched off for this sheet type, so the ID is printed as text only. Switch on “QR codes on labels” in the details of <0>this type in the sheet archive</0>."
+msgstr "QR codes are switched off for this sheet type, so the ID is printed as text only. Switch on “QR codes on labels” in the details of <0>this type in the sheet archive</0>."
+
 #: src/features/archive/TypeForm.tsx
 msgid "QR codes on labels"
 msgstr "QR codes on labels"
@@ -2812,8 +2971,8 @@ msgid "Remove {itemName}"
 msgstr "Remove {itemName}"
 
 #: src/shell/BootstrapKeyCreated.tsx
-msgid "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
-msgstr "Remove <0>PRINTER_HUB_BOOTSTRAP_ADMIN_KEY</0> from the container; it no longer works once this key exists."
+msgid "Remove <0>{variableName}</0> from the container; it no longer works once this key exists."
+msgstr "Remove <0>{variableName}</0> from the container; it no longer works once this key exists."
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Remove colour"
@@ -2970,10 +3129,6 @@ msgstr "Same device"
 msgid "Save"
 msgstr "Save"
 
-#: src/features/calibration/CalibrationPage.tsx
-msgid "Save a correction first."
-msgstr "Save a correction first."
-
 #: src/features/archive/TypeForm.tsx
 msgid "Save details"
 msgstr "Save details"
@@ -3101,6 +3256,11 @@ msgstr "Separate several with commas."
 msgid "Serial number"
 msgstr "Serial number"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "part of the hub"
+msgid "Server"
+msgstr "Server"
+
 #: src/shell/Sidebar.tsx
 msgid "Server unreachable"
 msgstr "Server unreachable"
@@ -3140,6 +3300,7 @@ msgstr "Settle the cells on the sheet"
 
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/sheets/print/SheetPicker.tsx
+#: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Sheet"
 msgstr "Sheet"
@@ -3242,6 +3403,12 @@ msgstr "Sheets"
 msgid "Sheets already made keep printing with the old measurements."
 msgstr "Sheets already made keep printing with the old measurements."
 
+#. placeholder {0}: matches.length
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show all {0} packages"
+msgstr "Show all {0} packages"
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Show all {count}"
 msgstr "Show all {count}"
@@ -3261,6 +3428,12 @@ msgstr "Show discarded sheets"
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Show fewer"
 msgstr "Show fewer"
+
+#. placeholder {0}: entry.name
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
+msgid "Show licence text of {0}"
+msgstr "Show licence text of {0}"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Show the ID label job"
@@ -3422,10 +3595,6 @@ msgstr "Step 1: Print the calibration page"
 msgid "Step 2: Enter the deviation"
 msgstr "Step 2: Enter the deviation"
 
-#: src/features/calibration/CalibrationPage.tsx
-msgid "Step 3: Check the result"
-msgstr "Step 3: Check the result"
-
 #: src/features/jobs/HeldRuns.tsx
 #: src/features/printers/model.ts
 #: src/shell/PrintToasts.tsx
@@ -3552,10 +3721,6 @@ msgstr "Testing…"
 #: src/features/sheets/cellState.ts
 msgid "text shortened"
 msgstr "text shortened"
-
-#: src/features/sheets/print/SheetPreview.tsx
-msgid "Text shortened to fit: cells {shortened}"
-msgstr "Text shortened to fit: cells {shortened}"
 
 #: src/features/jobs/RunControls.tsx
 msgid "That did not work. Try again."
@@ -3937,10 +4102,6 @@ msgstr "The labels could not be put on the sheet."
 msgid "The labels could not be sent."
 msgstr "The labels could not be sent."
 
-#: src/features/sheets/AddSheetDialog.tsx
-msgid "The labels of this type are too small for a QR code, so the ID is printed as text only."
-msgstr "The labels of this type are too small for a QR code, so the ID is printed as text only."
-
 #: src/features/settings/System.tsx
 msgid "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
 msgstr "The last 200 records of level warning or higher, newest first. They are kept in memory and start over with the container."
@@ -3954,6 +4115,18 @@ msgstr "The left and right margins differ ({0} and {1}). Measure the sheet again
 #: src/features/archive/errors.ts
 msgid "The left margin"
 msgstr "The left margin"
+
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list could not be loaded."
+msgstr "The licence list could not be loaded."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list of the server is not included in this build."
+msgstr "The licence list of the server is not included in this build."
+
+#: src/features/about/DependencyLicences.tsx
+msgid "The licence list of the web app is not included in this build."
+msgstr "The licence list of the web app is not included in this build."
 
 #: src/features/lookup/LabelPreview.tsx
 #: src/features/lookup/PrinterPicker.tsx
@@ -4226,6 +4399,10 @@ msgstr "The roll was changed"
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
 msgstr "The secret comes from the container, but the URL does not. Set the URL in the container too."
 
+#: src/i18n/messages.ts
+msgid "The self-hosted Label Printer Hub for all your labels"
+msgstr "The self-hosted Label Printer Hub for all your labels"
+
 #: src/app/router.tsx
 #: src/features/archive/errors.ts
 #: src/features/lookup/PrinterPicker.tsx
@@ -4397,6 +4574,11 @@ msgstr "These labels were sent to the printer, but nobody confirmed the result. 
 #: src/features/calibration/errors.ts
 msgid "These readings cannot be fitted. Check them and add crossings that are further apart."
 msgstr "These readings cannot be fitted. Check them and add crossings that are further apart."
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "heading"
+msgid "Third-party software"
+msgstr "Third-party software"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "This browser blocked the camera for this site. Allow it in the site settings (the icon next to the address, then Camera), then try again."
@@ -4577,6 +4759,14 @@ msgstr "toner low"
 msgid "Too many attempts. Wait a minute and try again."
 msgstr "Too many attempts. Wait a minute and try again."
 
+#: src/features/sheets/print/SheetSection.tsx
+msgid "Too many previews at once. The preview updates in a moment."
+msgstr "Too many previews at once. The preview updates in a moment."
+
+#: src/features/sheets/print/errors.ts
+msgid "Too many previews right now. Try again in a moment."
+msgstr "Too many previews right now. Try again in a moment."
+
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "too small"
 msgstr "too small"
@@ -4625,7 +4815,13 @@ msgstr "Trays are listed once the printer has answered."
 #: src/app/router.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/sheets/print/SheetSection.tsx
 #: src/i18n/messages.ts
+msgid "Try again"
+msgstr "Try again"
+
+#: src/features/about/DependencyLicences.tsx
+msgctxt "action"
 msgid "Try again"
 msgstr "Try again"
 
@@ -4731,6 +4927,11 @@ msgstr "Verify the printer certificate"
 msgid "Version"
 msgstr "Version"
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "column"
+msgid "Version"
+msgstr "Version"
+
 #: src/features/archive/TypeDetail.tsx
 msgid "Versions"
 msgstr "Versions"
@@ -4777,6 +4978,11 @@ msgstr "Warning"
 msgid "Warning: the certificate is not checked. Anyone on the network path could pose as the printer."
 msgstr "Warning: the certificate is not checked. Anyone on the network path could pose as the printer."
 
+#: src/features/about/DependencyLicences.tsx
+msgctxt "part of the hub"
+msgid "Web"
+msgstr "Web"
+
 #: src/features/settings/AccessKeys.tsx
 msgid "Webhook key"
 msgstr "Webhook key"
@@ -4809,6 +5015,10 @@ msgstr "What was printed"
 #: src/features/jobs/JobDetail.tsx
 msgid "What went wrong"
 msgstr "What went wrong"
+
+#: src/features/calibration/CalibrationSchematic.tsx
+msgid "Where a label corner would touch the scale, its corner mark is left out; the gap lines and the scale show the cut."
+msgstr "Where a label corner would touch the scale, its corner mark is left out; the gap lines and the scale show the cut."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Where gap line {s} and gap line {z} cross, read the small scales against the middle of the physical gap, in millimetres."

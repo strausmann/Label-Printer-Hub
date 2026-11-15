@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Brother PT-P750W Multi-Label Tape-Feed-Mechanismus — Research
 
 **Datum:** 2026-06-05

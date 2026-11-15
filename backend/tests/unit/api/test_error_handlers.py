@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for app.api.error_handlers.
 
 Each test builds a minimal FastAPI app with one route that raises a mapped

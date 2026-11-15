@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The graceful-shutdown wait covers every worker's queue timeout, tape and page."""
 
 from __future__ import annotations

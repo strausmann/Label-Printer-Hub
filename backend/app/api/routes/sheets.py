@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet API (spec 15): physical sheets, cell marking and the reprint lookup.
 
 Reads need ``read`` scope; every write needs ``print`` (OC-11), except discard, which needs

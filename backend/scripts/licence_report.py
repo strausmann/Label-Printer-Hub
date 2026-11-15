@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Check the licences of an installed Python environment against ``licence-policy.yml``.
 
 The policy file is the one source for every licence gate of the project. It is written as
@@ -57,7 +60,13 @@ ones seen; the packages that still resolve to ``UNKNOWN`` (``pysnmp``, ``qrcode`
 
 Usage::
 
-    python -m scripts.licence_report --python <interpreter> --policy <file> [--output <json>]
+    python -m scripts.licence_report --python <interpreter> --policy <file> \\
+        --own-project <pyproject.toml> [--output <json>] [--require-texts] \\
+        [--extra <json> [--extra-root <dir>]] [--fallback-dir <dir>]
+
+``--output`` writes the list the image serves as ``/licenses/backend.json``: one
+:class:`LicenceRecord` per package, with the field names of ``rollup-license-plugin`` so the
+About page parses it and the web list with one function.
 """
 
 from __future__ import annotations
@@ -68,12 +77,11 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-
-#: The project's own distribution, excluded from the check.
-OWN_PACKAGE = "label-printer-hub-backend"
+from typing import TypedDict
 
 PROPRIETARY = "Proprietary"
 
@@ -99,9 +107,23 @@ METADATA_TO_SPDX: Mapping[str, str] = {
 
 UNKNOWN = "UNKNOWN"
 
+MISSING_TEXT_POINTER = (
+    'See "Dependencies and licences → A licence text is missing" in CONTRIBUTING.md'
+)
+
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 _TOKEN = re.compile(r"\(|\)|[A-Za-z0-9][A-Za-z0-9.+:\-]*")
+
+
+class LicenceRecord(TypedDict):
+    """One package of the served list; the keys are those of ``rollup-license-plugin``."""
+
+    name: str
+    version: str
+    license: str
+    licenseText: str | None
+    repository: str | None
 
 
 @dataclass(frozen=True)
@@ -361,7 +383,17 @@ def check(entries: Iterable[Mapping[str, str]], policy: Policy) -> list[str]:
     return sorted(offenders, key=str.lower)
 
 
-def _collect(interpreter: str) -> list[dict[str, str]]:
+def own_package_name(pyproject: Path) -> str:
+    """The project's own distribution name, ``[project].name`` of its ``pyproject.toml``."""
+    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    name = data.get("project", {}).get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"{pyproject}: [project].name is missing")
+    return name
+
+
+def _collect(interpreter: str, own: str) -> list[dict[str, str]]:
+    """The packages of ``interpreter``'s environment, without the project's own ``own``."""
     command = [
         sys.executable,
         "-m",
@@ -373,41 +405,135 @@ def _collect(interpreter: str) -> list[dict[str, str]]:
         "--format=json",
         "--with-license-file",
         "--no-license-path",
+        "--with-urls",
     ]
     result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"pip-licenses failed ({result.returncode}): {result.stderr.strip()}")
     data = json.loads(result.stdout)
-    own = normalise_purl(f"pkg:pypi/{OWN_PACKAGE}")
-    return [e for e in data if normalise_purl(f"pkg:pypi/{e['Name']}") != own]
+    skip = normalise_purl(f"pkg:pypi/{own}")
+    return [e for e in data if normalise_purl(f"pkg:pypi/{e['Name']}") != skip]
+
+
+def load_extra(path: Path, root: Path) -> list[LicenceRecord]:
+    """Read the hand-kept records of what pip does not list (fonts, sheet data).
+
+    Every entry is ``{name, version, license, licenseTextFile, repository}``; the text file is
+    read relative to ``root``. A missing file raises :class:`ValueError` naming it.
+    """
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError(f"{path}: the extra records must be a list")
+    records: list[LicenceRecord] = []
+    for raw in data:
+        if not isinstance(raw, dict):
+            raise ValueError(f"{path}: every extra record must be a mapping: {raw!r}")
+        try:
+            name, version = str(raw["name"]), str(raw["version"])
+            licence, text_file = str(raw["license"]), str(raw["licenseTextFile"])
+        except KeyError as error:
+            raise ValueError(f"{path}: an extra record lacks {error}: {raw!r}") from error
+        text_path = root / text_file
+        if not text_path.is_file():
+            raise ValueError(f"{path}: licence text file not found for {name}: {text_path}")
+        repository = raw.get("repository")
+        records.append(
+            {
+                "name": name,
+                "version": version,
+                "license": licence,
+                "licenseText": text_path.read_text(encoding="utf-8"),
+                "repository": repository if isinstance(repository, str) else None,
+            }
+        )
+    return records
+
+
+#: SPDX ids whose canonical text names no copyright holder, so one file serves every package
+#: with that id. Any other licence (MIT, BSD, ...) carries a holder line and needs a text of the
+#: package itself: ``<fallback-dir>/packages/<normalised name>.txt``.
+HOLDER_FREE_FALLBACKS: frozenset[str] = frozenset({"GPL-3.0-or-later"})
+
+
+def _text_for(entry: Mapping[str, str], expression: str, fallback_dir: Path) -> str | None:
+    """The text of one package: its file in ``packages/``, its own text, else a holder-free one.
+
+    A text that names a copyright holder is never borrowed from another package: the result is
+    ``None`` and ``--require-texts`` stops the build.
+    """
+    name = re.sub(r"[-_.]+", "-", entry["Name"]).lower()
+    per_package = fallback_dir / "packages" / f"{name}.txt"
+    if per_package.is_file():
+        return per_package.read_text(encoding="utf-8")
+    own = entry.get("LicenseText", UNKNOWN)
+    if own != UNKNOWN and own.strip():
+        return own
+    if expression in HOLDER_FREE_FALLBACKS:
+        candidate = fallback_dir / f"{expression}.txt"
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    return None
+
+
+def to_records(
+    entries: Iterable[Mapping[str, str]],
+    policy: Policy,
+    fallback_dir: Path,
+    extra: Sequence[LicenceRecord] = (),
+) -> list[LicenceRecord]:
+    """The served list (D23): ``entries`` classified, ``extra`` appended unjudged, sorted."""
+    records: list[LicenceRecord] = []
+    for entry in entries:
+        expression, _ = classify(entry, policy)
+        url = entry.get("URL", UNKNOWN).strip()
+        records.append(
+            {
+                "name": entry["Name"],
+                "version": entry["Version"],
+                "license": expression,
+                "licenseText": _text_for(entry, expression, fallback_dir),
+                "repository": url if url.lower().startswith(("http://", "https://")) else None,
+            }
+        )
+    records.extend(extra)
+    return sorted(records, key=lambda record: record["name"].lower())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", maxsplit=1)[0])
     parser.add_argument("--python", required=True, help="interpreter of the environment to check")
     parser.add_argument("--policy", required=True, type=Path, help="licence-policy.yml")
-    parser.add_argument("--output", type=Path, help="write the classified records as JSON")
+    parser.add_argument(
+        "--own-project", required=True, type=Path, help="pyproject.toml of the project itself"
+    )
+    parser.add_argument("--output", type=Path, help="write the licence list as JSON")
+    parser.add_argument(
+        "--require-texts", action="store_true", help="fail when a record has no licence text"
+    )
+    parser.add_argument("--extra", type=Path, help="JSON list of records pip does not know")
+    parser.add_argument("--extra-root", type=Path, default=Path(), help="base of the text files")
+    parser.add_argument(
+        "--fallback-dir", type=Path, default=Path("licences"), help="canonical SPDX texts"
+    )
     args = parser.parse_args(argv)
 
     policy = load_policy(args.policy)
-    entries = _collect(args.python)
-    if args.output:
-        classified = []
-        for e in entries:
-            expression, allowed = classify(e, policy)
-            classified.append(
-                {
-                    "name": e["Name"],
-                    "version": e["Version"],
-                    "licence": expression,
-                    "allowed": allowed,
-                }
-            )
-        args.output.write_text(json.dumps(classified, indent=2) + "\n", encoding="utf-8")
+    entries = _collect(args.python, own_package_name(args.own_project))
+    extra = load_extra(args.extra, args.extra_root) if args.extra else []
     offenders = check(entries, policy)
+    records = to_records(entries, policy, args.fallback_dir, extra)
+    if args.output:
+        args.output.write_text(
+            json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     for line in offenders:
         sys.stdout.write(line + "\n")
-    return 1 if offenders else 0
+    missing = [r for r in records if not r["licenseText"]] if args.require_texts else []
+    for record in missing:
+        sys.stdout.write(f"{record['name']} ({record['license']}): no licence text\n")
+    if missing:
+        sys.stdout.write(MISSING_TEXT_POINTER + "\n")
+    return 1 if offenders or missing else 0
 
 
 if __name__ == "__main__":

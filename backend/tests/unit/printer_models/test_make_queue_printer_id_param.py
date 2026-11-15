@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1b — driver.make_queue_printer(...) accepts an optional
 printer_id so lifespan can plumb the deterministic UUIDv5 from
 upsert_runtime_printer() into the runtime printer."""

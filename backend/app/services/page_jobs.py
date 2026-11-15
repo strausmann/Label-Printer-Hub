@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Page jobs: the queue's third item type, printed on IPP page printers (spec 11, 12.4).
 
 A page job carries a ``PagePayload`` — everything needed to draw the page again at send

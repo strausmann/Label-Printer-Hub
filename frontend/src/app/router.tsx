@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import {
   createRootRoute,
@@ -104,6 +107,7 @@ function BootstrapScreen() {
         ).plaintext
       }
       onContinue={session.signIn}
+      variable={session.bootstrapVariable}
     />
   );
 }

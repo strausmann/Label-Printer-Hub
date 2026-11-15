@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``evict_finished`` keeps the queue's in-memory job table bounded (263-70).
 
 The bound is checked on counts and on what the queue still tracks, never on timing: every

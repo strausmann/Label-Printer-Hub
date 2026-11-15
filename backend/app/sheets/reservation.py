@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Atomic cell reservation for sheet prints (spec 8, 10.1, 10.2).
 
 ``reserve`` plans and inserts the ``reserved`` rows in one write transaction: the sheet write

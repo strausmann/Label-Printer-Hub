@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet type service: create, edit, versions, archive, delete (Plan 1, Task 3)."""
 
 from __future__ import annotations
@@ -90,17 +93,20 @@ async def test_create_type_version_1(session: AsyncSession) -> None:
     assert v.version == 1
     assert len(v.geometry_hash) == 64
     assert v.created_by == "tester"
-    assert t.allow_qr is True  # shorter side 21.2 mm >= 15 mm
+    assert t.allow_qr is True  # shorter side 21.2 mm >= 10 mm
     _, v_small = await ts.create_type(
         session, fields("small-type", "SMALL1"), G_SMALL, actor="tester"
     )
     t_small = await ts.get_type(session, "small-type")
-    assert t_small.allow_qr is False  # shorter side 10 mm
+    assert t_small.allow_qr is True  # shorter side 10 mm, the threshold itself (#330)
     assert v_small.version == 1
+    tiny = replace(G_SMALL, label_h=990, pitch_y=990)
+    t_tiny, _ = await ts.create_type(session, fields("tiny-type", "TINY1"), tiny, actor="tester")
+    assert t_tiny.allow_qr is False  # shorter side 9.9 mm
     t3, _ = await ts.create_type(
-        session, fields("forced-qr", "FQR", allow_qr=True), G_SMALL, actor="tester"
+        session, fields("forced-qr", "FQR", allow_qr=False), G_SMALL, actor="tester"
     )
-    assert t3.allow_qr is True  # an explicit value wins over the default
+    assert t3.allow_qr is False  # an explicit value wins over the default
 
 
 async def test_create_duplicate_key_and_prefix(session: AsyncSession) -> None:

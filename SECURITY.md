@@ -1,6 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Security Policy
 
-We work to keep Label Printer Hub secure, but issues can still slip through. If you believe you have
+We work to keep Labelyard secure, but issues can still slip through. If you believe you have
 found a security issue, please tell us. We want to work with you to resolve it promptly.
 
 ## Reporting a Vulnerability
@@ -66,8 +71,8 @@ Once you report, we will:
 
 ## Scope
 
-**In scope:** security issues in the current release and the default branch of Label Printer Hub
-(https://github.com/strausmann/Label-Printer-Hub).
+**In scope:** security issues in the current release and the default branch of Labelyard
+(https://github.com/strausmann/labelyard).
 
 **Out of scope:**
 
@@ -95,11 +100,11 @@ While researching, please do not:
   restrictions, sessions with CSRF protection, trusted SSO headers only with a shared token).
 - The webhook endpoints (Spoolman, Grocy) with their own key and rate limit.
 - Credentials and tokens never appear in logs, error messages or pages; stored integration keys
-  are encrypted with `PRINTER_HUB_SECRET_KEY`.
+  are encrypted with `LABELYARD_SECRET_KEY`.
 - The container runs as a non-root user (UID 1000); dependencies are kept current by Dependabot.
 
 ## Trademarks
 
 See [README.md](README.md#trademarks-and-disclaimer) for trademark notices and disclaimers.
 
-Thank you for helping keep Label Printer Hub and its users safe.
+Thank you for helping keep Labelyard and its users safe.

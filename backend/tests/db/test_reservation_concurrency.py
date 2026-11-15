@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Reservations under contention on a real SQLite file in WAL mode (acceptance 12, C26).
 
 In-memory SQLite has no second connection, so these tests use a temp file, the production

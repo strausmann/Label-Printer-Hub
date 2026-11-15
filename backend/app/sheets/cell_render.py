@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Cell renderer: draws one label into one sheet cell (spec 12.1 and 12.3).
 
 The renderer is a small protocol, separate from the tape ``LayoutEngine``, so that the sheet

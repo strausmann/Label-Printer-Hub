@@ -1,0 +1,18 @@
+# Generated from docs/glossary.toml — edit that file
+^Labelyard$
+^Bogen$
+^Zelle$
+^Bogentyp$
+^Druckeingang$
+^Band$
+^Rolle$
+^Vorlage$
+^Drucker$
+^Fach$
+^Kalibrierung$
+^Vorschau$
+^Auftrag$
+^Stapel$
+^Warteschlange$
+^Etikett$
+^API-Schlüssel$

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Cancel, queue-clear and retry routes for page jobs (they go through ``PrintQueue``, #184).
 
 A real ``PrintQueue`` + ``SQLiteJobStore`` with one IPP page printer whose transport is the

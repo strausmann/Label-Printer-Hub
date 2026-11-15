@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 name: Release impact
 
 # Keeps version numbers honest before anything is merged into main.
@@ -47,6 +50,9 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      # The Vale counter-tests (scripts/test_vale_rules.py) fail under CI without Vale.
+      - name: Install Vale
+        run: scripts/vale_setup.sh
       - name: Run the unit tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 

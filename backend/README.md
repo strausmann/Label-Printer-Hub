@@ -1,8 +1,13 @@
-# label-printer-hub — backend
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
 
-Python/FastAPI backend for the [Label Printer Hub](https://github.com/strausmann/label-printer-hub).
+# Labelyard — backend
 
-This subdirectory builds an installable Python package and a container image. Project-level documentation, architecture decisions, and the user wiki live in the [repository root](https://github.com/strausmann/label-printer-hub).
+Python/FastAPI backend for the [Labelyard](https://github.com/strausmann/labelyard), the self-hosted Label Printer Hub.
+
+This subdirectory builds an installable Python package and a container image. Project-level documentation, architecture decisions, and the user wiki live in the [repository root](https://github.com/strausmann/labelyard).
 
 ## Local development
 
@@ -17,7 +22,7 @@ The backend exposes its OpenAPI spec at `/openapi.json`, and the interactive Sca
 
 ## Container
 
-The `Dockerfile` here produces the `ghcr.io/strausmann/label-printer-hub-backend` image — see the [tag scheme ADR](../docs/decisions/0007-docker-image-tag-scheme.md) for which tags every release publishes.
+The `Dockerfile` here produces the `ghcr.io/strausmann/labelyard` image — see the [tag scheme ADR](../docs/decisions/0007-docker-image-tag-scheme.md) for which tags every release publishes.
 
 ## License
 

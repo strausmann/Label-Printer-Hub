@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """ui_sessions.sso_trust_fingerprint: bind SSO sessions to the trust token in use.
 
 Revision ID: 20261104a2

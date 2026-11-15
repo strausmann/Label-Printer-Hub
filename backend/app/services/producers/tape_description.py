@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """TapeDescription — shared data transfer object for tape-label metadata.
 
 Lives in its own module to avoid circular imports between

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { StatusBadge, type BadgeState } from "../../shell/StatusBadge";
 import { PANEL, SECONDARY_BUTTON } from "../ui";

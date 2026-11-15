@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """While a printer's device is flagged as swapped, sheet and calibration jobs are held (#231).
 
 The full app (real queue, real ``SheetCellsOutcome``, the fake IPP printer) for the sheet and

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """E-11: automatic and manual pauses are visible on /api/v1/printers with a reason.
 
 Decision 1 (sync): the manual API pause must also pause the queue worker and the

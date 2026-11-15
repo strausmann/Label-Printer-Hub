@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """app.auth.sessions: issuing, limits, purge and cookie naming (spec 8.1)."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """One-page, DeviceGray-only PDFs for page printers.
 
 Everything printed is gray: true 1-bit images, gray strokes, gray text. There is deliberately no
@@ -10,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import logging
 import os
 import zlib
 from collections.abc import Callable, Sequence
@@ -34,9 +38,23 @@ from app.page_render.transform import (
 
 #: The font shipped inside the package (DejaVu Sans, Bitstream Vera licence, see fonts/).
 BUNDLED_FONT = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
-FONT_ENV = "PRINTHUB_PDF_FONT"
+_log = logging.getLogger(__name__)
+FONT_ENV = "LABELYARD_PDF_FONT"
+#: Deprecated name of the same override, read when ``FONT_ENV`` is unset or empty.
+LEGACY_FONT_ENV = "PRINTHUB_PDF_FONT"
 
 _Anchor = Literal["start", "middle", "end"]
+
+
+_legacy_font_warned = False
+
+
+def _warn_legacy_font_env() -> None:
+    """Log once per process that the deprecated variable is in use (name only, never the path)."""
+    global _legacy_font_warned
+    if not _legacy_font_warned:
+        _legacy_font_warned = True
+        _log.warning("Deprecated variable %s in use, rename it to %s", LEGACY_FONT_ENV, FONT_ENV)
 
 
 class FontNotFoundError(RuntimeError):
@@ -46,16 +64,20 @@ class FontNotFoundError(RuntimeError):
 def resolve_font_path() -> Path:
     """The font file used for all PDF text.
 
-    ``PRINTHUB_PDF_FONT`` (a path) overrides the bundled DejaVu Sans. A missing file is an
+    ``LABELYARD_PDF_FONT`` (a path) overrides the bundled DejaVu Sans; the deprecated
+    ``PRINTHUB_PDF_FONT`` is read when the new one is unset or empty. A missing file is an
     error that names the path and the remedy; there is no search path and no silent fallback,
     so the output never depends on which fonts the machine happens to have.
     """
-    override = os.environ.get(FONT_ENV)
+    env_name = FONT_ENV if os.environ.get(FONT_ENV) else LEGACY_FONT_ENV
+    override = os.environ.get(env_name)
+    if override and env_name == LEGACY_FONT_ENV:
+        _warn_legacy_font_env()
     if override:
         path = Path(override)
         if not path.is_file():
             raise FontNotFoundError(
-                f"PDF font not found at {path}; fix or unset {FONT_ENV} "
+                f"PDF font not found at {path}; fix or unset {env_name} "
                 f"(unset uses the bundled {BUNDLED_FONT.name})"
             )
         return path
@@ -72,7 +94,7 @@ def _register_font(path: Path) -> str:
     # The font is registered once per path per process; replacing the file at the same path
     # while the process runs keeps the old registration.
     digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12]
-    name = f"PrintHubPdf-{digest}"
+    name = f"LabelyardPdf-{digest}"
     if name not in pdfmetrics.getRegisteredFontNames():
         pdfmetrics.registerFont(TTFont(name, str(path)))
     return name

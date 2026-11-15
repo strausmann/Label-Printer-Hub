@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Shared runtime-settings wiring for integration plugins (D4/D5).
 
 A plugin keeps its no-argument constructor (entry-point discovery calls

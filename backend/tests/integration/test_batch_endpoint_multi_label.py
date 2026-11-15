@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1k.2 End-to-End: POST /batch → BatchJob path → atomic completion.
 
 Verifies the full flow:

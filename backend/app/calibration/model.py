@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Calibration values as the API sees them, and their conversion to the integer ``Deviation``.
 
 The stored row and ``Deviation`` use integers (hundredths of a millimetre, parts per million,
@@ -97,6 +100,17 @@ class CalibrationPut(CalibrationIn):
     measured_on: MeasuredOn | None = Field(
         default=None, description="The sheet type version the page was measured on (optional)."
     )
+
+
+class CalibrationScale(BaseModel):
+    """The mini scale at a crossing of the calibration page (mm); the app draws from it."""
+
+    half_mm: float
+    step_mm: float
+    line_mm: float
+    tick_half_mm: float
+    tick_whole_mm: float
+    tick_centre_mm: float
 
 
 class CalibrationRead(BaseModel):

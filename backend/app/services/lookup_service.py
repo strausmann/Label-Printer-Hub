@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Aggregator that routes lookup requests to the right integration plugin.
 
 The service uses IntegrationRegistry as its source of truth. New apps

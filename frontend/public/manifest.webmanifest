@@ -1,7 +1,7 @@
 {
-  "name": "Label Printer Hub",
-  "short_name": "Label Hub",
-  "description": "Print labels, scan codes and watch the label printers.",
+  "name": "Labelyard",
+  "short_name": "Labelyard",
+  "description": "Label Printer Hub — print labels, scan codes and watch your label printers.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

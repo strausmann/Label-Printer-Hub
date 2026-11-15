@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """An admin resolves a flagged device swap; the stored identity is visible to admins only (#231).
 
 ``POST /api/v1/admin/printers/{id}/identity/resolve``:

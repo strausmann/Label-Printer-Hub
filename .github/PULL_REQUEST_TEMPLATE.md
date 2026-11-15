@@ -1,4 +1,9 @@
 <!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+<!--
 Thanks for your contribution. Please fill in this template completely.
 The PR title MUST follow Conventional Commits — see CONTRIBUTING.md.
 -->
@@ -63,6 +68,7 @@ Closes #
 - [ ] All commits are signed off (if applicable)
 - [ ] CHANGELOG entry isn't needed (semantic-release generates it)
 - [ ] Documentation updated (if behaviour, API, or config changed)
+- [ ] Website pages changed in English and German (if any page under `website/src/content/docs/` changed)
 - [ ] UI change visible in a README screenshot → ran `pnpm screenshots` and committed the changed PNGs
 - [ ] Changes a recorded decision → ADR added/amended and register updated (`docs/decisions/`)
 - [ ] No private IPs, hostnames, domains, real tokens, or PII in commits

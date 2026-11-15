@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Brother PT-Series status query — ESC i S over a raw asyncio socket.
 
 Sends a 3-byte command (0x1B 0x69 0x53) and parses the 32-byte reply via

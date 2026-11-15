@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """In-memory PrinterBackend used by tests and local development.
 
 Satisfies the PrinterBackend Protocol without touching the network. Failure

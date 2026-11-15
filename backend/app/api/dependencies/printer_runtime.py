@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The ``PrinterRuntime`` of the running hub, as a request dependency.
 
 Overridable in tests with ``app.dependency_overrides[get_printer_runtime]``.

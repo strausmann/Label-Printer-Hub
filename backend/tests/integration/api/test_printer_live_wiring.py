@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Admin changes take effect live (#224): no hub restart between a save and its effect.
 
 Runs the real lifespan (``lifespan_context``, so the runtime stops cleanly after each test)
@@ -79,7 +82,7 @@ async def live(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Live]:
 
     if not IntegrationRegistry.names():
         _discover_plugins()
-    monkeypatch.setenv("PRINTER_HUB_SSE_PROBE_INTERVAL_S", str(INTERVAL_S))
+    monkeypatch.setenv("LABELYARD_SSE_PROBE_INTERVAL_S", str(INTERVAL_S))
     monkeypatch.setattr(
         "app.services.print_queue.PageJobRunner",
         functools.partial(PageJobRunner, poll_interval_s=0.05),

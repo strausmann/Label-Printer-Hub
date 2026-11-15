@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Webhook API-key authentication dependency.
 
 Protects the webhook routes (``/api/v1/webhook/spoolman``,
@@ -13,7 +16,7 @@ Usage::
         ...
 
 The key is read from ``app.config.Settings.webhook_api_key`` (env var
-``PRINTER_HUB_WEBHOOK_API_KEY``) via :func:`app.config.get_settings`, which
+``LABELYARD_WEBHOOK_API_KEY``) via :func:`app.config.get_settings`, which
 is ``@lru_cache``-decorated so the env var is read once at startup rather than
 on every request.
 
@@ -52,7 +55,7 @@ async def require_webhook_key(
     Raises
     ------
     HTTPException(503)
-        When ``PRINTER_HUB_WEBHOOK_API_KEY`` is not set (empty string).
+        When ``LABELYARD_WEBHOOK_API_KEY`` is not set (empty string).
     HTTPException(401)
         When the supplied key does not match the configured key.
     """
@@ -63,7 +66,7 @@ async def require_webhook_key(
     if len(expected) < 32:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Webhook auth not configured (PRINTER_HUB_WEBHOOK_API_KEY missing)",
+            detail="Webhook auth not configured (LABELYARD_WEBHOOK_API_KEY missing)",
         )
     if not hmac.compare_digest(x_api_key, expected):
         raise HTTPException(

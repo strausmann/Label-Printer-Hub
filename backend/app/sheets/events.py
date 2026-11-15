@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``sheet.updated`` events on the ``sheets`` channel (spec 16).
 
 Published by the sheet service after a write has committed, so a client that reacts by reading

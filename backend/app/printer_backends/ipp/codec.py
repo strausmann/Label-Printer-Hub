@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Pure encoder/decoder for the IPP/1.1 binary message format (RFC 8010).
 
 No I/O, no IPP library. The decoder parses bytes that come from a network

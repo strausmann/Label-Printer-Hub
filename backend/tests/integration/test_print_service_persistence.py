@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintService muss Job-Row in DB anlegen BEVOR an PrintQueue übergeben wird.
 
 Phase 1k.1a (Task 25): Adapted from template_id/renderer/template_loader API

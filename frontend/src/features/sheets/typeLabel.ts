@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { formatMm } from "./cellState";
 
 /** The name the sheet list shows for a type, as the server builds it: "<vendor> <first product code>", else the code, else the key. */

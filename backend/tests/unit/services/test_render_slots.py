@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """#293: a render past its time limit is reported to its caller and shown as stuck.
 
 A hung render is simulated with a ``threading.Event`` the test controls; the time limit is
@@ -439,7 +442,7 @@ def test_the_render_timeout_setting_is_bounded(value: str, monkeypatch: pytest.M
     """F4: no way to switch the limit off (``inf``) or to make it absurd."""
     import pydantic
 
-    monkeypatch.setenv("PRINTER_HUB_RENDER_TIMEOUT_S", value)
+    monkeypatch.setenv("LABELYARD_RENDER_TIMEOUT_S", value)
     with pytest.raises(pydantic.ValidationError, match="render_timeout_s"):
         Settings(_env_file=None)  # type: ignore[call-arg]
 
@@ -448,7 +451,7 @@ def test_the_render_timeout_setting_is_bounded(value: str, monkeypatch: pytest.M
 def test_the_render_timeout_setting_accepts_sane_values(
     value: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("PRINTER_HUB_RENDER_TIMEOUT_S", value)
+    monkeypatch.setenv("LABELYARD_RENDER_TIMEOUT_S", value)
     assert Settings(_env_file=None).render_timeout_s == float(value)  # type: ignore[call-arg]
 
 

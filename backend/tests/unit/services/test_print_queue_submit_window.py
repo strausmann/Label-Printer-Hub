@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """A job the API reports as cancelled must never be printed (issue #184, audit R3-1).
 
 Two gaps remained after the cancel/clear/retry routing:

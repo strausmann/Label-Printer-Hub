@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # CLAUDE.md — AI Assistant Configuration
 
 This file configures **Claude Code** (and other LLM-based tools that read it) for this repository. It is intentionally short — the actual project knowledge lives in [`docs/`](docs/).
@@ -7,7 +12,7 @@ This file configures **Claude Code** (and other LLM-based tools that read it) fo
 When you start working in this repository, read in this order:
 
 1. [`README.md`](README.md) — project overview
-2. [`docs/architecture.md`](docs/architecture.md) — current architecture in one page
+2. [`website/src/content/docs/developers/architecture.md`](website/src/content/docs/developers/architecture.md) — current architecture in one page (published at https://labelyard.app/developers/architecture/)
 3. [`docs/decisions/`](docs/decisions/) — ADRs explaining **why** every architectural choice was made
 4. [`docs/policies/privacy.md`](docs/policies/privacy.md) — what must NOT be committed (binding)
 5. [`docs/policies/trademarks.md`](docs/policies/trademarks.md) — Brother trademark rules (binding)
@@ -29,6 +34,8 @@ If you're about to make a non-trivial change without having read those first, st
 | **README screenshots** — a new UI feature gets its screenshot in the same PR; an essential UI change updates the affected ones (`pnpm screenshots`) | [CONTRIBUTING.md](CONTRIBUTING.md#web-ui-screenshots) |
 | **Type hints + mypy --strict** in Python | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | **Use `httpx` not `requests`**, `pysnmp` v6+ asyncio API, `logging` not `print()` | — |
+| **Website in English and German together** — every page under `website/src/content/docs/` changes in both languages in the same PR | [CONTRIBUTING.md](CONTRIBUTING.md#website) |
+| **Write for the reader** — goal first, short sentences, glossary terms (`docs/glossary.toml`), German natively with „du“, English and German in the same PR | [CONTRIBUTING.md](CONTRIBUTING.md#writing) |
 
 ## Branches, PR targets and merge style (mandatory)
 
@@ -53,7 +60,7 @@ Version numbers are planned through milestones ([CONTRIBUTING.md — Milestones,
 |---|---|
 | Architectural decision (with rationale) | New ADR under [`docs/decisions/`](docs/decisions/) |
 | Engineering doc (reference) | [`docs/`](docs/) |
-| User-facing tutorial / FAQ / integration recipe | [Wiki](https://github.com/strausmann/label-printer-hub/wiki) |
+| User-facing tutorial / FAQ / integration recipe | [Wiki](https://github.com/strausmann/labelyard/wiki) |
 | Sample compose file | [`examples/`](examples/) |
 | Brother spec extracts / research | [`docs/research/`](docs/research/) |
 | Ongoing bugfix or feature | Issue + branch + PR (fix → `main`, feature → `milestone/x.y.0`) |

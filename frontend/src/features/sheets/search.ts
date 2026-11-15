@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /** The server caps the code search at this many characters (`max_length` of `q`); a longer one would be answered with a 422. */
 export const MAX_CODE_SEARCH = 24;
 

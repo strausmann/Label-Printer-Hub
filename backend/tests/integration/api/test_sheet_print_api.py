@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """HTTP tests of POST /api/v1/print/{printer}/sheet: the print through the real queue (Task 7).
 
 The full app with its lifespan: the real print queue and ``SheetCellsOutcome``, the fake IPP
@@ -117,10 +120,12 @@ class Rig:
         return dict(row.payload)
 
 
-async def _type(key: str = "acme-t1", prefix: str = "AT1", g: Geometry = G48) -> None:
+async def _type(
+    key: str = "acme-t1", prefix: str = "AT1", g: Geometry = G48, allow_qr: bool | None = None
+) -> None:
     async with _factory()() as s:
         await ts.create_type(
-            s, ts.TypeFields(key, prefix, "Acme", ["T-1"], None, None), g, actor="t"
+            s, ts.TypeFields(key, prefix, "Acme", ["T-1"], None, allow_qr), g, actor="t"
         )
 
 
@@ -367,7 +372,7 @@ async def test_insufficient_over_http() -> None:
 
 async def test_qr_mapped_on_small_type_printed_as_text() -> None:
     async with running() as rig:
-        await _type("acme-small", "SM1", G_SMALL)
+        await _type("acme-small", "SM1", G_SMALL, allow_qr=False)  # QR switched off
         code = await _sheet(key="acme-small")
         items = [_item(0), _item(1, content_type="qr_only")]
 

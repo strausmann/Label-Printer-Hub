@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hardware-in-the-loop smoke test. Skipped by default — opt in with --hardware."""
 
 from __future__ import annotations
@@ -10,8 +13,8 @@ pytestmark = pytest.mark.hardware
 
 
 @pytest.mark.skipif(
-    not os.environ.get("PRINTER_HUB_PT750W_HOST"),
-    reason="PRINTER_HUB_PT750W_HOST not set",
+    not os.environ.get("LABELYARD_PT750W_HOST"),
+    reason="LABELYARD_PT750W_HOST not set",
 )
 async def test_smoke_first_print_succeeds() -> None:
     """End-to-end hardware test: real printer prints a QR-only label."""

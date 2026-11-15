@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """CSRF protection for requests authenticated by the browser session cookie (spec 8.1).
 
 The session stores a random CSRF token; the browser reads it from the non-HttpOnly

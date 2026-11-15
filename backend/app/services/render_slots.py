@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The process-wide render slots: CPU-bound page drawing in a thread, bounded and timed (#293).
 
 The sheet preview (``_draw_page``) and the page-job render (``render_page``) both draw in a

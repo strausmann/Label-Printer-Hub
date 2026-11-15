@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit-Tests für BatchRead und BatchSummary (Phase 2 Schemas).
 
 Stellt sicher, dass datetime-Felder in BatchRead mit UTC-Offset (`Z`)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guard tests for the licence gate workflows.
 
 These check the TEXT of the workflow files, not their run. The live behaviour (a disallowed

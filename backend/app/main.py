@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """FastAPI application entry point.
 
 This module exposes the ASGI app that uvicorn runs in the container. It owns:
@@ -31,7 +34,7 @@ from typing import Annotated, Any
 #
 # app.config.get_settings() is called at module load by engine.py (imported
 # below) and by integration plugins (imported via app.integrations).  If an
-# env var fails Pydantic validation (e.g. PRINTER_HUB_WEBHOOK_API_KEY is
+# env var fails Pydantic validation (e.g. LABELYARD_WEBHOOK_API_KEY is
 # shorter than 32 chars) we catch the ValidationError here — BEFORE any
 # integration imports that would produce multiple interleaved tracebacks —
 # and print a human-readable summary, then exit with EX_CONFIG (78).
@@ -46,20 +49,36 @@ from app.config import get_settings as _get_settings
 try:
     _get_settings()
 except ValidationError as _cfg_exc:
-    # Honour both the app-prefixed var (PRINTER_HUB_LOG_LEVEL, consistent with
-    # all other Settings fields) and the short alias (LOG_LEVEL) that uvicorn
-    # and other tools conventionally set.
-    _debug = (
-        os.environ.get("PRINTER_HUB_LOG_LEVEL", "").upper() == "DEBUG"
-        or os.environ.get("LOG_LEVEL", "").upper() == "DEBUG"
+    # Honour the app-prefixed var (LABELYARD_LOG_LEVEL, consistent with all other Settings
+    # fields), its deprecated predecessor (PRINTER_HUB_LOG_LEVEL) and the short alias
+    # (LOG_LEVEL) that uvicorn and other tools conventionally set.
+    _debug = any(
+        os.environ.get(_name, "").upper() == "DEBUG"
+        for _name in ("LABELYARD_LOG_LEVEL", "PRINTER_HUB_LOG_LEVEL", "LOG_LEVEL")
     )
     if _debug:
-        raise
+        # Raise for a traceback, but never re-raise the ValidationError itself: its text
+        # carries every offending input value, and those can be secrets.
+        _detail = "\n".join(
+            f"  {'.'.join(str(_p) for _p in _e['loc'])} [{_e['type']}]: {_e['msg']}"
+            for _e in _cfg_exc.errors(include_input=False, include_url=False, include_context=False)
+        )
+        raise RuntimeError(f"Configuration error (input values omitted):\n{_detail}") from None
+    from app.config_legacy import report_from_process as _report_from_process
+    from app.config_legacy import setting_variable_label as _variable_label
+
+    _report = _report_from_process()
     _lines = ["❌  Configuration error — fix the following before starting:\n"]
     for _err in _cfg_exc.errors():
         _field = ".".join(str(_p) for _p in _err["loc"])
         _msg = _err["msg"]
-        _lines.append(f"   • PRINTER_HUB_{_field.upper()}: {_msg}\n")
+        # An unknown key is already reported under its full variable name.
+        _label = (
+            _field.upper()
+            if _err["type"] == "extra_forbidden"
+            else _variable_label(_field, _report)
+        )
+        _lines.append(f"   • {_label}: {_msg}\n")
     _lines.append("\n")
     _lines.append("Hint: see backend/.env.example for all supported variables.\n")
     sys.stderr.writelines(_lines)
@@ -108,6 +127,7 @@ from app.auth.sessions import warn_if_insecure as warn_if_insecure_cookies
 from app.build_info import PROJECT_LICENSE, public_repo_url
 from app.calibration.page import render_calibration_page
 from app.config import get_settings
+from app.config_legacy import listen_port_warning, report_from_process, warn_legacy_env
 from app.db.engine import async_session, engine
 from app.db.lifespan import (
     ensure_printer_state,
@@ -156,9 +176,7 @@ OPENAPI_VERSION = "3.1.0"
 HUB_VERSION: str = os.environ.get("HUB_VERSION") or __version__
 HUB_REVISION: str = os.environ.get("HUB_REVISION", "unknown")
 HUB_BUILD_DATE: str = os.environ.get("HUB_BUILD_DATE", "1970-01-01T00:00:00Z")
-HUB_REPO_URL: str = os.environ.get(
-    "HUB_REPO_URL", "https://github.com/strausmann/label-printer-hub"
-)
+HUB_REPO_URL: str = os.environ.get("HUB_REPO_URL", "https://github.com/strausmann/labelyard")
 
 _log = logging.getLogger(__name__)
 
@@ -264,6 +282,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     then cancels the rest), then closes the page clients.
     """
     settings = get_settings()
+    warn_legacy_env(report_from_process(), _log)
+    if (port_warning := listen_port_warning(os.environ)) is not None:
+        _log.warning(port_warning)
     warn_if_insecure_cookies(settings)
     # 266-14: the PDF font is registered before any planner or renderer thread can need it.
     # A missing font is reported where it is used (the sheet print answers with it).
@@ -586,9 +607,10 @@ def create_app() -> _LifespanManager:
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
     app = FastAPI(
         lifespan=lifespan,
-        title="Label Printer Hub API",
+        title="Labelyard API",
         description=(
-            "REST + SSE API of the Label Printer Hub, which also serves the web UI. "
+            "REST + SSE API of Labelyard, the self-hosted Label Printer Hub, "
+            "which also serves the web UI. "
             "The OpenAPI spec is at /openapi.json; humans browse the interactive "
             "reference (Scalar) at /docs."
         ),
@@ -640,7 +662,7 @@ def create_app() -> _LifespanManager:
             "Deep readiness check: database connectivity, alembic migration "
             "state, printer wiring, SNMP probe recency, "
             "print-queue liveness, SSE subscriber capacity, and stuck render slots "
-            "(`render_slots`: page renders past `PRINTER_HUB_RENDER_TIMEOUT_S` whose "
+            "(`render_slots`: page renders past `LABELYARD_RENDER_TIMEOUT_S` whose "
             "thread still runs; fails when every slot is stuck, a hub restart frees them). "
             "Returns 200 with status in {ready, degraded} when all critical "
             "checks pass; 503 with status=not-ready when any critical check "

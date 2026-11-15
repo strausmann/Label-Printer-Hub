@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1b — derive_printer_id: stabiler UUIDv5 für (model, host, port, created_at_utc).
 
 Issue #124: Erweiterung von 3-arg auf 4-arg mit timezone-aware created_at_utc.

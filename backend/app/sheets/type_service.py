@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Sheet type service: create, edit, versioned geometry, archive, delete (spec 7.1).
 
 Every write starts with ``acquire_sheet_write_lock`` and commits inside; any failure rolls the

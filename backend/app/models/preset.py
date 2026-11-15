@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLModel table definition for Preset entities.
 
 Phase 1k.1a (Task 25): template_id foreign key removed — the templates table

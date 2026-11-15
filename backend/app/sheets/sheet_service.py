@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Physical sheets: create, next code, mark, unmark, resolve, discard, list, lookups (spec 8, 10).
 
 Every write runs in ``type_service.write_transaction``: the sheet write lock is its first

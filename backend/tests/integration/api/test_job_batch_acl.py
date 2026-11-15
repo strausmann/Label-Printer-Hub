@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Per-printer ACL on job and batch endpoints (follow-up to #146).
 
 Foreign jobs/batches answer 404 (not 403) so their existence is not leaked.

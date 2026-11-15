@@ -1,0 +1,23 @@
+[
+  {
+    "name": "anyio",
+    "version": "4.0.0",
+    "license": "MIT",
+    "licenseText": "MIT test text of anyio",
+    "repository": null
+  },
+  {
+    "name": "brother-ql",
+    "version": "0.9.4",
+    "license": "GPL-3.0-or-later",
+    "licenseText": "                    GNU GENERAL PUBLIC LICENSE\n                       Version 3, 29 June 2007\n\n Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>\n Everyone is permitted to copy and distribute verbatim copies\n of this license document, but changing it is not allowed.\n\n                            Preamble\n\n  The GNU General Public License is a free, copyleft license for\nsoftware and other kinds of works.\n",
+    "repository": null
+  },
+  {
+    "name": "fastapi",
+    "version": "0.115.0",
+    "license": "MIT",
+    "licenseText": null,
+    "repository": null
+  }
+]

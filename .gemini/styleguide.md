@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Style Guide for Gemini Code Reviews
 
 This document teaches Gemini how to review PRs in this repository. Rules echo the canonical [CLAUDE.md](../CLAUDE.md).

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { useMemo, useState } from "react";
@@ -12,7 +15,7 @@ import { usePrinterStatus, type Printer } from "../../printers/api";
 import { describePrinter } from "../../printers/model";
 import { ReasonLine } from "../../printers/PageStatus";
 import { HINT, LABEL, SelectField } from "../../settings/controls";
-import { PANEL, SECTION_HEADING } from "../../ui";
+import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../../ui";
 import { useNextCode, usePrintSheets, useSheet, useSheetPreview, useSheets, type SheetPrintRequest, type SheetPrintResponse } from "../api";
 import type { GridCell } from "../cellState";
 import { SheetGrid } from "../SheetGrid";
@@ -245,7 +248,13 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const toggle = (list: readonly number[], cell: number, limit = Infinity) =>
     list.includes(cell) ? list.filter((n) => n !== cell) : list.length < limit ? [...list, cell].sort((a, b) => a - b) : list;
 
-  const insufficient = insufficientCells(preview.error);
+  // A refusal answers the request it was asked for. While the debounce still holds the request before (a sheet was just
+  // picked), the refusal on screen is about the sheet before: shown under the new sheet's name it offered that sheet's
+  // alternatives, and a press on one was lost when the new request replaced the alert under it. Shown again once asked.
+  const previewError = settled.pending ? null : preview.error;
+  // #339: one preview per key at a time. The query asks again on its own (`previewRetry`); until then the wait is said in words.
+  const previewWait = !previewError && preview.isFetching && preview.failureReason instanceof ApiError && preview.failureReason.code === "too-many-previews";
+  const insufficient = insufficientCells(previewError);
   const otherSheets = usable.filter((s) => s.code !== sheetCode);
 
   function submit() {
@@ -435,12 +444,21 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
                 else setOverride({ key: planKey, placements: choice.placements });
               }}
             />
-          ) : preview.isError ? (
-            <p role="alert" className="[overflow-wrap:anywhere]">{errorText(preview.error)}</p>
+          ) : previewError ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <p role="alert" className="min-w-0 [overflow-wrap:anywhere]">{errorText(previewError)}</p>
+              {previewError instanceof ApiError && previewError.code === "too-many-previews" && (
+                <Button className={SECONDARY_BUTTON} onPress={() => void preview.refetch()}>
+                  {t`Try again`}
+                </Button>
+              )}
+            </div>
           ) : null}
           {fitNote && <p role="status" className="font-bold [overflow-wrap:anywhere]">{fitNote}</p>}
-          {busy && !preview.isError && (
-            <p role="status" className="text-ink-2">{shownData ? t`Updating the preview…` : t`Drawing the sheet…`}</p>
+          {busy && !previewError && (
+            <p role="status" className="text-ink-2 [overflow-wrap:anywhere]">
+              {previewWait ? t`Too many previews at once. The preview updates in a moment.` : shownData ? t`Updating the preview…` : t`Drawing the sheet…`}
+            </p>
           )}
           {shownData && !insufficient && (
             <div aria-busy={busy} className={busy ? "opacity-60 transition-opacity duration-150" : "transition-opacity duration-150"}>

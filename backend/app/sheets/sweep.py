@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The periodic sweep of sheet reservations whose job ended while the hub ran (266-04).
 
 A sheet page's cells are settled by its outcome handler when the job ends. When that call is

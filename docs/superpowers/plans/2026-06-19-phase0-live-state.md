@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 0 Live-State (Issue #124, 2026-06-20)
 
 > **Plan-Prinzip:** Live-Container-Werte sind Wahrheit. Spec-Werte sind Vorschläge. Bei Konflikt: Live gewinnt.

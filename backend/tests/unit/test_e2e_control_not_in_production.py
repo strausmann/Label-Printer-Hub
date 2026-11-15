@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The browser-test control paths exist in the e2e app only (Plan 4, Task 1, C5).
 
 ``/__e2e/`` switches a fake printer's state without authentication. It is served by the ASGI
@@ -118,7 +121,7 @@ async def test_e2e_control_route_absent_with_the_web_bundle(
     dist = tmp_path / "dist"
     dist.mkdir()
     (dist / "index.html").write_text("<!doctype html><title>shell</title>", encoding="utf-8")
-    monkeypatch.setenv("PRINTER_HUB_WEB_DIST_DIR", str(dist))
+    monkeypatch.setenv("LABELYARD_WEB_DIST_DIR", str(dist))
     get_settings.cache_clear()
     try:
         inner = create_app()._app  # type: ignore[attr-defined]
@@ -138,5 +141,5 @@ async def test_e2e_control_route_absent_with_the_web_bundle(
                 assert resp.status_code in (404, 405), where
                 assert '"uri"' not in resp.text and '"backends"' not in resp.text, where
     finally:
-        monkeypatch.delenv("PRINTER_HUB_WEB_DIST_DIR")
+        monkeypatch.delenv("LABELYARD_WEB_DIST_DIR")
         get_settings.cache_clear()

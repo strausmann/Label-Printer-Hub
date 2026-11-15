@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useInfo, useSession } from "../../app/session";
 import { LOOKUP_APPS } from "../lookup/apps";
 import type { LookupApp } from "../lookup/cart";

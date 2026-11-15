@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { Label, Radio, RadioGroup, Text } from "react-aria-components";
 import { PRESETS, type Orientation, type Preset } from "./ql";

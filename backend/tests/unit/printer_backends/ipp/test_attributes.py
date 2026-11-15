@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Attribute summary and status mapping (spec 11.1, 11.3, OC-18, OC-20).
 
 The attribute dictionaries are built by hand, never by the codec: printers

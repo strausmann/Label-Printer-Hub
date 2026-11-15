@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { I18nProvider } from "@lingui/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
@@ -57,12 +60,25 @@ describe("AboutPage", () => {
     expect(screen.getByText(/bekommst du jederzeit/)).toBeInTheDocument();
   });
 
-  it("leaves an empty dependencies section for the licence list", async () => {
+  it("renders the dependency licences in the dependencies section", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url !== "/licenses/frontend.json") return new Response("", { status: 404 });
+        return new Response(JSON.stringify([{ name: "react", version: "19.3.1", license: "MIT", licenseText: "MIT text" }]), {
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
     const { container } = await renderApp({ path: "/about" });
     await screen.findByRole("heading", { level: 1, name: "About" });
-    const section = container.querySelector('section[data-section="dependencies"]');
+    const section = container.querySelector('[data-section="dependencies"]') as HTMLElement;
     expect(section).not.toBeNull();
-    expect(section).toBeEmptyDOMElement();
+    expect(await within(section).findByRole("row", { name: /react/ })).toBeInTheDocument();
+    expect(within(section).getByRole("heading", { level: 2, name: "Third-party software" })).toBeInTheDocument();
+    expect(within(section).getByText("The licence list of the server is not included in this build.")).toBeInTheDocument();
+    // The project licence and the source link stay, whatever the lists say.
+    expect(within(screen.getByRole("main")).getByRole("link", { name: "Source code" })).toBeInTheDocument();
   });
 
   it("renders while info is loading", async () => {

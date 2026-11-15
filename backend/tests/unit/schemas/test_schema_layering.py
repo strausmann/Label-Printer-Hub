@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``app/schemas`` is below ``app/services``: no schema module imports from the services (263-33).
 
 There is no import-linter in the project, so this reads the source of every module under

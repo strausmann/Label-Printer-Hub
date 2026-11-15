@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 7a — Frontend-Basis (Tailwind v4 + Layout + Hauptseiten — Read-only UI) — Design
 
 **Date:** 2026-05-16

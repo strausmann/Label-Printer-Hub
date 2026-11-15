@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Unit tests for scope fail-closed behavior — Phase 7c Fixes B and C.
 
 Fix B: _scope_satisfies must raise ValueError for unknown scopes (not silently

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Startup robustness of the lifespan (#264 seed, #265 producer start).
 
 A failing seed must not block startup; a failing ``PrinterRuntime.start`` must still stop the

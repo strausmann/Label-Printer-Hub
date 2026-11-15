@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Phase 7b — Foundation: Init-Robustheit, Health-Split, Pangolin-Bypass
 
 **Status:** Spec — awaiting user review before writing-plans

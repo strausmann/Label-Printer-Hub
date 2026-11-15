@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLModel table for the roll (tape cassette) currently recorded for a printer (#229)."""
 
 from __future__ import annotations

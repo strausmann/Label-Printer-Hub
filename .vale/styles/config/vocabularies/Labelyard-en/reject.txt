@@ -1,0 +1,5 @@
+# Generated from docs/glossary.toml — edit that file
+printer-hub
+Print-Hub
+PrintHub
+API-Key

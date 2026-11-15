@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Test print for tape and page printers (#228).
 
 ``POST /api/v1/printers/{id}/test-print`` prints one test label (tape) or one test page (page

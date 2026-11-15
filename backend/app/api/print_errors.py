@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Synchronous print errors and their HTTP answer, shared by every route that submits a label.
 
 ``POST /api/v1/print`` and the Spoolman/Grocy webhooks call ``PrintService.submit_print_job``;

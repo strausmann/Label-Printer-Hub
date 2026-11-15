@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Exception hierarchy raised by PrinterBackend implementations.
 
 PrinterError is the root; HTTP-mapping is done in app.api.routes.print.

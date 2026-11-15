@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Hand assembly of the synthetic IPP fixtures in this directory.
 
 Run ``python assemble.py`` from this directory to rewrite the ``.bin`` files.
@@ -130,7 +133,7 @@ def print_job_request() -> bytes:
         + attr(0x47, "attributes-charset", b"utf-8")
         + attr(0x48, "attributes-natural-language", b"en")
         + attr(0x45, "printer-uri", URI)
-        + attr(0x42, "requesting-user-name", b"label-printer-hub")
+        + attr(0x42, "requesting-user-name", b"labelyard")
         + attr(0x42, "job-name", b"Calibration page")
         + attr(0x49, "document-format", b"application/pdf")
         + bytes([0x02])  # job-attributes-tag

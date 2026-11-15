@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Rejected API keys are logged with their prefix escaped (CodeQL py/log-injection #18, #19).
 
 The prefix comes from the request header. HTTP parsers refuse CR/LF in header values, but the

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Plugin-Registry fuer Drucker-Modelle (Issue #124).
 
 Die Admin-UI braucht eine Liste verfuegbarer (backend, model)-Kombinationen

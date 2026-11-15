@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Printing onto sheets: item resolution, the read-only preview and the print (spec 12.6, 15).
 
 ``resolve_items`` turns each requested item into label data, by an integration lookup or from
@@ -59,6 +62,7 @@ from app.schemas.sheet_print import (
     PreviewPage,
     PrintedPage,
     ReprintHint,
+    ReprintTotal,
     SheetItem,
     SheetPreview,
     SheetPrintRequest,
@@ -697,7 +701,7 @@ def _gate() -> asyncio.Semaphore:
 
 
 class RenderTimeoutApiError(SheetApiError):
-    """#293: a preview page took longer than ``PRINTER_HUB_RENDER_TIMEOUT_S`` to draw."""
+    """#293: a preview page took longer than ``LABELYARD_RENDER_TIMEOUT_S`` to draw."""
 
     status = 504
     error_code = "render-timeout"
@@ -869,27 +873,40 @@ def reserved_margin_id_payload(
     )
 
 
-async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -> list[ReprintHint]:
-    """Where lookup items were printed before: ``used`` cells only (pre-flight C32)."""
+async def _reprint_hints(
+    session: AsyncSession, items: Sequence[ResolvedItem]
+) -> tuple[list[ReprintHint], list[ReprintTotal]]:
+    """Where lookup items were printed before: ``used`` cells only (pre-flight C32).
+
+    Every copy of an item is an item of its own; the earlier prints are listed once, on the item
+    index of the first copy (#340), not once per copy. That also holds for a second cart line of
+    the same source and ref: it carries no hints of its own. The list holds the newest
+    ``MAX_HINTS_PER_ITEM`` prints; the totals count all of them, per item and per sheet.
+    """
     found: dict[tuple[str, str], list[ss.CellHit]] = {}
     hints: list[ReprintHint] = []
+    totals: list[ReprintTotal] = []
     for index, item in enumerate(items):
         if item.lookup is None:
             continue
         if item.meta.ref is None:
             continue
         key = (item.meta.source, item.meta.ref)
-        if key not in found:
-            found[key] = [
-                h
-                for h in await ss.find_cells(session, source=key[0], ref=key[1])
-                if h.state == "used"
-            ]
+        if key in found:
+            continue
+        found[key] = [
+            h for h in await ss.find_cells(session, source=key[0], ref=key[1]) if h.state == "used"
+        ]
         hints.extend(
             ReprintHint(item_index=index, sheet_code=h.code, cell=h.cell, printed_at=h.updated_at)
             for h in found[key][:MAX_HINTS_PER_ITEM]
         )
-    return hints
+        if found[key]:
+            sheets: dict[str, int] = {}
+            for h in found[key]:
+                sheets[h.code] = sheets.get(h.code, 0) + 1
+            totals.append(ReprintTotal(item_index=index, total=len(found[key]), sheets=sheets))
+    return hints, totals
 
 
 async def preview(
@@ -1039,7 +1056,7 @@ async def preview(
         )
 
     async with session_factory() as session:
-        hints = await _reprint_hints(session, items)
+        hints, totals = await _reprint_hints(session, items)
     return SheetPreview(
         pages=pages,
         free_after=list(result.free_after),
@@ -1048,6 +1065,7 @@ async def preview(
             for e in expected_of(result, new_views)
         ],
         reprint_hints=hints,
+        reprint_totals=totals,
         placed=placed,
         remaining=total - placed,
     )

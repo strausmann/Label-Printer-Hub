@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """IppStatusProducer: cache write, change-only events, offline handling, jobs ahead, auto-resume.
 
 The printer is ``FakeIppPrinter`` behind an ASGI transport; no network is touched.

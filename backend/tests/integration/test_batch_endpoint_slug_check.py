@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1i C-Fix: printer_slug Konsistenz-Check in der Batch-Route."""
 
 from __future__ import annotations

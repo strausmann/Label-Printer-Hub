@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import type { SheetTypeRead, VersionRead } from "./api";
 
 /**
@@ -43,7 +46,7 @@ export interface FeedbackInput {
   browser?: string;
 }
 
-export const FEEDBACK_BASE = "https://github.com/strausmann/Label-Printer-Hub/issues/new?template=sheet-type-feedback.yml";
+export const FEEDBACK_BASE = "https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml";
 
 /** Longer addresses are cut off by GitHub (or by proxies on the way). */
 export const MAX_URL = 8000;

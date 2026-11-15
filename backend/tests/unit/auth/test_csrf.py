@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """csrf.verify: double-submit token on state-changing session requests (spec 8.1)."""
 
 from __future__ import annotations

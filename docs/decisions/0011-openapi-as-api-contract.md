@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # 0011 — OpenAPI as the canonical API contract
 
 - **Status:** Accepted (amended 2026-11: the interactive UI at `/docs` is Scalar, see "Amendment")

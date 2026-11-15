@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -21,7 +24,7 @@ async function renderFlow(props: Partial<React.ComponentProps<typeof BootstrapKe
   render(
     <I18nProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <BootstrapKeyCreated onCreate={onCreate} onContinue={onContinue} />
+        <BootstrapKeyCreated onCreate={onCreate} onContinue={onContinue} variable={props.variable} />
       </QueryClientProvider>
     </I18nProvider>,
   );
@@ -49,11 +52,19 @@ describe("BootstrapKeyCreated", () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
     expect(await screen.findByLabelText("Your new admin key")).toHaveValue("lh_pat_fake-key-for-tests");
     expect(screen.getByText(/shown only once/)).toBeInTheDocument();
-    expect(screen.getByText("PRINTER_HUB_BOOTSTRAP_ADMIN_KEY")).toBeInTheDocument();
+    expect(screen.getByText("LABELYARD_BOOTSTRAP_ADMIN_KEY")).toBeInTheDocument();
     expect(screen.getByText(/Remove/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create admin key" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(onContinue).toHaveBeenCalledWith("lh_pat_fake-key-for-tests");
+  });
+
+  it("names the variable the deployment set, not a fixed one", async () => {
+    const variable = ["PRINTER", "HUB_BOOTSTRAP_ADMIN_KEY"].join("_");
+    await renderFlow({ variable });
+    await userEvent.click(screen.getByRole("button", { name: "Create admin key" }));
+    expect(await screen.findByText(variable)).toBeInTheDocument();
+    expect(screen.queryByText("LABELYARD_BOOTSTRAP_ADMIN_KEY")).toBeNull();
   });
 
   it("copies the key", async () => {

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Shared test doubles for page jobs: a recording outcome handler and payload factories."""
 
 from __future__ import annotations

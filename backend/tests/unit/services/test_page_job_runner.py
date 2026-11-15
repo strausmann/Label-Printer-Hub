@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PageJobRunner: pre-flight, upload, tracking and cancel of one page job against the fake printer.
 
 The printer is ``FakeIppPrinter`` behind an ASGI transport; no network is touched. Every wait

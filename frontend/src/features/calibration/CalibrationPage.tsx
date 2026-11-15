@@ -1,6 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
@@ -8,7 +11,7 @@ import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { useSheetTypes, type SheetTypeRead } from "../archive/api";
 import { usePrinters, usePrinterStatus, type Printer } from "../printers/api";
 import { PrinterRow } from "../sheets/print/PrinterRow";
-import { HINT, SelectField, TextInput } from "../settings/controls";
+import { HINT, ModalDialog, SelectField, TextInput } from "../settings/controls";
 import { SheetTypeCombobox } from "../sheets/SheetTypeCombobox";
 import { typeLabelWithKey } from "../sheets/typeLabel";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
@@ -180,14 +183,46 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
   // A fit result is saved as measured on the type it was fitted on; typed values on the type chosen now.
   const measuredOn: MeasuredOn | null = draft.fit ?? (type ? { type_key: type.key, version: type.current_version } : null);
 
+  // Whether a correction is stored decides which print is the obvious next step: measuring, or checking what was measured.
+  const hasStored = hasValues(stored);
+  const calibrationPrint = usePrintCalibrationPage(printer.id);
+  const checkPrint = usePrintCalibrationPage(printer.id);
+  const [asking, setAsking] = useState(false);
+  // A press while the calibration page is still being queued says so, instead of asking a question that cannot be acted on.
+  const [pressedWhileBusy, setPressedWhileBusy] = useState(false);
+  const send = (print: PrintMutation, corrected: boolean) => {
+    // A press while the same print is still being queued is ignored (the button may stay enabled, see `lockWhilePending`).
+    if (type && !print.isPending) setPressedWhileBusy(false);
+    if (type && !print.isPending) print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } });
+  };
+
   return (
     <>
-      <CurrentValues stored={stored} />
+      <CurrentValues stored={stored}>
+        {type && (
+          <PrintAction
+            printerId={printer.id}
+            type={type}
+            print={checkPrint}
+            onPress={() => send(checkPrint, true)}
+            disabled={!canPrint || !hasStored}
+            noKey={!canPrint}
+            label={t`Print the check page (with correction)`}
+            subject={t`Check page`}
+            statusLabel={t`Check page status`}
+            doneHint={t`The check page printed. Measure the crossings again: each one should be within 0.5 mm.`}
+            hint={hasStored ? t`Every crossing should be within 0.5 mm of the cut.` : t`Measure and save values first, then check.`}
+            primary={hasStored}
+          />
+        )}
+      </CurrentValues>
 
       <section aria-labelledby="cal-step1-h" className={`${PANEL} flex flex-col gap-4`}>
-        <h2 id="cal-step1-h" className={SECTION_HEADING}>{t`Step 1: Print the calibration page`}</h2>
+        <h2 id="cal-step1-h" className={SECTION_HEADING}>{hasStored ? t`Measure again` : t`Step 1: Print the calibration page`}</h2>
         <p className={`${HINT} max-w-prose`}>
-          {t`Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation.`}
+          {hasStored
+            ? t`Only needed when the check is off by more than 0.5 mm. Print it onto a real sheet of labels (the sheet is used up); it is always printed without correction.`
+            : t`Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation.`}
         </p>
         {types.isPending ? (
           <p role="status" className="text-ink-2">{t`Loading…`}</p>
@@ -199,18 +234,24 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
             <CalibrationSchematic geometry={type.geometry} typeName={typeLabelWithKey(type)} />
             <GapCrossing colGap={Math.min(2, type.geometry.cols - 1)} rowGap={Math.min(6, type.geometry.rows - 1)} />
             <PrintAction
-              key={`print/${type.key}`}
               printerId={printer.id}
-              tray={tray}
               type={type}
-              corrected={false}
+              print={calibrationPrint}
+              onPress={() => {
+                if (calibrationPrint.isPending) setPressedWhileBusy(true);
+                else if (hasStored) setAsking(true);
+                else send(calibrationPrint, false);
+              }}
+              busyNote={pressedWhileBusy && calibrationPrint.isPending ? t`A print is already on its way.` : ""}
               disabled={!canPrint}
-              label={t`Print calibration page`}
+              label={t`Print the calibration page (without correction)`}
               subject={t`Calibration page`}
               statusLabel={t`Calibration page status`}
               doneHint={t`The calibration page printed. Now measure the crossings.`}
-              primary
+              primary={!hasStored}
               noKey={!canPrint}
+              // The confirmation dialog hands focus back to this button when it closes: it must still be enabled then.
+              lockWhilePending={!hasStored}
             >
               <a
                 href={calibrationPdfUrl(printer.id, tray, { type: type.key, version: type.current_version, corrected: false })}
@@ -254,34 +295,37 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
         />
       </section>
 
-      <section aria-labelledby="cal-step3-h" className={`${PANEL} flex flex-col gap-4`}>
-        <h2 id="cal-step3-h" className={SECTION_HEADING}>{t`Step 3: Check the result`}</h2>
-        <p className={`${HINT} max-w-prose`}>
-          {t`Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust.`}
+      <ModalDialog title={t`Print without correction?`} isOpen={asking} onClose={() => setAsking(false)} alert dismissable>
+        <p className="m-0 [overflow-wrap:anywhere]">
+          {t`A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. The stored values stay in place until you save a new measurement. To check the stored correction, print the check page.`}
         </p>
-        {type && (
-          <PrintAction
-            key={`check/${type.key}`}
-            printerId={printer.id}
-            tray={tray}
-            type={type}
-            corrected
-            disabled={!canPrint || !hasValues(stored)}
-            noKey={!canPrint}
-            label={t`Check print with correction`}
-            subject={t`Check page`}
-            statusLabel={t`Check page status`}
-            doneHint={t`The check page printed. Measure the crossings again: each one should be within 0.5 mm.`}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button className={SECONDARY_BUTTON} onPress={() => setAsking(false)}>{t`Cancel`}</Button>
+          <Button
+            className={SECONDARY_BUTTON}
+            onPress={() => {
+              setAsking(false);
+              send(checkPrint, true);
+            }}
           >
-            {!hasValues(stored) && <span className={HINT}>{t`Save a correction first.`}</span>}
-          </PrintAction>
-        )}
-      </section>
+            {t`Print the check page`}
+          </Button>
+          <Button
+            className={PRIMARY_BUTTON}
+            onPress={() => {
+              setAsking(false);
+              send(calibrationPrint, false);
+            }}
+          >
+            {t`Measure again anyway`}
+          </Button>
+        </div>
+      </ModalDialog>
     </>
   );
 }
 
-function CurrentValues({ stored }: { stored: CalibrationRead | undefined }) {
+function CurrentValues({ stored, children }: { stored: CalibrationRead | undefined; children?: ReactNode }) {
   const { t, i18n } = useLingui();
   const text = useNumberText();
   const names = useValueNames();
@@ -314,15 +358,20 @@ function CurrentValues({ stored }: { stored: CalibrationRead | undefined }) {
       ) : (
         <p className={`${HINT} mt-2`}>{t`No correction stored for this tray.`}</p>
       )}
+      {/* The check is the next step once a correction is stored, so it sits with the values it checks. */}
+      {children && <div className="mt-4">{children}</div>}
     </section>
   );
 }
 
+type PrintMutation = ReturnType<typeof usePrintCalibrationPage>;
+
 interface PrintActionProps {
   printerId: string;
-  tray: string;
   type: SheetTypeRead;
-  corrected: boolean;
+  /** The mutation lives in the page, so a dialog there can start either print. */
+  print: PrintMutation;
+  onPress: () => void;
   disabled: boolean;
   label: string;
   /** What the print is ("Calibration page"), for the status line. */
@@ -331,38 +380,55 @@ interface PrintActionProps {
   statusLabel: string;
   /** Said once the page is out of the printer: the next step. */
   doneHint: string;
+  /** Said under the row, whatever the print answers. */
+  hint?: string;
+  /** Said when a press is ignored because the print is still being queued. Its region is always in the page, so it is announced. */
+  busyNote?: string;
   primary?: boolean;
   noKey: boolean;
+  /** Off where a dialog returns focus to the button after it was pressed: it must not be disabled by then. A press while pending is ignored either way. */
+  lockWhilePending?: boolean;
   /** More controls for the row next to the print button. */
   children?: ReactNode;
 }
 
-function PrintAction({ printerId, tray, type, corrected, disabled, label, subject, statusLabel, doneHint, primary, noKey, children }: PrintActionProps) {
+function PrintAction({ printerId, type, print, onPress, disabled, label, subject, statusLabel, doneHint, hint, busyNote, primary, noKey, lockWhilePending = true, children }: PrintActionProps) {
   const { t } = useLingui();
+  const hintId = useId();
+  const noteId = useId();
   const errorText = useCalibrationErrorText();
-  const print = usePrintCalibrationPage(printerId);
+  // What the last print answered belongs to the sheet type it was for: another type starts with a clean line.
+  const current = print.variables?.request.type === type.key;
   return (
     <div className="flex min-w-0 flex-col gap-3">
       {/* The row holds only controls. Whatever a print answers goes below it, so the buttons never move. */}
       <div className="flex flex-wrap items-center gap-3">
         <Button
-          isDisabled={disabled || print.isPending}
-          onPress={() => print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } })}
+          isDisabled={disabled || (lockWhilePending && print.isPending)}
+          onPress={onPress}
+          // A disabled button leaves the tab order: the hint says why, so the button points to it.
+          aria-describedby={[hint && hintId, busyNote && noteId].filter(Boolean).join(" ") || undefined}
           className={primary ? PRIMARY_BUTTON : SECONDARY_BUTTON}
         >
           {label}
         </Button>
         {children}
       </div>
+      {hint && <p id={hintId} className={`${HINT} m-0`}>{hint}</p>}
+      {busyNote !== undefined && (
+        <p id={noteId} role="status" className={`${HINT} m-0 empty:hidden`}>
+          {busyNote}
+        </p>
+      )}
       {noKey && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
-      {print.isError && (
+      {print.isError && current && (
         <p role="alert" className="m-0 text-bad">
           {errorText(print.error, t`The page could not be queued.`)}
         </p>
       )}
       <PrintResult
         key={print.data?.job_id ?? "none"}
-        jobId={print.isSuccess ? print.data.job_id : null}
+        jobId={print.isSuccess && current ? print.data.job_id : null}
         printerId={printerId}
         subject={subject}
         label={statusLabel}

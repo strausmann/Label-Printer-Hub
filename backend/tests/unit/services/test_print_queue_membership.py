@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrintQueue membership (#224): add and remove a printer while the queue runs.
 
 A removed printer's waiting jobs are not printed and stay ``queued`` in the store; a re-add

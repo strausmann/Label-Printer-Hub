@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 /**
  * Design tokens (D3) as a typed object. This is the single source for the contrast test;
  * `tokens.test.ts` asserts that `tokens.css` carries exactly these values.

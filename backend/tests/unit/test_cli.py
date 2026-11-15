@@ -1,4 +1,7 @@
-"""Recovery command: printer-hub admin create-key (spec 8.2, D7)."""
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""Recovery command: labelyard admin create-key (spec 8.2, D7)."""
 
 from __future__ import annotations
 

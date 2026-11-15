@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 # Sheet archive, numbered sheets and IPP page printers (Part A)
 
 - **Date:** 2026-11-05
@@ -266,13 +271,17 @@ The prefix is the first product code without vendor-specific suffixes (`L4731REV
 
 ### 9.5 Seed
 
+<!-- REUSE-IgnoreStart -->
+
 - **File:** `backend/app/seed/sheet_types.json`, a list of documents in the export format (one parser for both), plus a `seed_revision` integer.
 - **Content:** the researched seed, converted to our schema: only the numbers and provenance, **notes translated to English**, the derived "remaining margin" fields dropped (they are computed), `verified=false` everywhere. The research file was checked for private data: it contains vendor data, public source URLs and the public gLabels commit hash only; its notes are German and must be translated.
 - **36 types, not 42 (OC-13, see Operator question 1).** The issue says Avery 7163, 8658, L4730 and L4770 deviate enough to need a cross-check "before going in". They are held back from the seed until cross-checked. The plan review found two more that fail the geometry rules of section 7.1 as researched: Avery 7161 (`pitch_y` 46.74 < label height 46.78) and Avery Zweckform 3475 (three 70.05 mm columns at 0 mm margin are wider than A4). They are held back as well until their values are checked (maintainer ruling 2026-11-05). Users can still create all six as custom types.
-- **L4731REV:** 25.4 × 10, 7 × 27, pitch 27.9 / 10.0, margins top 13.5 / left 8.6, radius 1.5, `allow_qr=false`. **L4736REV:** 45.7 × 21.2, 4 × 12, pitch 48.2 / 21.2, margins top 21.3 / left 9.85, radius **null** (to be measured), `allow_qr=true`. Both A4, rectangle.
+- **L4731REV:** 25.4 × 10, 7 × 27, pitch 27.9 / 10.0, margins top 13.5 / left 8.6, radius 1.5, `allow_qr=true` (*changed in 1.6.0, #330: was `false` under the former 15 mm rule*). **L4736REV:** 45.7 × 21.2, 4 × 12, pitch 48.2 / 21.2, margins top 21.3 / left 9.85, radius **null** (to be measured), `allow_qr=true`. Both A4, rectangle.
 - **Loading (OC-14):** on startup a seeder inserts every seed type whose key is missing. A type already in the database is never changed automatically, with one exception: if all its versions have `origin=seed` and no sheet uses it yet, and the seed geometry changed in a newer `seed_revision`, a new version is added. Locally edited types are left alone; the change is logged.
 - **Notices:** `THIRD_PARTY_NOTICES.md` gets an entry for the gLabels-qt template database: project URL, commit `37901c1`, the copyright line ("Copyright (C) 2001-2026 Jaye Evins") and the MIT text. The two hand-added types cite Labelplanet LP189/25, MR-Label MR111 and Labelplanet LP48/45 as sources in their `source_*` fields; only facts are taken, no page content.
 - **Trademarks:** vendor names and product codes identify which sheet is meant ("for Avery Zweckform L4731REV"); the archive never implies affiliation. Same spirit as `docs/policies/trademarks.md`.
+
+<!-- REUSE-IgnoreEnd -->
 
 ## 10. Physical sheets
 
@@ -293,7 +302,7 @@ The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/
 ### 10.2 The sheet ID label and margin ID
 
 - **Scan payload (OC-15):** the public hub URL `{PRINTER_HUB_PUBLIC_URL}/sheet/{code}` (the public URL is a required setting since the foundation; if it is empty, e.g. in a test setup, the short form is encoded instead). A phone camera opens the hub directly. The scan resolver also accepts the short form `sheet:{code}` so clients and people can type it.
-- **ID label in a cell:** content `qr_two_lines` with `primary_id` = code, `title` = vendor and first product code (the type label, shortened by the renderer if the cell is too narrow), QR = payload. *Changed in 1.5.x (#266): the title ended in "· sheet ID", which never fitted a 45.7 × 21.2 mm cell.* The API marks this cell with `is_id_cell: true`; clients use that flag, not `source`. On types with `allow_qr=false` it becomes `text_two_lines` (maintainer: text only on 25.4 × 10). The cell is reserved with `source=hub`, purpose "Sheet ID".
+- **ID label in a cell:** content `qr_two_lines` with `primary_id` = code, `title` = vendor and first product code (the type label, shortened by the renderer if the cell is too narrow), QR = payload. *Changed in 1.5.x (#266): the title ended in "· sheet ID", which never fitted a 45.7 × 21.2 mm cell.* The API marks this cell with `is_id_cell: true`; clients use that flag, not `source`. On types with `allow_qr=false` it becomes `text_two_lines`. *Changed in 1.6.0 (#330): 25.4 × 10 mm types now default to `allow_qr=true`, so the ID cell there carries its QR.* The cell is reserved with `source=hub`, purpose "Sheet ID".
 - **ID in the margin (OC-16, OC-45 to OC-52):** drawn once, on the sheet's first job, in the **best of the four margin bands**. Content: the code, the vendor and first product code (as the ID cell's title), and a QR of the payload above where it fits. *Changed 2026-11-07 (operator decision): the margin ID was always drawn in the top margin, and the margin option was refused below 4 mm. It now goes into whichever band fits it largest, and below 4 mm everywhere it is simply not printed.* The rules:
   - **Bands.** The four strips between the label grid and the page edges. With `grid_right = margin_left + (cols − 1) × pitch_x + label_w` and `grid_bottom = margin_top + (rows − 1) × pitch_y + label_h`, each band has a **depth** (its size across, which is the QR edge and the text height) of:
 
@@ -474,7 +483,7 @@ A small protocol, separate from the tape `LayoutEngine`:
 
 ### 12.5 Small cells and QR
 
-- Default `allow_qr` when a type is created: true if the shorter label side is at least 15 mm, else false (OC-28). L4736REV (21.2) → true; L4731REV (10) → false. A person flips it after a test print proves a QR scans (maintainer: "until a test print proves a QR scans").
+- Default `allow_qr` when a type is created: true if the shorter label side is at least 10 mm, else false (OC-28). L4736REV (21.2) → true; L4731REV (10) → true. Evidence: a test print on Avery Zweckform L4731REV (25.4 × 10 mm) with Paperless ASN labels showed that a QR code with a number (or very short text) beside it fits and scans. The value is only the default for a new type; `allow_qr` stays the type's own switch, and existing types keep their stored value. *Changed in 1.6.0 (#330): the threshold was 15 mm, which switched QR off on L4731REV and made every QR content type on it text only.*
 - Mapping when `allow_qr=false`: `qr_only` → `text_one_line` (needs `primary_id`), `qr_one_line` → `text_one_line`, `qr_two_lines` and `qr_three_lines` → `text_two_lines`, `qr_with_listing` → `text_two_lines` (header only). A cell whose mapped type lacks required fields fails the request with `422 content_type_data_mismatch` for that item. The preview marks mapped cells ("code only on this sheet type").
 
 ### 12.6 Preview
@@ -695,7 +704,7 @@ Follows the foundation's design system and layout; the mockups show the intent. 
 
 - Table: number (mono), sheet type with label size, used n/N with bar, last used, state (`used up`, `discarded`), Discard (with the confirmation text from the mockup: "leaves the picker; its number is never given out again; labels already printed stay printed").
 - Filters: hide used up (default on), sheet type, search by code. Discarded sheets behind a filter.
-- "+ New sheet" opens **Add a sheet** (mockup 3): type select (current version), cells already used (tap on the grid), dimensions panel with the geometry diagram (read-only), ID placement radios with **margin preselected** (when a printer is chosen: the band the ID will go into, "with QR" or "text only", or, when no band is wide enough, "The ID will not be printed on this printer, add it by hand"; the option stays selectable), for "first free cell" a printer and tray choice and "Add and print ID label", small-cell hint when `allow_qr=false`. *Changed 2026-11-07 (operator decision): the margin option is the default and is no longer disabled when the margin is narrow.*
+- "+ New sheet" opens **Add a sheet** (mockup 3): type select (current version), cells already used (tap on the grid), dimensions panel with the geometry diagram (read-only), ID placement radios with **margin preselected** (when a printer is chosen: the band the ID will go into, "with QR" or "text only", or, when no band is wide enough, "The ID will not be printed on this printer, add it by hand"; the option stays selectable), for "first free cell" a printer and tray choice and "Add and print ID label", a hint when `allow_qr=false` that QR codes are switched off for this type, so the ID is printed as text, with a link to the type in the sheet archive where the switch is (*changed in 1.6.0, #330: the hint used to claim the labels were too small*). *Changed 2026-11-07 (operator decision): the margin option is the default and is no longer disabled when the margin is narrow.*
 - Sheet detail of a `margin` or `cell` sheet with `id_printed=false`: "Sheet ID not printed yet".
 - **Sheet detail** `/sheets/$code` (and the scan route `/sheet/$code`): the grid to scale with every cell's state, purpose on focus/tap, list of cells with purpose, actions: mark cells used, resolve unconfirmed cells, discard, "Print onto this sheet" (opens the cart with this sheet preselected).
 
@@ -871,7 +880,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-25 | Content box inset 1.0 mm + 0.3 × corner radius (unknown radius counts as 2.0 mm); round cells use the inscribed square. |
 | OC-26 | Cells are rendered at the printer's highest resolution, capped at 600 dpi. |
 | OC-27 | Text shrinks to 1.6 mm cap height minimum, then is shortened with an ellipsis and flagged. |
-| OC-28 | `allow_qr` defaults to true when the shorter label side is ≥ 15 mm. |
+| OC-28 | `allow_qr` defaults to true when the shorter label side is ≥ 10 mm (1.6.0, #330; was 15 mm). |
 | OC-29 | Preview answers JSON with a 150 dpi PNG of the new content per page; the UI draws the sheet. |
 | OC-30 | Calibration sign conventions as in 13.1; ranges ±10 mm, 0.95–1.05, ±2°. |
 | OC-31 | No vernier on the mini scales in Part A. |

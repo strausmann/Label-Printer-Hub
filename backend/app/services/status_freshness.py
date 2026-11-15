@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """How old a cached printer status may be before it is shown as unknown (#227).
 
 The age is measured from ``printer_status_cache.updated_at``, the time of the last probe

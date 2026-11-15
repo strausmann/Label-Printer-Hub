@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Guard: the public decision register and the D<n> labels used in code stay in sync."""
 
 from __future__ import annotations

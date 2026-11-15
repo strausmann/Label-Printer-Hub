@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """How a sheet page job ends decides its cells (spec 8, D15) and the startup orphan sweep.
 
 D15: cells are reserved at job creation (``reservation``), and this module owns the other

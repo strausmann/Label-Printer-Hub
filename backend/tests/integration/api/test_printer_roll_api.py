@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The roll record endpoints, and the colour in the status and tape reads (#229)."""
 
 from __future__ import annotations
@@ -30,7 +33,7 @@ from tests.helpers.fake_printer_runtime import FakeRuntime
 def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Helper to build StatusBlock instances in tests with minimal boilerplate.
 
 The real StatusBlock has 18 fields. Most tests only care about three:

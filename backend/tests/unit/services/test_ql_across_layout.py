@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """QL 62 mm labels are laid across the tape width with a fixed QR size per tape (#258).
 
 These tests use only ``LayoutEngine.render(62, ...)`` without any layout option: the default

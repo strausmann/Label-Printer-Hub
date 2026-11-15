@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 2: JobStore Protocol + MemoryJobStore in-memory Implementation.
 
 JobStore ist die Persistierungs-Boundary die PrintQueue nutzt um Job-State-Transitionen

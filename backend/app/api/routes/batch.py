@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """POST /api/v1/print/{printer_key}/batch — best-effort batch print."""
 
 from __future__ import annotations
@@ -71,8 +74,8 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
         "no_tape_loaded, content_type_data_mismatch) rejects the whole batch "
         "with the appropriate 4xx status code. A page printer (IPP) answers "
         "409 media_kind_mismatch. A printer holds at most "
-        "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most "
-        "`PRINTER_HUB_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. "
+        "`LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most "
+        "`LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. "
         "A run that waits for `/continue` or a reprint counts against its key only. Over a "
         "cap the batch answers 429 too-many-queued-runs."
     ),

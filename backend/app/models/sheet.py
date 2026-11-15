@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """SQLModel tables for the sheet archive (spec 7.1).
 
 All lengths are integer hundredths of a millimetre (D16). ``sheet_cells.job_id`` is a plain

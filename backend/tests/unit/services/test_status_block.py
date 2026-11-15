@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Tests for the Brother 32-byte status block parser.
 
 Reference: Brother Raster Command Reference v1.02 (PT-E550W/P750W/P710BT) and

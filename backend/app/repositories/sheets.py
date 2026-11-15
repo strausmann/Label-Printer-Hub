@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Queries for physical sheets and their non-free cells (spec 7.1).
 
 Reads that a write decides on run inside the writer's transaction, after the write lock. They

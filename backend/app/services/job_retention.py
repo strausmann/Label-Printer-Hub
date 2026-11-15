@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Keep the print queue's in-memory job table bounded.
 
 ``PrintQueue`` tracks every job it ran in ``_jobs`` (with its rendered image) so that

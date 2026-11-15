@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Calibration API for page printers (spec 15, 18).
 
 Reads and the fit need ``read`` scope, writes need ``admin``; every route also checks the
@@ -19,12 +22,13 @@ from app.api.identity_hold import ensure_not_held
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_admin, require_print, require_read
-from app.calibration import page, service
+from app.calibration import page, scale, service
 from app.calibration.fit import Reading, fit
 from app.calibration.model import (
     CalibrationIn,
     CalibrationPut,
     CalibrationRead,
+    CalibrationScale,
     deviation_to_values,
 )
 from app.db.session import get_session
@@ -65,6 +69,22 @@ class FitResponse(BaseModel):
         description="0-based indices into `readings` of those further than 0.3 mm from the fit."
     )
     out_of_range: list[str] = Field(description="Names of values outside the allowed ranges.")
+
+
+@router.get(
+    "/calibration/scale",
+    response_model=CalibrationScale,
+    summary="The mini scale drawn at every crossing of the calibration page",
+)
+async def get_calibration_scale(_auth: ReadDep) -> CalibrationScale:
+    return CalibrationScale(
+        half_mm=scale.HALF_MM,
+        step_mm=scale.STEP_MM,
+        line_mm=scale.LINE_MM,
+        tick_half_mm=scale.TICK_HALF_MM,
+        tick_whole_mm=scale.TICK_WHOLE_MM,
+        tick_centre_mm=scale.TICK_CENTRE_MM,
+    )
 
 
 @router.get(

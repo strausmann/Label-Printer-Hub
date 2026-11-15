@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # Local smoke test — build and start the hub (one container: API and web UI).
 #
 #   docker compose -f dev/docker-compose.smoke.yml up --build
@@ -16,7 +19,9 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-    container_name: label-printer-hub-smoke-backend
+    # Local name only; this stack never pushes (the published image is labelyard).
+    image: labelyard:smoke
+    container_name: labelyard-smoke-backend
     user: "1000:1000"
     networks:
       - hub-internal
@@ -25,17 +30,17 @@ services:
     environment:
       PORT: "8000"
       FORWARDED_ALLOW_IPS: "127.0.0.1"
-      PRINTER_HUB_LOG_LEVEL: "INFO"
-      PRINTER_HUB_SECRET_KEY: "${PRINTER_HUB_SECRET_KEY:?set PRINTER_HUB_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
-      PRINTER_HUB_PUBLIC_URL: "http://localhost:8000"
-      PRINTER_HUB_BOOTSTRAP_ADMIN_KEY: "smoke-bootstrap-key-fake-value-0123456789"
-      PRINTER_HUB_DATABASE_URL: "sqlite+aiosqlite:////data/printer-hub.db"
-      PRINTER_HUB_WEBHOOK_API_KEY: "smoke-test-key-must-be-at-least-32-chars-long"
-      PRINTER_HUB_SSE_QUEUE_SIZE: "32"
-      PRINTER_HUB_SSE_HEARTBEAT_S: "30"
-      PRINTER_HUB_SSE_IDLE_TIMEOUT_S: "300"
-      PRINTER_HUB_SSE_MAX_SUBSCRIBERS: "100"
-      PRINTER_HUB_SSE_PROBE_INTERVAL_S: "30"
+      LABELYARD_LOG_LEVEL: "INFO"
+      LABELYARD_SECRET_KEY: "${LABELYARD_SECRET_KEY:?set LABELYARD_SECRET_KEY - generate with: openssl rand -base64 32 | tr '+/' '-_'}"
+      LABELYARD_PUBLIC_URL: "http://localhost:8000"
+      LABELYARD_BOOTSTRAP_ADMIN_KEY: "smoke-bootstrap-key-fake-value-0123456789"
+      LABELYARD_DATABASE_URL: "sqlite+aiosqlite:////data/printer-hub.db"
+      LABELYARD_WEBHOOK_API_KEY: "smoke-test-key-must-be-at-least-32-chars-long"
+      LABELYARD_SSE_QUEUE_SIZE: "32"
+      LABELYARD_SSE_HEARTBEAT_S: "30"
+      LABELYARD_SSE_IDLE_TIMEOUT_S: "300"
+      LABELYARD_SSE_MAX_SUBSCRIBERS: "100"
+      LABELYARD_SSE_PROBE_INTERVAL_S: "30"
     volumes:
       - smoke-data:/data
     restart: "no"

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """aiosqlite's DEBUG logger prints every bound SQL parameter (263-50).
 
 Run with a root logger at DEBUG, bound values (a device serial, a key hash) would reach the log

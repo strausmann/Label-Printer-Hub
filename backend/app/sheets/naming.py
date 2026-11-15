@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Derivation of sheet type keys and code prefixes from vendor and product code."""
 
 from __future__ import annotations
@@ -10,7 +13,7 @@ KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
 PREFIX_PATTERN = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 _PACK_SUFFIX = re.compile(r"-\d+$")
 _REV_SUFFIX = re.compile(r"REV$")
-_QR_MIN_SIDE_HMM = 1500
+_QR_MIN_SIDE_HMM = 1000  # 10 mm (OC-28, issue #330)
 
 
 def derive_prefix(vendor: str, first_code: str) -> str:
@@ -36,5 +39,10 @@ def derive_key(vendor: str, first_code: str) -> str:
 
 
 def default_allow_qr(g: Geometry) -> bool:
-    """A QR code is allowed by default when the shorter label side is at least 15 mm."""
+    """A QR code is allowed by default when the shorter label side is at least 10 mm.
+
+    Evidence: on Avery Zweckform L4731REV (25.4 x 10 mm) a QR code with a short number beside
+    it prints and scans. The value is only the default for a new type; the type keeps its own
+    switch afterwards.
+    """
     return min(g.label_w, g.label_h) >= _QR_MIN_SIDE_HMM  # OC-28

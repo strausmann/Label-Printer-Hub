@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 1i Sub-Task G: QL-Series Printer-Model.
 
 Naming follows pt.py (ADR 0004 — m2-Fix: ql.py, not ql_series.py).

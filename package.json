@@ -1,12 +1,12 @@
 {
-  "name": "label-printer-hub",
+  "name": "labelyard",
   "version": "0.0.0-development",
   "private": true,
-  "description": "Self-hosted label printer hub for Brother PT-Series and QL-Series",
+  "description": "Labelyard — the self-hosted Label Printer Hub for all your labels",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/strausmann/label-printer-hub.git"
+    "url": "https://github.com/strausmann/labelyard.git"
   },
   "engines": {
     "node": ">=20"

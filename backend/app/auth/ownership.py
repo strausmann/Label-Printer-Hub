@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Who may see and act on a job or a tape run (#294).
 
 A job and a tape run belong to the API key that submitted it (``Job.api_key_id``,

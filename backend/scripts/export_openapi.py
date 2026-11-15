@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Print the backend's OpenAPI document to stdout (``pnpm gen:api`` in ``frontend/``).
 
 Needs no running server and no real settings: the app factory is imported with
@@ -18,11 +21,11 @@ import tempfile
 def _fake_settings_env() -> None:
     """Fill the required settings with non-secret placeholders (never real values)."""
     key = base64.urlsafe_b64encode(b"openapi-export-only-key-00000000"[:32]).decode()
-    os.environ.setdefault("PRINTER_HUB_SECRET_KEY", key)
-    os.environ.setdefault("PRINTER_HUB_PUBLIC_URL", "http://localhost:8000")
+    os.environ.setdefault("LABELYARD_SECRET_KEY", key)
+    os.environ.setdefault("LABELYARD_PUBLIC_URL", "http://localhost:8000")
     # The app resolves the web root at import; the directory need not hold a build.
-    os.environ.setdefault("PRINTER_HUB_WEB_DIST_DIR", tempfile.gettempdir())
-    os.environ.setdefault("PRINTER_HUB_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+    os.environ.setdefault("LABELYARD_WEB_DIST_DIR", tempfile.gettempdir())
+    os.environ.setdefault("LABELYARD_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 
 def main() -> int:

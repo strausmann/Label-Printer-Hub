@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Snipe-IT REST API client — asset lookup by asset_tag.
 
 The client emits domain-level `LabelData` records so downstream consumers

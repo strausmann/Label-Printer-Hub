@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Repository for ApiKey aggregate — Phase 7c app-side authentication."""
 
 from __future__ import annotations

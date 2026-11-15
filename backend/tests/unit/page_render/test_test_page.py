@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """The test page: a frame on the printable area, who/where/when, a QR to the printer (#228)."""
 
 from __future__ import annotations

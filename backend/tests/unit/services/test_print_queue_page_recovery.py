@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Restart recovery of page jobs (plan Task 8): tracking resumes, an unknown outcome is not
 guessed, queued jobs print after a restart. Two queues share one store and one fake printer;
 the fake keeps its job ids across the "restart", as a printer does when the hub restarts.

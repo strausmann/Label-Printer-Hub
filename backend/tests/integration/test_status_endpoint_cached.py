@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """Phase 7b Cluster 1f — /api/v1/printers/{id}/status reads cache, never blocks."""
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ def _trust_legacy_pangolin_user(monkeypatch: pytest.MonkeyPatch):
     counts only with the D10 opt-in (default off)."""
     from app.config import get_settings
 
-    monkeypatch.setenv("PRINTER_HUB_TRUST_LEGACY_PANGOLIN_USER", "true")
+    monkeypatch.setenv("LABELYARD_TRUST_LEGACY_PANGOLIN_USER", "true")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

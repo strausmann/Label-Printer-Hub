@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useHubEvents } from "../api/events";
@@ -26,7 +29,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         {t`Skip to content`}
       </a>
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* The sidebar is a fixed box (#341): the column beside it leaves its width free. */}
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
         <TopBar />
         <main id="content" tabIndex={-1} className="flex-1 p-4 pb-32 outline-none lg:p-8 lg:pb-8">
           <UpdatePrompt />

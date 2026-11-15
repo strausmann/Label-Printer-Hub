@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """``printer_url``: one slash, no credentials, IPv6 hosts bracketed exactly once (#228)."""
 
 from __future__ import annotations

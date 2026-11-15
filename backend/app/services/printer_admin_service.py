@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 """PrinterAdminService — CRUD + Audit fuer printers-Tabelle (Issue #124, Tasks 2.4 + 2.5).
 
 Verantwortlichkeiten:
