@@ -881,10 +881,6 @@ msgstr "Check page"
 msgid "Check page status"
 msgstr "Check page status"
 
-#: src/features/calibration/CalibrationPage.tsx
-#~ msgid "Check print with correction"
-#~ msgstr "Check print with correction"
-
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "check this reading"
 msgstr "check this reading"
@@ -2656,10 +2652,6 @@ msgid "Print {0}"
 msgstr "Print {0}"
 
 #: src/features/calibration/CalibrationPage.tsx
-#~ msgid "Print calibration page"
-#~ msgstr "Print calibration page"
-
-#: src/features/calibration/CalibrationPage.tsx
 msgid "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
 msgstr "Print it onto a real sheet of labels (the sheet is used up). The page is always printed without correction, so what you measure is the printer's own deviation."
 
@@ -2702,10 +2694,6 @@ msgstr "Print the check page"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print the check page (with correction)"
 msgstr "Print the check page (with correction)"
-
-#: src/features/calibration/CalibrationPage.tsx
-#~ msgid "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
-#~ msgstr "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Print with the new plan"
@@ -3132,10 +3120,6 @@ msgstr "Same device"
 #: src/features/settings/SectionForm.tsx
 msgid "Save"
 msgstr "Save"
-
-#: src/features/calibration/CalibrationPage.tsx
-#~ msgid "Save a correction first."
-#~ msgstr "Save a correction first."
 
 #: src/features/archive/TypeForm.tsx
 msgid "Save details"
@@ -3602,10 +3586,6 @@ msgstr "Step 1: Print the calibration page"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Step 2: Enter the deviation"
 msgstr "Step 2: Enter the deviation"
-
-#: src/features/calibration/CalibrationPage.tsx
-#~ msgid "Step 3: Check the result"
-#~ msgstr "Step 3: Check the result"
 
 #: src/features/jobs/HeldRuns.tsx
 #: src/features/printers/model.ts
