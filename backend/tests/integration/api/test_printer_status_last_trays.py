@@ -275,3 +275,49 @@ async def test_a_deferred_grocy_job_without_kind_does_not_count(api) -> None:
         payload={"deferred": True, "deferred_kind": "sheet_page", "tray": "manual"},
     )  # fmt: skip
     assert (await _status(client, pid))["last_sheet_tray"] is None
+
+
+async def test_tied_calibration_timestamps_name_one_job(api) -> None:
+    """Two calibration jobs created at the same instant: tray and time come from one row."""
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache(factory, pid)
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    at = await _job(factory, pid, "calibration_page", "manual")
+    await _job(factory, pid, "calibration_page", "auto")
+    first = (await _status(client, pid))["last_calibration_print"]
+    assert first["tray"] in {"manual", "auto"}
+    assert datetime.fromisoformat(first["at"].replace("Z", "+00:00")) == at
+    assert (await _status(client, pid))["last_calibration_print"] == first
+
+
+async def test_a_key_restricted_to_another_printer_gets_403_and_no_tray(
+    api_client_with_seed,
+) -> None:
+    import app.db.engine as engine_module
+    import bcrypt
+    from app.models.api_key import ApiKey
+
+    factory = engine_module.async_session
+    pid = await _printer(factory)
+    await _job(factory, pid, "sheet_page", "secret-tray")
+    await _job(factory, pid, "calibration_page", "secret-tray")
+    plaintext = f"lh_pat_acl_t_{uuid4().hex[:16]}"
+    async with factory() as s:
+        s.add(
+            ApiKey(
+                name="acl-tray-key",
+                key_hash=bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode(),
+                key_prefix=plaintext[:16],
+                scopes=["read"],
+                allowed_printer_ids=[str(uuid4())],  # printer A, not the one asked for
+                enabled=True,
+                rate_limit_per_minute=60,
+            )
+        )
+        await s.commit()
+    resp = await api_client_with_seed.get(
+        f"/api/v1/printers/{pid}/status", headers={"X-Label-Hub-Key": plaintext}
+    )
+    assert resp.status_code == 403, resp.text
+    assert "secret-tray" not in resp.text

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
@@ -499,18 +500,19 @@ async def last_page_trays(session: AsyncSession, printer_id: UUID) -> LastPageTr
             .scalar_subquery()
         )
 
-    tray: Any = literal_column(json_at("$.tray"))
+    tray = json_at("$.tray")
+    # Tray and time of the calibration page come out of ONE subquery, so equal ``created_at``
+    # values cannot name two different jobs.
+    calibration = newest(
+        "calibration_page", literal_column(f"json_object('tray', {tray}, 'at', created_at)")
+    )
     row = (
-        await session.execute(
-            select(
-                newest("sheet_page", tray),
-                newest("calibration_page", tray),
-                newest("calibration_page", col(Job.created_at)),
-            )
-        )
+        await session.execute(select(newest("sheet_page", literal_column(tray)), calibration))
     ).one()
+    cal: dict[str, Any] = json.loads(row[1]) if isinstance(row[1], str) else {}
+    at = cal.get("at")
     return LastPageTrays(
         sheet_tray=row[0] if isinstance(row[0], str) else None,
-        calibration_tray=row[1] if isinstance(row[1], str) else None,
-        calibration_at=row[2],
+        calibration_tray=cal["tray"] if isinstance(cal.get("tray"), str) else None,
+        calibration_at=datetime.fromisoformat(at) if isinstance(at, str) else None,
     )

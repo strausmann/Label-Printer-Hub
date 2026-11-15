@@ -94,7 +94,7 @@ def test_the_status_query_uses_the_index(tmp_path: Path) -> None:
         eng.dispose()
 
     searches = [row for row in plan if f"USING INDEX {_INDEX}" in row]
-    assert len(searches) >= 3, plan  # sheet, calibration tray, calibration time
+    assert len(searches) >= 2, plan  # sheet, calibration
     for row in searches:
         assert "printer_id=? AND" in row and "=?" in row.split("AND", 1)[1], row
     assert not any("TEMP B-TREE" in row for row in plan), plan
