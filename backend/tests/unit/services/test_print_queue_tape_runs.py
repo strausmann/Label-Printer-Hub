@@ -409,6 +409,106 @@ async def test_a_discard_while_the_rows_are_written_cancels_the_waiting_part_onl
         await queue.stop(timeout_s=2.0)
 
 
+async def test_cancelling_the_tail_during_the_row_writes_never_gives_a_409_window() -> None:
+    """#347 re-review R2: group 4 is printed, its rows are being written, labels 41-50 are still
+    queued (so the group is not the last one when it is decided). Cancelling them in that window
+    leaves nothing of the part to print: the run must wait for the Continue at once, not only
+    when the worker gets to its fallback after the writes."""
+    printer = TapeRoll()
+    store = _SlowDoneStore()
+    queue, run_id, ids = await _start(printer, store, 51)
+    store.slow = ids[30]  # the first row of group 4
+    try:
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        assert not _waits(queue, run_id)  # labels 41-50 are queued: the part is not over
+        for jid in ids[40:50]:
+            assert await queue.cancel(str(jid))
+        assert _waits(queue, run_id)  # the rows are still not written
+        await queue.confirm_run(run_id)  # no 409
+        printer.gate = asyncio.Event()  # part 2 stops at the printer
+        store.release.set()
+        async with asyncio.timeout(3.0):  # the worker has finished part 1 (rows written)
+            while (row := await store.get(ids[39])) is None or row.state != DbJobState.DONE.value:
+                await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)  # lets the worker run its end-of-sub-job step
+        # part 2 is under way: the worker must not advance the run a second time
+        info = queue.run_info(run_id)
+        assert info is not None and info.state == "printing"
+        printer.gate.set()
+        await _until(lambda: queue.run_info(run_id) is None)
+        await _drained(queue, printer)
+        # part 1 printed 30 labels before the write (3 groups) + group 4; part 2 once; no repeat
+        assert printer.calls == [10] * 4 + [1] + [1]
+        assert (await queue.get(ids[50])).state == JobState.COMPLETED
+    finally:
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+class _FailingDoneStore(MemoryJobStore):
+    """A store whose ``mark_done`` of one label raises *exc* (a failing or cut-short write)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_on: UUID | None = None
+        self.exc: BaseException = RuntimeError("store down")
+
+    async def mark_done(self, job_id: UUID) -> None:
+        if job_id == self.fail_on:
+            raise self.exc
+        await super().mark_done(job_id)
+
+
+@pytest.mark.parametrize("exc", [RuntimeError("store down"), asyncio.CancelledError()])
+async def test_labels_of_a_limit_discarded_run_are_not_left_queued_when_the_done_write_fails(
+    exc: BaseException,
+) -> None:
+    """#347 re-review R1: a third waiting run discards the oldest one in memory. When the rows of
+    the printed group then fail (or the worker is cancelled), the discarded run's rows must still
+    be written ``cancelled``, not left ``queued`` while memory says they are gone."""
+    printer = TapeRoll()
+    store = _FailingDoneStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    try:
+        runs: list[tuple[UUID, list[UUID]]] = []
+        for _ in range(2):
+            ids = [uuid4() for _ in range(51)]
+            for jid in ids:
+                await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={}))
+            run_id = await queue.enqueue_batch(
+                printer_id=printer.id,
+                images=[_img() for _ in ids],
+                job_ids=ids,
+                tape_mm=12,
+                options={},
+            )
+            runs.append((run_id, ids))
+            await _until(partial(_waits, queue, run_id))
+        third_ids = [uuid4() for _ in range(51)]
+        for jid in third_ids:
+            await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={}))
+        store.fail_on = third_ids[MAX_LABELS_PER_TAPE_JOB - 1]
+        store.exc = exc
+        await queue.enqueue_batch(
+            printer_id=printer.id,
+            images=[_img() for _ in third_ids],
+            job_ids=third_ids,
+            tape_mm=12,
+            options={},
+        )
+        discarded = runs[0][1][50]
+        await _until(lambda: queue._jobs[str(discarded)].state == JobState.CANCELLED)
+        row = None
+        async with asyncio.timeout(3.0):
+            while row is None or row.state == DbJobState.QUEUED.value:
+                await asyncio.sleep(0.01)
+                row = await store.get(discarded)
+        assert row.state == DbJobState.CANCELLED.value
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
 def _waits(queue: PrintQueue, run_id: UUID) -> bool:
     info = queue.run_info(run_id)
     return info is not None and info.state == "awaiting_confirmation"

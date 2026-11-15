@@ -2131,6 +2131,14 @@ class PrintQueue:
             queue_depth=self._queue_depth(job.printer_id),
         )
         self._settle_waiting_run(job.id)
+        discarded = self._settle_printing_run(job.id)
+        if discarded:
+            try:
+                await self._persist_cancelled(discarded)
+            except Exception:
+                logger.warning(
+                    "Could not store the cancelled labels of discarded runs", exc_info=True
+                )
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
         try:
@@ -2785,71 +2793,85 @@ class PrintQueue:
         # label of the part done may continue at once, and the hub must already take it.
         moved_on = False
         to_cancel: list[Job] = []
+        part = run.current if run is not None else None
 
         def move_on() -> None:
             # The run waits for the next part (bounded at once: the held limit is exact) or ends.
+            # A cancel that emptied the part during the row writes has done it already
+            # (``_settle_printing_run``): the run is then past this part, not to be advanced again.
             nonlocal moved_on
             moved_on = True
+            if run is not None and run.current != part:
+                return
             if self._advance_run_now(run) and run is not None:
                 to_cancel.extend(self._bound_held_runs_now(run))
 
-        for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
-            if start > 0 and (
-                self._stopping
-                or self._removing(printer_id)
-                or not await self._wait_until_active(printer_id)
-            ):
-                return  # the labels not taken stay ``queued``
-            group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
-            active, payloads = await self._take_group(printer_id, batch, group)
-            if not active:
-                continue
-            raw_images = await asyncio.gather(
-                *[asyncio.to_thread(Image.open, BytesIO(p)) for p in payloads]
-            )
-            images: list[Image.Image] = list(raw_images)
-            later = [str(j) for j in batch.job_ids[group.stop :]]
-            try:
-                await printer.print_images(images, tape_mm=batch.tape_mm, **batch.options)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                # A refusal of the backend's own preflight sent nothing: the group did not
-                # print. Anything else may have happened while sending: unknown.
-                nothing_sent = isinstance(exc, PrinterError) and exc.nothing_sent
-                await self._stop_run(
-                    printer_id, batch, run, active, later, exc, nothing_sent=nothing_sent
+        try:
+            for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
+                if start > 0 and (
+                    self._stopping
+                    or self._removing(printer_id)
+                    or not await self._wait_until_active(printer_id)
+                ):
+                    return  # the labels not taken stay ``queued``
+                group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
+                active, payloads = await self._take_group(printer_id, batch, group)
+                if not active:
+                    continue
+                raw_images = await asyncio.gather(
+                    *[asyncio.to_thread(Image.open, BytesIO(p)) for p in payloads]
                 )
-                return
-            check = getattr(printer, "check_status", None)
-            if check is not None:
+                images: list[Image.Image] = list(raw_images)
+                later = [str(j) for j in batch.job_ids[group.stop :]]
                 try:
-                    await check()
+                    await printer.print_images(images, tape_mm=batch.tape_mm, **batch.options)
                 except asyncio.CancelledError:
                     raise
-                except Exception as exc:  # the group was sent: its outcome is unknown
+                except Exception as exc:
+                    # A refusal of the backend's own preflight sent nothing: the group did not
+                    # print. Anything else may have happened while sending: unknown.
+                    nothing_sent = isinstance(exc, PrinterError) and exc.nothing_sent
                     await self._stop_run(
-                        printer_id, batch, run, active, later, exc, nothing_sent=False
+                        printer_id, batch, run, active, later, exc, nothing_sent=nothing_sent
                     )
                     return
-            # The last group that prints is the one after which nothing of the sub-job is queued
-            # (labels after it may have been cancelled): not the last by position (#347). No
-            # await from this check until ``_complete_group`` calls ``move_on``.
-            last = not any(
-                (job := self._jobs.get(str(j))) is not None and job.state == JobState.QUEUED
-                for j in batch.job_ids[group.stop :]
-            )
-            await self._complete_group(
-                printer_id, batch, active, before_write=move_on if last else None
-            )
-            # Printed: the pictures are not needed any more (I3). A retry re-renders from the row.
-            self._drop_pictures(run, [job.id for job in active])
-            if last:
-                break  # nothing of this sub-job is left to take
-        logger.info("Batch %s: sub-job done on %s", batch.batch_id, printer_id)
-        if not moved_on:  # the sub-job had nothing left to print (cancelled labels)
-            move_on()
-        await self._persist_cancelled(to_cancel)
+                check = getattr(printer, "check_status", None)
+                if check is not None:
+                    try:
+                        await check()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # the group was sent: its outcome is unknown
+                        await self._stop_run(
+                            printer_id, batch, run, active, later, exc, nothing_sent=False
+                        )
+                        return
+                # The last group that prints is the one after which nothing of the sub-job is queued
+                # (labels after it may have been cancelled): not the last by position (#347). No
+                # await from this check until ``_complete_group`` calls ``move_on``.
+                last = not any(
+                    (job := self._jobs.get(str(j))) is not None and job.state == JobState.QUEUED
+                    for j in batch.job_ids[group.stop :]
+                )
+                await self._complete_group(
+                    printer_id, batch, active, before_write=move_on if last else None
+                )
+                # Printed: the pictures are not needed any more (I3). A retry re-renders from the
+                # row.
+                self._drop_pictures(run, [job.id for job in active])
+                if last:
+                    break  # nothing of this sub-job is left to take
+            logger.info("Batch %s: sub-job done on %s", batch.batch_id, printer_id)
+            if not moved_on:  # the sub-job had nothing left to print (cancelled labels)
+                move_on()
+            await self._persist_cancelled(to_cancel)
+        except BaseException:
+            # The labels of limit-discarded runs are gone in memory already; their rows are
+            # written even when the group's rows failed or the worker is cancelled (R1).
+            if to_cancel:
+                with contextlib.suppress(Exception):
+                    await self._persist_through_cancel(lambda: self._persist_cancelled(to_cancel))
+            raise
 
     async def _wait_until_active(self, printer_id: UUID) -> bool:
         """Wait while the printer is paused; ``False`` when the worker must leave instead."""
@@ -3098,6 +3120,28 @@ class PrintQueue:
             ):
                 return nxt
         return None
+
+    def _settle_printing_run(self, job_id: str) -> list[Job]:
+        """A label of a printing part was cancelled (#347 re-review R2): when nothing of that part
+        is queued or at the printer any more, the part is over in memory (its last group is only
+        being written). The run then waits for the next part now, not after the writes.
+        No await. Returns the labels of runs the held limit discarded; the caller stores them."""
+        for run in list(self._runs.values()):
+            if run.state != "printing" or job_id not in run.job_ids:
+                continue
+            s, e = run.sub_jobs[run.current]
+            if job_id not in run.job_ids[s:e]:
+                return []
+            if any(
+                (job := self._jobs.get(j)) is not None
+                and job.state in (JobState.QUEUED, JobState.PRINTING)
+                for j in run.job_ids[s:e]
+            ):
+                return []
+            if self._advance_run_now(run):
+                return self._bound_held_runs_now(run)
+            return []
+        return []
 
     def _settle_waiting_run(self, job_id: str) -> None:
         """A label of a waiting part was cancelled (#347 review M3): when nothing of that part is
