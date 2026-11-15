@@ -27,6 +27,14 @@ name: Release
 # net behind the release-impact PR check, e.g. against a direct push to main. See CONTRIBUTING.md, "Milestones,
 # branches and releases".
 #
+# Draft first, publish last: the repository has GitHub immutable releases
+# enabled, which lock a release's assets and tag once it is published.
+# semantic-release therefore pushes the tag and creates the GitHub Release as a
+# DRAFT (`draftRelease` in .releaserc.json). The images and the SBOM are built
+# from the tag, the SBOM is attached to the draft, and only then does
+# publish-release publish it. A failed image or SBOM job leaves a draft, never a
+# published release with missing assets. See CONTRIBUTING.md, "Releases".
+#
 # When a scheduled run skips publishing:
 #   semantic-release evaluates the ENTIRE history since the last tag, not
 #   just commits made since the previous run. A scheduled release only
@@ -62,7 +70,7 @@ jobs:
     # Releases must only ever come from main — refuse to run on anything else.
     if: github.ref == 'refs/heads/main'
     permissions:
-      contents: write       # create tags + GitHub Releases
+      contents: write       # create tags + the draft GitHub Release
       issues: write         # post comments on closed issues; release guard opens a blocking issue
       pull-requests: write  # comment on PRs
     outputs:
@@ -125,10 +133,11 @@ jobs:
         run: |
           if [ -n "${SSH_AGENT_PID:-}" ]; then ssh-agent -k > /dev/null || true; fi
 
-  # `@semantic-release/github` publishes the release with GITHUB_TOKEN, and
-  # GitHub does not start workflows for events created by that token, so
-  # docker-publish.yml's old `release: published` trigger never fired (#183).
-  # Build the release images here instead. Never in a dry run. The deploy key
+  # `@semantic-release/github` creates the draft release with GITHUB_TOKEN, and
+  # GitHub does not start workflows for events created by that token, so a
+  # `release: published` trigger in docker-publish.yml would never fire (#183).
+  # Build the release images here instead. semantic-release has already pushed
+  # the tag, so the image jobs check out refs/tags/v<version>. Never in a dry run. The deploy key
   # is not passed on: secrets are handed over by name, not inherited.
   images:
     name: Release images
@@ -147,12 +156,13 @@ jobs:
       packages: write
       id-token: write
 
-  # semantic-release has already created the tag and the GitHub Release when
-  # the image jobs run, so a failed image build leaves a release page without
-  # an image. The images job failing already fails the run; this job makes the
-  # gap readable: which version is missing and how to rebuild it. The rebuild
-  # reruns the failed jobs of this run, which keeps refs/heads/main as the ref,
-  # so the images are signed and release-sbom runs again. The version and the
+  # semantic-release has already pushed the tag and created the draft release
+  # when the image jobs run, so a failed image build leaves a tag and a draft
+  # without images; publish-release is skipped, nothing is published. The
+  # images job failing already fails the run; this job makes the gap readable:
+  # which version is missing and how to finish it. The rebuild reruns the failed
+  # jobs of this run, which keeps refs/heads/main as the ref, so the images are
+  # signed and release-sbom and publish-release run again. The version and the
   # run id come in through env and are validated before they are printed. No
   # secret is touched.
   images-missing:
@@ -178,11 +188,13 @@ jobs:
           {
             echo "## Release images missing: ${VERSION}"
             echo
-            echo "The tag and the GitHub Release \`v${VERSION}\` exist, but the image jobs ended with \`${IMAGES_RESULT}\`."
-            echo "GHCR and Docker Hub may still carry the previous version."
+            echo "The tag \`v${VERSION}\` and a draft GitHub Release exist, but the image jobs ended with \`${IMAGES_RESULT}\`."
+            echo "The release was not published. GHCR and Docker Hub may still carry the previous version."
+            echo "A later release run does not publish this draft; it stays a draft until it is finished."
             echo
-            echo "Rerun the failed jobs of this run. That reruns the images and the release SBOM"
-            echo "on refs/heads/main, so the images are signed and the SBOM asset is attached:"
+            echo "Rerun the failed jobs of this run. That reruns the images, the release SBOM and the"
+            echo "publish job on refs/heads/main, so the images are signed, the SBOM is attached to the"
+            echo "draft and the release is published:"
             echo
             echo '```sh'
             if [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
@@ -194,7 +206,8 @@ jobs:
             echo
             echo "If the run can no longer be rerun, build the tag's commit from main (main is a"
             echo "signing ref; a dispatch on the tag ref would publish unsigned images) and attach"
-            echo "the SBOM from the new run's \`release-sbom\` artifact by hand. Caution: this dispatch"
+            echo "the SBOM from the new run's \`release-sbom\` artifact to the draft by hand, then publish"
+            echo "the draft (publishing locks it: attach the SBOM first). Caution: this dispatch"
             echo "moves \`latest\`, \`X.Y\` and \`X\` to ${VERSION}; use it only if ${VERSION} is the newest"
             echo "stable release, otherwise re-point those tags afterwards:"
             echo
@@ -202,13 +215,16 @@ jobs:
             echo "gh workflow run docker-publish.yml --ref main -f tag=${VERSION}"
             echo "gh run download <new-run-id> -n release-sbom"
             echo "gh release upload v${VERSION} labelyard-${VERSION}.cdx.json"
+            echo "gh release edit v${VERSION} --draft=false --latest"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error::Release images for ${VERSION} were not published; see the step summary for the rebuild command"
 
-  # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced.
-  # Only GITHUB_TOKEN, no checkout, no other secret. The version reaches the
-  # shell through env and is validated first.
+  # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced to
+  # the DRAFT release (`gh release` finds a draft by its pending tag). A draft is
+  # not immutable yet, so `--clobber` makes a rerun safe. Only GITHUB_TOKEN, no
+  # checkout, no other secret. The version reaches the shell through env and is
+  # validated first.
   release-sbom:
     name: Release SBOM
     needs: [release, images]
@@ -239,6 +255,58 @@ jobs:
             exit 1
           fi
           VERSION="${VERSION#v}"
+          if [ "$(gh release view "v${VERSION}" --json isDraft --jq .isDraft)" != "true" ]; then
+            echo "::error::Release v${VERSION} is not a draft; a published release is immutable and takes no asset"
+            exit 1
+          fi
           gh release upload "v${VERSION}" ./*.cdx.json --clobber
           count=$(gh release view "v${VERSION}" --json assets --jq '[.assets[].name | select(endswith(".cdx.json"))] | length')
           test "$count" -eq 1
+
+  # Publishes the draft once the images and the SBOM asset are in place. Runs
+  # only when every job before it succeeded (no always()), so a failed image or
+  # SBOM job leaves the draft unpublished. Publishing locks the tag and the
+  # assets (immutable releases), so the asset is checked first. `--latest`
+  # mirrors what @semantic-release/github sends for a release from main: the
+  # release guard only admits the next version, so it is the newest one.
+  publish-release:
+    name: Publish release
+    needs: [release, images, release-sbom]
+    if: needs.release.outputs.new-release-published == 'true' && !inputs.dry_run
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft release
+        env:
+          VERSION: ${{ needs.release.outputs.new-release-version }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::Invalid release version: not a semantic version"
+            exit 1
+          fi
+          VERSION="${VERSION#v}"
+          export ASSET="labelyard-${VERSION}.cdx.json"
+          # "<isDraft> <number of assets named $ASSET>"; gh's --jq reads env.
+          state=$(gh release view "v${VERSION}" --json isDraft,assets \
+            --jq '"\(.isDraft) \([.assets[].name | select(. == env.ASSET)] | length)"')
+          echo "draft and SBOM count: ${state}"
+          case "$state" in
+            "true 1") ;;
+            "false 1")
+              echo "::notice::Release v${VERSION} is already published with its SBOM"
+              exit 0
+              ;;
+            *)
+              echo "::error::Release v${VERSION} is not a draft with exactly one ${ASSET}; not publishing. Rerun the failed jobs of this run."
+              exit 1
+              ;;
+          esac
+          gh release edit "v${VERSION}" --draft=false --latest
+          published=$(gh api "repos/${GH_REPO}/releases/tags/v${VERSION}" --jq '"\(.draft) \(.immutable)"')
+          echo "published release: draft and immutable = ${published}"
+          test "${published%% *}" = "false"
