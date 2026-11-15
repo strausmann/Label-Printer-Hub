@@ -278,7 +278,7 @@ def test_images_job_skips_dry_run() -> None:
 
 def test_semantic_release_pushes_over_ssh() -> None:
     releaserc = json.loads((REPO_ROOT / ".releaserc.json").read_text(encoding="utf-8"))
-    assert releaserc["repositoryUrl"] == "git@github.com:strausmann/Label-Printer-Hub.git"
+    assert releaserc["repositoryUrl"] == "git@github.com:strausmann/labelyard.git"
 
     steps = _load("release.yml")["jobs"]["release"]["steps"]
     load = next(s for s in steps if "Load deploy key" in str(s.get("name", "")))
