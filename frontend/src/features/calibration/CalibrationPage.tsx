@@ -3,7 +3,7 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
@@ -189,7 +189,8 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
   const checkPrint = usePrintCalibrationPage(printer.id);
   const [asking, setAsking] = useState(false);
   const send = (print: PrintMutation, corrected: boolean) => {
-    if (type) print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } });
+    // A press while the same print is still being queued is ignored (the button may stay enabled, see `lockWhilePending`).
+    if (type && !print.isPending) print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } });
   };
 
   return (
@@ -241,6 +242,8 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
               doneHint={t`The calibration page printed. Now measure the crossings.`}
               primary={!hasStored}
               noKey={!canPrint}
+              // The confirmation dialog hands focus back to this button when it closes: it must still be enabled then.
+              lockWhilePending={!hasStored}
             >
               <a
                 href={calibrationPdfUrl(printer.id, tray, { type: type.key, version: type.current_version, corrected: false })}
@@ -286,7 +289,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
 
       <ModalDialog title={t`Print without correction?`} isOpen={asking} onClose={() => setAsking(false)} alert dismissable>
         <p className="m-0 [overflow-wrap:anywhere]">
-          {t`A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. To check the stored correction, print the check page.`}
+          {t`A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. The stored values stay in place until you save a new measurement. To check the stored correction, print the check page.`}
         </p>
         <div className="flex flex-wrap justify-end gap-2">
           <Button className={SECONDARY_BUTTON} onPress={() => setAsking(false)}>{t`Cancel`}</Button>
@@ -373,12 +376,15 @@ interface PrintActionProps {
   hint?: string;
   primary?: boolean;
   noKey: boolean;
+  /** Off where a dialog returns focus to the button after it was pressed: it must not be disabled by then. A press while pending is ignored either way. */
+  lockWhilePending?: boolean;
   /** More controls for the row next to the print button. */
   children?: ReactNode;
 }
 
-function PrintAction({ printerId, type, print, onPress, disabled, label, subject, statusLabel, doneHint, hint, primary, noKey, children }: PrintActionProps) {
+function PrintAction({ printerId, type, print, onPress, disabled, label, subject, statusLabel, doneHint, hint, primary, noKey, lockWhilePending = true, children }: PrintActionProps) {
   const { t } = useLingui();
+  const hintId = useId();
   const errorText = useCalibrationErrorText();
   // What the last print answered belongs to the sheet type it was for: another type starts with a clean line.
   const current = print.variables?.request.type === type.key;
@@ -386,12 +392,18 @@ function PrintAction({ printerId, type, print, onPress, disabled, label, subject
     <div className="flex min-w-0 flex-col gap-3">
       {/* The row holds only controls. Whatever a print answers goes below it, so the buttons never move. */}
       <div className="flex flex-wrap items-center gap-3">
-        <Button isDisabled={disabled || print.isPending} onPress={onPress} className={primary ? PRIMARY_BUTTON : SECONDARY_BUTTON}>
+        <Button
+          isDisabled={disabled || (lockWhilePending && print.isPending)}
+          onPress={onPress}
+          // A disabled button leaves the tab order: the hint says why, so the button points to it.
+          aria-describedby={hint ? hintId : undefined}
+          className={primary ? PRIMARY_BUTTON : SECONDARY_BUTTON}
+        >
           {label}
         </Button>
         {children}
       </div>
-      {hint && <p className={`${HINT} m-0`}>{hint}</p>}
+      {hint && <p id={hintId} className={`${HINT} m-0`}>{hint}</p>}
       {noKey && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
       {print.isError && current && (
         <p role="alert" className="m-0 text-bad">

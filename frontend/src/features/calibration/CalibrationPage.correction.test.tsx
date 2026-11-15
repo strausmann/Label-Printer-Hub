@@ -29,6 +29,8 @@ describe("the buttons depend on whether a correction is stored (#349)", () => {
     expect(check).toBeDisabled();
     expect(check.className).not.toContain("bg-accent");
     expect(screen.getByText("Measure and save values first, then check.")).toBeVisible();
+    // A disabled button is not reachable by keyboard: the hint is its description for a screen reader.
+    expect(check).toHaveAccessibleDescription("Measure and save values first, then check.");
     expect(screen.getByRole("heading", { level: 2, name: "Step 1: Print the calibration page" })).toBeVisible();
   });
 
@@ -38,6 +40,7 @@ describe("the buttons depend on whether a correction is stored (#349)", () => {
     const check = await within(current).findByRole("button", { name: CHECK });
     expect(check).toBeEnabled();
     expect(check.className).toContain("bg-accent");
+    expect(check).toHaveAccessibleDescription("Every crossing should be within 0.5 mm of the cut.");
     expect(within(current).getByText("Every crossing should be within 0.5 mm of the cut.")).toBeVisible();
     // Step 1 became "Measure again", and its button is the secondary one.
     const measure = await screen.findByRole("region", { name: "Measure again" });
@@ -79,6 +82,37 @@ describe("the buttons depend on whether a correction is stored (#349)", () => {
     expect(body(only(calls, "POST", "/page")[0])).toEqual({ type: "L4736REV", version: 1, corrected: false });
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(await within(await screen.findByRole("status", { name: "Calibration page status" })).findByText("Queued")).toBeVisible();
+  });
+
+  it("the dialog says the stored values stay in place until a new measurement is saved", async () => {
+    await open(post());
+    await userEvent.click(await button(CALIBRATION));
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent("The stored values stay in place until you save a new measurement.");
+  });
+
+  it("after measuring again anyway focus returns to the calibration button, which is still enabled while the page is queued", async () => {
+    // The answer is held back, so the print is still pending when the dialog closes and hands focus back.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    const { calls } = await open({
+      [`POST ${BASE}/main/page`]: async () => {
+        await held;
+        return respond(202, { job_id: `eeeeeeee-0000-4000-8000-${String(++jobs).padStart(12, "0")}` });
+      },
+    });
+    await userEvent.click(await button(CALIBRATION));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Measure again anyway" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    const again = screen.getByRole("button", { name: CALIBRATION });
+    expect(again).toBeEnabled();
+    await waitFor(() => expect(again).toHaveFocus());
+    // A second press while it is queued asks again, and a second confirmation does not print twice.
+    await userEvent.click(again);
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Measure again anyway" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(only(calls, "POST", "/page")).toHaveLength(1);
+    release();
+    await waitFor(() => expect(screen.getByRole("status", { name: "Calibration page status" })).toHaveTextContent("Queued"));
   });
 
   it("escape closes the dialog without printing", async () => {

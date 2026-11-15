@@ -101,7 +101,11 @@ describe("step 1: the calibration page", () => {
 
   it("the download link ends in /page/pdf and names the type, its version and no correction", async () => {
     await open();
-    const link = await screen.findByRole("link", { name: "Download PDF" });
+    // Found by its text, then taken as the link. A role query computes the accessible name of every node of this page (the
+    // schematic alone has a rectangle per label): ~105 ms against ~50 ms for the text query on an idle machine, and it
+    // re-runs on every DOM change while the page loads, so with 76 files on four cores it overran the 1 s findBy timeout.
+    const link = (await screen.findByText("Download PDF")).closest("a")!;
+    expect(link).toHaveAttribute("download");
     const [path, query] = link.getAttribute("href")!.split("?");
     expect(path).toBe(`${BASE}/main/page/pdf`);
     expect(path!.endsWith("/page/pdf")).toBe(true);

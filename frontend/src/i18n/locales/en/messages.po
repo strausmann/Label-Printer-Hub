@@ -368,8 +368,8 @@ msgid "+ = rotated clockwise"
 msgstr "+ = rotated clockwise"
 
 #: src/features/calibration/CalibrationPage.tsx
-msgid "A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. To check the stored correction, print the check page."
-msgstr "A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. To check the stored correction, print the check page."
+msgid "A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. The stored values stay in place until you save a new measurement. To check the stored correction, print the check page."
+msgstr "A correction is stored for this tray. The calibration page is printed without it on purpose, to measure again. The stored values stay in place until you save a new measurement. To check the stored correction, print the check page."
 
 #: src/features/settings/AccessKeys.tsx
 msgid "A key opens the API and the browser sign-in. read looks, print also prints, admin also changes settings."

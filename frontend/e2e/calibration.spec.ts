@@ -442,6 +442,9 @@ test.describe.serial("calibration", () => {
         expect(b, name).not.toBeNull();
         expect(b!.x).toBeGreaterThanOrEqual(0);
         expect(b!.x + b!.width).toBeLessThanOrEqual(390);
+        // ... and in the height: a button below the 640 px edge would need a scroll inside the dialog to be pressed.
+        expect(b!.y).toBeGreaterThanOrEqual(0);
+        expect(b!.y + b!.height).toBeLessThanOrEqual(640);
       }
       expect(await noSideScroll(page)).toBe(true);
       await page.keyboard.press("Escape");
