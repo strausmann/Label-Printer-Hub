@@ -47,9 +47,8 @@ test.describe("lookup", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/spool/7");
     await expect(page.getByRole("heading", { level: 1, name: "Spoolman item" })).toBeVisible();
-    // A Spoolman item starts with the spool label (#346), which the 24 mm P-touch tape cannot print.
-    await expect(page.getByText("No preview for this tape.")).toBeVisible();
-    await page.getByRole("combobox", { name: "Layout" }).selectOption("qr_two_lines");
+    // On the P-touch a Spoolman item starts on the default layout, not the spool label (#346).
+    await expect(page.getByRole("combobox", { name: "Layout" })).toHaveValue("qr_two_lines");
     await expect(page.getByRole("img", { name: "Label preview" })).toBeVisible();
     await shot(page, "task-12-item-phone.png");
     expect(await noSideScroll(page)).toBe(true);

@@ -31,8 +31,30 @@ export const SPOOL_SWATCH: ContentType = "spool_swatch";
 export const contentTypesFor = (app: LookupApp): readonly ContentType[] =>
   app === "spoolman" ? [SPOOL_SWATCH, ...LOOKUP_CONTENT_TYPES] : LOOKUP_CONTENT_TYPES;
 
-/** The layout an item of `app` starts with: the spool label for Spoolman, else the default. */
-export const defaultContentTypeFor = (app: LookupApp): ContentType => contentTypesFor(app)[0] === SPOOL_SWATCH ? SPOOL_SWATCH : DEFAULT_CONTENT_TYPE;
+/** QL tape widths the spool label is drawn for (the backend refuses the others). */
+export const SWATCH_TAPE_MM: readonly number[] = [62];
+
+/** What the start layout depends on besides the app: the item's swatch data and the printer it goes to. */
+export interface DefaultContext {
+  /** The lookup returned spool label data (`extra.swatch`). */
+  hasSwatch: boolean;
+  /** The chosen printer's backend, if one is chosen. */
+  backend?: string | null;
+  /** The loaded tape width in mm (QL only). */
+  tapeMm?: number;
+}
+
+/**
+ * The layout an item starts with (#346). A Spoolman item with swatch data starts on the spool label when it
+ * goes to a sheet printer or to a QL with a tape the spool label is drawn for; everything else (a P-touch,
+ * no printer yet, no swatch data, another app) starts on the default. P-touch tape never carries the spool label.
+ */
+export const defaultContentTypeFor = (app: LookupApp, ctx?: DefaultContext): ContentType => {
+  if (app !== "spoolman" || !ctx?.hasSwatch) return DEFAULT_CONTENT_TYPE;
+  if (ctx.backend === "ipp") return SPOOL_SWATCH;
+  if (ctx.backend === "brother_ql" && ctx.tapeMm !== undefined && SWATCH_TAPE_MM.includes(ctx.tapeMm)) return SPOOL_SWATCH;
+  return DEFAULT_CONTENT_TYPE;
+};
 
 const APP_NAMES = { snipeit: msg`Snipe-IT`, grocy: msg`Grocy`, spoolman: msg`Spoolman` };
 

@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { mockApi, pngResponse, PRINTER_A, PRINTER_B, respond, status } from "../test-api";
+import { mockApi, PAGE_PRINTER, pageStatus, pngResponse, PRINTER_A, PRINTER_B, respond, status } from "../test-api";
 import { CART_KEY, reloadCart } from "./cart";
 
 beforeEach(() => {
@@ -217,7 +217,52 @@ describe("the spool label of a Spoolman item (#346)", () => {
       }),
     );
     await renderApp({ path: "/spool/7" });
+    // On 29 mm the item starts on the default; picking the spool label by hand says it is not available.
+    const select = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(select).toHaveValue("qr_two_lines"));
+    await userEvent.selectOptions(select, "spool_swatch");
     expect(await screen.findByText("No preview for this tape.")).toBeVisible();
+  });
+
+  it("a P-touch starts on the default, and switching to the QL brings the spool label", async () => {
+    localStorage.setItem("lph.printer", PRINTER_A.id);
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(layout).toHaveValue("qr_two_lines");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_B.id);
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_A.id);
+    await waitFor(() => expect(layout).toHaveValue("qr_two_lines"));
+  });
+
+  it("the user's own choice survives a printer change", async () => {
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
+    await userEvent.selectOptions(layout, "qr_one_line");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_A.id);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_B.id);
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(layout).toHaveValue("qr_one_line");
+  });
+
+  it("an item without swatch data starts on the default even on the QL", async () => {
+    const { calls } = mockApi(spoolRoutes({ "GET /api/v1/lookup/spoolman/7": { ...spool(), extra: { secondary: ["640g remaining"] } } }));
+    await renderApp({ path: "/spool/7" });
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(screen.getByRole("combobox", { name: "Layout" })).toHaveValue("qr_two_lines");
+    expect(previews(calls).every((b) => b.content_type === "qr_two_lines")).toBe(true);
+  });
+
+  it("a sheet printer starts on the spool label", async () => {
+    localStorage.setItem("lph.printer", PAGE_PRINTER.id);
+    mockApi(spoolRoutes({ "GET /api/v1/printers": [PRINTER_A, QL(), PAGE_PRINTER], [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: pageStatus(PAGE_PRINTER.id) }));
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
   });
 
   it("the content type label reads Spool label", async () => {

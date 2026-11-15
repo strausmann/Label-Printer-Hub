@@ -19,7 +19,7 @@ import {
   useAppName,
   useContentTypeLabel,
 } from "./apps";
-import { useLookup, usePreviewImage, usePrintNow, type LookupResult } from "./api";
+import { swatchOf, useLookup, usePreviewImage, usePrintNow, type LookupResult } from "./api";
 import { MAX_COPIES, useCart, type ContentType, type LookupApp } from "./cart";
 import { LayoutPicker } from "../layout/LayoutPicker";
 import { tapeMmOfStatus, useLabelLayout } from "../layout/ql";
@@ -120,12 +120,15 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const { usable, selected, choose } = usePrinterChoice(printers.data);
   const status = usePrinterStatus(selected?.id ?? "", !!selected);
   const statuses = usePrinterStatuses(usable);
-  const [contentType, setContentType] = useState<ContentType>(() => defaultContentTypeFor(item.app));
+  // The user's own pick stays; until there is one, the start layout follows the printer and tape (#346).
+  const [chosen, setContentType] = useState<ContentType | null>(null);
   const [copies, setCopies] = useState(1);
   const print = usePrintNow();
   // A page printer prints onto sheets (the sheet section); only tape printers get the tape preview.
   const pagePrinter = selected?.backend === "ipp";
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
+  const contentType =
+    chosen ?? defaultContentTypeFor(item.app, { hasSwatch: swatchOf(item) !== undefined, backend: selected?.backend, tapeMm });
   const layout = useLabelLayout(selected, tapeMm);
   // The spool label has no direction or arrangement to pick (#346): the picker hides and nothing is sent.
   const swatch = contentType === "spool_swatch";
