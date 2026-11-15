@@ -1233,8 +1233,16 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   30 mm. Each width prints in its own direction: a single job stores it, an all-swatch batch takes it, and in a
   batch of the other direction `swatch_for_batch` turns the image so the backend's rotation prints it upright
   (recovery and retry alike). The engine and the render check accept these widths for the spool label only; the
-  other layouts get them with #258, so a mixed cart there is refused as before. QR modules: 29/38/50 mm 4 px,
-  54 mm 3 px (0.254 mm, the planner's 0.25 mm minimum; no room for more beside two columns).
+  other layouts get them with #258: a batch with other labels on 29–54 mm is refused before any lookup with
+  `SpoolLabelOnlyTapeError` (409 `unsupported_tape`, "Only the spool label prints on N mm tape …",
+  `error_detail.content_types` naming the other layouts); the render check gives each other label its own
+  `unsupported_tape` verdict with `spool_label_only: true`, the spool labels pass. QR modules for the reference URL:
+  29/38/50 mm 4 px, 54 mm 3 px, 62 mm 5 px. **Minimum enforced on every tape width (review 2026-11-15):** a payload
+  that would need modules below the planner's 0.25 mm (`MIN_QR_MODULE_HMM`, 3 px at 300 dpi) is refused with
+  `QrPayloadTooLongError` (422 `qr_payload_too_long`, `max_bytes` = the most the box holds at 3 px): 62 mm 213
+  bytes, 50/38 mm 122, 29 mm 84, 54 mm 62. Decision: refuse, not fall back to a tier with a larger QR — the label
+  of a roll looks the same for every spool, as for the other tape layouts (#258); a typical Spoolman URL (~45
+  bytes) fits every width. This also applies to 62 mm, where a long payload used to print with 2 px modules.
 - **R-346-14 (sample image, maintainer 2026-11-15):** the README and the website page `integrations/spoolman` (en and
   de) show one static mockup image of the four media (L4737REV, QL 62 × 36, L4736REV, 6121), built from fictitious
   spools (TecBears PETG Orange, Sunlu PLA+ Grau; no real location or lot). The coordinator provides it as

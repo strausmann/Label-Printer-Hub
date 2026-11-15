@@ -75,7 +75,18 @@ Auf einem Brother QL druckt das Spulenetikett auf diesen DK-Endlosbändern, jewe
 | 38 mm | längs | alles | 30 bis 53 mm |
 | 29 mm | quer | die kurze Fassung: Hersteller, Balken, Filamentname, Farbcodes und QR-Code | 20 mm |
 
-Längs zum Band ist das Etikett so lang, wie seine Texte es brauchen, aber nie kürzer als 30 mm: Eine Spule mit allen Feldern braucht etwa 53 mm, eine mit nur Hersteller, Material und Farbe 30 mm. Richtung und Anordnung gelten für das Spulenetikett nicht, deshalb blenden die Artikelansicht und der Warenkorb sie aus. In einem Warenkorb mit anderen Etiketten druckt das Spulenetikett trotzdem in seiner eigenen Richtung. Auf anderem Band (12 mm, P-touch) sagt die Vorschau, dass es nicht verfügbar ist.
+Längs zum Band ist das Etikett so lang, wie seine Texte es brauchen, aber nie kürzer als 30 mm: Eine Spule mit allen Feldern braucht etwa 53 mm, eine mit nur Hersteller, Material und Farbe 30 mm. Richtung und Anordnung gelten für das Spulenetikett nicht, deshalb blenden die Artikelansicht und der Warenkorb sie aus. Auf 62-mm-Band druckt ein Warenkorb mit anderen Etiketten das Spulenetikett in seiner eigenen Richtung. Auf 29-, 38-, 50- und 54-mm-Band druckt bisher nur das Spulenetikett: Der Warenkorb markiert jedes andere Etikett mit „Auf 38-mm-Band druckt nur das Spulenetikett“, und ein Warenkorb, der sie noch enthält, wird mit dieser Meldung abgelehnt, bevor etwas gedruckt wird. Nimm diese Etiketten heraus oder leg 62-mm-Band ein. Auf anderem Band (12 mm, P-touch) sagt die Vorschau, dass das Spulenetikett nicht verfügbar ist.
+
+Der QR-Code behält Module von mindestens 0,25 mm, damit er lesbar bleibt. Ein längerer Link, als das Band fasst, wird abgelehnt, statt kleiner gedruckt zu werden; der Warenkorb meldet „Der QR-Code passt nicht auf dieses Band“ mit der Zahl der Bytes:
+
+| Band | Längster Link im QR-Code |
+|---|---|
+| 62 mm | 213 Bytes |
+| 50 und 38 mm | 122 Bytes |
+| 29 mm | 84 Bytes |
+| 54 mm | 62 Bytes |
+
+Ein Spoolman-Link wie `https://spoolman.example.org/spool/show/123` hat etwa 45 Bytes und passt auf jede Breite.
 
 Eine Spule öffnet mit dem Spulenetikett, wenn sie an einen Bogendrucker oder an einen QL mit einem dieser Bänder geht. Auf einem P-touch, auf anderem Band oder wenn Spoolman nichts für das Etikett geliefert hat, öffnet sie mit **QR-Code, Code und Titel**. Wechselst du Drucker oder Band, wird neu gewählt, bis du selbst ein Layout aussuchst; deine Wahl bleibt dann.
 

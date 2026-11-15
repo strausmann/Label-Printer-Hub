@@ -75,7 +75,18 @@ On a Brother QL, the spool label prints on these DK endless tapes, each in a fix
 | 38 mm | along | everything | 30 to 53 mm |
 | 29 mm | across | the short version: vendor, bar, filament name, colour codes and the QR code | 20 mm |
 
-Along the tape, the label is as long as its texts need, never shorter than 30 mm: a spool with every field filled takes about 53 mm, one with only vendor, material and colour 30 mm. The direction and arrangement settings do not apply to the spool label, so the item view and the cart hide them. In a cart that also holds other labels, the spool label still prints in its own direction. On other tape (12 mm, P-touch) the preview says it is not available.
+Along the tape, the label is as long as its texts need, never shorter than 30 mm: a spool with every field filled takes about 53 mm, one with only vendor, material and colour 30 mm. The direction and arrangement settings do not apply to the spool label, so the item view and the cart hide them. On 62 mm tape, a cart that also holds other labels prints the spool label in its own direction. On 29, 38, 50 and 54 mm tape only the spool label prints so far: the cart marks every other label with "Only the spool label prints on 38 mm tape", and printing a cart that still holds them is refused with that message, before anything is printed. Remove those labels or load 62 mm tape. On other tape (12 mm, P-touch) the preview says the spool label is not available.
+
+The QR code keeps modules of at least 0.25 mm, so it stays readable. A longer link than the tape holds is refused instead of being printed smaller; the cart says "The QR code does not fit this tape" with the number of bytes:
+
+| Tape | Longest link in the QR code |
+|---|---|
+| 62 mm | 213 bytes |
+| 50 and 38 mm | 122 bytes |
+| 29 mm | 84 bytes |
+| 54 mm | 62 bytes |
+
+A Spoolman link such as `https://spoolman.example.org/spool/show/123` has about 45 bytes and fits every width.
 
 A spool opens on the spool label when it goes to a sheet printer or to a QL with one of these tapes. On a P-touch, on other tape, or when Spoolman returned nothing for the label, it opens on **QR code, code and title**. Changing the printer or the tape picks again, until you choose a layout yourself; your choice then stays.
 
