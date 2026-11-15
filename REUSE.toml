@@ -89,7 +89,6 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 path = [
   "docs/screenshots/*.png",
   "docs/superpowers/specs/assets/*.png",
-  "website/src/assets/spoolman/*.png",
   "website/src/assets/screens/*.webp",
   "backend/tests/fixtures/ql_layout/*.png",
 ]

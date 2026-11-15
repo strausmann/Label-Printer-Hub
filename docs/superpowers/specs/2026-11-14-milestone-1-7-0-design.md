@@ -1219,7 +1219,7 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   spools (TecBears PETG Orange, Sunlu PLA+ Grau; no real location or lot). The coordinator provides it as
   `docs/screenshots/spoolman-swatch-samples.png` (layout v4, QR codes match the captions #12 and #27; covered by the
   REUSE block for `docs/screenshots/*.png`); the
-  website uses a byte copy at `website/src/assets/spoolman/spoolman-swatch-samples.png`. No generator script or test.
+  website uses a byte copy at `website/src/assets/spoolman/spoolman-swatch-samples.png`. The website copy and its REUSE glob (`website/src/assets/spoolman/*.png`) are added together in Task 15h (a glob without a tracked file fails `test_reuse_toml_globs_match_tracked_files`). No generator script or test.
   It is a mockup and differs from the print in details (it writes „Empty spool“ on one line, „Grey“ for the colour,
   „lot“ in lower case, and a larger QR); that is accepted (coordinator, 2026-11-15).
 
@@ -1255,15 +1255,14 @@ list of shipped sheet types (`using/sheets.md` describes sheet types in general)
   |---|---|
   | key / prefix | `avery-zweckform-3490` / `A3490` |
   | vendor / product codes | `Avery Zweckform` / `3490` |
-  | description | `Universal labels, edge to edge` |
+  | description | `Universal labels, 70 x 36 mm, square cut` |
   | geometry | A4, label 70 × 36 mm, 3 × 8, pitch 70 / 36, margin left 0, top 4.5, corner radius unknown (`null`), rectangle |
   | allow_qr / verified | `true` / `true` |
-  | source_name / source_url | `Labelplanet LP24/70SS, glabels-qt` / none |
+  | source_name / source_url | `Labelplanet LP24/70SS; glabels-qt Zweckform 3490` / `https://www.labelplanet.co.uk/label-templates-for-square-cut-rectangle-labels/label-templates-24-per-sheet-lp24-70ss/` |
   | notes | "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print within −0.33 to −0.50 mm across and ±0.3 mm down. Square-cut labels edge to edge, no side margin, top margin 4.5 mm. No usable margin: the sheet code is not printed in the margin (until #350)." |
 
   Both geometries fit A4 (6121: 9.9 + 190.5 = 200.4 ≤ 210, 10.8 + 275.34 = 286.14 ≤ 297; 3490: 0 + 210 = 210, 4.5 + 288
-  = 292.5 ≤ 297) and pass `validate_geometry`. Prefix and description of 3490 are the planner's choice (the ruling named
-  key and geometry only), following the seed's pattern.
+  = 292.5 ≤ 297) and pass `validate_geometry`. The 3490 metadata is the one the maintainer's instance holds (2026-11-15).
 - **R-334-6 (3490 has no usable margin):** its bands are 4.5 mm (top), 4.5 mm (bottom) and 0 mm (sides); after the
   printer's hardware margin (5 mm when unknown) no band reaches `MIN_MARGIN_TEXT_HMM` (4 mm), so
   `choose_margin_placement` returns `None` and a new sheet's margin ID is not printed — as for every such type today.
