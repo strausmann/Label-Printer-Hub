@@ -9,7 +9,7 @@ The repository has a ready compose file for each of these proxies under `example
 
 ## Three things every proxy setup needs
 
-1. **Trust exactly one peer.** Labelyard reads `X-Forwarded-For` only from the address in `FORWARDED_ALLOW_IPS`. Give your proxy a fixed address on the shared network and set `PROXY_IP` in `.env` to it; the examples pass it on. Without it every client looks like the proxy, and the per-address sign-in limit becomes one bucket for everybody. Do not use `*` or a subnet.
+1. **Trust exactly one peer.** Labelyard reads `X-Forwarded-For` only from the address in `FORWARDED_ALLOW_IPS`. Give your proxy a fixed address on the shared network and set `PROXY_IP` in `.env` to it; the examples pass it on. Without it every client looks like the proxy, and the per-address sign-in limit becomes one bucket for everybody. Do not use `*` or a subnet. The [access log](/admin/security/#access-log) shows the same address.
 2. **Set the public address.** `LABELYARD_PUBLIC_URL` is the `https` address people open, for example `https://labelyard.example.com`, and `LABELYARD_HOST` the host name the examples route.
 3. **Do not buffer the event stream.** Live updates arrive as Server-Sent Events on `/api/v1/events`. The Caddy example sets `flush_interval -1`, the Traefik example `responseforwarding.flushinterval=100ms`. Settings for other proxies and how to check the stream: [event stream and reverse proxies](/developers/architecture/sse/).
 
