@@ -54,7 +54,7 @@ If your Spoolman uses other keys, change them under **Settings > Integrations > 
 
 ### Where it fits
 
-The label is made for a sheet cell of 63.5 × 29.6 mm (Avery Zweckform L4737REV) and for 62 mm endless tape on a Brother QL. The label drops parts as the space gets smaller, always in the same order, so every cell of a sheet prints the same way:
+The label is made for a sheet cell of 63.5 × 29.6 mm (Avery Zweckform L4737REV) and for 62 mm endless tape on a Brother QL; the narrower DK endless tapes get it too (see below). The label drops parts as the space gets smaller, always in the same order, so every cell of a sheet prints the same way:
 
 | Version | Shows | Example |
 |---|---|---|
@@ -65,9 +65,19 @@ The label is made for a sheet cell of 63.5 × 29.6 mm (Avery Zweckform L4737REV)
 
 A cell smaller than the short version is refused before any cell is reserved. Long field names wrap onto a second line; text that still does not fit gets smaller, and is shortened with `…` only as a last resort. The preview then marks the cell as shortened.
 
-On tape, the spool label prints only on 62 mm endless tape, always across the tape. The direction and arrangement settings do not apply to it, so the item view and the cart hide them for the spool label. On another tape the preview says it is not available.
+On a Brother QL, the spool label prints on these DK endless tapes, each in a fixed direction:
 
-A spool opens on the spool label when it goes to a sheet printer or to a QL with 62 mm tape. On a P-touch, on other tape, or when Spoolman returned nothing for the label, it opens on **QR code, code and title**. Changing the printer or the tape picks again, until you choose a layout yourself; your choice then stays.
+| Tape | Direction | Shows | Label length |
+|---|---|---|---|
+| 62 mm | across | everything | 36 mm |
+| 54 mm | across | everything except the footer | 30 mm |
+| 50 mm | along | everything | 30 to 53 mm |
+| 38 mm | along | everything | 30 to 53 mm |
+| 29 mm | across | the short version: vendor, bar, filament name, colour codes and the QR code | 20 mm |
+
+Along the tape, the label is as long as its texts need, never shorter than 30 mm: a spool with every field filled takes about 53 mm, one with only vendor, material and colour 30 mm. The direction and arrangement settings do not apply to the spool label, so the item view and the cart hide them. In a cart that also holds other labels, the spool label still prints in its own direction. On other tape (12 mm, P-touch) the preview says it is not available.
+
+A spool opens on the spool label when it goes to a sheet printer or to a QL with one of these tapes. On a P-touch, on other tape, or when Spoolman returned nothing for the label, it opens on **QR code, code and title**. Changing the printer or the tape picks again, until you choose a layout yourself; your choice then stays.
 
 ## Printing when a spool changes
 

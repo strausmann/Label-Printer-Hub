@@ -1215,15 +1215,26 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
 - **R-346-12 (UI):** the item view, the cart and the integration page's "add to cart" offer **Spool label** /
   „Spulenetikett“ only for Spoolman items, as the first choice and the default for them (QU7, accepted); other items
   keep the existing list and default. With the spool label chosen, the item view hides the layout picker (direction
-  and arrangement); the cart hides it when every item is a spool label. A preview on a tape printer without 62 mm
-  shows the existing "not available for this tape" message. The settings group of R-346-5 is a react-aria
+  and arrangement); the cart hides it when every item is a spool label. A preview on a tape without a spool label
+  (R-346-15) shows the existing "not available for this tape" message. The settings group of R-346-5 is a react-aria
   `Disclosure` with five key fields and the title source.
   **Default refined (maintainer, 2026-11-15):** a Spoolman item starts on the spool label only when it has swatch
-  data and goes to a sheet printer or a QL with a tape the spool label is drawn for (today 62 mm); otherwise (P-touch,
+  data and goes to a sheet printer or a QL with a tape the spool label is drawn for (R-346-15); otherwise (P-touch,
   other tape, no printer, no swatch data, a recent entry added from the integration page) it starts on `qr_two_lines`.
   The default is picked again when printer or tape change, never over the user's own choice.
 - **R-346-13 (scope):** the Spoolman webhook keeps `qr_two_lines`/`qr_three_lines` with the remaining-weight line of
-  R-284 (QU8, accepted); other DK widths than 62 mm follow with #258; the vendor stays text.
+  R-284 (QU8, accepted); the vendor stays text. Other DK widths: R-346-15.
+- **R-346-15 (other DK widths, maintainer 2026-11-15, after mockups):** `SWATCH_TAPES` in `spool_swatch/draw.py`:
+  62 mm across `full` (R-346-9, unchanged), 54 mm across `no_footer`, 50 and 38 mm along `full`, 29 mm across `core`
+  (left part 11.8 mm so the reference QR keeps 4 px modules). Across labels are as long as the tier's minimum height
+  (54 mm: 350 px, 29 mm: 238 px). Along labels are an upright band as high as the tape's printable dots, the tier's
+  box (3040 hmm high) centred in it, so the rows sit under the colour line; their length is trimmed to the texts:
+  the QR column and the right edge slide left while no text changes and nothing reaches into the QR, never below
+  30 mm. Each width prints in its own direction: a single job stores it, an all-swatch batch takes it, and in a
+  batch of the other direction `swatch_for_batch` turns the image so the backend's rotation prints it upright
+  (recovery and retry alike). The engine and the render check accept these widths for the spool label only; the
+  other layouts get them with #258, so a mixed cart there is refused as before. QR modules: 29/38/50 mm 4 px,
+  54 mm 3 px (0.254 mm, the planner's 0.25 mm minimum; no room for more beside two columns).
 - **R-346-14 (sample image, maintainer 2026-11-15):** the README and the website page `integrations/spoolman` (en and
   de) show one static mockup image of the four media (L4737REV, QL 62 × 36, L4736REV, 6121), built from fictitious
   spools (TecBears PETG Orange, Sunlu PLA+ Grau; no real location or lot). The coordinator provides it as

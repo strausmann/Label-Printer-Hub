@@ -54,7 +54,7 @@ Nutzt dein Spoolman andere Schlüssel, änderst du sie unter **Einstellungen > I
 
 ### Wo es passt
 
-Das Etikett ist für eine Bogenzelle von 63,5 × 29,6 mm (Avery Zweckform L4737REV) und für 62-mm-Endlosband auf einem Brother QL gemacht. Wird der Platz kleiner, lässt das Etikett Teile weg, immer in derselben Reihenfolge, damit jede Zelle eines Bogens gleich gedruckt wird:
+Das Etikett ist für eine Bogenzelle von 63,5 × 29,6 mm (Avery Zweckform L4737REV) und für 62-mm-Endlosband auf einem Brother QL gemacht; die schmaleren DK-Endlosbänder bekommen es auch (siehe unten). Wird der Platz kleiner, lässt das Etikett Teile weg, immer in derselben Reihenfolge, damit jede Zelle eines Bogens gleich gedruckt wird:
 
 | Fassung | Zeigt | Beispiel |
 |---|---|---|
@@ -65,9 +65,19 @@ Das Etikett ist für eine Bogenzelle von 63,5 × 29,6 mm (Avery Zweckform L4737R
 
 Eine Zelle, die kleiner ist als die kurze Fassung, wird abgelehnt, bevor eine Zelle reserviert wird. Lange Feldnamen brechen in eine zweite Zeile um; Text, der dann noch nicht passt, wird kleiner und erst als letzter Ausweg mit `…` gekürzt. Die Vorschau markiert die Zelle dann als gekürzt.
 
-Auf Band druckt das Spulenetikett nur auf 62-mm-Endlosband, immer quer zum Band. Richtung und Anordnung gelten dafür nicht, deshalb blenden die Artikelansicht und der Warenkorb sie beim Spulenetikett aus. Auf einem anderen Band sagt die Vorschau, dass es nicht verfügbar ist.
+Auf einem Brother QL druckt das Spulenetikett auf diesen DK-Endlosbändern, jeweils in fester Richtung:
 
-Eine Spule öffnet mit dem Spulenetikett, wenn sie an einen Bogendrucker oder an einen QL mit 62-mm-Band geht. Auf einem P-touch, auf anderem Band oder wenn Spoolman nichts für das Etikett geliefert hat, öffnet sie mit **QR-Code, Code und Titel**. Wechselst du Drucker oder Band, wird neu gewählt, bis du selbst ein Layout aussuchst; deine Wahl bleibt dann.
+| Band | Richtung | Zeigt | Etikettlänge |
+|---|---|---|---|
+| 62 mm | quer | alles | 36 mm |
+| 54 mm | quer | alles außer der Fußzeile | 30 mm |
+| 50 mm | längs | alles | 30 bis 53 mm |
+| 38 mm | längs | alles | 30 bis 53 mm |
+| 29 mm | quer | die kurze Fassung: Hersteller, Balken, Filamentname, Farbcodes und QR-Code | 20 mm |
+
+Längs zum Band ist das Etikett so lang, wie seine Texte es brauchen, aber nie kürzer als 30 mm: Eine Spule mit allen Feldern braucht etwa 53 mm, eine mit nur Hersteller, Material und Farbe 30 mm. Richtung und Anordnung gelten für das Spulenetikett nicht, deshalb blenden die Artikelansicht und der Warenkorb sie aus. In einem Warenkorb mit anderen Etiketten druckt das Spulenetikett trotzdem in seiner eigenen Richtung. Auf anderem Band (12 mm, P-touch) sagt die Vorschau, dass es nicht verfügbar ist.
+
+Eine Spule öffnet mit dem Spulenetikett, wenn sie an einen Bogendrucker oder an einen QL mit einem dieser Bänder geht. Auf einem P-touch, auf anderem Band oder wenn Spoolman nichts für das Etikett geliefert hat, öffnet sie mit **QR-Code, Code und Titel**. Wechselst du Drucker oder Band, wird neu gewählt, bis du selbst ein Layout aussuchst; deine Wahl bleibt dann.
 
 ## Drucken, wenn sich eine Spule ändert
 
