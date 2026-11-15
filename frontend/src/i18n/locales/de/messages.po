@@ -4295,6 +4295,10 @@ msgstr "Der Schlüssel besteht aus Kleinbuchstaben, Ziffern und Bindestrichen, 3
 msgid "The keys could not be loaded."
 msgstr "Die Schlüssel konnten nicht geladen werden."
 
+#: src/features/lookup/CartPage.tsx
+msgid "The label could not be drawn for this tape."
+msgstr "Das Etikett ließ sich für dieses Band nicht zeichnen."
+
 #: src/features/archive/errors.ts
 msgid "The label height"
 msgstr "Die Etikettenhöhe"
@@ -4864,6 +4868,10 @@ msgstr "Das ist kein gültiger Export eines Bogentyps."
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "Dieser Eintrag kann nicht angezeigt werden"
+
+#: src/features/lookup/CartPage.tsx
+msgid "This item has no data for this layout."
+msgstr "Dieser Eintrag hat keine Daten für dieses Layout."
 
 #: src/features/lookup/CartPage.tsx
 msgid "This item no longer exists in its app."

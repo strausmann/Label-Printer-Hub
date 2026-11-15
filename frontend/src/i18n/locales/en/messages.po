@@ -4295,6 +4295,10 @@ msgstr "The key uses lowercase letters, digits and dashes, 3 to 64 characters, a
 msgid "The keys could not be loaded."
 msgstr "The keys could not be loaded."
 
+#: src/features/lookup/CartPage.tsx
+msgid "The label could not be drawn for this tape."
+msgstr "The label could not be drawn for this tape."
+
 #: src/features/archive/errors.ts
 msgid "The label height"
 msgstr "The label height"
@@ -4864,6 +4868,10 @@ msgstr "This is not a valid sheet type export."
 #: src/features/lookup/ItemView.tsx
 msgid "This item cannot be shown"
 msgstr "This item cannot be shown"
+
+#: src/features/lookup/CartPage.tsx
+msgid "This item has no data for this layout."
+msgstr "This item has no data for this layout."
 
 #: src/features/lookup/CartPage.tsx
 msgid "This item no longer exists in its app."

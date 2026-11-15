@@ -173,6 +173,21 @@ describe("CartPage checks and previews", () => {
     expect(screen.getByText("1 item will not print.")).toBeVisible();
   });
 
+  it("says in words why an item cannot be drawn when the server names no tape problem", async () => {
+    const two = {
+      results: [
+        { index: 0, ok: false, error_code: "content_type_data_mismatch", error_message: "English sentence from the server." },
+        { index: 1, ok: false, error_code: "render_failed", error_message: "English sentence from the server." },
+      ],
+    };
+    mockApi(qlRoutes([line("1", "qr_two_lines"), line("2", "qr_one_line")], { "POST /api/v1/render/check": two }));
+    await renderApp({ path: "/cart" });
+    const rows = within(await screen.findByRole("list", { name: "Cart" })).getAllByRole("listitem");
+    expect(await within(rows[0]!).findByText("This item has no data for this layout.")).toBeVisible();
+    expect(await within(rows[1]!).findByText("The label could not be drawn for this tape.")).toBeVisible();
+    expect(screen.queryByText(/English sentence/)).toBeNull();
+  });
+
   it("summarises the items that will not print", async () => {
     mockApi(qlRoutes([line("1", "qr_two_lines")], { "POST /api/v1/render/check": TOO_LONG }));
     await renderApp({ path: "/cart" });

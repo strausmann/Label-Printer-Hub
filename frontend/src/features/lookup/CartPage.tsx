@@ -76,6 +76,10 @@ function useFlagText(): (result: RenderCheckResult) => string {
           ? t`The QR code does not fit this tape: ${length} of at most ${max} bytes.`
           : t`The QR code does not fit this tape.`;
       }
+      case "content_type_data_mismatch":
+        return t`This item has no data for this layout.`;
+      case "render_failed":
+        return t`The label could not be drawn for this tape.`;
       case "integration_item_not_found":
         return t`This item no longer exists in its app.`;
       case "integration_not_configured":
