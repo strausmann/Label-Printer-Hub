@@ -30,6 +30,7 @@ from app.sheets.print_service import scan_payload_builder
 from tests.integration.api.test_sheet_print_api import (
     DE_MARK,
     EN_MARK,
+    G_SMALL,
     Rig,
     _body,
     _cells,
@@ -58,6 +59,16 @@ G_MARK_30 = Geometry(
 
 QR_KEY = "avery-zweckform-l4736rev"  # seeded: 4 x 12 cells, QR allowed
 TEXT_KEY = "avery-zweckform-l4731rev"  # seeded: 7 x 27 cells of 25.4 x 10 mm, QR on (#330)
+
+# The margin tests pin band choice and the never-refused rule, so they run on a type of their own
+# with fixed geometry (7 x 27 cells of 25.4 x 10 mm, top 13.5 mm, left 8.6 mm). Shipped catalogue
+# data may be corrected at any time (L4731REV was, after a real-hardware check) and must not move
+# these expectations.
+MARGIN_KEY = "acme-margin"
+
+
+async def _seed_margin_type() -> None:
+    await _type(MARGIN_KEY, "MG1", G_SMALL, allow_qr=True)
 
 
 def _scan(code: str) -> str:
@@ -380,15 +391,17 @@ async def test_margin_check_uses_probable_code_payload(monkeypatch: pytest.Monke
 
 
 async def test_margin_never_refused() -> None:
-    async with running(margins=Margins(top=1000, left=1000, bottom=1000, right=1000)) as rig:
+    async with running(
+        margins=Margins(top=1000, left=1000, bottom=1000, right=1000), seeds=_seed_margin_type
+    ) as rig:
         created = await rig.client.post(
             "/api/v1/sheets",
-            json={"type": TEXT_KEY, "id_placement": "margin", "printer": "page-1"},
+            json={"type": MARGIN_KEY, "id_placement": "margin", "printer": "page-1"},
             headers=rig.key,
         )
         assert created.status_code == 201, created.text  # never refused
 
-        check = await _margin_check(rig, TEXT_KEY)
+        check = await _margin_check(rig, MARGIN_KEY)
 
         assert check.status_code == 200, check.text
         body = check.json()
@@ -398,9 +411,9 @@ async def test_margin_never_refused() -> None:
 
 
 async def test_margin_check_without_reported_margins_assumes_five_millimetres() -> None:
-    async with running() as rig:
+    async with running(seeds=_seed_margin_type) as rig:
         await _set_margins(rig, None)  # type: ignore[arg-type]  # the printer reports none
-        check = await _margin_check(rig, TEXT_KEY)
+        check = await _margin_check(rig, MARGIN_KEY)
 
         body = check.json()
         assert body["band"] == "top" and body["usable_mm"] == 7.5
