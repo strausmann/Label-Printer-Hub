@@ -11,6 +11,9 @@ import { apiErrorBody, mockApi, PAGE_PRINTER, PRINTED_PAGE, respond, sheetPrevie
 import {
   calibrationKey,
   capabilitiesKey,
+  PREVIEW_RETRIES,
+  previewRetry,
+  previewRetryDelay,
   sheetKey,
   sheetPreviewKey,
   sheetsKey,
@@ -228,6 +231,36 @@ describe("preview and print", () => {
     await waitFor(() => expect(on.result.current.isError).toBe(true));
     expect(planChanged(on.result.current.error)).toEqual({ plan: [{ sheet: "L4736-0001", cells: [4], id_cell: null }] });
     expect(calls).toHaveLength(1);
+  });
+
+  it("useSheetPreview waits out too-many-previews and then shows the preview (#339)", async () => {
+    let answers = 0;
+    const { calls } = mockApi({
+      [`POST /api/v1/print/${PAGE_PRINTER.id}/sheet/preview`]: () =>
+        ++answers === 1
+          ? new Response(JSON.stringify(apiErrorBody("too-many-previews", "Busy.")), { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "1" } })
+          : respond(200, sheetPreview()),
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useSheetPreview(PAGE_PRINTER.id, request), { wrapper });
+    await waitFor(() => expect(result.current.failureReason).toMatchObject({ code: "too-many-previews" }));
+    expect(result.current.isError).toBe(false);
+    await waitFor(() => expect(result.current.data?.pages).toHaveLength(1), { timeout: 4000 });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("asks again only after too-many-previews, a bounded number of times, after the time the server names (#339)", () => {
+    const busy = (seconds: number | null) => new ApiError(429, "too-many-previews", "Busy.", null, seconds);
+    expect(previewRetry(0, busy(2))).toBe(true);
+    expect(previewRetry(PREVIEW_RETRIES - 1, busy(2))).toBe(true);
+    expect(previewRetry(PREVIEW_RETRIES, busy(2))).toBe(false);
+    expect(previewRetry(0, new ApiError(409, "plan_changed", "Changed."))).toBe(false);
+    expect(previewRetry(0, new ApiError(429, "rate_limited", "Slow down."))).toBe(false);
+    expect(previewRetryDelay(0, busy(2))).toBe(2000);
+    expect(previewRetryDelay(0, busy(null))).toBe(2000);
+    // Never sooner than a second, never longer than half a minute, whatever the server says.
+    expect(previewRetryDelay(0, busy(0))).toBe(1000);
+    expect(previewRetryDelay(0, busy(600))).toBe(30_000);
   });
 
   it("usePrintSheets answers with the batch and refreshes sheets, previews and jobs", async () => {

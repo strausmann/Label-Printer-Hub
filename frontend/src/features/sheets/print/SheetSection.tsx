@@ -252,6 +252,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   // picked), the refusal on screen is about the sheet before: shown under the new sheet's name it offered that sheet's
   // alternatives, and a press on one was lost when the new request replaced the alert under it. Shown again once asked.
   const previewError = settled.pending ? null : preview.error;
+  // #339: one preview per key at a time. The query asks again on its own (`previewRetry`); until then the wait is said in words.
+  const previewWait = !previewError && preview.isFetching && preview.failureReason instanceof ApiError && preview.failureReason.code === "too-many-previews";
   const insufficient = insufficientCells(previewError);
   const otherSheets = usable.filter((s) => s.code !== sheetCode);
 
@@ -447,7 +449,9 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
           ) : null}
           {fitNote && <p role="status" className="font-bold [overflow-wrap:anywhere]">{fitNote}</p>}
           {busy && !previewError && (
-            <p role="status" className="text-ink-2">{shownData ? t`Updating the preview…` : t`Drawing the sheet…`}</p>
+            <p role="status" className="text-ink-2 [overflow-wrap:anywhere]">
+              {previewWait ? errorText(preview.failureReason) : shownData ? t`Updating the preview…` : t`Drawing the sheet…`}
+            </p>
           )}
           {shownData && !insufficient && (
             <div aria-busy={busy} className={busy ? "opacity-60 transition-opacity duration-150" : "transition-opacity duration-150"}>

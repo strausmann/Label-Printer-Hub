@@ -39,6 +39,12 @@ describe("print dialog error words", () => {
     );
   });
 
+  it("too many previews at once says the preview comes in a moment, never the code (#339), en and de", async () => {
+    const error = new ApiError(429, "too-many-previews", "server words");
+    expect(await textFor(error)).toBe("Too many previews at once. The preview updates in a moment.");
+    expect(await textFor(error, "de")).toBe("Gerade laufen zu viele Vorschauen. Die Vorschau kommt gleich.");
+  });
+
   it("an unknown error ends in the fallback, never in the server's words", async () => {
     expect(await textFor(new ApiError(500, null, "HTTP 500"))).toBe("The labels could not be put on the sheet.");
   });

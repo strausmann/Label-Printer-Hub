@@ -19,6 +19,9 @@ export function usePrintDialogErrorText(itemName: (index: number) => string): (e
       if (error.code === "render-timeout") {
         return t`The preview took too long. Try again later.`;
       }
+      if (error.code === "too-many-previews") {
+        return t`Too many previews at once. The preview updates in a moment.`;
+      }
       if (error.code === "render-unavailable") {
         return t`The hub cannot draw a preview right now. Try again later.`;
       }

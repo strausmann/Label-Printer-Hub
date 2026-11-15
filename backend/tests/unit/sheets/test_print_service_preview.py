@@ -551,6 +551,21 @@ async def test_preview_reprint_hint(session: AsyncSession) -> None:
     assert hint.printed_at.replace(tzinfo=UTC) == when
 
 
+async def test_preview_reprint_hints_once_per_item_not_per_copy(session: AsyncSession) -> None:
+    # #340: ten copies of an item printed five times before are five earlier prints, not fifty.
+    printer = await make_printer(session, record())
+    old = await make_sheet(session)
+    for cell in range(2, 7):
+        await _printed_before(session, old, cell, "used", "42")
+    target = await make_sheet(session)
+
+    out = await run_preview(session, printer, req([grocy(42)] * 10, [on(target)]))
+
+    assert sorted((h.item_index, h.sheet_code, h.cell) for h in out.reprint_hints) == [
+        (0, old, cell) for cell in range(2, 7)
+    ]
+
+
 async def test_preview_reprint_hint_only_from_used_cells(session: AsyncSession) -> None:
     printer = await make_printer(session, record())
     old = await make_sheet(session)
