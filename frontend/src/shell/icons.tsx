@@ -175,3 +175,11 @@ export const BellIcon = (p: IconProps) => (
     <path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
   </Icon>
 );
+
+export const CartIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 4h2.4l2.2 10.5h9.8L19.5 8H6.4" />
+    <circle cx="9.5" cy="19" r="1.3" />
+    <circle cx="16.5" cy="19" r="1.3" />
+  </Icon>
+);

@@ -148,6 +148,10 @@ msgstr "{count} von {needed} Zellen gewählt"
 msgid "{dpi} dpi"
 msgstr "{dpi} dpi"
 
+#: src/shell/CartButton.tsx
+msgid "{entries, plural, one {Cart, # item} other {Cart, # items}}"
+msgstr "{entries, plural, one {Warenkorb, # Eintrag} other {Warenkorb, # Einträge}}"
+
 #: src/shell/PrintToasts.tsx
 msgid "{finished} of {total} items"
 msgstr "{finished} von {total} Etiketten"
@@ -910,6 +914,10 @@ msgstr "Warenkorb"
 msgid "Cart ({inCart})"
 msgstr "Warenkorb ({inCart})"
 
+#: src/shell/CartButton.tsx
+msgid "Cart, empty"
+msgstr "Warenkorb, leer"
+
 #. placeholder {0}: cell.cell
 #: src/features/sheets/cellState.ts
 msgid "Cell {0}, {state}"
@@ -1287,6 +1295,11 @@ msgstr "eigen"
 #: src/features/settings/PrinterForm.tsx
 msgid "Cuts the tape but leaves the backing, so a strip of labels stays together. A print can still override it."
 msgstr "Schneidet das Band an, lässt aber das Trägerpapier ganz, damit ein Streifen Etiketten zusammenbleibt. Ein Druck kann es trotzdem überschreiben."
+
+#: src/shell/ThemeSwitch.tsx
+msgctxt "the chosen theme, after the word Theme"
+msgid "dark"
+msgstr "dunkel"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Dark theme"
@@ -2097,6 +2110,11 @@ msgstr "Lizenztext von {0}"
 msgctxt "licence of a package"
 msgid "Licence unknown"
 msgstr "Lizenz unbekannt"
+
+#: src/shell/ThemeSwitch.tsx
+msgctxt "the chosen theme, after the word Theme"
+msgid "light"
+msgstr "hell"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -3961,6 +3979,11 @@ msgstr "Material leer"
 msgid "supply low"
 msgstr "Material fast leer"
 
+#: src/shell/ThemeSwitch.tsx
+msgctxt "the chosen theme, after the word Theme"
+msgid "system"
+msgstr "System"
+
 #: src/features/settings/SettingsPage.tsx
 #: src/features/settings/System.tsx
 #: src/shell/labels.ts
@@ -4938,6 +4961,10 @@ msgstr "Der vertikale Abstand darf nicht kleiner sein als die Etikettenhöhe."
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"
 msgstr "Design"
+
+#: src/shell/ThemeSwitch.tsx
+msgid "Theme: {chosen}"
+msgstr "Design: {chosen}"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "There is no page printer yet. Add one under Settings › Printers."

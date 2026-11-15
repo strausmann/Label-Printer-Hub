@@ -8,6 +8,7 @@ import { useSession } from "../app/session";
 import { NotificationCentre } from "../features/notifications/NotificationCentre";
 import { GlobalSearch } from "../features/search";
 import { InfoIcon, ScanIcon, SignOutIcon } from "./icons";
+import { CartButton } from "./CartButton";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 const ICON_BUTTON =
@@ -19,7 +20,7 @@ export function TopBar({ livePaused = false }: { livePaused?: boolean }) {
   const session = useSession();
 
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center gap-2 border-b border-line bg-surface px-4 lg:gap-3 lg:px-8">
+    <header className="sticky top-0 z-10 flex h-16 items-center gap-1 border-b border-line bg-surface px-2 sm:gap-2 sm:px-4 lg:gap-3 lg:px-8">
       <GlobalSearch />
 
       <Link
@@ -30,8 +31,9 @@ export function TopBar({ livePaused = false }: { livePaused?: boolean }) {
         <span>{t`Scan`}</span>
       </Link>
 
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex items-center sm:gap-1">
         <NotificationCentre livePaused={livePaused} />
+        <CartButton />
         <Link
           to="/about"
           aria-label={t({ message: "About and licences", context: "link to the about page" })}

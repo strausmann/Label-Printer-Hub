@@ -75,4 +75,19 @@ describe("ThemeSwitch", () => {
     await renderSwitch();
     expect(screen.getByRole("radio", { name: "Light theme" })).toBeChecked();
   });
+
+  it("the compact button on a narrow phone cycles system, light, dark and back", async () => {
+    await renderSwitch();
+    const cycle = () => screen.getByRole("button", { name: /^Theme: / });
+    expect(cycle()).toHaveAccessibleName("Theme: system");
+    await userEvent.click(cycle());
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    expect(cycle()).toHaveAccessibleName("Theme: light");
+    await userEvent.click(cycle());
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(localStorage.getItem(THEME_KEY)).toBe("dark");
+    await userEvent.click(cycle());
+    expect(document.documentElement).not.toHaveAttribute("data-theme");
+    expect(screen.getByRole("radio", { name: "System theme" })).toBeChecked();
+  });
 });

@@ -57,6 +57,18 @@ async function expectWithin(what: Locator, top: number, bottom: number, name: st
   expect(box!.y + box!.height, `${name} ends at or above ${bottom}`).toBeLessThanOrEqual(bottom + 1);
 }
 
+/** Fills the cart of the browser (the key and the shape are those of `features/lookup/cart.ts`) with `entries` lines. */
+const putInCart = (page: Page, entries: number) =>
+  page.evaluate((n) => {
+    const line = (id: number) => ({ app: "grocy", id: String(id), name: `Item ${id}`, content_type: "qr_two_lines", copies: 4 });
+    localStorage.setItem("lph.cart", JSON.stringify(Array.from({ length: n }, (_, i) => line(i + 1))));
+  }, entries);
+const emptyCart = (page: Page) => page.evaluate(() => localStorage.removeItem("lph.cart"));
+
+type Box = { x: number; y: number; width: number; height: number };
+const intersects = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
 test.describe("short viewport (on-screen keyboard)", () => {
   let page: Page;
   test.beforeAll(async ({ browser }) => {
@@ -128,6 +140,44 @@ test.describe("short viewport (on-screen keyboard)", () => {
     await expect(dialog).toBeVisible();
     return dialog;
   }
+
+  test("Top bar at 320 px: the cart badge overlaps no other control", async () => {
+    await prepare({ name: "narrow", width: 320, height: 640 });
+    await page.goto("/sheets");
+    // The widest badge: more than 99 entries.
+    await putInCart(page, 120);
+    await page.reload();
+    const header = page.locator("header");
+    const cart = header.getByRole("link", { name: "Cart, 120 items" });
+    await expect(cart).toBeVisible();
+    await expect(cart).toContainText("99+");
+    const controls: Array<[string, Locator]> = [
+      ["the bell", header.getByRole("button", { name: /^Notifications/ })],
+      ["the cart", cart],
+      ["the about link", header.getByRole("link", { name: /^About/ })],
+      ["the theme button", header.getByRole("button", { name: /^Theme: / })],
+      ["the sign-out button", header.getByRole("button", { name: "Sign out" })],
+    ];
+    const boxes: Array<{ name: string; box: Box }> = [];
+    for (const [name, control] of controls) {
+      const box = await control.boundingBox();
+      expect(box, `${name} has a box`).not.toBeNull();
+      expect(box!.x, `${name} starts inside the screen`).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, `${name} ends inside the screen`).toBeLessThanOrEqual(320 + 1);
+      boxes.push({ name, box: box! });
+    }
+    // The badge is a child of the cart link: its own box must also stay inside the link's box.
+    const badge = (await cart.getByTestId("cart-badge").boundingBox())!;
+    const link = (await cart.boundingBox())!;
+    expect(badge.x).toBeGreaterThanOrEqual(link.x - 1);
+    expect(badge.x + badge.width).toBeLessThanOrEqual(link.x + link.width + 1);
+    boxes.forEach((first, i) => {
+      for (const second of boxes.slice(i + 1)) {
+        expect(intersects(first.box, second.box), `${first.name} and ${second.name} do not overlap`).toBe(false);
+      }
+    });
+    await emptyCart(page);
+  });
 
   for (const mode of modes) {
     test.describe(mode.name, () => {
@@ -230,6 +280,19 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expectInSight(page, panel, "the panel");
         await page.keyboard.press("Escape");
         await expect(panel).toBeHidden();
+      });
+
+      test("with the search keyboard up the cart icon stays in sight", async () => {
+        await prepare(mode);
+        await page.goto("/sheets");
+        await putInCart(page, 3);
+        await page.reload();
+        await page.getByRole("combobox", { name: "Search" }).click();
+        await keyboard(mode);
+        const cart = page.locator("header").getByRole("link", { name: "Cart, 3 items" });
+        await expect(cart).toBeVisible();
+        await expectInSight(page, cart, "the cart icon");
+        await emptyCart(page);
       });
 
       test("Discard sheet (a confirmation): its buttons are in sight", async () => {
