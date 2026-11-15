@@ -219,4 +219,11 @@ describe("the reading guide in step 2", () => {
     await userEvent.click(trigger);
     expect(within(step2).getByRole("img", { name: "The crossings to read on Example Labels L4736REV-25 (L4736REV)" })).toBeVisible();
   });
+
+  it("step 3 ends with the still-off card and its link to the guide", async () => {
+    await open();
+    const step3 = await screen.findByRole("region", { name: "Step 3: Check the result" });
+    expect(within(step3).getByRole("heading", { name: "Still off after the check print?" })).toBeVisible();
+    expect(within(step3).getByRole("link", { name: /More in the guide/ })).toHaveAttribute("href", expect.stringContaining("/using/calibration/#printer-or-sheet-type"));
+  });
 });

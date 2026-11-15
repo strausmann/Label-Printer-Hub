@@ -79,7 +79,26 @@ Drucke die Kontrollseite. Es ist dieselbe Seite, jetzt mit der Korrektur. Liegt 
 
 ## Drucker oder Bogentyp?
 
-Liegt die Seite danach immer noch daneben, sagt dir die Abweichung, wo du suchen musst:
+Liegt die Seite danach immer noch daneben, sagt dir die Abweichung, wo du suchen musst. Vergleiche, was du siehst, mit dieser Tabelle:
 
-- Abweichungen, die gleichmäßig über die Seite wachsen (Versatz, Maßstab, Drehung), kommen vom Drucker. Die Berechnung gleicht sie aus.
-- Ein Sprung zwischen benachbarten Lücken kommt von der Geometrie des Bogentyps. Korrigiere zuerst den Bogentyp und kalibriere dann noch einmal.
+| Was du siehst | Ursache | Was tun |
+|---|---|---|
+| Überall der gleiche Versatz in eine Richtung, auf jedem Bogentyp | Versatz von Drucker oder Fach | Kalibrieren, die Korrektur gleicht es aus |
+| Die Abweichung wächst mit dem Abstand, in beiden Richtungen und auf jedem Bogentyp | Maßstab des Druckers (er druckt zu groß oder zu klein) | Kalibrieren |
+| Die Abweichung wächst nach unten anders als zur Seite, links und rechts verschieden | Drehung (der Drucker druckt schief) | Kalibrieren |
+| Gleicher Versatz oder Wandern nur bei einem Bogentyp, andere Bögen mit derselben Korrektur sitzen | Maße des Bogentyps (Rand, Abstand, Etikettenhöhe) | Bogentyp korrigieren (neue Fassung), nicht den Drucker |
+| Sprung zwischen zwei benachbarten Lücken | Bogentyp (Lücke, Spalten- oder Zeilenzahl) | Bogentyp korrigieren |
+| Seitlicher Versatz, der von Blatt zu Blatt anders ist | Papiereinzug | Blatt an der Führung anlegen, ein zweites Blatt drucken; die Korrektur erst bei Wiederholung ändern |
+| Gleichmäßiger Rest unter etwa 0,2 mm | Messgenauigkeit | Nichts tun |
+
+Ein falscher Abstand zeigt sich nicht als Sprung, sondern als stetiges Wandern, ähnlich einem Maßstabsfehler des Druckers. Deshalb kommt es auf die Bogentypen an: Wandert ein Typ, während andere mit derselben Korrektur sitzen, sieh dir diesen Typ an. Ein echter Fall war ein Bogentyp, dessen Zeilenabstand 9,98 statt 10,0 mm betrug.
+
+Für den Kontrolldruck gilt dieselbe Regel: Liegt jede Kreuzung innerhalb von ±0,5 mm, bist du fertig. Ein größerer Rest oder einer, der zu einem Rand hin wächst, gehört zu einer der Zeilen oben.
+
+### Hinweise zum Ablesen
+
+- Lies quer und abwärts an jeder Kreuzung getrennt ab, jeweils als Zahl. „Sieht mittig aus“ ist kein Messwert.
+- Lies Kreuzungen in der ersten, mittleren und letzten Zeile und Spalte ab; sonst bleibt ein Wandern unsichtbar.
+- Ist die Skala schwer zu lesen, dient die bekannte Lückenbreite (Spaltenabstand minus Etikettenbreite) als Lineal.
+- Datenblätter der Hersteller können danebenliegen. Miss einen Abstand mit dem Lineal über zehn Etiketten und teile durch zehn.
+- Für Fotos: volle Auflösung, an jede Kreuzung heranzoomen, und flaches Licht macht den Schnitt sichtbar. Gebogenes Papier lässt Linien krumm wirken, beurteile deshalb nur an der Kreuzung.

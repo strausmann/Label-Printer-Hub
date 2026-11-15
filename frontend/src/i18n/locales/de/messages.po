@@ -8,6 +8,7 @@ msgstr ""
 "Language: de\n"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
+#: src/features/calibration/guide/StillOff.tsx
 msgid "(opens in a new tab)"
 msgstr "(öffnet in einem neuen Tab)"
 
@@ -839,6 +840,14 @@ msgstr "Kalibrieren"
 msgid "Calibrate {name}"
 msgstr "{name} kalibrieren"
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Calibrate: it is the scale or the rotation of the printer."
+msgstr "Kalibrieren: Es ist der Maßstab oder die Drehung des Druckers."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Calibrate: the correction removes it."
+msgstr "Kalibrieren: Die Korrektur gleicht es aus."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Calibrated"
 msgstr "Kalibriert"
@@ -1232,6 +1241,10 @@ msgstr "Eckenradius"
 #: src/features/archive/TypeForm.tsx
 msgid "Corner radius (mm)"
 msgstr "Eckenradius (mm)"
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Correct that sheet type (add a new version), not the printer."
+msgstr "Korrigiere diesen Bogentyp (neue Fassung anlegen), nicht den Drucker."
 
 #: src/features/lookup/CartPage.tsx
 msgid "Could not check the items; the print still checks them."
@@ -1954,6 +1967,10 @@ msgstr "IPP-Adresse"
 msgid "IPP UUID"
 msgstr "IPP-UUID"
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "It is the paper feed: push the sheet against the guide and print a second one. Change the correction only if it repeats."
+msgstr "Es ist der Papiereinzug: Leg das Blatt an die Führung an und drucke ein zweites. Ändere die Korrektur erst, wenn es sich wiederholt."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "It will probably become <0>{hintCode}</0>."
 msgstr "Er bekommt voraussichtlich die Nummer <0>{hintCode}</0>."
@@ -2326,6 +2343,10 @@ msgstr "Meldung"
 #: src/features/settings/PrinterForm.tsx
 msgid "Model"
 msgstr "Modell"
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "More in the guide"
+msgstr "Mehr in der Anleitung"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "More on labelyard.app"
@@ -2798,6 +2819,10 @@ msgstr "Nur von Hand markierte Zellen lassen sich zurücksetzen."
 #: src/features/sheets/SheetDetail.tsx
 msgid "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
 msgstr "Nur Zellen, die du von Hand markiert hast, lassen sich zurücksetzen. Von einem Auftrag gedruckte Etiketten bleiben belegt."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Only one sheet type is off; other sheets sit with the same correction"
+msgstr "Nur ein Bogentyp liegt daneben; andere Bögen sitzen mit derselben Korrektur"
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Only the first {listed} of {reported} trays are listed."
@@ -4021,6 +4046,10 @@ msgstr "Schritt 3: Ergebnis prüfen"
 msgid "Steps"
 msgstr "Schritte"
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Still off after the check print?"
+msgstr "Noch daneben nach dem Kontrolldruck?"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Stock entry"
 msgstr "Bestandseintrag"
@@ -4396,6 +4425,10 @@ msgstr "Die Beschreibung"
 #: src/features/scan/GrocycodePage.tsx
 msgid "The details could not be loaded."
 msgstr "Die Details konnten nicht geladen werden."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "The deviation grows with the distance, on every sheet type"
+msgstr "Die Abweichung wächst mit dem Abstand, auf jedem Bogentyp"
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The device at this address changed while you were looking. Check the values shown now before you decide."
@@ -4988,6 +5021,10 @@ msgstr "Die Bogentypen konnten nicht geladen werden."
 msgid "The sheets could not be loaded."
 msgstr "Die Bögen konnten nicht geladen werden."
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "The shift differs from sheet to sheet"
+msgstr "Der Versatz ist von Blatt zu Blatt verschieden"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "The short name in addresses and in the API. It cannot be changed later."
 msgstr "Der Kurzname in Adressen und in der API. Er lässt sich später nicht ändern."
@@ -5073,6 +5110,10 @@ msgstr "Der vertikale Abstand"
 #: src/features/archive/errors.ts
 msgid "The vertical pitch must not be smaller than the label height."
 msgstr "Der vertikale Abstand darf nicht kleiner sein als die Etikettenhöhe."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "The whole page is off by the same shift"
+msgstr "Die ganze Seite ist um denselben Versatz verschoben"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"
@@ -5574,6 +5615,10 @@ msgstr "Das nimmt ein Druck, der kein Layout nennt. Der Druckdialog startet dami
 #: src/features/archive/TypeForm.tsx
 msgid "What changed"
 msgstr "Was sich geändert hat"
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "What the deviation tells you"
+msgstr "Was die Abweichung dir sagt"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "What the markings mean"

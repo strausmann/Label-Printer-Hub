@@ -29,6 +29,7 @@ import { useCalibrationErrorText, useValueNames } from "./errors";
 import { parseNumber, usableTypes } from "./model";
 import { PrintResult } from "./PrintResult";
 import { ReadingGuide } from "./guide/ReadingGuide";
+import { StillOff } from "./guide/StillOff";
 import { ReadingsHelper } from "./ReadingsHelper";
 
 const calibrationApi = getRouteApi("/calibration");
@@ -281,6 +282,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
             {!hasValues(stored) && <span className={HINT}>{t`Save a correction first.`}</span>}
           </PrintAction>
         )}
+        <StillOff />
       </section>
     </>
   );

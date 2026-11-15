@@ -122,6 +122,11 @@ test.describe.serial("calibration", () => {
       expect(box!.x + box!.width).toBeLessThanOrEqual(390);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    // The card at the end of step 3 reads at this width too.
+    const stillOff = page.getByRole("heading", { name: "Still off after the check print?" });
+    await stillOff.scrollIntoViewIfNeeded();
+    await expect(stillOff).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     // The link leaves the app in a new tab.
     const link = page.getByRole("link", { name: /More on labelyard\.app/ });
     await expect(link).toHaveAttribute("href", "https://labelyard.app/using/calibration/");

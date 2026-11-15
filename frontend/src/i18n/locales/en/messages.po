@@ -8,6 +8,7 @@ msgstr ""
 "Language: en\n"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
+#: src/features/calibration/guide/StillOff.tsx
 msgid "(opens in a new tab)"
 msgstr "(opens in a new tab)"
 
@@ -839,6 +840,14 @@ msgstr "Calibrate"
 msgid "Calibrate {name}"
 msgstr "Calibrate {name}"
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Calibrate: it is the scale or the rotation of the printer."
+msgstr "Calibrate: it is the scale or the rotation of the printer."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Calibrate: the correction removes it."
+msgstr "Calibrate: the correction removes it."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "Calibrated"
 msgstr "Calibrated"
@@ -1232,6 +1241,10 @@ msgstr "Corner radius"
 #: src/features/archive/TypeForm.tsx
 msgid "Corner radius (mm)"
 msgstr "Corner radius (mm)"
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Correct that sheet type (add a new version), not the printer."
+msgstr "Correct that sheet type (add a new version), not the printer."
 
 #: src/features/lookup/CartPage.tsx
 msgid "Could not check the items; the print still checks them."
@@ -1954,6 +1967,10 @@ msgstr "IPP address"
 msgid "IPP UUID"
 msgstr "IPP UUID"
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "It is the paper feed: push the sheet against the guide and print a second one. Change the correction only if it repeats."
+msgstr "It is the paper feed: push the sheet against the guide and print a second one. Change the correction only if it repeats."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "It will probably become <0>{hintCode}</0>."
 msgstr "It will probably become <0>{hintCode}</0>."
@@ -2326,6 +2343,10 @@ msgstr "Message"
 #: src/features/settings/PrinterForm.tsx
 msgid "Model"
 msgstr "Model"
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "More in the guide"
+msgstr "More in the guide"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "More on labelyard.app"
@@ -2798,6 +2819,10 @@ msgstr "Only cells that were marked by hand can be un-marked."
 #: src/features/sheets/SheetDetail.tsx
 msgid "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
 msgstr "Only cells you marked by hand can be un-marked. Labels a job printed stay used."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Only one sheet type is off; other sheets sit with the same correction"
+msgstr "Only one sheet type is off; other sheets sit with the same correction"
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Only the first {listed} of {reported} trays are listed."
@@ -4021,6 +4046,10 @@ msgstr "Step 3: Check the result"
 msgid "Steps"
 msgstr "Steps"
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "Still off after the check print?"
+msgstr "Still off after the check print?"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Stock entry"
 msgstr "Stock entry"
@@ -4396,6 +4425,10 @@ msgstr "The description"
 #: src/features/scan/GrocycodePage.tsx
 msgid "The details could not be loaded."
 msgstr "The details could not be loaded."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "The deviation grows with the distance, on every sheet type"
+msgstr "The deviation grows with the distance, on every sheet type"
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The device at this address changed while you were looking. Check the values shown now before you decide."
@@ -4988,6 +5021,10 @@ msgstr "The sheet types could not be loaded."
 msgid "The sheets could not be loaded."
 msgstr "The sheets could not be loaded."
 
+#: src/features/calibration/guide/StillOff.tsx
+msgid "The shift differs from sheet to sheet"
+msgstr "The shift differs from sheet to sheet"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "The short name in addresses and in the API. It cannot be changed later."
 msgstr "The short name in addresses and in the API. It cannot be changed later."
@@ -5073,6 +5110,10 @@ msgstr "The vertical pitch"
 #: src/features/archive/errors.ts
 msgid "The vertical pitch must not be smaller than the label height."
 msgstr "The vertical pitch must not be smaller than the label height."
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "The whole page is off by the same shift"
+msgstr "The whole page is off by the same shift"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Theme"
@@ -5574,6 +5615,10 @@ msgstr "What a print uses when it names no layout. The print dialog starts from 
 #: src/features/archive/TypeForm.tsx
 msgid "What changed"
 msgstr "What changed"
+
+#: src/features/calibration/guide/StillOff.tsx
+msgid "What the deviation tells you"
+msgstr "What the deviation tells you"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "What the markings mean"
