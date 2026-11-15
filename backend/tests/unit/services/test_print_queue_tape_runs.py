@@ -748,6 +748,44 @@ async def test_a_failed_write_of_discarded_rows_in_the_error_path_is_logged(
         await queue.stop(timeout_s=2.0)
 
 
+@pytest.mark.parametrize("own_error", [None, RuntimeError("store down")])
+async def test_a_discard_cut_short_in_its_write_leaves_no_waiting_row_queued(
+    own_error: BaseException | None,
+) -> None:
+    """#347 round 4: ``discard_run`` cancels the waiting part (labels 51 and 52) and writes the
+    rows. The client goes away (``None``: a task cancel) or the store fails on label 51's row. A
+    cancel still finishes every write (shielded retry); a store error does not stop the rows
+    after it, the failed label is kept as unpersisted, and the error reaches the caller as
+    before."""
+    printer = TapeRoll()
+    store = _CancelWindowStore()
+    queue, run_id, ids = await _start(printer, store, 52)
+    try:
+        await _until(lambda: _waits(queue, run_id))
+        store.gate_cancel = ids[50]
+        store.cancel_exc = own_error
+        task = asyncio.create_task(queue.discard_run(run_id))
+        await asyncio.wait_for(store.cancel_reached.wait(), 3.0)
+        if own_error is None:
+            task.cancel()
+        store.cancel_release.set()
+        with pytest.raises(asyncio.CancelledError if own_error is None else RuntimeError):
+            await task
+        assert queue.run_info(run_id) is None
+        rows = [await store.get(jid) for jid in ids[50:]]
+        if own_error is None:
+            assert [r.state for r in rows if r] == [DbJobState.CANCELLED.value] * 2
+            assert str(ids[50]) not in queue._unpersisted
+        else:
+            assert rows[1] is not None and rows[1].state == DbJobState.CANCELLED.value
+            assert str(ids[50]) in queue._unpersisted
+            assert not queue.forget_job(ids[50])
+    finally:
+        store.release.set()
+        store.cancel_release.set()
+        await queue.stop(timeout_s=2.0)
+
+
 def _waits(queue: PrintQueue, run_id: UUID) -> bool:
     info = queue.run_info(run_id)
     return info is not None and info.state == "awaiting_confirmation"

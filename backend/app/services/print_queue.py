@@ -1604,7 +1604,10 @@ class PrintQueue:
         run = self._live_run(run_id)
         if run.state not in ("awaiting_confirmation", "stopped"):
             raise RunStateError("run_not_held", "Only a stopped or waiting run can be discarded.")
-        await self._persist_cancelled(self._discard_now(run, code))
+        cancelled = self._discard_now(run, code)
+        # A client that goes away still gets every row written; a store error reaches the route
+        # (5xx, as before) only after the other rows are written (#347 round 4).
+        await self._persist_through_cancel(lambda: self._persist_each_cancelled(cancelled))
 
     def _discard_now(self, run: TapeRun, code: str) -> list[Job]:
         """The in-memory part of ``discard_run`` (no await): forget the held *run*, cancel its
@@ -1645,6 +1648,24 @@ class PrintQueue:
     async def _persist_cancelled(self, jobs: Sequence[Job]) -> None:
         for job in jobs:
             await self._store.mark_cancelled(UUID(job.id))
+
+    async def _persist_each_cancelled(self, jobs: Sequence[Job]) -> None:
+        """Write every row of *jobs* ``cancelled`` (already cancelled in memory), past a failing
+        one; then raise the first store error. A failed label is kept as unpersisted (its id stays
+        known, so this process never forgets or prints it); a later successful write clears it.
+        Safe to repeat (``_persist_through_cancel``): ``mark_cancelled`` leaves a written row.
+        """
+        first: Exception | None = None
+        for job in jobs:
+            try:
+                await self._store.mark_cancelled(UUID(job.id))
+            except Exception as exc:
+                self._unpersisted.add(job.id)
+                first = first or exc
+            else:
+                self._unpersisted.discard(job.id)
+        if first is not None:
+            raise first
 
     async def _persist_discarded(
         self, run_id: UUID | None, jobs: Sequence[Job], *, keep_original: bool
