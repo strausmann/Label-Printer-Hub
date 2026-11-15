@@ -1922,6 +1922,7 @@ async def retry_sheet_page(
                     "render_dpi": facts.render_dpi,
                     "calibration": snapshot,
                     "detail": new_detail.model_dump(mode="json"),
+                    "retry_of": job.id,
                 }
             )
             await session.commit()  # no pooled connection is held while the job is submitted

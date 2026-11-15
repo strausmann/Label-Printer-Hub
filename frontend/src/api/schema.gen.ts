@@ -364,7 +364,7 @@ export interface paths {
         };
         /**
          * List jobs
-         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).  An API key without ``admin`` scope, and a browser session signed in with one, sees only the jobs that key submitted; SSO users and admin keys see every job of their printers.
+         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).  ``order`` is ``oldest`` (default) or ``newest``, which returns the latest jobs first.  An API key without ``admin`` scope, and a browser session signed in with one, sees only the jobs that key submitted; SSO users and admin keys see every job of their printers.
          */
         get: operations["list_jobs_api_v1_jobs_get"];
         put?: never;
@@ -5246,6 +5246,8 @@ export interface operations {
                 since?: string | null;
                 /** @description Maximum number of jobs to return (1-200, default 50) */
                 limit?: number;
+                /** @description Sort by creation time: ``oldest`` first (default) or ``newest`` first. With ``newest`` and a ``limit`` the latest jobs come back, not the first ones. */
+                order?: "oldest" | "newest";
             };
             header?: never;
             path?: never;

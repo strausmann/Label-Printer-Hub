@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import delete, exists, func, literal_column, select, update
@@ -31,6 +31,7 @@ async def list_by_filter(
     limit: int = 50,
     allowed_printer_ids: list[UUID] | None = None,
     api_key_id: UUID | None = None,
+    order: Literal["oldest", "newest"] = "oldest",
 ) -> list[Job]:
     """Return jobs matching the optional filters, ordered by creation time.
 
@@ -38,6 +39,8 @@ async def list_by_filter(
     ``allowed_printer_ids`` restricts to those printers (``None`` or empty = no
     restriction); it is applied in SQL so ``limit`` counts only visible jobs.
     ``api_key_id`` keeps only the jobs that key submitted (``None`` = no restriction).
+    ``order`` is ``oldest`` (default: the first ``limit`` jobs) or ``newest`` (the latest
+    ``limit`` jobs, newest first); every filter above applies before the cut.
     """
     stmt = select(Job)
     if state is not None:
@@ -50,7 +53,8 @@ async def list_by_filter(
         stmt = stmt.where(col(Job.api_key_id) == api_key_id)
     if since is not None:
         stmt = stmt.where(col(Job.created_at) >= since)
-    stmt = stmt.order_by(col(Job.created_at)).limit(limit)
+    created = col(Job.created_at)
+    stmt = stmt.order_by(created.desc() if order == "newest" else created).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars())
 

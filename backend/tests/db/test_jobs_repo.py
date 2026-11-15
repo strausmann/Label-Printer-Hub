@@ -180,3 +180,24 @@ async def test_list_active_returns_only_inflight(session):
     assert p.id in active_ids
     assert d.id not in active_ids
     assert len(active) == 2
+
+
+@pytest.mark.asyncio
+async def test_list_by_filter_newest_returns_the_latest_first(session):
+    from datetime import UTC, datetime, timedelta
+
+    printer = await _make_printer(session)
+    base = datetime(2026, 1, 1, tzinfo=UTC)
+    ids = []
+    for i in range(5):
+        job = await _queued(session, printer, key=f"k{i}")
+        job.created_at = base + timedelta(minutes=i)
+        session.add(job)
+        await session.commit()
+        ids.append(job.id)
+
+    newest = await jobs.list_by_filter(session, order="newest", limit=2)
+    oldest = await jobs.list_by_filter(session, limit=2)
+
+    assert [j.id for j in newest] == [ids[4], ids[3]]
+    assert [j.id for j in oldest] == [ids[0], ids[1]]  # the default stays oldest first

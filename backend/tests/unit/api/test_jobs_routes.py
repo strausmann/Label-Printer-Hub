@@ -365,7 +365,7 @@ async def test_retry_clones_failed_job(session) -> None:
     # Cloned fields match original
     assert body["printer_id"] == str(original.printer_id)
     assert body["template_key"] == original.template_key
-    assert body["payload"] == original.payload
+    assert body["payload"] == {**original.payload, "retry_of": str(original.id)}
     # timestamps: no started_at or finished_at on fresh job
     assert body["started_at"] is None
     assert body["finished_at"] is None

@@ -42,7 +42,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -95,6 +95,15 @@ PrinterIdQuery = Annotated[
 SinceQuery = Annotated[
     datetime | None,
     Query(description="Return only jobs created at or after this ISO-8601 datetime"),
+]
+OrderQuery = Annotated[
+    Literal["oldest", "newest"],
+    Query(
+        description=(
+            "Sort by creation time: ``oldest`` first (default) or ``newest`` first. With "
+            "``newest`` and a ``limit`` the latest jobs come back, not the first ones."
+        )
+    ),
 ]
 LimitQuery = Annotated[
     int,
@@ -150,6 +159,7 @@ async def _get_job_or_404(
         "``done``, ``failed``, ``cancelled``, ``failed_restart``).  "
         "``since`` is an ISO-8601 datetime; only jobs created at or after that "
         "instant are returned.  ``limit`` caps the result (default 50, max 200).  "
+        "``order`` is ``oldest`` (default) or ``newest``, which returns the latest jobs first.  "
         "An API key without ``admin`` scope, and a browser session signed in with one, sees "
         "only the jobs that key submitted; SSO users and admin keys see every job of their "
         "printers."
@@ -162,6 +172,7 @@ async def list_jobs(
     printer_id: PrinterIdQuery = None,
     since: SinceQuery = None,
     limit: LimitQuery = 50,
+    order: OrderQuery = "oldest",
 ) -> list[JobRead]:
     """Return jobs matching the given filters."""
     # Per-printer ACL: restrict to the caller's printers (empty list = all).
@@ -182,6 +193,7 @@ async def list_jobs(
         limit=limit,
         allowed_printer_ids=allowed,
         api_key_id=owner,
+        order=order,
     )
     return [JobRead.model_validate(r, from_attributes=True) for r in rows]
 
@@ -472,7 +484,7 @@ async def retry_job(
         session,
         printer_id=job.printer_id,
         template_key=job.template_key,
-        payload=dict(job.payload),
+        payload={**job.payload, "retry_of": str(job.id)},
         # #294: the clone belongs to the caller that asked for it, like a page retry.
         api_key_id=_auth.api_key_id if _auth is not None else None,
         source_ip=_auth.ip if _auth is not None else None,
@@ -593,7 +605,7 @@ async def _retry_page_job(
     if kind not in ("calibration_page", "test_page"):
         raise PageJobNotRetryableError().to_http()
     try:
-        payload = PagePayload.model_validate(job.payload)
+        payload = PagePayload.model_validate(job.payload).model_copy(update={"retry_of": job.id})
     except ValueError as exc:
         raise _stored_page_invalid() from exc
     if queue is None:
