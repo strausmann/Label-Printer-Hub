@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # Spoolman integration (no API key needed)
     spoolman_url: str = ""
     spoolman_timeout: float = 5.0
+    spoolman_label_title_source: Literal["material", "name"] = "material"
+    """What the swatch label's black bar shows (#346): the filament's ``material`` (default)
+    or its ``name``; the colour line under it shows the other one."""
 
     # Server
     server_port: int = 8000

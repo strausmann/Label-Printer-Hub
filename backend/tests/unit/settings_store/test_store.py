@@ -74,9 +74,36 @@ def test_registry_has_exactly_the_specified_keys() -> None:
             for t in ("product", "stock_entry", "chore", "battery", "recipe")
             for f in ("content_type", "printer", "sheet_type")
         ),
+        "integrations.spoolman.label.nozzle_field",
+        "integrations.spoolman.label.pressure_advance_field",
+        "integrations.spoolman.label.flow_ratio_field",
+        "integrations.spoolman.label.drying_temp_field",
+        "integrations.spoolman.label.drying_time_field",
+        "integrations.spoolman.label.title_source",
     }
     assert SETTINGS["general.language"].choices == ("en", "de")
     assert SETTINGS["jobs.retention_days"].default == 30
+
+
+def test_spoolman_label_settings() -> None:
+    """#346 R-346-5: five key fields without environment lock, the title source locked by env."""
+    defaults = {
+        "nozzle_field": "nozzle_temperature",
+        "pressure_advance_field": "flowdynamics",
+        "flow_ratio_field": "flowrate",
+        "drying_temp_field": "drying_condiftions_temp",
+        "drying_time_field": "drying_condiftions_time",
+    }
+    for name, default in defaults.items():
+        d = SETTINGS[f"integrations.spoolman.label.{name}"]
+        assert (d.kind, d.default, d.env_field) == ("str", default, None)
+    d = SETTINGS["integrations.spoolman.label.title_source"]
+    assert (d.kind, d.default, d.env_field, d.choices) == (
+        "enum",
+        "material",
+        "spoolman_label_title_source",
+        ("material", "name"),
+    )
 
 
 def test_grocy_sheet_type_settings_default_empty() -> None:

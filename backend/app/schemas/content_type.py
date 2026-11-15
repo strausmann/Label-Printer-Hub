@@ -37,3 +37,12 @@ class ContentType(StrEnum):
 
     QR_WITH_LISTING = "qr_with_listing"
     """QR + N item lines (M font); overflow shows "+N"."""
+
+    SPOOL_SWATCH = "spool_swatch"
+    """Swatch-style Spoolman spool label (#346): vendor, bar, colour, values and a QR.
+    Needs ``qr_payload`` and ``swatch``; on tape only 62 mm, always across."""
+
+
+def has_qr(content_type: ContentType) -> bool:
+    """Whether ``content_type`` draws a QR code (every ``qr_*`` type and the swatch label)."""
+    return content_type.value.startswith("qr_") or content_type is ContentType.SPOOL_SWATCH

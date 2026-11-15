@@ -84,6 +84,32 @@ def _grocy_label() -> list[SettingDef]:
     return defs
 
 
+SPOOLMAN_LABEL_KEY_SETTINGS: tuple[tuple[str, str], ...] = (
+    ("integrations.spoolman.label.nozzle_field", "nozzle_temperature"),
+    ("integrations.spoolman.label.pressure_advance_field", "flowdynamics"),
+    ("integrations.spoolman.label.flow_ratio_field", "flowrate"),
+    ("integrations.spoolman.label.drying_temp_field", "drying_condiftions_temp"),
+    ("integrations.spoolman.label.drying_time_field", "drying_condiftions_time"),
+)
+"""#346 R-346-5: Spoolman extra-field keys the swatch label reads (Spoolman's own spelling)."""
+
+SPOOLMAN_LABEL_TITLE_SOURCE_KEY = "integrations.spoolman.label.title_source"
+
+
+def _spoolman_label() -> list[SettingDef]:
+    defs = [SettingDef(key, "str", default, None) for key, default in SPOOLMAN_LABEL_KEY_SETTINGS]
+    defs.append(
+        SettingDef(
+            SPOOLMAN_LABEL_TITLE_SOURCE_KEY,
+            "enum",
+            "material",
+            "spoolman_label_title_source",
+            choices=("material", "name"),
+        )
+    )
+    return defs
+
+
 _DEFS: list[SettingDef] = [
     SettingDef("general.display_name", "str", "Labelyard", None),
     SettingDef("general.language", "enum", "en", None, choices=("en", "de")),
@@ -94,6 +120,7 @@ _DEFS: list[SettingDef] = [
     *_integration("grocy", secret="api_key", secret_env="grocy_api_key"),
     *_grocy_label(),
     *_integration("spoolman", secret=None, secret_env=None),
+    *_spoolman_label(),
     *_integration("paperless", secret="token", secret_env="paperless_token"),
     SettingDef("access.webhook_api_key", "secret", "", "webhook_api_key"),
     SettingDef("jobs.retention_days", "int", 30, "job_retention_days"),

@@ -48,7 +48,7 @@ from app.printer_backends.ipp.attributes import Margins
 from app.repositories import print_batches as batches_repo
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
-from app.schemas.content_type import ContentType
+from app.schemas.content_type import ContentType, has_qr
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintLookupRequest
 from app.schemas.sheet_print import (
@@ -651,7 +651,7 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
     payload = job.data.qr_payload
     if (
         not payload
-        or not job.content_type.value.startswith("qr_")
+        or not has_qr(job.content_type)
         or not _qr_fits_at(payload, w_mm, h_mm, render_dpi)
     ):
         return draw(job.data)
@@ -1127,7 +1127,7 @@ def check_item_fits(
     box = content_box(geometry, cell)
     if not box_fits_a_line(box):  # a label too small to hold a line (or a negative box)
         raise ItemContentMismatchError(index, ("label_size",))
-    qr_does_not_fit = content_type.value.startswith("qr_") and not _qr_fits_at(
+    qr_does_not_fit = has_qr(content_type) and not _qr_fits_at(
         item.label.qr_payload or "", box.w / 100, box.h / 100, render_dpi
     )
     if qr_does_not_fit:
@@ -1148,9 +1148,7 @@ def check_id_cell_fits(
     if not box_fits_a_line(box):
         raise IdCellContentMismatchError(("label_size",))
     content_type, _ = map_content_type(ContentType.QR_TWO_LINES, allow_qr)
-    if content_type.value.startswith("qr_") and not _qr_fits_at(
-        scan(code), box.w / 100, box.h / 100, render_dpi
-    ):
+    if has_qr(content_type) and not _qr_fits_at(scan(code), box.w / 100, box.h / 100, render_dpi):
         raise IdCellContentMismatchError(("qr_payload",))
 
 
@@ -1832,7 +1830,7 @@ def _check_retry_fits(detail: SheetPageDetail, render_dpi: int) -> None:
         if not box_fits_a_line(box):
             raise IdCellContentMismatchError(("label_size",))
         if (
-            detail.id_cell.content_type.value.startswith("qr_")
+            has_qr(detail.id_cell.content_type)
             and id_label.qr_payload
             and not _qr_fits_at(id_label.qr_payload, box.w / 100, box.h / 100, render_dpi)
         ):

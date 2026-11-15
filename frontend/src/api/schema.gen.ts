@@ -1930,7 +1930,7 @@ export interface components {
          * @description Tape-independent semantic content types for label rendering.
          * @enum {string}
          */
-        ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing";
+        ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing" | "spool_swatch";
         /**
          * DetailError
          * @description The error body the routes actually send: FastAPI's ``{"detail": "<text>"}``.
@@ -3201,6 +3201,7 @@ export interface components {
              * @default []
              */
             secondary: string[];
+            swatch?: components["schemas"]["SpoolSwatch"] | null;
             /** Title */
             title?: string | null;
         };
@@ -3761,6 +3762,7 @@ export interface components {
              * @default []
              */
             secondary: string[];
+            swatch?: components["schemas"]["SpoolSwatch"] | null;
             /** Title */
             title?: string | null;
         };
@@ -4051,6 +4053,63 @@ export interface components {
         SignInRequest: {
             /** Key */
             key: string;
+        };
+        /**
+         * SpoolSwatch
+         * @description What the swatch label prints for one spool; every field but the id is optional.
+         */
+        SpoolSwatch: {
+            /** Bed C */
+            bed_c?: number | null;
+            /**
+             * Color Hexes
+             * @default []
+             */
+            color_hexes: string[];
+            /** Color Name */
+            color_name?: string | null;
+            /** Density G Cm3 */
+            density_g_cm3?: number | null;
+            /** Diameter Mm */
+            diameter_mm?: number | null;
+            /** Drying C */
+            drying_c?: number | null;
+            /** Drying H */
+            drying_h?: [
+                number,
+                number
+            ] | null;
+            /** Flow Ratio */
+            flow_ratio?: number | null;
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "en" | "de";
+            /** Location */
+            location?: string | null;
+            /** Lot */
+            lot?: string | null;
+            /** Net Weight G */
+            net_weight_g?: number | null;
+            /** Nozzle C */
+            nozzle_c?: [
+                number,
+                number
+            ] | null;
+            /** Opened */
+            opened?: string | null;
+            /** Pressure Advance */
+            pressure_advance?: number | null;
+            /** Spool Id */
+            spool_id: number;
+            /** Spool Weight G */
+            spool_weight_g?: number | null;
+            /** Title */
+            title?: string | null;
+            /** Vendor */
+            vendor?: string | null;
         };
         /**
          * SpoolmanWebhookPayload

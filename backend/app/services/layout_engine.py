@@ -43,6 +43,7 @@ REQUIRED_FIELDS: Final[Mapping[ContentType, tuple[str, ...]]] = {
     ContentType.TEXT_ONE_LINE: ("primary_id",),
     ContentType.TEXT_TWO_LINES: ("primary_id", "title"),
     ContentType.QR_WITH_LISTING: ("qr_payload", "primary_id", "items"),
+    ContentType.SPOOL_SWATCH: ("qr_payload", "swatch"),
 }
 """ContentType -> ordered tuple of LabelData field names that must be set.
 
@@ -104,6 +105,8 @@ class LayoutEngine:
                 return self._render_text_two_lines(geometry, data)
             case ContentType.QR_WITH_LISTING:
                 return self._render_qr_with_listing(geometry, data)
+            case ContentType.SPOOL_SWATCH:
+                raise UnsupportedTapeError(tape_mm=tape_mm)
 
     # ------------------------------------------------------------------
     # Helpers

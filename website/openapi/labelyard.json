@@ -1045,7 +1045,8 @@
           "qr_three_lines",
           "text_one_line",
           "text_two_lines",
-          "qr_with_listing"
+          "qr_with_listing",
+          "spool_swatch"
         ],
         "title": "ContentType",
         "type": "string"
@@ -3832,6 +3833,16 @@
             "title": "Secondary",
             "type": "array"
           },
+          "swatch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpoolSwatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -5189,6 +5200,16 @@
             "title": "Secondary",
             "type": "array"
           },
+          "swatch": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpoolSwatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "title": {
             "anyOf": [
               {
@@ -6047,6 +6068,260 @@
           "key"
         ],
         "title": "SignInRequest",
+        "type": "object"
+      },
+      "SpoolSwatch": {
+        "additionalProperties": false,
+        "description": "What the swatch label prints for one spool; every field but the id is optional.",
+        "properties": {
+          "bed_c": {
+            "anyOf": [
+              {
+                "maximum": 600.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed C"
+          },
+          "color_hexes": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Color Hexes",
+            "type": "array"
+          },
+          "color_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Name"
+          },
+          "density_g_cm3": {
+            "anyOf": [
+              {
+                "maximum": 30.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Density G Cm3"
+          },
+          "diameter_mm": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diameter Mm"
+          },
+          "drying_c": {
+            "anyOf": [
+              {
+                "maximum": 600.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drying C"
+          },
+          "drying_h": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "maximum": 1000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  },
+                  {
+                    "maximum": 1000.0,
+                    "minimum": 0.0,
+                    "type": "number"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drying H"
+          },
+          "flow_ratio": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Ratio"
+          },
+          "language": {
+            "default": "en",
+            "enum": [
+              "en",
+              "de"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "lot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lot"
+          },
+          "net_weight_g": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Weight G"
+          },
+          "nozzle_c": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "maximum": 600.0,
+                    "minimum": 0.0,
+                    "type": "integer"
+                  },
+                  {
+                    "maximum": 600.0,
+                    "minimum": 0.0,
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nozzle C"
+          },
+          "opened": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened"
+          },
+          "pressure_advance": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pressure Advance"
+          },
+          "spool_id": {
+            "minimum": 1.0,
+            "title": "Spool Id",
+            "type": "integer"
+          },
+          "spool_weight_g": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spool Weight G"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "vendor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor"
+          }
+        },
+        "required": [
+          "spool_id"
+        ],
+        "title": "SpoolSwatch",
         "type": "object"
       },
       "SpoolmanWebhookPayload": {

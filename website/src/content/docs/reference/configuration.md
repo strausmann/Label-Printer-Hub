@@ -159,6 +159,14 @@ Seconds to wait for Spoolman.
 
 Also set in the web UI; a value set here wins and locks the field there.
 
+### `LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE`
+
+Default: `material`
+
+What the black bar of the Spoolman spool label shows: `material` (the filament's material) or `name` (the filament name). The line under the bar shows the other one.
+
+Also set in the web UI; a value set here wins and locks the field there.
+
 ### `LABELYARD_SERVER_PORT`
 
 Default: `8000`

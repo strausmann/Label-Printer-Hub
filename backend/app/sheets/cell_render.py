@@ -39,7 +39,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.page_render.pdf import resolve_font_path
 from app.printer_backends.exceptions import ContentTypeDataMismatchError
-from app.schemas.content_type import ContentType
+from app.schemas.content_type import ContentType, has_qr
 from app.schemas.label_data import LabelData
 from app.services.layout_engine import REQUIRED_FIELDS
 from app.sheets.geometry import Geometry, cell_origin
@@ -86,6 +86,7 @@ _MAPPED_WITHOUT_QR: Final[dict[ContentType, ContentType]] = {
     ContentType.QR_TWO_LINES: ContentType.TEXT_TWO_LINES,
     ContentType.QR_THREE_LINES: ContentType.TEXT_TWO_LINES,
     ContentType.QR_WITH_LISTING: ContentType.TEXT_TWO_LINES,
+    ContentType.SPOOL_SWATCH: ContentType.TEXT_TWO_LINES,
 }
 
 # Font sizes (em, in px) as fractions of the box height; the cap height is about 0.73 em.
@@ -361,7 +362,10 @@ def _clean(value: str | None) -> str:
 def check_required(content_type: ContentType, data: LabelData) -> None:
     def empty(name: str) -> bool:
         value = getattr(data, name)
-        if value is None or len(value) == 0:
+        if value is None:
+            return True
+        # A value without a length (the swatch model) is present once it is set.
+        if hasattr(value, "__len__") and len(value) == 0:
             return True
         # Text that is only whitespace or control characters draws nothing: also missing.
         if name in ("primary_id", "title"):
@@ -416,7 +420,7 @@ class RasterCellRenderer:
         width, height = _box_px(box_w_mm, box_h_mm, dpi)
         canvas = Image.new("1", (width, height), 1)
         text_x = 0
-        if content_type.value.startswith("qr_"):
+        if has_qr(content_type):
             edge = qr_edge_px(box_w_mm, box_h_mm, dpi)
             qr = build_qr(data.qr_payload or "", edge, mask=qr_mask)
             if qr is None:

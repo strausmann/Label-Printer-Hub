@@ -159,6 +159,14 @@ Sekunden, die auf Spoolman gewartet wird.
 
 Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sperrt das Feld dort.
 
+### `LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE`
+
+Standard: `material`
+
+Was der schwarze Balken des Spoolman-Spulenetiketts zeigt: `material` (das Material des Filaments) oder `name` (den Filamentnamen). Die Zeile unter dem Balken zeigt das jeweils andere.
+
+Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sperrt das Feld dort.
+
 ### `LABELYARD_SERVER_PORT`
 
 Standard: `8000`

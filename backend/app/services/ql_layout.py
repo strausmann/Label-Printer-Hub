@@ -399,6 +399,9 @@ def _fields(
             shown = data.items[:max_rows]
             rows = [(it.item, _Role.DETAIL) for it in shown]
             return [(code, _Role.CODE), *rows], len(data.items) - len(shown)
+        case ContentType.SPOOL_SWATCH:
+            # The engine draws the swatch itself, before any QL layout is resolved (#346).
+            raise ValueError("spool_swatch has no QL text layout")
 
 
 def _has_qr(content_type: ContentType) -> bool:
