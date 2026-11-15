@@ -2160,6 +2160,10 @@ msgstr "No client keys yet. Create one under <0>Access and keys</0>, named after
 msgid "No code found in this photo. Hold the camera closer and try again."
 msgstr "No code found in this photo. Hold the camera closer and try again."
 
+#: src/features/calibration/CalibrationSchematic.tsx
+msgid "No corner marks are drawn at the inner crossings: there the gap lines and the scale show the cut."
+msgstr "No corner marks are drawn at the inner crossings: there the gap lines and the scale show the cut."
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "No correction stored for this tray."
 msgstr "No correction stored for this tray."

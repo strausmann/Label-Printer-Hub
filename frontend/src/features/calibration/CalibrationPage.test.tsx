@@ -90,6 +90,7 @@ describe("step 1: the calibration page", () => {
     expect(legend).toHaveTextContent("Z1, Z2 … number the gaps between rows");
     expect(legend).toHaveTextContent("black only");
     expect(legend).toHaveTextContent("checkerboard");
+    expect(legend).toHaveTextContent("No corner marks are drawn at the inner crossings");
   });
 
   it("explains a gap crossing in words, with the signs", async () => {

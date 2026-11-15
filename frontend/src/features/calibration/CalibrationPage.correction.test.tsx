@@ -109,6 +109,9 @@ describe("the buttons depend on whether a correction is stored (#349)", () => {
     // A second press while it is queued says so, asks nothing and sends nothing.
     await userEvent.click(again);
     expect(await screen.findByText("A print is already on its way.")).toBeVisible();
+    // A live region that was in the page before the text came, so a screen reader announces it.
+    expect(screen.getByText("A print is already on its way.")).toHaveAttribute("role", "status");
+    expect(screen.getByRole("button", { name: CALIBRATION })).toHaveAccessibleDescription("A print is already on its way.");
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(only(calls, "POST", "/page")).toHaveLength(1);
     release();

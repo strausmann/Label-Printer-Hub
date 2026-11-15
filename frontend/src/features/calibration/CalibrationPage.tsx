@@ -242,7 +242,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
                 else if (hasStored) setAsking(true);
                 else send(calibrationPrint, false);
               }}
-              hint={pressedWhileBusy && calibrationPrint.isPending ? t`A print is already on its way.` : undefined}
+              busyNote={pressedWhileBusy && calibrationPrint.isPending ? t`A print is already on its way.` : ""}
               disabled={!canPrint}
               label={t`Print the calibration page (without correction)`}
               subject={t`Calibration page`}
@@ -382,6 +382,8 @@ interface PrintActionProps {
   doneHint: string;
   /** Said under the row, whatever the print answers. */
   hint?: string;
+  /** Said when a press is ignored because the print is still being queued. Its region is always in the page, so it is announced. */
+  busyNote?: string;
   primary?: boolean;
   noKey: boolean;
   /** Off where a dialog returns focus to the button after it was pressed: it must not be disabled by then. A press while pending is ignored either way. */
@@ -390,9 +392,10 @@ interface PrintActionProps {
   children?: ReactNode;
 }
 
-function PrintAction({ printerId, type, print, onPress, disabled, label, subject, statusLabel, doneHint, hint, primary, noKey, lockWhilePending = true, children }: PrintActionProps) {
+function PrintAction({ printerId, type, print, onPress, disabled, label, subject, statusLabel, doneHint, hint, busyNote, primary, noKey, lockWhilePending = true, children }: PrintActionProps) {
   const { t } = useLingui();
   const hintId = useId();
+  const noteId = useId();
   const errorText = useCalibrationErrorText();
   // What the last print answered belongs to the sheet type it was for: another type starts with a clean line.
   const current = print.variables?.request.type === type.key;
@@ -404,7 +407,7 @@ function PrintAction({ printerId, type, print, onPress, disabled, label, subject
           isDisabled={disabled || (lockWhilePending && print.isPending)}
           onPress={onPress}
           // A disabled button leaves the tab order: the hint says why, so the button points to it.
-          aria-describedby={hint ? hintId : undefined}
+          aria-describedby={[hint && hintId, busyNote && noteId].filter(Boolean).join(" ") || undefined}
           className={primary ? PRIMARY_BUTTON : SECONDARY_BUTTON}
         >
           {label}
@@ -412,6 +415,11 @@ function PrintAction({ printerId, type, print, onPress, disabled, label, subject
         {children}
       </div>
       {hint && <p id={hintId} className={`${HINT} m-0`}>{hint}</p>}
+      {busyNote !== undefined && (
+        <p id={noteId} role="status" className={`${HINT} m-0 empty:hidden`}>
+          {busyNote}
+        </p>
+      )}
       {noKey && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
       {print.isError && current && (
         <p role="alert" className="m-0 text-bad">
