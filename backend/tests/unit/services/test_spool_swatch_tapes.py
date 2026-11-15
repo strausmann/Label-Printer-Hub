@@ -10,9 +10,11 @@ core, 62 mm unchanged. Along labels are as long as their content needs, never sh
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 
 import pytest
+from app.printer_backends.exceptions import QrPayloadTooLongError
 from app.schemas.label_layout import LabelOrientation
 from app.services.spool_swatch import (
     SWATCH_ALONG_MIN_MM,
@@ -181,12 +183,21 @@ def test_qr_modules_reach_the_minimum(tape_mm: int, module_px: int) -> None:
     assert symbol[1] * 2540 >= MIN_QR_MODULE_HMM * DPI
 
 
-def test_62_mm_is_unchanged() -> None:
+# SHA-256 of the 62 mm image bytes at 739602d, before the other DK widths (``git archive``).
+GOLDEN_62 = {
+    "every_row": "024886b2ef822ccbb19ef334dc106356df1c60e19e70cd2f9ffb21c437f24b8d",
+    "sparse": "40c11ec60045dd032824a5d72469437d907d47ed55ce79753fe1f6c0f153b0c6",
+}
+
+
+@pytest.mark.parametrize("spool", GOLDEN_62)
+def test_62_mm_is_unchanged(spool: str) -> None:
     from app.services.spool_swatch import SWATCH_TAPE_PX
 
-    image = render_tape_swatch(every_row(), SAMPLE_URL, 62)
-    assert image.size == SWATCH_TAPE_PX
-    assert image.tobytes() == render_tape_swatch(every_row(), SAMPLE_URL).tobytes()
+    image = render_tape_swatch(SPOOLS[spool](), SAMPLE_URL, 62)
+    assert (image.size, image.mode) == (SWATCH_TAPE_PX, "1")
+    assert hashlib.sha256(image.tobytes()).hexdigest() == GOLDEN_62[spool]
+    assert image.tobytes() == render_tape_swatch(SPOOLS[spool](), SAMPLE_URL).tobytes()
 
 
 @pytest.mark.parametrize("tape_mm", WIDTHS)
@@ -203,3 +214,58 @@ def test_batch_hands_over_what_prints_upright(tape_mm: int, batch: LabelOrientat
         printed = handed.transpose(Image.Transpose.ROTATE_270) if native is ALONG else handed
     assert printed.tobytes() == expected.tobytes()
     assert printed.width == SWATCH_TAPES[tape_mm].dots
+
+
+def _url(length: int) -> str:
+    base = "https://labels.example.org/spool/show/12?x="
+    return base + "a" * (length - len(base))
+
+
+def _prints(tape_mm: int, length: int) -> bool:
+    try:
+        render_tape_swatch(every_row(), _url(length), tape_mm)
+    except QrPayloadTooLongError:
+        return False
+    return True
+
+
+def _longest_that_prints(tape_mm: int) -> int:
+    """The longest payload the tape prints (bytes); payload length is monotone in QR size."""
+    low, high = len(SAMPLE_URL), 3000
+    while low < high:
+        mid = (low + high + 1) // 2
+        if _prints(tape_mm, mid):
+            low = mid
+        else:
+            high = mid - 1
+    return low
+
+
+@pytest.mark.parametrize("tape_mm", WIDTHS)
+def test_every_printed_qr_keeps_modules_of_at_least_025_mm(tape_mm: int) -> None:
+    """Up to the longest payload a tape takes, every module is at least 0.25 mm; one byte more
+    is refused with ``qr_payload_too_long``, naming exactly that limit."""
+    layout, _, _ = tape_swatch_layout(every_row(), tape_mm)
+    box_px = to_px(layout.qr_box[2], DPI)
+    longest = _longest_that_prints(tape_mm)
+    for length in range(len(SAMPLE_URL), longest + 1, 7):
+        symbol = swatch_symbol(_url(length), box_px)
+        assert symbol is not None
+        assert symbol[1] * 2540 >= MIN_QR_MODULE_HMM * DPI, length
+    with pytest.raises(QrPayloadTooLongError) as exc:
+        render_tape_swatch(every_row(), _url(longest + 1), tape_mm)
+    assert exc.value.max_bytes == longest
+    assert exc.value.length == longest + 1
+
+
+@pytest.mark.parametrize(
+    ("tape_mm", "longest"), [(29, 84), (38, 122), (50, 122), (54, 62), (62, 213)]
+)
+def test_longest_qr_payload_per_width(tape_mm: int, longest: int) -> None:
+    """The per-width limit the docs name (bytes, error correction M)."""
+    assert _longest_that_prints(tape_mm) == longest
+
+
+def test_a_url_40_characters_longer_is_refused_on_54mm() -> None:
+    with pytest.raises(QrPayloadTooLongError):
+        render_tape_swatch(every_row(), SAMPLE_URL + "?" + "a" * 39, 54)

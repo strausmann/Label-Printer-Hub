@@ -337,8 +337,17 @@ def swatch_symbol(
     return image.convert("1"), module
 
 
-def _too_long(payload: str, box_px: int) -> QrPayloadTooLongError:
-    version = min(40, (box_px - 2 * _QUIET_MODULES - 17) // 4)
+def min_module_px(dpi: int) -> int:
+    """The smallest QR module drawn on tape: the planner's ``MIN_QR_MODULE_HMM`` (0.25 mm) in
+    whole pixels, 3 px at 300 dpi."""
+    from app.sheets.planner import MIN_QR_MODULE_HMM
+
+    return math.ceil(MIN_QR_MODULE_HMM * dpi / 2540)
+
+
+def _too_long(payload: str, box_px: int, module_px: int = 1) -> QrPayloadTooLongError:
+    """The refusal for ``payload``, naming the most a ``box_px`` box holds at ``module_px``."""
+    version = min(40, (box_px // module_px - 2 * _QUIET_MODULES - 17) // 4)
     capacity = _byte_capacity_m(version) if version >= 1 else 0
     return QrPayloadTooLongError(length=len(payload.encode("utf-8")), max_bytes=capacity)
 
@@ -358,14 +367,16 @@ def render_swatch(
 
     Raises:
         QrDoesNotFitError: sheet metrics, no QR version fits the box.
-        QrPayloadTooLongError: tape metrics, no QR version fits the box.
+        QrPayloadTooLongError: tape metrics, the payload does not fit the box at modules of
+            at least 0.25 mm (``min_module_px``).
     """
     qr_x, qr_y, edge = layout.qr_box
     box_px = to_px(edge, dpi)
     symbol = swatch_symbol(qr_payload, box_px, mask=qr_mask)
+    if metrics.name == TAPE_METRICS.name and (symbol is None or symbol[1] < min_module_px(dpi)):
+        # Tape: below 0.25 mm per module a longer URL would print, but not scan (#346).
+        raise _too_long(qr_payload, box_px, min_module_px(dpi))
     if symbol is None:
-        if metrics.name == TAPE_METRICS.name:
-            raise _too_long(qr_payload, box_px)
         from app.sheets.cell_render import QrDoesNotFitError
 
         raise QrDoesNotFitError(content_type="spool_swatch")
