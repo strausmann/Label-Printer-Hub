@@ -64,6 +64,7 @@ export function previewFor(code: string | null, fresh: number[], used: number[] 
     free_after: [48 - used.length - fresh.length],
     expected_cells: [{ sheet: code ?? "new", cells: fresh, id_cell: null }],
     reprint_hints: [],
+    reprint_totals: [],
     placed: fresh.length,
     remaining: 0,
     ...over,

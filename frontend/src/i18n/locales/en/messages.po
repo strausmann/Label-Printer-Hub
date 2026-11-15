@@ -162,6 +162,14 @@ msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hid
 msgstr "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
 
 #: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {only}, the last {count} listed"
+msgstr "{item}: printed before {all}× on {only}, the last {count} listed"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+msgstr "{item}: printed before {all}× on {sheetCount} sheets, the last {count} listed"
+
+#: src/features/sheets/print/SheetPreview.tsx
 msgid "{item}: printed before {count}× on {only}, last on {last}"
 msgstr "{item}: printed before {count}× on {only}, last on {last}"
 

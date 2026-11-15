@@ -363,6 +363,7 @@ export const sheetPreview = (over: Partial<Schemas["SheetPreview"]> = {}): Schem
   ],
   free_after: [7, 8, 9],
   reprint_hints: [],
+  reprint_totals: [],
   expected_cells: [{ sheet: "L4736-0001", cells: [4, 5, 6], id_cell: null }],
   placed: 3,
   remaining: 0,

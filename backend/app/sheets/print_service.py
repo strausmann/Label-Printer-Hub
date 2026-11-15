@@ -62,6 +62,7 @@ from app.schemas.sheet_print import (
     PreviewPage,
     PrintedPage,
     ReprintHint,
+    ReprintTotal,
     SheetItem,
     SheetPreview,
     SheetPrintRequest,
@@ -872,14 +873,19 @@ def reserved_margin_id_payload(
     )
 
 
-async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -> list[ReprintHint]:
+async def _reprint_hints(
+    session: AsyncSession, items: Sequence[ResolvedItem]
+) -> tuple[list[ReprintHint], list[ReprintTotal]]:
     """Where lookup items were printed before: ``used`` cells only (pre-flight C32).
 
     Every copy of an item is an item of its own; the earlier prints are listed once, on the item
-    index of the first copy (#340), not once per copy.
+    index of the first copy (#340), not once per copy. That also holds for a second cart line of
+    the same source and ref: it carries no hints of its own. The list holds the newest
+    ``MAX_HINTS_PER_ITEM`` prints; the totals count all of them, per item and per sheet.
     """
     found: dict[tuple[str, str], list[ss.CellHit]] = {}
     hints: list[ReprintHint] = []
+    totals: list[ReprintTotal] = []
     for index, item in enumerate(items):
         if item.lookup is None:
             continue
@@ -895,7 +901,12 @@ async def _reprint_hints(session: AsyncSession, items: Sequence[ResolvedItem]) -
             ReprintHint(item_index=index, sheet_code=h.code, cell=h.cell, printed_at=h.updated_at)
             for h in found[key][:MAX_HINTS_PER_ITEM]
         )
-    return hints
+        if found[key]:
+            sheets: dict[str, int] = {}
+            for h in found[key]:
+                sheets[h.code] = sheets.get(h.code, 0) + 1
+            totals.append(ReprintTotal(item_index=index, total=len(found[key]), sheets=sheets))
+    return hints, totals
 
 
 async def preview(
@@ -1045,7 +1056,7 @@ async def preview(
         )
 
     async with session_factory() as session:
-        hints = await _reprint_hints(session, items)
+        hints, totals = await _reprint_hints(session, items)
     return SheetPreview(
         pages=pages,
         free_after=list(result.free_after),
@@ -1054,6 +1065,7 @@ async def preview(
             for e in expected_of(result, new_views)
         ],
         reprint_hints=hints,
+        reprint_totals=totals,
         placed=placed,
         remaining=total - placed,
     )

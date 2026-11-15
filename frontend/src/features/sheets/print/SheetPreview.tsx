@@ -13,6 +13,7 @@ import { useSheetIdBand } from "./bandWord";
 import { cellRanges, groupReprints, type ReprintGroup } from "./reprints";
 
 type Page = PreviewData["pages"][number];
+type Total = PreviewData["reprint_totals"][number];
 
 /** More planned cells than this and the list of them starts folded. */
 const LONG_LIST = 12;
@@ -51,11 +52,13 @@ function localDay(iso: string): string {
  * Where an item was printed before (#340): one line, and on more than one sheet or day a folded table with a row per
  * sheet and day.
  */
-function Reprints({ group, item }: { group: ReprintGroup; item: string }) {
+function Reprints({ group, item, total }: { group: ReprintGroup; item: string; total: Total | undefined }) {
   const { t, i18n } = useLingui();
   const date = (iso: string) => new Date(iso).toLocaleDateString(i18n.locale, { dateStyle: "medium" });
   const { count, rows } = group;
-  if (rows.length === 1) {
+  // The server lists the newest prints only; `reprint_totals` counts all of them. More than listed: say so.
+  const all = total && total.total > count ? total.total : null;
+  if (all === null && rows.length === 1) {
     const row = rows[0]!;
     const sheet = row.sheet;
     const when = date(row.last);
@@ -68,17 +71,25 @@ function Reprints({ group, item }: { group: ReprintGroup; item: string }) {
       </span>
     );
   }
-  const sheets = new Set(rows.map((r) => r.sheet));
-  const sheetCount = sheets.size;
-  const only = rows[0]!.sheet;
+  const sheetNames = all !== null && total ? Object.keys(total.sheets) : [...new Set(rows.map((r) => r.sheet))];
+  const sheetCount = sheetNames.length;
+  const only = sheetNames[0] ?? rows[0]!.sheet;
   const last = date(rows[0]!.last);
+  let line: string;
+  if (all !== null) {
+    line =
+      sheetCount === 1
+        ? t`${item}: printed before ${all}× on ${only}, the last ${count} listed`
+        : t`${item}: printed before ${all}× on ${sheetCount} sheets, the last ${count} listed`;
+  } else {
+    line =
+      sheetCount === 1
+        ? t`${item}: printed before ${count}× on ${only}, last on ${last}`
+        : t`${item}: printed before ${count}× on ${sheetCount} sheets, last on ${last}`;
+  }
   return (
     <details>
-      <summary className="min-h-11 cursor-pointer py-2 [overflow-wrap:anywhere]">
-        {sheetCount === 1
-          ? t`${item}: printed before ${count}× on ${only}, last on ${last}`
-          : t`${item}: printed before ${count}× on ${sheetCount} sheets, last on ${last}`}
-      </summary>
+      <summary className="min-h-11 cursor-pointer py-2 [overflow-wrap:anywhere]">{line}</summary>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left tabular-nums" aria-label={t`Earlier prints of ${item}`}>
           <thead>
@@ -200,7 +211,7 @@ function PageView({
         {cutOff !== "" && <li>{t`May be cut off by the printer's unprintable margin: cells ${cutOff}`}</li>}
         {reprints.map((group) => (
           <li key={group.itemIndex}>
-            <Reprints group={group} item={itemName(group.itemIndex)} />
+            <Reprints group={group} item={itemName(group.itemIndex)} total={data.reprint_totals.find((r) => r.item_index === group.itemIndex)} />
           </li>
         ))}
       </ul>

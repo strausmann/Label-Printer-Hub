@@ -3740,20 +3740,25 @@
         "type": "object"
       },
       "ReprintHint": {
+        "description": "One earlier print of a lookup item: a ``used`` cell it was printed into.",
         "properties": {
           "cell": {
+            "description": "The cell of the earlier print.",
             "title": "Cell",
             "type": "integer"
           },
           "item_index": {
+            "description": "Index of the item in `items`. Only on the first copy of an item (the first item with this source and ref): its other copies, and later cart lines of the same item, carry no hints.",
             "title": "Item Index",
             "type": "integer"
           },
           "printed_at": {
+            "description": "When the cell was printed (UTC).",
             "title": "Printed At",
             "type": "string"
           },
           "sheet_code": {
+            "description": "The sheet the earlier print is on.",
             "title": "Sheet Code",
             "type": "string"
           }
@@ -3836,6 +3841,36 @@
           "run"
         ],
         "title": "ReprintResponse",
+        "type": "object"
+      },
+      "ReprintTotal": {
+        "description": "How often an item was printed before: all earlier prints, not only the listed ones.",
+        "properties": {
+          "item_index": {
+            "description": "The item the hints are on (see `ReprintHint.item_index`).",
+            "title": "Item Index",
+            "type": "integer"
+          },
+          "sheets": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Earlier prints of the item per sheet code.",
+            "title": "Sheets",
+            "type": "object"
+          },
+          "total": {
+            "description": "Earlier prints of the item; `reprint_hints` lists the newest ones only.",
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "item_index",
+          "total",
+          "sheets"
+        ],
+        "title": "ReprintTotal",
         "type": "object"
       },
       "ResolveRequest": {
@@ -4557,10 +4592,19 @@
             "type": "integer"
           },
           "reprint_hints": {
+            "description": "Where lookup items were printed before: the newest ones per item, on the first copy of the item. `reprint_totals` has the full count.",
             "items": {
               "$ref": "#/components/schemas/ReprintHint"
             },
             "title": "Reprint Hints",
+            "type": "array"
+          },
+          "reprint_totals": {
+            "description": "One entry per item that has `reprint_hints`: the count of all its earlier prints.",
+            "items": {
+              "$ref": "#/components/schemas/ReprintTotal"
+            },
+            "title": "Reprint Totals",
             "type": "array"
           }
         },
@@ -4569,6 +4613,7 @@
           "free_after",
           "expected_cells",
           "reprint_hints",
+          "reprint_totals",
           "placed",
           "remaining"
         ],

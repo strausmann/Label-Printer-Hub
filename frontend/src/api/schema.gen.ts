@@ -3016,15 +3016,30 @@ export interface components {
              */
             severity: "report" | "warning" | "error";
         };
-        /** ReprintHint */
+        /**
+         * ReprintHint
+         * @description One earlier print of a lookup item: a ``used`` cell it was printed into.
+         */
         ReprintHint: {
-            /** Cell */
+            /**
+             * Cell
+             * @description The cell of the earlier print.
+             */
             cell: number;
-            /** Item Index */
+            /**
+             * Item Index
+             * @description Index of the item in `items`. Only on the first copy of an item (the first item with this source and ref): its other copies, and later cart lines of the same item, carry no hints.
+             */
             item_index: number;
-            /** Printed At */
+            /**
+             * Printed At
+             * @description When the cell was printed (UTC).
+             */
             printed_at: string;
-            /** Sheet Code */
+            /**
+             * Sheet Code
+             * @description The sheet the earlier print is on.
+             */
             sheet_code: string;
         };
         /** ReprintRequest */
@@ -3053,6 +3068,29 @@ export interface components {
              * @description Labels not re-queued because their stored job was cleaned up.
              */
             skipped_job_ids: string[];
+        };
+        /**
+         * ReprintTotal
+         * @description How often an item was printed before: all earlier prints, not only the listed ones.
+         */
+        ReprintTotal: {
+            /**
+             * Item Index
+             * @description The item the hints are on (see `ReprintHint.item_index`).
+             */
+            item_index: number;
+            /**
+             * Sheets
+             * @description Earlier prints of the item per sheet code.
+             */
+            sheets: {
+                [key: string]: number;
+            };
+            /**
+             * Total
+             * @description Earlier prints of the item; `reprint_hints` lists the newest ones only.
+             */
+            total: number;
         };
         /** ResolveRequest */
         ResolveRequest: {
@@ -3332,8 +3370,16 @@ export interface components {
              * @description Items left out because one run prints one sheet; print them in another run.
              */
             remaining: number;
-            /** Reprint Hints */
+            /**
+             * Reprint Hints
+             * @description Where lookup items were printed before: the newest ones per item, on the first copy of the item. `reprint_totals` has the full count.
+             */
             reprint_hints: components["schemas"]["ReprintHint"][];
+            /**
+             * Reprint Totals
+             * @description One entry per item that has `reprint_hints`: the count of all its earlier prints.
+             */
+            reprint_totals: components["schemas"]["ReprintTotal"][];
         };
         /** SheetPrintRequest */
         SheetPrintRequest: {
