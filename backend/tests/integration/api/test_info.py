@@ -13,7 +13,6 @@ from uuid import uuid4
 import app.models  # noqa: F401
 import bcrypt
 import pytest
-from app.calibration import scale
 from app.config import get_settings
 from app.models.api_key import ApiKey
 
@@ -61,7 +60,6 @@ async def test_info_shape(api_client_with_seed) -> None:
         "auth",
         "features",
         "integrations",
-        "calibration_scale",
         "license",
         "source_url",
     }
@@ -77,15 +75,8 @@ async def test_info_shape(api_client_with_seed) -> None:
     assert body["default_language"] == "en"
     assert body["display_name"] == "Labelyard"
     assert body["auth"] == {"sso_configured": False, "bootstrap_open": False}
-    # The app draws its schematic of the calibration page from these, so they are the page's own.
-    assert body["calibration_scale"] == {
-        "half_mm": scale.HALF_MM,
-        "step_mm": scale.STEP_MM,
-        "line_mm": scale.LINE_MM,
-        "tick_half_mm": scale.TICK_HALF_MM,
-        "tick_whole_mm": scale.TICK_WHOLE_MM,
-        "tick_centre_mm": scale.TICK_CENTRE_MM,
-    }
+    # The drawing numbers of the calibration page are behind sign-in (the calibration routes).
+    assert "calibration_scale" not in body
 
 
 async def test_info_sso_configured_follows_trust_token(

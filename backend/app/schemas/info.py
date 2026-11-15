@@ -27,19 +27,6 @@ class InfoIntegration(BaseModel):
     configured: bool
 
 
-class InfoCalibrationScale(BaseModel):
-    """The mini scale at a crossing of the calibration page: the app draws its schematic from it."""
-
-    model_config = ConfigDict(frozen=True)
-
-    half_mm: float
-    step_mm: float
-    line_mm: float
-    tick_half_mm: float
-    tick_whole_mm: float
-    tick_centre_mm: float
-
-
 class Info(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -53,7 +40,6 @@ class Info(BaseModel):
     auth: InfoAuth
     features: dict[str, bool]
     integrations: list[InfoIntegration]
-    calibration_scale: InfoCalibrationScale
 
 
 class LogEntry(BaseModel):

@@ -102,6 +102,17 @@ class CalibrationPut(CalibrationIn):
     )
 
 
+class CalibrationScale(BaseModel):
+    """The mini scale at a crossing of the calibration page (mm); the app draws from it."""
+
+    half_mm: float
+    step_mm: float
+    line_mm: float
+    tick_half_mm: float
+    tick_whole_mm: float
+    tick_centre_mm: float
+
+
 class CalibrationRead(BaseModel):
     """One enabled tray; the values are ``None`` while the tray has no calibration (identity)."""
 

@@ -19,12 +19,11 @@ from app.auth import sessions as ui_sessions
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin
 from app.build_info import PROJECT_LICENSE, source_url
-from app.calibration import scale
 from app.config import get_settings
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
 from app.observability.log_buffer import LOG_BUFFER, LOG_BUFFER_CAPACITY
-from app.schemas.info import Info, InfoAuth, InfoCalibrationScale, InfoIntegration, LogEntry
+from app.schemas.info import Info, InfoAuth, InfoIntegration, LogEntry
 
 router = APIRouter(tags=["info"])
 
@@ -84,14 +83,6 @@ async def get_info(request: Request, db: SessionDep) -> Info:
         ),
         features=dict(FEATURES),
         integrations=_integration_status(),
-        calibration_scale=InfoCalibrationScale(
-            half_mm=scale.HALF_MM,
-            step_mm=scale.STEP_MM,
-            line_mm=scale.LINE_MM,
-            tick_half_mm=scale.TICK_HALF_MM,
-            tick_whole_mm=scale.TICK_WHOLE_MM,
-            tick_centre_mm=scale.TICK_CENTRE_MM,
-        ),
     )
 
 

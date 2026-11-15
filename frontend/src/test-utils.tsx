@@ -25,8 +25,6 @@ export const INFO: InfoData = {
     { name: "grocy", configured: true },
     { name: "spoolman", configured: true },
   ],
-  // The values of backend/app/calibration/scale.py; CalibrationSchematic.scale.test.tsx holds this copy to them.
-  calibration_scale: { half_mm: 2, step_mm: 0.5, line_mm: 0.1, tick_half_mm: 0.8, tick_whole_mm: 1.4, tick_centre_mm: 2 },
 };
 
 export const SIGNED_IN: SessionData = {

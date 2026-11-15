@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useLingui } from "@lingui/react/macro";
-import { useInfo } from "../../app/session";
+import { useCalibrationScale, type CalibrationScale } from "./api";
 import { crossingName } from "./model";
 import { cellRect, formatMm, pageSizeMm, type GeometryMm } from "../sheets/cellState";
 
 /** The edge a gap line sits on: the middle of the gap, or the cut between two labels where there is none. */
 const gapCentre = (start: number, pitch: number, size: number, k: number) => start + k * pitch - (pitch - size) / 2;
 
-/** The mini scale of the printed page, as `GET /api/v1/info` hands it over (the numbers live in the backend). */
-export type MiniScaleMm = NonNullable<ReturnType<typeof useInfo>["data"]>["calibration_scale"];
+/** The mini scale of the printed page, as the calibration routes hand it over (the numbers live in the backend). */
+export type MiniScaleMm = CalibrationScale;
 
 /** One tick of the mini scale: where it sits and how long it is, both across the whole scale, in mm. */
 export interface Tick {
@@ -39,7 +39,9 @@ export function miniScaleTicks(scale: MiniScaleMm): Tick[] {
  */
 export function CalibrationSchematic({ geometry: g, typeName }: { geometry: GeometryMm; typeName: string }) {
   const { t, i18n } = useLingui();
-  const scale = useInfo().data?.calibration_scale;
+  const scale = useCalibrationScale().data;
+  // The overview is a schematic, NOT to scale (hair strokes, a cross per crossing). Only `GapCrossing` below is drawn
+  // to the scale of the print: its spacing, lengths and stroke come from the backend's constants.
   const page = pageSizeMm(g);
   const colGaps = Array.from({ length: g.cols - 1 }, (_, i) => i + 1);
   const rowGaps = Array.from({ length: g.rows - 1 }, (_, i) => i + 1);
@@ -132,7 +134,7 @@ export function GapCrossing({ colGap, rowGap }: { colGap: number; rowGap: number
   const name = crossingName(colGap, rowGap);
   const s = `S${colGap}`;
   const z = `Z${rowGap}`;
-  const scale = useInfo().data?.calibration_scale;
+  const scale = useCalibrationScale().data;
   // Drawn at 5 units to the millimetre: the spacing, lengths and stroke are those of the print, only larger.
   const m = 5;
   const reach = (scale?.half_mm ?? 2) * m;

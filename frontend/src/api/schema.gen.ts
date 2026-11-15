@@ -615,6 +615,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printers/calibration/scale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The mini scale drawn at every crossing of the calibration page */
+        get: operations["get_calibration_scale_api_v1_printers_calibration_scale_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/printers/{printer_id}": {
         parameters: {
             query?: never;
@@ -1663,6 +1680,24 @@ export interface components {
             updated_by?: string | null;
         };
         /**
+         * CalibrationScale
+         * @description The mini scale at a crossing of the calibration page (mm); the app draws from it.
+         */
+        CalibrationScale: {
+            /** Half Mm */
+            half_mm: number;
+            /** Line Mm */
+            line_mm: number;
+            /** Step Mm */
+            step_mm: number;
+            /** Tick Centre Mm */
+            tick_centre_mm: number;
+            /** Tick Half Mm */
+            tick_half_mm: number;
+            /** Tick Whole Mm */
+            tick_whole_mm: number;
+        };
+        /**
          * Capabilities
          * @description Served from the status cache; the printer is never contacted.
          */
@@ -1992,7 +2027,6 @@ export interface components {
             auth: components["schemas"]["InfoAuth"];
             /** Build Date */
             build_date: string;
-            calibration_scale: components["schemas"]["InfoCalibrationScale"];
             /**
              * Default Language
              * @enum {string}
@@ -2021,24 +2055,6 @@ export interface components {
             bootstrap_open: boolean;
             /** Sso Configured */
             sso_configured: boolean;
-        };
-        /**
-         * InfoCalibrationScale
-         * @description The mini scale at a crossing of the calibration page: the app draws its schematic from it.
-         */
-        InfoCalibrationScale: {
-            /** Half Mm */
-            half_mm: number;
-            /** Line Mm */
-            line_mm: number;
-            /** Step Mm */
-            step_mm: number;
-            /** Tick Centre Mm */
-            tick_centre_mm: number;
-            /** Tick Half Mm */
-            tick_half_mm: number;
-            /** Tick Whole Mm */
-            tick_whole_mm: number;
         };
         /**
          * InfoIntegration
@@ -5530,6 +5546,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_calibration_scale_api_v1_printers_calibration_scale_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationScale"];
                 };
             };
         };

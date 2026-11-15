@@ -40,6 +40,9 @@ export const typeB = { ...SHEET_TYPE, key: "OTHERTYPE", prefix: "OT", vendor: "O
 export const twoColumns = { ...SHEET_TYPE, key: "TWOCOL", prefix: "T2", vendor: "Two", product_codes: ["T2-1"], geometry: { ...GEOMETRY_L4736, cols: 2 } };
 export const disabledPrinter = { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-555555555555", name: "Switched off laser", enabled: false };
 
+/** The values of backend/app/calibration/scale.py; CalibrationSchematic.scale.test.tsx holds this copy to them. */
+export const SCALE = { half_mm: 2, step_mm: 0.5, line_mm: 0.1, tick_half_mm: 0.8, tick_whole_mm: 1.4, tick_centre_mm: 2 };
+
 export function routes(extra: Record<string, unknown> = {}) {
   return {
     "GET /api/v1/printers": [PAGE_PRINTER, secondPrinter, PRINTER_A, disabledPrinter],
@@ -50,6 +53,7 @@ export function routes(extra: Record<string, unknown> = {}) {
     [`GET /api/v1/printers/${secondPrinter.id}/capabilities`]: PAGE_CAPABILITIES,
     [`GET ${BASE}`]: [stored, none],
     [`GET /api/v1/printers/${secondPrinter.id}/calibration`]: [{ ...none, tray: "main" }],
+    "GET /api/v1/printers/calibration/scale": SCALE,
     "GET /api/v1/sheet-types": [SHEET_TYPE, oneColumn],
     ...extra,
   };
