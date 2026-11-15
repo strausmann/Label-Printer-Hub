@@ -28,9 +28,9 @@ import pytest
 from app.auth.verifier import _cache as verifier_cache
 from app.config import get_settings
 from app.models.api_key import ApiKey
-from app.observability.access_log import ACCESS_LOGGER_NAME
 from app.models.job import Job as DbJob
 from app.models.printer import Printer
+from app.observability.access_log import ACCESS_LOGGER_NAME
 from app.printer_backends.exceptions import PrinterOfflineError
 from app.printer_backends.mock_backend import MockPrinterBackend
 from app.schemas.grocy_label import GROCY_LABEL_BUDGET_S, MAX_GROCY_LABEL_BODY
