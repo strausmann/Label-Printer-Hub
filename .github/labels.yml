@@ -120,6 +120,10 @@
   color: "b60205"
   description: "Blocked on external dependency or decision"
 
+- name: "status:implemented"
+  color: "0e8a16"
+  description: "Done on the milestone branch, ships with the release"
+
 - name: "status:ready-for-review"
   color: "0e8a16"
   description: "Ready for review"
