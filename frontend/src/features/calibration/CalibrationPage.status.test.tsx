@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { recordJobEvent, resetPrintWatch } from "../jobs/printWatch";
 import { apiErrorBody, job, respond } from "../test-api";
-import { BASE, button, JOB, open, P, resetBetweenTests, RETRY } from "./CalibrationPage.kit";
+import { BASE, button, JOB, open, P, printCalibrationAnyway, resetBetweenTests, RETRY } from "./CalibrationPage.kit";
 
 vi.setConfig({ testTimeout: 15_000 });
 resetBetweenTests();
@@ -17,7 +17,7 @@ describe("the live print status line (#239)", () => {
   const lineOf = (name: string) => screen.getByRole("status", { name });
   const printed = async (routesExtra: Record<string, unknown> = {}) => {
     const api = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }), ...routesExtra });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     await within(lineOf("Calibration page status")).findByText("Queued");
     return api;
   };
@@ -147,7 +147,7 @@ describe("the live print status line (#239)", () => {
       [`POST ${BASE}/main/page`]: () => new Promise((resolve) => (answer = () => resolve(respond(202, { job_id: JOB })))),
       [`GET /api/v1/jobs/${JOB}`]: job(JOB, P, "failed", { ...PAGE_JOB, error: "ipp_aborted: x" }),
     });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     await waitFor(() => expect(answer).toBeDefined());
     // Away from the calibration page: the line is gone before the hub answered.
     await userEvent.click(screen.getAllByRole("link", { name: "Jobs" })[0]!);
@@ -193,13 +193,13 @@ describe("the live print status line (#239)", () => {
 
   it("the check page has its own line under its own button", async () => {
     await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
-    await userEvent.click(await button("Check print with correction"));
+    await userEvent.click(await button("Print the check page (with correction)"));
     const line = await screen.findByRole("status", { name: "Check page status" });
     await within(line).findByText("Queued");
     event("completed");
     expect(within(line).getByText(/within 0\.5 mm/)).toBeVisible();
     expect(lineOf("Calibration page status").textContent).toBe("");
-    const row = screen.getByRole("button", { name: "Check print with correction" }).parentElement!;
+    const row = screen.getByRole("button", { name: "Print the check page (with correction)" }).parentElement!;
     expect(row.contains(line)).toBe(false);
   });
 
@@ -208,7 +208,7 @@ describe("the live print status line (#239)", () => {
       [`POST ${BASE}/main/page`]: () =>
         respond(409, { detail: { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "held" } }),
     });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("This printer may be a different device now.");
     const row = screen.getByRole("link", { name: "Download PDF" }).parentElement!;

@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
 import { apiErrorBody, mockApi, PRINTER_A, respond, SHEET_TYPE, status } from "../test-api";
-import { BASE, body, button, JOB, only, open, P, READ_SESSION, resetBetweenTests, routes, secondPrinter, throws } from "./CalibrationPage.kit";
+import { BASE, body, button, JOB, only, open, P, printCalibrationAnyway, READ_SESSION, resetBetweenTests, routes, secondPrinter, throws } from "./CalibrationPage.kit";
 
 vi.setConfig({ testTimeout: 15_000 });
 resetBetweenTests();
@@ -63,7 +63,7 @@ describe("the page and its preselection (C10)", () => {
     mockApi({ "GET /api/v1/printers": [PRINTER_A], [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id), "GET /api/v1/sheet-types": [SHEET_TYPE] });
     await renderApp({ path: "/calibration" });
     expect(await screen.findByText("There is no page printer yet. Add one under Settings › Printers.")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Print calibration page" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Print the calibration page (without correction)" })).toBeNull();
   });
 
   it("shows the printer's state", async () => {
@@ -118,7 +118,7 @@ describe("step 1: the calibration page", () => {
 
   it("prints the calibration page without correction and links to the job", async () => {
     const { calls } = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     expect(await within(await screen.findByRole("status", { name: "Calibration page status" })).findByText("Queued")).toBeVisible();
     expect(body(only(calls, "POST", "/page")[0])).toEqual({ type: "L4736REV", version: 1, corrected: false });
     expect(screen.getByRole("link", { name: "Show the job" })).toHaveAttribute("href", `/jobs/${JOB}`);
@@ -129,7 +129,7 @@ describe("step 1: the calibration page", () => {
       [`POST ${BASE}/main/page`]: () =>
         respond(409, { detail: { type: "printer-unavailable", title: "Printer is not available to the print queue", status: 409, detail: "Printer is not known" } }),
     });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     expect(await screen.findByText("The print queue does not know this printer yet. Try again in a moment.")).toBeVisible();
     expect(screen.queryByRole("link", { name: "Show the job" })).toBeNull();
   });
@@ -139,7 +139,7 @@ describe("step 1: the calibration page", () => {
       [`POST ${BASE}/main/page`]: () =>
         respond(409, { detail: { type: "printer-identity-mismatch", title: "Held", status: 409, detail: "The printer is held" } }),
     });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     expect(
       await screen.findByText("This printer may be a different device now. An admin has to confirm it on the printer's page first."),
     ).toBeVisible();
@@ -147,26 +147,26 @@ describe("step 1: the calibration page", () => {
 
   it("says in words when the sheet type has no crossings", async () => {
     await open({ [`POST ${BASE}/main/page`]: () => respond(422, apiErrorBody("calibration_type_unsuitable", "No crossings.", { cols: 1, rows: 4 })) });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     expect(await screen.findByText("This sheet type has fewer than two columns or two rows, so its calibration page has no crossings.")).toBeVisible();
   });
 
   it("says in words when the server cannot be reached", async () => {
     await open({ [`POST ${BASE}/main/page`]: throws });
-    await userEvent.click(await button("Print calibration page"));
+    await printCalibrationAnyway();
     expect(await screen.findByText("The server cannot be reached.")).toBeVisible();
   });
 
   it("a key that may only read cannot print", async () => {
     await open({}, READ_SESSION);
-    expect(await button("Print calibration page")).toBeDisabled();
+    expect(await button("Print the calibration page (without correction)")).toBeDisabled();
   });
 });
 
 describe("print without a print key", () => {
   it("says why the print buttons are disabled", async () => {
     await open({}, READ_SESSION);
-    expect(await button("Print calibration page")).toBeDisabled();
+    expect(await button("Print the calibration page (without correction)")).toBeDisabled();
     expect((await screen.findAllByText("Printing needs a print or admin key.")).length).toBeGreaterThan(0);
   });
 });
@@ -174,7 +174,7 @@ describe("print without a print key", () => {
 describe("step 3: check print with correction", () => {
   it("prints the page with the stored correction", async () => {
     const { calls } = await open({ [`POST ${BASE}/main/page`]: respond(202, { job_id: JOB }) });
-    await userEvent.click(await button("Check print with correction"));
+    await userEvent.click(await button("Print the check page (with correction)"));
     expect(await within(await screen.findByRole("status", { name: "Check page status" })).findByText("Queued")).toBeVisible();
     expect(body(only(calls, "POST", "/page")[0])).toEqual({ type: "L4736REV", version: 1, corrected: true });
     expect(screen.getByText(/within 0\.5 mm/)).toBeVisible();
@@ -182,19 +182,19 @@ describe("step 3: check print with correction", () => {
 
   it("says in words when the print queue does not know the printer", async () => {
     await open({ [`POST ${BASE}/main/page`]: () => respond(409, { detail: { type: "printer-unavailable", title: "x", status: 409, detail: "y" } }) });
-    await userEvent.click(await button("Check print with correction"));
+    await userEvent.click(await button("Print the check page (with correction)"));
     expect(await screen.findByText("The print queue does not know this printer yet. Try again in a moment.")).toBeVisible();
   });
 
   it("says in words when the server cannot be reached", async () => {
     await open({ [`POST ${BASE}/main/page`]: throws });
-    await userEvent.click(await button("Check print with correction"));
+    await userEvent.click(await button("Print the check page (with correction)"));
     expect(await screen.findByText("The server cannot be reached.")).toBeVisible();
   });
 
   it("is not offered while the tray has no correction", async () => {
     await open({}, SIGNED_IN, `/calibration?printer=${P}&tray=bypass`);
-    expect(await button("Check print with correction")).toBeDisabled();
+    expect(await button("Print the check page (with correction)")).toBeDisabled();
   });
 });
 
@@ -202,7 +202,7 @@ describe("the German page", () => {
   it("is translated, with the signs in words", async () => {
     mockApi(routes());
     await renderApp({ path: `/calibration?printer=${P}&tray=main`, language: "de" });
-    expect(await screen.findByRole("button", { name: "Kalibrierseite drucken" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: "Kalibrierseite drucken (ohne Korrektur)" })).toBeVisible();
     expect(document.body.textContent).toContain("+ = zu weit rechts gedruckt");
   });
 });
