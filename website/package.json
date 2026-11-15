@@ -23,5 +23,10 @@
     "astro": "7.4.11",
     "starlight-links-validator": "0.27.0",
     "starlight-openapi": "0.27.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "form-data@>=4.0.0 <4.0.6": "^4.0.6"
+    }
   }
 }
