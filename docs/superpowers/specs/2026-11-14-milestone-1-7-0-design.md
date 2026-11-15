@@ -576,6 +576,295 @@ acceptance. Screenshots light and dark at 1280 px and 390 px.
   never overlaps a neighbouring control at 320 px width.
 - Short-viewport case and the top bar screenshot. Same design skills as #255.
 
+## Change to section 10 (#316) and section 9 (#255)
+
+- **R-316-2** reads: "…after the bell and, **on desktop**, before the about link; on a phone (below 1024 px) the about
+  link lives in the phone menu (R-319-4)."
+- Breakpoints: below **1024 px** the app has the phone shell (tab bar, Menu, magnifier). Task 14's full-height
+  notification sheet applies below **640 px**; between 640 and 1023 px the phone shell shows the bell's panel as a
+  popover. The two numbers answer different questions (shell vs. panel form) and both stay.
+
+## 10a. #319 — Every area reachable on a phone
+
+Findings: below 1024 px the sidebar (`frontend/src/shell/Sidebar.tsx:36`, `hidden … lg:flex`) is gone and the tab bar
+(`TabBar.tsx:37-55`) offers Overview, Printers, Scan, Jobs, Sheets. Sheet archive, calibration, the integration pages
+(`/integrations/$app`), Paperless ASN, Kept, Settings and its sections (printer admin is **Settings > Printers**,
+`router.tsx:233-240`) are reachable only by typing the address. The sidebar shows **Settings** to every session; the page
+itself refuses non-admins (`SettingsPage.tsx:16-23`).
+
+- **R-319-1 (placement; maintainer confirmed 2026-11-14 — QU2):** a **Menu** button at the left edge of
+  the top bar below 1024 px opens a sheet from the left (a modal dialog, react-aria `ModalOverlay`/`Modal`/`Dialog`).
+  Not a sixth tab: the tab bar keeps five fixed slots with Scan in the middle (`TabBar.tsx:27-29`). Desktop keeps the
+  sidebar and has no Menu button.
+- **R-319-2 (contents, one source):** the menu lists the sidebar's groups in the sidebar's order — Main, Material,
+  Integrations (the configured integration pages, as in `IntegrationNav.tsx`), System — including the entries the tab bar
+  already has, so one place reaches everything. In the System group an admin session sees the six settings sections
+  (General, Printers, Integrations, Access and keys, Jobs, System) as direct entries, so every destination is two taps away
+  (open the menu, tap the entry). Below the groups: Reload (R-331-6), About and licences, the theme switch, Sign out, and
+  the connection status the sidebar shows (`Sidebar.tsx:29-33`). Groups and entries come from one pure function used by
+  the sidebar and the menu; the settings sections from one list used by the menu and `SettingsLayout`.
+- **R-319-3 (role rule; maintainer confirmed 2026-11-14 — QU1):** entries that need the admin scope
+  (Settings and its sections) are shown only to a session with `scope === "admin"`, in the menu **and in the desktop
+  sidebar** (one rule everywhere; the Settings page keeps its own gate). Hiding an entry is navigation, not access
+  control: the API enforces admin on every settings and printer-admin route (`require_admin`, `settings_api.py:36`),
+  unchanged. The desktop change gets one line in the 1.7.0 upgrade notes (en + de).
+- **R-319-4 (top bar on a phone):** below 1024 px the top bar holds Menu, the search button (R-320-1), the bell (Task 14)
+  and the cart (Task 15). About, theme and Sign out move into the menu there; on desktop they stay in the top bar. At
+  320 px no two controls overlap.
+- **R-319-5 (behaviour):** the trigger's accessible name is "Menu" / „Menü“, it carries `aria-expanded`; the sheet's
+  heading is the same word. It closes by its × button, a press on the dim area (`useBackdropClose`, #318), Escape and by
+  choosing an entry; focus returns to the trigger. The sheet is the visible area's height (`--vvh`, `--vv-top`) and
+  scrolls inside itself. The active entry is marked as in the sidebar (`data-status=active`, not by colour alone).
+  Opening animates in ≤ 200 ms (`translate-x` + fade), instant under `prefers-reduced-motion`.
+
+## 10b. #320 — Search as a magnifier on phones
+
+Findings: `GlobalSearch.tsx:101` takes `flex-1` of the phone top bar; the results already follow the visible area on a
+phone (`GlobalSearch.tsx:128`). The shortcut `/` focuses the field (`GlobalSearch.tsx:42-53`). Escape on open results only
+calls `preventDefault()` (`GlobalSearch.tsx:80-86`).
+
+- **R-320-1:** below 1024 px the top bar shows a magnifier button named "Search" / „Suchen“; the inline field is **not
+  rendered**. At 1024 px and above the inline field stays as it is.
+- **R-320-2:** the button opens a search dialog at the top of the visible area, full width, field focused on open,
+  results listed inside the dialog below the field. It closes by ×, the dim area, Escape and by choosing a result; focus
+  returns to the magnifier. Escape with open results closes the results only and does not reach the dialog
+  (`stopPropagation`); the next Escape closes the dialog.
+- **R-320-3 (one search):** inline field and dialog share the query state, the ranking and the result list: the combobox
+  logic moves out of `GlobalSearch.tsx` into one hook and one list component; both shells render them. Same results for
+  the same text.
+- **R-320-4 (keyboard):** `/` focuses the inline field at 1024 px and above (unchanged) and opens the dialog below. With
+  the on-screen keyboard open the field and the first result stay in sight (short-viewport, 390 × 400 and the covered
+  phone mode).
+
+## 10c. #323 — Select popovers follow the visible area
+
+Findings: `SelectField` (`frontend/src/features/settings/controls.tsx:174-245`) leaves placement to React Aria's
+`Popover`, which measures against the window. `SheetTypeCombobox` measures against `window.visualViewport` with
+`listRoom` and re-measures while open (`SheetTypeCombobox.tsx:105-114`, `193-202`); the measuring is inline in the
+component. `SelectField` is used in eleven files, among them the calibration readings helper (`ReadingsHelper.tsx:61-62`)
+and the Grocy labels panel, where #323 was found.
+
+- **R-323-1:** every `SelectField` list is placed and sized against the visible area: below the trigger unless that leaves
+  room for fewer than four options and above has more; height clamped to the room; the phone tab bar limits the room
+  outside a dialog — the same rule as `SheetTypeCombobox` (`listRoom`, `LIST_MAX = 384`, `LIST_GAP = 12`, option 44 px).
+- **R-323-2 (shared logic):** the measuring (anchor rectangle, tab bar outside dialogs, re-measure on visible-area changes
+  while open) moves into one hook; `SheetTypeCombobox` and `SelectField` both use it. The combobox keeps its own
+  scroll-reopen logic (`SheetTypeCombobox.tsx:116-185`), which is about closing, not placement.
+- **R-323-3:** short-viewport e2e: with the keyboard stand-in covering the screen, a select whose trigger sits in the lowest
+  60 px of the visible area shows its trigger and its first option inside the visible area, tablet (1280 × 800, visible
+  420) and phone (390 × 800, visible 380). It fails against the current placement (counter-test).
+
+## 10d. #331 — Pull to refresh
+
+Findings: `frontend/src/index.css:65` sets `overscroll-behavior: none` on `html`, which turns off the browser's own
+pull-to-refresh in a tab. The manifest asks for `display: standalone` (`src/build.test.ts:86`); an installed app has no
+browser pull-to-refresh of its own (to be confirmed against Chrome for Android's and Safari's documentation in the task and
+cited in the commit body). Inner scroll areas already carry `overscroll-contain` (`controls.tsx:220`, `364`,
+`SheetGrid.tsx:304`, `print/SheetPicker.tsx:116`, `SheetTypeCombobox.tsx:349`, `PrintToasts.tsx:278`,
+`GlobalSearch.tsx:128`). Every write of the app goes through TanStack Query's `useMutation` (`settings/api.ts`,
+`lookup/api.ts`, `sheets/api.ts`, `calibration/api.ts`, …). The service worker registers with `registerType: "prompt"`,
+`skipWaiting: false` (`pwa.config.ts:19,40`).
+
+- **R-331-1 (browser tab):** the root locks only horizontal overscroll (`overscroll-behavior-x: none`); vertical stays
+  `auto`, so the browser's pull-to-refresh works. Inner scroll areas keep `overscroll-contain`. When `isStandalone()` is true (the same check as R-331-2, so iOS
+  versions that only report `navigator.standalone` are covered) the app sets `data-standalone` on `<html>`, and
+  `html[data-standalone]` sets `overscroll-behavior-y: none`, so the own gesture does not fight a bounce or glow. No
+  `display-mode` media rule: one source for "is this the installed app".
+- **R-331-2 (installed app, own gesture):** active only when the app runs standalone
+  (`matchMedia("(display-mode: standalone)")` or `navigator.standalone === true`). In standalone mode a pull starts at
+  `touchstart` only when the five conditions below hold:
+  - the page is scrolled to the very top (`scrollY === 0`),
+  - the touch begins outside every inner scroll area (an element between the target and `<body>` whose computed
+    `overflow-y` or `overflow-x` is `auto` or `scroll` and which can scroll on that axis: `scrollHeight > clientHeight`
+    or `scrollWidth > clientWidth`),
+  - no dialog is open (`[role="dialog"], [role="alertdialog"]` in the document),
+  - the on-screen keyboard is closed (no focused text field: `input` other than checkbox/radio/button/submit/reset/file
+    types, `textarea`, `contenteditable`),
+  - no write is in flight (`useIsMutating() === 0`).
+  The **first** `touchmove` then locks the direction: more downward than sideways (`dy > |dx|`) → pull; otherwise the
+  gesture is abandoned for this touch and the page scrolls normally. Later moves only change the distance.
+- **R-331-3 (distance and threshold):** shown distance = `min(PULL_MAX, max(0, 0.5 × downward finger travel))`,
+  `PULL_MAX = 112` px; release at or past `PULL_THRESHOLD = 72` px reloads, release before it (or a `touchcancel`, or a
+  second finger) cancels and the indicator returns. While a locked pull is under way the page does not scroll
+  (`touchmove` `preventDefault`).
+- **R-331-4 (what reload means):** a **full page reload** (`window.location.reload()`), in the gesture and in the menu
+  entry — the same as the browser's own gesture in a tab, so tab and app behave alike, and a reload also re-opens a
+  stalled live connection. Not a query refetch. A reload does **not** activate a waiting service worker (`skipWaiting:
+  false`); updates stay with the existing update prompt. Accepted risk, as with the browser's own gesture: an unsaved
+  form draft is lost. Not accepted: losing a write in flight — neither the gesture nor Menu › Reload acts while
+  `useIsMutating() > 0` (the gesture does not start; the menu entry is disabled with the description "Wait until the
+  current action has finished." / „Warte, bis die laufende Aktion fertig ist.“).
+- **R-331-5 (indicator):** a round indicator under the top edge (`top: calc(var(--vv-top) + 8px)`) that follows the
+  distance and turns its arrow at the threshold; `aria-hidden` (the reload itself is the outcome). Under
+  `prefers-reduced-motion` it does not follow the finger: it appears at a fixed position once a pull is locked and
+  changes only its arrow at the threshold; no spring back.
+- **R-331-6 (menu entry):** the phone menu (R-319-2) has **Reload** / „Neu laden“ below the groups, in tab and app, with
+  the guard of R-331-4. Device check on an Android phone and tablet, tab and installed app, by the maintainer (QU3);
+  #331 stays open until he reports it.
+
+## 10e. #337 — The calibration reading guide, in the app and on labelyard.app
+
+Findings: step 2 of the calibration page (`CalibrationPage.tsx:230-258`) has the readings helper (only when a type is
+chosen, `:231`) and the direct form; the only explanation is one hint line (`ReadingsHelper.tsx:158`) and the
+schematic's legend (`CalibrationSchematic.tsx:75-88`). The schematic names the type with `typeLabelWithKey(type)`
+(`CalibrationPage.tsx:202`). The website has no calibration page; `try/index.mdx:55` shows the `calibration` screenshot
+rendered from the e2e fixtures. #337 pulls part A of #240 forward; the rest of #240 stays there.
+
+- **R-337-1 (in the app):** step 2 starts with a collapsible "How to read the calibration page" / „So liest du die
+  Kalibrierseite ab“ (react-aria `Disclosure`), collapsed by default. Inside: two inline SVG figures and the steps
+  (R-337-3). Without a chosen sheet type the guide shows figure 1 and the steps; figure 2 appears once a type is chosen.
+- **R-337-2 (figures):** black only (`currentColor`), lines told apart by style and number, never by colour — like the
+  printed page. Figure 1, one crossing: the two gap edges, the middle of the gap, the row cut, the printed S line and Z
+  line, the ±2 mm scale with ticks every 0.2 mm and labels 0, ±1, ±2, the arrows "across" and "down" with their `+`
+  side. Figure 2, the sheet schema: the grid of the chosen sheet type with the five crossings to read marked — the four of
+  `suggestedCrossings(cols, rows)` (`model.ts:20-30`) plus the centre one, S `ceil((cols−1)/2)`, Z `ceil((rows−1)/2)`.
+  The drawings carry only numbers and signs; every word is in the legend text below each figure (translatable, read by a
+  screen reader). In the app each figure is `role="img"` with an accessible name: "How to read one crossing" / „So liest
+  du eine Kreuzung ab“ and "The crossings to read on ${typeName}" / „Die abzulesenden Kreuzungen auf ${typeName}“,
+  `typeName = typeLabelWithKey(type)`. At 390 px wide a figure fits the panel without horizontal scrolling. Ids inside an
+  SVG (markers, clip paths) come from `useId`, so two figures on one page never share an id.
+- **R-337-3 (steps, the content of #337):** print on a real sheet of the type; number the cells row by row (optional,
+  helps with photos); read at least the four outer crossings and the one in the centre; how to read a scale (where the
+  printed line meets it, to 0.1 mm by eye between ticks); signs: across `+` = the ink lies right of the gap middle, down
+  `+` = the ink lies below the cut — the same as `ReadingsHelper.tsx:158`; a sheet without a row gap: the Z line sits on
+  the cut, peel every other label (checkerboard) only if the cut is hard to see; enter the values; the check print;
+  within ±0.5 mm everywhere is done. Then "printer or sheet type?": deviations that grow evenly across the page are the
+  printer (scale, offset, rotation — the fit handles them); a jump between neighbouring gaps is the sheet type's
+  geometry, fix the type first. Below: a link "More on labelyard.app" / „Mehr auf labelyard.app“ to the page of R-337-4 in
+  the UI language; it opens in a new tab (`target="_blank" rel="noopener noreferrer"`), so the installed app is not left.
+- **R-337-4 (website):** a new page **Calibrate a page printer** at `using/calibration` (en) and
+  `de/using/calibration` („Seitendrucker kalibrieren“), in the sidebar after `using/sheets`, with the same steps, both
+  figures and the screenshot of R-337-6. Glossary terms from `docs/glossary.toml` (`calibration`); German with „du“.
+- **R-337-5 (one drawing, two places):** the React figure components are the source. The website's SVG files are
+  rendered from them (the sheet schema for a 4 × 12 sheet) **without** `role` and `aria-label` — the Astro page sets the
+  localised ones — and a test fails when the files and the components differ.
+- **R-337-6 (screenshot; maintainer, #337 comment 2026-11-14 22:21Z):** the website page shows a screenshot of the real
+  installation's calibration page — the maintainer's own, unmarked screenshot (QU5) — as one plain image (Astro `<Image>`, the same file for en and de, light theme only;
+  `<Screenshot>` needs four variants and is not used for it). Allowed in it: exactly what the maintainer cleared — the
+  printer name and the real calibration values. Not allowed: host names, addresses, the hub's display name of that
+  installation, key names, user names, anything outside the calibration panel (cropped to it). Metadata stripped
+  (EXIF/XMP/PNG text chunks). The fixture `calibration` shot stays where it is (`try/index.mdx`, README) and is not
+  needed on the new page. The optional photo of a real test sheet stays out of 1.7.0 (QU4, left to #240).
+
+## 10f. #338 — Add to cart from the sheet section of an item
+
+Findings: the item view's left panel has **Add to cart** (`ItemView.tsx:218-224`, `cart.add(asItem)`), the sheet section
+below has only the print (`SheetSection.tsx:353`). The section's choices (sheet type, target sheet or new sheet, tray) live
+in component state (`SheetSection.tsx:106-109`); only the type is remembered per printer (`print/lastType.ts`,
+`lastType.set` on a choice, `SheetSection.tsx:237`, read back at `:136`). The printer choice is shared by item view and
+cart (`lph.printer`, `PrinterPicker.tsx:11`). `/cart?sheet=<code>` already preselects a sheet (`router.tsx:164-172`,
+`CartPage.tsx:64-65`); `cart.add` sums the copies of an entry already in the cart (`cart.ts:103-110`).
+
+- **R-338-1:** on the item view the sheet section has a secondary button **Add to cart** / „In den Warenkorb“ beside the
+  print button. It adds the item with the item view's copies through `cart.add` — exactly once per press — and is
+  available to every session (adding to the cart is local; the print still needs a print key). The cart page's own sheet
+  section has no such button. Why two buttons with one name: the left panel's adds the item only; the section's adds it
+  **and** keeps the sheet choices (R-338-2). They are told apart by their region — the left one sits in the region
+  "Print" (`ItemView.tsx`, `aria-labelledby="print-h"`), the new one in the region "Print onto a sheet"
+  (`SheetSection`, `aria-labelledby="sheet-section-h"`); the new button's `aria-describedby` points at that heading,
+  so a screen reader announces the difference.
+- **R-338-2 (keeping the choices):** on add, the chosen sheet type is remembered with `lastType.set(printer.id, key)` (also
+  when it is the default the section picked), and the link carries the rest in the address: `/cart?sheet=<code>` when the
+  target is an existing sheet (no `sheet` for "a new sheet") and `&tray=<key>` when the printer has more than one enabled
+  tray. The printer is already shared (`lph.printer`). The cart route accepts `tray` as text of at most 64 characters, any
+  other value is dropped (the same rule as `type`); the cart's sheet section derives its tray as `trays.find(trayChoice) ?? trays.find(preselectedTray) ?? default ??
+  first` on every render (the trays arrive with the status after mount, so the address tray applies whenever they
+  do), and an address tray the printer does not have is ignored. While the section's target is not known yet (sheets
+  still loading) the button is disabled.
+- **R-338-3 (feedback):** after adding, a status line "Added to the cart." / „In den Warenkorb gelegt.“ with a link **Open
+  cart** / „Warenkorb öffnen“ to the address of R-338-2; the cart count in the top bar (Task 15, #316) follows by itself
+  (`useCart`). The status line goes away when a choice in the section changes (the link would be stale).
+- **R-338-4 (scope):** no server-side cart (#27); chosen cells ("Choose cells") are not carried — the cart prints onto the
+  first free cells.
+
+## 10g. #344 — Calibrate the tray that sheets actually use
+
+Findings: the calibration page preselects the address tray, else the printer's **default** tray from the IPP
+capabilities, else the first (`defaultTray`/`tray` in `CalibrationPage`), and writes it into the address on first load
+(the address `useEffect` in `CalibrationPage`). The workbench is keyed by printer and tray (the `<Workbench key=…>`), so the tray of step 1's print and of step 2's save is one value in a
+session; the mismatch of #344 comes from the default tray not being the tray sheets are printed from, and a page printer
+pulling from another tray when the requested one is empty. The sheet print dialog keeps its own tray choice in component
+state (`SheetSection.tsx:109,187-188`). Sheet and calibration jobs store the tray in `payload.tray` (`PagePayload.tray`,
+`services/page_jobs.py:77-86`, kinds `sheet_page` / `calibration_page`); a stored tray is always a configured tray key
+(validated before the job is written). `get_printer_status` returns early on several branches of `_cached_status`
+(never probed, not polled, stale) and `_page_status`; `jobs` has indexes on `state`, `api_key_id` and the page sheet only
+(`models/job.py`, `Job.__table_args__`).
+
+- **R-344-1 (where "last used" comes from; planner's decision):** from the **jobs the hub already stores**, read on the
+  server, not from a new column and not from the browser. The status response of a page printer
+  (`GET /api/v1/printers/{id}/status`, `PrinterStatus`) gains two fields:
+  `last_sheet_tray: str | None` — `payload.tray` of the newest `sheet_page` job of that printer in state `queued`,
+  `printing` or `done`; `last_calibration_print: { tray: str; at: datetime } | None` — tray and `created_at` of the
+  newest such `calibration_page` job. `null` when there is none, and always `null` for tape printers. Both are computed
+  in `get_printer_status` for every IPP printer **on every branch** (never probed, not polled, stale, fresh): the jobs do
+  not depend on the probe. Why this source:
+  - a new `printer_trays` column would be wiped on every printer save (the rows are replace-all,
+    `models/printer_tray.py:5-6`) and needs a migration;
+  - `localStorage` would not know the tray chosen on another device;
+  - the client-side job list cannot answer it: read and print keys see only their own jobs (#294), it has no kind
+    filter, and a page of 200 jobs may hold no sheet print. The server query has none of these limits; it returns a tray
+    key, no job content, so it does not widen what a key can read.
+  - Limit, accepted: jobs older than `jobs.retention_days` (default 30) are gone, then the default tray applies again.
+  Failed and cancelled jobs do not count (a tray that failed is no evidence of the tray in use).
+- **R-344-6 (cost):** both fields come from **one** SQL statement (two scalar subqueries, each `ORDER BY created_at DESC
+  LIMIT 1`) served by a new index `ix_jobs_printer_kind_created` on `(printer_id, PAGE_KIND_EXPR, created_at)`, where
+  `PAGE_KIND_EXPR = json_at("$.kind")` is one literal shared by model, migration and query (as `PAGE_SHEET_EXPR` is).
+  The state filter runs on the few index rows walked from the newest; the payload is parsed only for those rows; no
+  sort step (no `id` tiebreak, a tie on `created_at` is harmless). Without
+  the index the query sorts every `done` row of all printers (measured in the check: about 11 ms per lookup at 30 000
+  rows, linear in retention), and the status is fetched for every printer on every invalidation.
+- **R-344-2 (preselection):** the tray is the address tray when it is a calibratable tray; else `last_sheet_tray` when it
+  is one; else the capabilities default; else the first — derived from the trays loaded at that moment. Without an
+  address tray the tray stays **undefined** until the status has been fetched **after this mount**
+  (`status.isFetchedAfterMount && !status.isFetching`, or the fetch failed) and the capabilities are loaded: no
+  Workbench, no print button, a "Loading…" status as for `calibration.isPending`. A status cached by another view does
+  not count, so an old `last_sheet_tray` cannot decide. So that this fetch always happens, the calibration page's own
+  status observer uses `staleTime: 0` and `refetchOnMount: "always"` and is enabled once the printer is known (the
+  app default `staleTime: 15_000` would otherwise start no fetch for a status another view loaded moments ago, and the
+  wait would never end). A **failed** fetch ends the wait too: the tray falls back to the default, then the first, and
+  cached data of the failed refetch is not used for `last_sheet_tray`. Then the tray is chosen and written into the
+  address once. **The wait applies only before a tray is chosen:** once the address carries a tray, later status
+  fetches (after a print, R-344-5) never unmount or hide the Workbench, so typed values stay.
+- **R-344-3 (the tray, prominently):** step 1 and step 3 each show "Prints from: ${tray}" / „Druckt aus: ${tray}“, step 2
+  "Saves for: ${tray}" / „Speichert für: ${tray}“ — the tray label, in body text weight bold, next to the step heading.
+- **R-344-4 (before saving):** above the save button the form names the tray it saves for and the tray the calibration
+  page was last requested from (`last_calibration_print.tray`, "not known" when null). A warning (`text-warn`, opened by the bold words "Check the tray:" /
+  „Fach prüfen:“, so it does not rest on colour alone) appears when the calibration page was requested from another tray: "The calibration page was
+  requested from ${requested}. Measure on a page printed from ${tray}, or switch to ${requested}." — only while that
+  calibration print is **recent**: created within the last `CALIBRATION_PRINT_WINDOW_H = 24` hours **and** after the
+  stored values of the save tray (`stored.updated_at`, none stored counts as older). An old calibration print of another
+  tray (last month's) says nothing about the values typed now, so it shows no warning; the line naming the tray stays. A second warning when
+  sheets print from another tray: "Sheets on this printer last printed from ${sheetTray}." Saving stays possible (the
+  person may mean it); the warnings are not dismissable while the condition holds.
+- **R-344-5 (fresh values):** a calibration print and a sheet print invalidate the printer's status query in
+  `onSettled` (a partial sheet print, `print_interrupted`, has queued jobs too), so the fields follow without a reload.
+
+## Additions to "11. Rulings index"
+
+| ID | Ruling |
+|---|---|
+| R-316-2 (amended) | On phones the about link is in the phone menu |
+| R-319-1…5 | Menu button in the phone top bar opening a side sheet; every sidebar entry plus the settings sections; admin entries for admins only, menu and sidebar (navigation, not access control); About/theme/Sign out move into the menu on phones; close and focus rules |
+| R-320-1…4 | Magnifier below 1024 px, no inline field; search dialog at the top of the visible area; Escape closes results before the dialog; one search logic for both; `/` opens the dialog on phones |
+| R-323-1…3 | Select lists measured against the visible area like the sheet type combobox; one shared hook; covered-keyboard e2e |
+| R-331-1…6 | Only horizontal overscroll locked; own pull gesture in standalone with five start conditions incl. no write in flight; `data-standalone` on the root from the same check; direction locked on the first move; 0.5 resistance, 72 px threshold, 112 px cap; full page reload, no service-worker activation; reduced-motion indicator; guarded Reload in the phone menu |
+| R-337-1…6 | Collapsible guide in step 2; two black-only inline SVG figures with text legends; the #337 steps; website page en + de; website SVGs rendered from the app's components without accessible names; the real installation's screenshot as cleared by the maintainer, metadata stripped |
+| R-338-1…4 | Add to cart in the item view's sheet section; type via `lastType`, sheet and tray via `/cart?sheet=&tray=`; status line with Open cart; no cells, no server cart |
+| R-344-1…6 | `last_sheet_tray` and `last_calibration_print` on every page-printer status branch, from stored jobs (queued/printing/done); preselect address > last sheet tray > default > first, only after a status fetched after mount; the tray named in every step; warnings before saving, the requested-tray one only for a calibration print of the last 24 h newer than the stored values; status refreshed in `onSettled`; one statement on a new index |
+
+## Additions to "Questions for the maintainer"
+
+| # | Question | Status |
+|---|---|---|
+| QU1 | R-319-3 also hides **Settings** in the desktop sidebar for non-admin sessions (today they see it and get "You need an admin key"). | **Answered 2026-11-14: yes.** |
+| QU2 | R-319-1 puts the phone menu in the top bar (left), not as a sixth tab; Scan stays the centre tab. | **Answered 2026-11-14: yes.** |
+| QU3 | Device check of #331 on Android phone and tablet, browser tab and installed app. | Before the fix: done on 1.6.0-rc.4, fails in both modes (comment on #331, 22:49Z) — confirms the issue. **Still open: the same check on a build with 15c**; #331 stays open until he reports it, Task 16 does not start the release without it. |
+| QU4 | #337's optional annotated photo of a real crossing. | **Answered 2026-11-14: ok** — left out of 1.7.0, stays in #240. |
+| QU5 | The real-installation screenshot file (R-337-6). | **Answered 2026-11-14: his real, unmarked screenshot may be used.** The controller puts the file into the 15e clone at task start; 15e Step 4 crops and strips it. The fixture fallback stays only for the case the file is not in hand. |
+
+---
+
+
 ## 11. Rulings index
 
 | ID | Ruling |
