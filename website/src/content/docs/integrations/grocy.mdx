@@ -49,6 +49,8 @@ The hub answers within two seconds with `202` and the ID of a new job; printing 
 
 A proxy with single sign-on must let `/api/v1/webhook/` through, as for the other [webhooks](/integrations/webhooks/#behind-a-proxy-with-sso).
 
+If Grocy and the hub run as containers in the same Docker network, use the hub's address inside that network instead of the public one, for example `http://labelyard:8000/api/v1/webhook/grocy/label?token=<print-key>` (the host name is the hub's container or service name). The call then never passes the reverse proxy, so neither single sign-on nor a proxy outage can block a label, and the key does not travel over the public address. The panel always shows the public address; replace the part before `/api/v1/` yourself.
+
 ## Printing Grocy labels onto sheets
 
 A label can also go to a page printer, onto a sheet of labels. The printer lists tape printers and page printers in two groups.

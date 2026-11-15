@@ -49,6 +49,8 @@ Der Hub antwortet innerhalb von zwei Sekunden mit `202` und der ID eines neuen A
 
 Ein Proxy mit Single Sign-on muss `/api/v1/webhook/` durchlassen, wie bei den anderen [Webhooks](/de/integrations/webhooks/#hinter-einem-proxy-mit-sso).
 
+Laufen Grocy und der Hub als Container im selben Docker-Netz, nimm statt der öffentlichen Adresse die Adresse des Hubs in diesem Netz, zum Beispiel `http://labelyard:8000/api/v1/webhook/grocy/label?token=<print-key>` (der Hostname ist der Container- oder Dienstname des Hubs). Der Aufruf geht dann nicht über den Reverse Proxy: Weder Single Sign-on noch ein Ausfall des Proxys kann ein Etikett aufhalten, und der Schlüssel läuft nicht über die öffentliche Adresse. Der Bereich zeigt immer die öffentliche Adresse; den Teil vor `/api/v1/` ersetzt du selbst.
+
 ## Grocy-Etiketten auf Bögen drucken
 
 Ein Etikett kann auch an einen Seitendrucker gehen, auf einen Etikettenbogen. Die Druckerauswahl zeigt Banddrucker und Seitendrucker in zwei Gruppen.
