@@ -30,6 +30,7 @@ import { signInWith } from "./fixtures";
  *   cart-check      cart-check
  *   grocy-labels    grocy-labels
  *   notifications   notifications
+ *   spool-label     (desktop only, no website shot) the spool label of a Spoolman item on the QL with 62 mm tape
  *
  * Desktop is 1440 x 900 in light and dark for every view; the phone (390 x 844) shows `overview`, `printer-detail`
  * and `sheets`. File names are `<view>-<light|dark>[-phone].png`. The README shows English only; the German website
@@ -102,7 +103,15 @@ type Text = (typeof TEXT)["en"];
 /** The website name of each view (`hero` for the overview). */
 const SITE_SHOT: Record<string, string> = { overview: "hero" };
 
-type View = { name: string; phone: boolean; /** Shown on the phone only (not on the desktop). */ only?: "phone"; open: (page: Page, text: Text) => Promise<void> };
+type View = {
+  name: string;
+  phone: boolean;
+  /** Shown on one size only. */
+  only?: "phone" | "desktop";
+  /** `false`: a README shot only, no website shot. */
+  site?: boolean;
+  open: (page: Page, text: Text) => Promise<void>;
+};
 
 const id = async (page: Page, printer: string) => {
   const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
@@ -144,7 +153,7 @@ async function fillCart(page: Page) {
  * A cart on a Brother QL with 62 mm tape: two layouts to preview and one item whose link the QR code cannot hold. The
  * hub's QL is not polled, so the tape is served from here (the fixtures have no tape reading for it).
  */
-async function fillQlCart(page: Page) {
+async function serveQlTape(page: Page): Promise<string> {
   const printer = await id(page, "Office QL-820NWB");
   await page.route(new RegExp(`/api/v1/printers/${printer}/status$`), async (route) => {
     const response = await route.fetch();
@@ -152,6 +161,11 @@ async function fillQlCart(page: Page) {
     Object.assign(body, { online: true, polled: true, stale: false, tape_loaded: "62mm", tape_width_mm: 62, last_probe_age_s: 3, note: null });
     await route.fulfill({ response, json: body });
   });
+  return printer;
+}
+
+async function fillQlCart(page: Page) {
+  const printer = await serveQlTape(page);
   await page.evaluate((p) => {
     localStorage.setItem("lph.printer", p);
     const line = (app: string, n: string, name: string, content_type: string, copies: number) => ({ app, id: n, name, content_type, copies });
@@ -339,6 +353,21 @@ const VIEWS: View[] = [
       await expect(panel.getByText(text.isNew).first()).toBeVisible();
     },
   },
+  {
+    // #346: the swatch-style spool label of a fictitious Spoolman spool, previewed for the QL with 62 mm tape.
+    name: "spool-label",
+    phone: false,
+    only: "desktop",
+    site: false,
+    open: async (page, text) => {
+      await page.goto("/");
+      const printer = await serveQlTape(page);
+      await page.evaluate((p) => localStorage.setItem("lph.printer", p), printer);
+      await page.goto("/spool/12");
+      const preview = page.getByRole("img", { name: text.preview });
+      await expect.poll(() => preview.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(696);
+    },
+  },
 ];
 
 async function newContext(browser: Browser, scheme: Scheme, size: Size, lang: Lang): Promise<BrowserContext> {
@@ -365,7 +394,8 @@ async function shoot(browser: Browser, scheme: Scheme, size: Size, lang: Lang, s
     await signInWith(page, KEY());
     await expect(page.getByRole("navigation").first()).toBeVisible();
     await page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
-    for (const view of VIEWS.filter((v) => (size === DESKTOP ? v.only !== "phone" : v.phone))) {
+    for (const view of VIEWS.filter((v) => (size === DESKTOP ? v.only !== "phone" : v.phone && v.only !== "desktop"))) {
+      if (lang !== "en" && view.site === false) continue;
       await view.open(page, TEXT[lang]);
       await settle(page, TEXT[lang]);
       save(view, await page.screenshot());
@@ -387,7 +417,7 @@ for (const scheme of ["light", "dark"] as const) {
         const readme = resolve(OUT, `${view.name}-${scheme}${size.name}.png`);
         writeFileSync(readme, png);
         // The English desktop shot is also the website's English shot.
-        if (size === DESKTOP) copyFileSync(readme, sitePng(view, "en", scheme));
+        if (size === DESKTOP && view.site !== false) copyFileSync(readme, sitePng(view, "en", scheme));
       });
     });
   }

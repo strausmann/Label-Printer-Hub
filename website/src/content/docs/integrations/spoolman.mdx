@@ -1,0 +1,72 @@
+---
+title: Spoolman
+description: Print spool labels for 3D printing filament from Spoolman.
+---
+
+import { Image } from "astro:assets";
+import samples from "../../../assets/spoolman/spoolman-swatch-samples.png";
+
+The Spoolman plugin looks up spools in your Spoolman and prints their labels, with a QR code that leads back to the spool. Spoolman needs no API key.
+
+## Setup
+
+Open **Settings > Integrations > Spoolman**, enter the Spoolman address and test the connection. Or set `LABELYARD_SPOOLMAN_URL`.
+
+## Printing
+
+Scan or type a spool ID on the lookup page, or a label link the hub printed earlier (`/spool/…`). From a script, use `{"lookup": {"app": "spoolman", "identifier": "<spool-id>"}}` with `POST /api/v1/print`.
+
+## Spool label
+
+The **Spool label** is the first layout a Spoolman spool offers. It shows what you need at the printer, read off the shelf:
+
+- the vendor, and the colour codes of the filament on the right;
+- a black bar with the material, and the filament name under it;
+- the print settings: nozzle and bed temperature, pressure advance (`PA (K)`) and flow ratio;
+- the spool: drying, empty spool weight, net weight and location;
+- a footer with diameter, density, lot and the date the spool was opened;
+- the QR code with the spool ID under it.
+
+<figure>
+  <Image src={samples} alt="Spoolman spool labels for two sample spools on four media: L4737REV sheet without footer, 62 mm QL tape with footer, and the short label on L4736REV and 6121" />
+  <figcaption>A sample with two fictitious spools. The printed label follows the same layout.</figcaption>
+</figure>
+
+Rows without a value are left out. The remaining weight and the price are left out on purpose: they change, and the QR code leads to the current values in Spoolman.
+
+### Material and filament name
+
+By default the bar shows the filament's material and the line under it the filament name. If your Spoolman keeps the product in the name, swap them: **Settings > Integrations > Spoolman > Label fields > Bar shows**, or set `LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE` to `name`.
+
+### Extra fields
+
+Nozzle temperature, pressure advance, flow ratio and drying come from Spoolman's extra fields. The hub reads these keys by default:
+
+| Value | Default key | Read from |
+|---|---|---|
+| Nozzle temperature | `nozzle_temperature` | filament, else the filament's extruder temperature |
+| Pressure advance | `flowdynamics` | spool, else filament |
+| Flow ratio | `flowrate` | spool, else filament |
+| Drying temperature | `drying_condiftions_temp` | filament |
+| Drying time | `drying_condiftions_time` | filament |
+
+If your Spoolman uses other keys, change them under **Settings > Integrations > Spoolman > Label fields**. An empty key reads nothing. A value that is not in the shape of its field leaves only its own row out.
+
+### Where it fits
+
+The label is made for a sheet cell of 63.5 × 29.6 mm (Avery Zweckform L4737REV) and for 62 mm endless tape on a Brother QL. The label drops parts as the space gets smaller, always in the same order, so every cell of a sheet prints the same way:
+
+| Version | Shows | Example |
+|---|---|---|
+| Full | everything | 62 mm tape, cut at 36 mm |
+| Without footer | no footer | L4737REV |
+| First column | no footer, no spool column | Avery Zweckform 4780 |
+| Short | vendor, bar, filament name, colour codes and the QR code | L4736REV, 6121 |
+
+A cell smaller than the short version is refused before any cell is reserved. Long field names wrap onto a second line; text that still does not fit gets smaller, and is shortened with `…` only as a last resort. The preview then marks the cell as shortened.
+
+On tape, the spool label prints only on 62 mm endless tape, always across the tape. The direction and arrangement settings do not apply to it, so the item view and the cart hide them for the spool label. On another tape the preview says it is not available.
+
+## Printing when a spool changes
+
+Spoolman events can call the hub, which prints the spool's label, with the remaining filament as a third line (for example `851g remaining`) when the event carries it. These labels keep the short QR layout. See [webhooks](/integrations/webhooks/).

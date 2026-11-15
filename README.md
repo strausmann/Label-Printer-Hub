@@ -181,6 +181,21 @@ Grocy can send its own labels (products, stock entries, chores, batteries and re
   </picture>
 </p>
 
+### Spoolman spool labels
+
+A Spoolman spool prints as a **Spool label**: vendor and colour codes, the material on a black bar, the filament name, print settings, spool data and a QR code back to the spool. It is made for the L4737REV sheet cell and for 62 mm QL endless tape, and drops parts in a fixed order on smaller cells. The bar can show the filament name instead of the material, and the keys of Spoolman's extra fields are settings ([details](https://labelyard.app/integrations/spoolman/)).
+
+<p>
+  <img src="docs/screenshots/spoolman-swatch-samples.png" alt="Spoolman spool labels for two sample spools on four media: L4737REV sheet without footer, 62 mm QL tape with footer, and the short label on L4736REV and 6121">
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/spool-label-dark.png">
+    <img src="docs/screenshots/spool-label-light.png" alt="A Spoolman spool in the item view with the spool label previewed for 62 mm tape.">
+  </picture>
+</p>
+
 ### On a phone
 
 The same pages adapt to a phone held next to the printer. **Menu** at the top left opens every area, calibration, the settings and the integrations included. The magnifier at the top opens the search.

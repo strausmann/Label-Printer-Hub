@@ -90,6 +90,7 @@ path = [
   "docs/screenshots/*.png",
   "docs/superpowers/specs/assets/*.png",
   "website/src/assets/screens/*.webp",
+  "website/src/assets/spoolman/*.png",
   "backend/tests/fixtures/ql_layout/*.png",
 ]
 SPDX-FileCopyrightText = "2026 Björn Strausmann and Labelyard contributors"
