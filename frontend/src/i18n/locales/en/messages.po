@@ -539,6 +539,7 @@ msgid "About"
 msgstr "About"
 
 #: src/features/settings/System.tsx
+#: src/shell/PhoneMenu.tsx
 #: src/shell/Sidebar.tsx
 #: src/shell/TopBar.tsx
 msgctxt "link to the about page"
@@ -558,7 +559,7 @@ msgstr "About the key"
 msgid "above 1 = printed too large"
 msgstr "above 1 = printed too large"
 
-#: src/features/settings/SettingsPage.tsx
+#: src/shell/labels.ts
 msgid "Access and keys"
 msgstr "Access and keys"
 
@@ -1107,6 +1108,7 @@ msgstr "Clients"
 #: src/features/scan/CameraScanner.tsx
 #: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/shell/PhoneMenu.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -1167,11 +1169,11 @@ msgid "Connected"
 msgstr "Connected"
 
 #. placeholder {0}: info.data.version
-#: src/shell/Sidebar.tsx
+#: src/shell/ConnectionStatus.tsx
 msgid "Connected · v{0}"
 msgstr "Connected · v{0}"
 
-#: src/shell/Sidebar.tsx
+#: src/shell/ConnectionStatus.tsx
 msgid "Connecting…"
 msgstr "Connecting…"
 
@@ -1770,7 +1772,7 @@ msgid "Gap Z"
 msgstr "Gap Z"
 
 #: src/features/settings/sections.tsx
-#: src/features/settings/SettingsPage.tsx
+#: src/shell/labels.ts
 msgid "General"
 msgstr "General"
 
@@ -1950,7 +1952,6 @@ msgstr "Information"
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/Integrations.tsx
-#: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
 msgid "Integrations"
 msgstr "Integrations"
@@ -1978,7 +1979,6 @@ msgstr "It will probably become <0>{hintCode}</0>."
 #: src/features/jobs/JobsPage.tsx
 #: src/features/search/jobsSource.ts
 #: src/features/settings/sections.tsx
-#: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
 msgid "Jobs"
 msgstr "Jobs"
@@ -2334,6 +2334,10 @@ msgstr "Media sizes"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Media types"
 msgstr "Media types"
+
+#: src/shell/PhoneMenu.tsx
+msgid "Menu"
+msgstr "Menu"
 
 #: src/features/settings/System.tsx
 msgid "Message"
@@ -2951,6 +2955,10 @@ msgstr "Page printers"
 msgid "Page size"
 msgstr "Page size"
 
+#: src/shell/PhoneMenu.tsx
+msgid "Pages"
+msgstr "Pages"
+
 #: src/features/archive/TypeForm.tsx
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Paper size"
@@ -3165,7 +3173,6 @@ msgstr "Printer status unknown"
 #: src/features/printers/PrintersPage.tsx
 #: src/features/search/printersSource.ts
 #: src/features/settings/Printers.tsx
-#: src/features/settings/SettingsPage.tsx
 #: src/shell/labels.ts
 msgid "Printers"
 msgstr "Printers"
@@ -3694,7 +3701,7 @@ msgctxt "part of the hub"
 msgid "Server"
 msgstr "Server"
 
-#: src/shell/Sidebar.tsx
+#: src/shell/ConnectionStatus.tsx
 msgid "Server unreachable"
 msgstr "Server unreachable"
 
@@ -3898,6 +3905,7 @@ msgstr "Sign in"
 msgid "Sign in with an API key that has print or admin scope."
 msgstr "Sign in with an API key that has print or admin scope."
 
+#: src/shell/PhoneMenu.tsx
 #: src/shell/TopBar.tsx
 msgid "Sign out"
 msgstr "Sign out"
@@ -4097,7 +4105,6 @@ msgctxt "the chosen theme, after the word Theme"
 msgid "system"
 msgstr "system"
 
-#: src/features/settings/SettingsPage.tsx
 #: src/features/settings/System.tsx
 #: src/shell/labels.ts
 msgid "System"

@@ -183,6 +183,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   }
 }
 
+/* The phone menu slides in from the left edge: a short move and opacity (menuin), the dim area only fades. */
+@keyframes menuin {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+}
+
 /* A print notification rises in from below; transform and opacity only (reduced motion shortens it to nothing above). */
 @keyframes toastin {
   from {

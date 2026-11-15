@@ -20,6 +20,7 @@ import { signInWith } from "./fixtures";
  *   printer-detail  printer-detail
  *   jobs            jobs
  *   sheets          sheets
+ *   phone-menu      (phone only, no website shot) the menu open as admin
  *   sheet-archive   sheet-archive
  *   calibration     calibration
  *   calibration-guide  (phone only) the reading guide of step 2, opened
@@ -54,6 +55,7 @@ type Lang = "en" | "de";
 const TEXT = {
   en: {
     connected: /^Connected/,
+    menu: "Menu",
     overview: "Overview",
     skip: "Skip",
     calibration: "Calibration",
@@ -73,6 +75,7 @@ const TEXT = {
   },
   de: {
     connected: /^Verbunden/,
+    menu: "Menü",
     overview: "Übersicht",
     skip: "Überspringen",
     calibration: "Kalibrierung",
@@ -105,7 +108,7 @@ const id = async (page: Page, printer: string) => {
 
 /** Waits until the shell shows the live connection and the web fonts are in, so nothing changes under the camera. */
 async function settle(page: Page, text: Text) {
-  await expect(page.getByText(text.connected)).toBeAttached(); // hidden on the phone layout
+  await expect(page.getByText(text.connected).first()).toBeAttached(); // the sidebar line is hidden on the phone layout; the open phone menu shows one too
   await page.evaluate(() => document.fonts.ready);
   // The bell counts entries that arrive from three queries (jobs, printers with their statuses, sheets): its name stops
   // changing once they have all landed. Three equal readings in a row, so a view is never photographed half-counted.
@@ -200,6 +203,18 @@ const VIEWS: View[] = [
     open: async (page) => {
       await page.goto("/sheets");
       await expect(page.getByRole("link", { name: "L4736-0001" })).toBeVisible();
+    },
+  },
+  {
+    // The phone menu open as admin: every area of the sidebar, then the settings sections.
+    name: "phone-menu",
+    phone: true,
+    only: "phone",
+    open: async (page, text) => {
+      await page.goto("/sheets");
+      await expect(page.getByRole("link", { name: "L4736-0001" })).toBeVisible();
+      await page.getByRole("button", { name: text.menu, exact: true }).click();
+      await expect(page.getByRole("dialog", { name: text.menu })).toBeVisible();
     },
   },
   {

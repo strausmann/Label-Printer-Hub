@@ -151,13 +151,16 @@ test.describe("short viewport (on-screen keyboard)", () => {
     const cart = header.getByRole("link", { name: "Cart, 120 items" });
     await expect(cart).toBeVisible();
     await expect(cart).toContainText("99+");
+    // Below 1024 px About, the theme and Sign out live in the menu (#319); the top bar keeps Menu, Search, the bell and the cart.
     const controls: Array<[string, Locator]> = [
+      ["the menu button", header.getByRole("button", { name: "Menu", exact: true })],
+      ["the search field", header.getByRole("combobox", { name: "Search" })],
       ["the bell", header.getByRole("button", { name: /^Notifications/ })],
       ["the cart", cart],
-      ["the about link", header.getByRole("link", { name: /^About/ })],
-      ["the theme button", header.getByRole("button", { name: /^Theme: / })],
-      ["the sign-out button", header.getByRole("button", { name: "Sign out" })],
     ];
+    for (const gone of [header.getByRole("link", { name: /^About/ }), header.getByRole("button", { name: /^Theme: / }), header.getByRole("button", { name: "Sign out" })]) {
+      await expect(gone).toBeHidden();
+    }
     const boxes: Array<{ name: string; box: Box }> = [];
     for (const [name, control] of controls) {
       const box = await control.boundingBox();
@@ -181,6 +184,33 @@ test.describe("short viewport (on-screen keyboard)", () => {
 
   for (const mode of modes) {
     test.describe(mode.name, () => {
+      // The menu button is a phone control (hidden from 1024 px up): the tablet-wide modes have no menu to test.
+      test("Phone menu: the close button and the first entry are in sight, the list scrolls inside the sheet", async () => {
+        test.skip(mode.width >= 1024, "no menu button on a wide screen");
+        await prepare(mode);
+        await page.goto("/");
+        await page.getByRole("button", { name: "Menu", exact: true }).click();
+        const menu = page.getByRole("dialog", { name: "Menu" });
+        await expect(menu).toBeVisible();
+        await keyboard(mode);
+        const sheet = frameOf(menu);
+        const close = menu.locator('button[aria-label="Close"]');
+        const first = menu.locator('nav[aria-label="Pages"] a').first();
+        await expectInSight(page, close, "the close button");
+        await expectInSight(page, first, "the first entry");
+        await expectInSight(page, sheet, "the sheet");
+        // More entries than fit: the sheet scrolls, the page behind does not move.
+        const scroll = await sheet.evaluate((el) => ({ over: el.scrollHeight > el.clientHeight, page: window.scrollY }));
+        expect(scroll.over, "the list is taller than the visible area and scrolls inside the sheet").toBe(true);
+        const last = menu.locator('nav[aria-label="Pages"] a').last();
+        await last.scrollIntoViewIfNeeded();
+        await expectInSight(page, last, "the last entry after scrolling");
+        await expectInSight(page, close, "the close button after scrolling");
+        expect(await page.evaluate(() => window.scrollY), "the page behind stays put").toBe(scroll.page);
+        await page.keyboard.press("Escape");
+        await expect(menu).toBeHidden();
+      });
+
       test("New sheet: typed type, first option, and both buttons are in sight", async () => {
         await prepare(mode);
         const dialog = await openAddSheet();

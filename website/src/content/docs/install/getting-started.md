@@ -108,6 +108,8 @@ Browsers allow installing and camera access only on a secure origin: serve the h
 - **iPhone and iPad (Safari):** open the hub, Share > *Add to Home Screen*.
 - **Desktop (Chrome, Edge):** the install icon in the address bar.
 
+On the phone, **Menu** at the top left opens every area: calibration, settings and the integrations.
+
 The app has a **Scan** shortcut on the home-screen icon. Set `LABELYARD_PUBLIC_URL` to the address people open; with an `https` value the session cookies are `Secure`, so a browser will not send them to a plain-`http` name of the same hub.
 
 ## 5. Webhooks: print when something happens

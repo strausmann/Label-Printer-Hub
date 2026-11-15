@@ -17,14 +17,24 @@ export const INTEGRATION_ICON: Record<LookupApp, ReactNode> = {
 const ROW = "press flex h-10 items-center gap-3 rounded-r2 px-3 transition-colors duration-150 hover:bg-sunken";
 
 /** One sidebar entry per configured integration; the ones not set up are not listed (see `useConfiguredIntegrations`). */
-export function IntegrationNavEntries({ integrations }: { integrations: IntegrationState[] }) {
+export function IntegrationNavEntries({
+  integrations,
+  row = ROW,
+  onNavigate,
+}: {
+  integrations: IntegrationState[];
+  /** The row's box classes; the phone menu passes its taller 48 px row. */
+  row?: string;
+  onNavigate?: () => void;
+}) {
   const appName = useAppName();
   return integrations.map(({ app }) => (
     <li key={app}>
       <Link
         to="/integrations/$app"
         params={{ app }}
-        className={`${ROW} text-ink-2 hover:text-ink data-[status=active]:bg-sunken data-[status=active]:font-bold data-[status=active]:text-ink`}
+        onClick={onNavigate}
+        className={`${row} text-ink-2 hover:text-ink data-[status=active]:bg-sunken data-[status=active]:font-bold data-[status=active]:text-ink`}
       >
         {INTEGRATION_ICON[app]}
         <span>{appName(app)}</span>

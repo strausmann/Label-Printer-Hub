@@ -9,6 +9,7 @@ import { NotificationCentre } from "../features/notifications/NotificationCentre
 import { GlobalSearch } from "../features/search";
 import { InfoIcon, ScanIcon, SignOutIcon } from "./icons";
 import { CartButton } from "./CartButton";
+import { PhoneMenu } from "./PhoneMenu";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 const ICON_BUTTON =
@@ -21,6 +22,7 @@ export function TopBar({ livePaused = false }: { livePaused?: boolean }) {
 
   return (
     <header className="sticky top-0 z-10 flex h-16 items-center gap-1 border-b border-line bg-surface px-2 sm:gap-2 sm:px-4 lg:gap-3 lg:px-8">
+      <PhoneMenu />
       <GlobalSearch />
 
       <Link
@@ -37,12 +39,14 @@ export function TopBar({ livePaused = false }: { livePaused?: boolean }) {
         <Link
           to="/about"
           aria-label={t({ message: "About and licences", context: "link to the about page" })}
-          className={ICON_BUTTON}
+          className={`${ICON_BUTTON} max-lg:hidden`}
         >
           <InfoIcon />
         </Link>
-        <ThemeSwitch />
-        <Button aria-label={t`Sign out`} onPress={() => void session.signOut()} className={ICON_BUTTON}>
+        <div className="flex max-lg:hidden">
+          <ThemeSwitch />
+        </div>
+        <Button aria-label={t`Sign out`} onPress={() => void session.signOut()} className={`${ICON_BUTTON} max-lg:hidden`}>
           <SignOutIcon />
         </Button>
       </div>

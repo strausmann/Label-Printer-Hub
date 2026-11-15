@@ -24,6 +24,13 @@ describe("Sidebar", () => {
     }
   });
 
+  it("a read session sees no Settings link", async () => {
+    await renderApp({ path: "/", session: { ...SIGNED_IN, scope: "read" } });
+    const nav = screen.getByRole("navigation", { name: "Main" });
+    expect(within(nav).getByRole("link", { name: "Jobs" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Settings" })).toBeNull();
+  });
+
   it("hides entries whose feature is off", async () => {
     await renderApp({ path: "/", info: { integrations: [], features: { sheets: false, calibration: false, asn: false, kept: false } } });
     const nav = screen.getByRole("navigation", { name: "Main" });
