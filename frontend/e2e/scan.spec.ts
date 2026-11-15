@@ -112,6 +112,9 @@ test.describe.serial("scan", () => {
     const id = jobs[0]!.id;
     // On a phone the search is a magnifier that opens a dialog (#320): a new field, so the code is typed again.
     await page.setViewportSize({ width: 390, height: 844 });
+    // The layout switches a moment after the resize: `/` belongs to the dialog only once the magnifier has replaced the field.
+    await expect(page.locator("header").getByRole("button", { name: "Search", exact: true })).toBeVisible();
+    await expect(search).toHaveCount(0);
     await page.keyboard.press("/");
     const phoneField = page.getByRole("dialog", { name: "Search" }).getByRole("combobox", { name: "Search" });
     await expect(phoneField).toBeFocused();

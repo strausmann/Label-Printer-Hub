@@ -43,6 +43,20 @@ async function expectInSight(page: Page, what: Locator, name: string) {
   expect(box!.y + box!.height, `${name} ends above the keyboard`).toBeLessThanOrEqual(view.bottom + 1);
 }
 
+/** Like `expectInSight`, for a box that settles a moment after the viewport changed (a popover repositions on the resize). */
+async function expectInSightOnceSettled(page: Page, what: Locator, name: string) {
+  await expect
+    .poll(
+      async () => {
+        const box = await what.boundingBox();
+        const view = await visible(page);
+        return box !== null && box.y >= view.top - 1 && box.y + box.height <= view.bottom + 1;
+      },
+      { message: `${name} ends up inside the visible area` },
+    )
+    .toBe(true);
+}
+
 /** Opens the keyboard in the "covered" mode: only the visual viewport shrinks. */
 async function coverWithKeyboard(page: Page, visibleHeight: number) {
   await page.evaluate((h) => (window as unknown as { __keyboard(h: number | null): void }).__keyboard(h), visibleHeight);
@@ -347,12 +361,13 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.getByRole("button", { name: /^Notifications/ }).click();
         const panel = dialogOf(page);
         await expect(panel).toBeVisible();
+        // The panel settles first (it repositions on the resize); the parts are measured against that final layout.
+        await expectInSightOnceSettled(page, panel, "the panel");
         const first = panel.getByRole("link").first();
         await expect(first).toBeVisible();
         await expectInSight(page, buttonIn(panel, "Mark all as read"), "the Mark all as read button");
         await expectInSight(page, buttonIn(panel, "Clear all"), "the Clear all button");
         await expectInSight(page, first, "the first entry");
-        await expectInSight(page, panel, "the panel");
         await page.keyboard.press("Escape");
         await expect(panel).toBeHidden();
       });
