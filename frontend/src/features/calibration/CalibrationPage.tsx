@@ -220,7 +220,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
             primary={hasStored}
           />
         )}
-        {hasStored && <StillOff />}
+        <StillOff />
         </div>
       </CurrentValues>
 
