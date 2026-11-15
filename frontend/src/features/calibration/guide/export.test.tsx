@@ -13,10 +13,13 @@ import { SheetCrossingsFigure } from "./SheetCrossingsFigure";
 // two differ. They are rendered without a title, so without role and aria-label: the Astro page sets the
 // localised ones. The sheet figure is the one of a 4 × 12 sheet.
 
+// The header the generated files carry; REUSE would read these two lines as the header of this test file.
+// REUSE-IgnoreStart
 const SPDX = [
   "<!-- SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors -->",
   "<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->",
 ].join("\n");
+// REUSE-IgnoreEnd
 
 const dir = resolve(__dirname, "../../../../../website/src/assets/guide");
 
