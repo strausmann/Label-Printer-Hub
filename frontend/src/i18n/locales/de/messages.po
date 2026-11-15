@@ -3439,6 +3439,7 @@ msgstr "Rechteck"
 msgid "Red"
 msgstr "Rot"
 
+#: src/shell/PhoneMenu.tsx
 #: src/shell/UpdatePrompt.tsx
 msgid "Reload"
 msgstr "Neu laden"
@@ -5650,6 +5651,10 @@ msgstr "Auftrag für Seite {number} ansehen"
 #: src/features/lookup/ItemView.tsx
 msgid "View the job"
 msgstr "Auftrag ansehen"
+
+#: src/shell/PhoneMenu.tsx
+msgid "Wait until the current action has finished."
+msgstr "Warte, bis die laufende Aktion abgeschlossen ist."
 
 #: src/features/jobs/liveText.ts
 #: src/features/jobs/pageJobText.ts

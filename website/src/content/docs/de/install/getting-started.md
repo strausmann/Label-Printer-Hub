@@ -112,6 +112,8 @@ Das Symbol auf dem Startbildschirm hat eine Kurzwahl **Scannen**. Setz `LABELYAR
 
 Auf dem Handy öffnet **Menü** oben links jeden Bereich: Kalibrierung, Einstellungen und die Integrationen.
 
+Ziehe oben auf einer Seite nach unten, um sie neu zu laden, im Browser und in der installierten App; oder nimm **Menü > Neu laden**.
+
 ## 5. Webhooks: drucken, wenn etwas passiert
 
 Der Hub nimmt Ereignisse von Spoolman und Grocy an und druckt das Etikett des Eintrags, den das Ereignis nennt.

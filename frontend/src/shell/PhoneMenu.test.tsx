@@ -1,12 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { MutationObserver } from "@tanstack/react-query";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import type * as Actual from "./pullToRefresh";
+import { describe, expect, it, vi } from "vitest";
 import { mockApi } from "../features/test-api";
 import { renderApp, SIGNED_IN } from "../test-utils";
 import { navGroups } from "./features";
+import { reloadApp } from "./pullToRefresh";
+
+vi.mock("./pullToRefresh", async (importActual) => ({ ...(await importActual<typeof Actual>()), reloadApp: vi.fn() }));
 
 const FEATURES = { sheets: true, calibration: true, asn: true, kept: true };
 // With the sheet open the page behind it is hidden from assistive technology, the trigger included.
@@ -140,5 +145,41 @@ describe("PhoneMenu", () => {
     await userEvent.click(within(menu).getByRole("link", { name }));
     await waitFor(() => expect(router.state.location.pathname).toBe(path));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Menu" })).toBeNull());
+  });
+
+  it("Reload reloads the app", async () => {
+    mockApi({});
+    vi.mocked(reloadApp).mockClear();
+    await renderApp({ path: "/" });
+    const menu = await open();
+    const entry = within(menu).getByRole("button", { name: "Reload" });
+    expect(entry).not.toHaveAttribute("aria-disabled");
+    await userEvent.click(entry);
+    expect(reloadApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("Reload is disabled while a write is in flight", async () => {
+    mockApi({});
+    vi.mocked(reloadApp).mockClear();
+    const { queryClient } = await renderApp({ path: "/" });
+    const menu = await open();
+    await act(async () => {
+      void new MutationObserver(queryClient, { mutationFn: () => new Promise<void>(() => {}) }).mutate();
+    });
+    const entry = await within(menu).findByRole("button", { name: "Reload" });
+    await waitFor(() => expect(entry).toHaveAttribute("aria-disabled", "true"));
+    expect(entry).toHaveAccessibleDescription("Wait until the current action has finished.");
+    await userEvent.click(entry);
+    expect(reloadApp).not.toHaveBeenCalled();
+  });
+
+  it("Reload sits below the page entries inside the scrolling area", async () => {
+    mockApi({});
+    await renderApp({ path: "/" });
+    const menu = await open();
+    const scroll = within(menu).getByTestId("menu-scroll");
+    expect(within(scroll).getByRole("button", { name: "Reload" })).toBeInTheDocument();
+    const nav = within(scroll).getByRole("navigation", { name: "Pages" });
+    expect(nav.compareDocumentPosition(within(scroll).getByRole("button", { name: "Reload" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

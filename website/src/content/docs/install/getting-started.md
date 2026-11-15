@@ -112,6 +112,8 @@ The app has a **Scan** shortcut on the home-screen icon. Set `LABELYARD_PUBLIC_U
 
 On the phone, **Menu** at the top left opens every area: calibration, settings and the integrations.
 
+Pull down at the top of a page to reload it, in the browser and in the installed app; or use **Menu > Reload**.
+
 ## 5. Webhooks: print when something happens
 
 The hub accepts events from Spoolman and Grocy and prints the label of the item the event names.

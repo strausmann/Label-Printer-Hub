@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useHubEvents } from "../api/events";
 import { LiveStatus, useLiveDown } from "./LiveStatus";
 import { PrintToasts } from "./PrintToasts";
+import { PullToRefresh } from "./PullToRefresh";
 import { SessionStatus } from "./SessionStatus";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       <PrintToasts />
+      <PullToRefresh />
       <TabBar />
     </div>
   );

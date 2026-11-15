@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useLingui } from "@lingui/react/macro";
+import { useIsMutating } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button, Dialog, DialogTrigger, Heading, Modal, ModalOverlay } from "react-aria-components";
@@ -9,9 +10,10 @@ import { useInfo, useSession } from "../app/session";
 import { useConfiguredIntegrations } from "../features/integrations/api";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { navGroups, SETTINGS_SECTIONS } from "./features";
-import { CloseIcon, InfoIcon, MenuIcon, SignOutIcon } from "./icons";
+import { CloseIcon, InfoIcon, MenuIcon, ReloadIcon, SignOutIcon } from "./icons";
 import { IntegrationNavEntries } from "./IntegrationNav";
 import { useNavLabels } from "./labels";
+import { reloadApp } from "./pullToRefresh";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { useBackdropClose } from "./useBackdropClose";
 
@@ -88,6 +90,36 @@ function MenuItems({ onNavigate }: { onNavigate: () => void }) {
   );
 }
 
+/** Reload the app, for the installed app (no browser reload) and as the plain way when pulling down is awkward (#331). */
+function ReloadEntry({ onNavigate }: { onNavigate: () => void }) {
+  const { t } = useLingui();
+  // A reload drops writes that are still on their way; the entry says so instead of silently doing it.
+  const busy = useIsMutating() > 0;
+  return (
+    <div className="px-3 pt-2 pb-3">
+      <button
+        type="button"
+        aria-disabled={busy || undefined}
+        aria-describedby={busy ? "menu-reload-note" : undefined}
+        onClick={() => {
+          if (busy) return;
+          onNavigate();
+          reloadApp();
+        }}
+        className={`${ROW} w-full ${busy ? "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-ink-2" : ""}`}
+      >
+        <ReloadIcon />
+        <span>{t`Reload`}</span>
+      </button>
+      {busy && (
+        <p id="menu-reload-note" className="px-3 pt-1 text-small text-ink-3">
+          {t`Wait until the current action has finished.`}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * Phone menu (< 1024 px): the button at the top left opens a sheet from the left with every area of the hub, so calibration,
  * the settings and the integrations are reachable without the sidebar (#319). About, the theme and Sign out live here too.
@@ -124,6 +156,7 @@ export function PhoneMenu() {
             </div>
             <div data-testid="menu-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <MenuItems onNavigate={close} />
+              <ReloadEntry onNavigate={close} />
             </div>
             <div className="flex shrink-0 flex-col gap-3 border-t border-line pt-4 pr-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]">
               <div className="flex items-center gap-1">
