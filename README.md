@@ -161,6 +161,15 @@ Page printers rarely print exactly where the page says. Choose printer and tray,
   </picture>
 </p>
 
+How to read the calibration page: the guide in step 2 explains one crossing, which crossings to read and what the signs mean, and links to the same page on [labelyard.app](https://labelyard.app/using/calibration/).
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/calibration-guide-dark-phone.png">
+    <img src="docs/screenshots/calibration-guide-light-phone.png" width="320" alt="The reading guide of the calibration page on a phone: the drawing of one crossing with its scale, and the legend.">
+  </picture>
+</p>
+
 ### Grocy's own labels
 
 Grocy can send its own labels (products, stock entries, chores, batteries and recipes) to the hub. Under **Settings > Integrations** you switch this on, choose the default printer and a layout and printer for each label type, and copy the lines for Grocy's `config.php`.

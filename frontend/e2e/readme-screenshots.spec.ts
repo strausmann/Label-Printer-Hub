@@ -22,6 +22,7 @@ import { signInWith } from "./fixtures";
  *   sheets          sheets
  *   sheet-archive   sheet-archive
  *   calibration     calibration
+ *   calibration-guide  (phone only) the reading guide of step 2, opened
  *   print-dialog    print-dialog
  *   cart-sheet      cart-sheet
  *   cart-check      cart-check
@@ -57,6 +58,8 @@ const TEXT = {
     skip: "Skip",
     calibration: "Calibration",
     calibrationPage: /^Calibration page of /,
+    guide: "How to read the calibration page",
+    crossingFigure: "How to read one crossing",
     item: "Snipe-IT item" as string | undefined,
     preview: "Label preview",
     ontoSheet: "Print onto a sheet",
@@ -74,6 +77,8 @@ const TEXT = {
     skip: "Überspringen",
     calibration: "Kalibrierung",
     calibrationPage: /^Kalibrierseite für /,
+    guide: "So liest du die Kalibrierseite ab",
+    crossingFigure: "So liest du eine Kreuzung ab",
     item: undefined, // the heading names the item in German word order; the preview below proves the page
     preview: "Etikettenvorschau",
     ontoSheet: "Auf einen Bogen drucken",
@@ -91,7 +96,7 @@ type Text = (typeof TEXT)["en"];
 /** The website name of each view (`hero` for the overview). */
 const SITE_SHOT: Record<string, string> = { overview: "hero" };
 
-type View = { name: string; phone: boolean; open: (page: Page, text: Text) => Promise<void> };
+type View = { name: string; phone: boolean; /** Shown on the phone only (not on the desktop). */ only?: "phone"; open: (page: Page, text: Text) => Promise<void> };
 
 const id = async (page: Page, printer: string) => {
   const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
@@ -215,6 +220,23 @@ const VIEWS: View[] = [
     },
   },
   {
+    // Step 2 with the guide open on the phone: the drawing of one crossing and its legend. The guide is
+    // collapsed in the `calibration` view above.
+    name: "calibration-guide",
+    phone: true,
+    only: "phone",
+    open: async (page, text) => {
+      await page.goto(`/calibration?printer=${await id(page, "Office page printer")}&tray=main-tray`);
+      await expect(page.getByRole("heading", { level: 1, name: text.calibration })).toBeVisible();
+      const trigger = page.getByRole("button", { name: text.guide });
+      await trigger.click();
+      await expect(trigger).toHaveAttribute("aria-expanded", "true");
+      await expect(page.getByRole("img", { name: text.crossingFigure })).toBeVisible();
+      // Bring the guide's top below the sticky top bar: the drawing and the start of its legend fill the view.
+      await trigger.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 72));
+    },
+  },
+  {
     name: "print-dialog",
     phone: false,
     open: async (page, text) => {
@@ -310,7 +332,7 @@ async function shoot(browser: Browser, scheme: Scheme, size: Size, lang: Lang, s
     await signInWith(page, KEY());
     await expect(page.getByRole("navigation").first()).toBeVisible();
     await page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
-    for (const view of VIEWS.filter((v) => size === DESKTOP || v.phone)) {
+    for (const view of VIEWS.filter((v) => (size === DESKTOP ? v.only !== "phone" : v.phone))) {
       await view.open(page, TEXT[lang]);
       await settle(page, TEXT[lang]);
       save(view, await page.screenshot());

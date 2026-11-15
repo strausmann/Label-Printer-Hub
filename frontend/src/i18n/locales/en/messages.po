@@ -7,6 +7,10 @@ msgstr ""
 "X-Generator: @lingui/cli\n"
 "Language: en\n"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "(opens in a new tab)"
+msgstr "(opens in a new tab)"
+
 #. placeholder {0}: chosen.length
 #: src/features/sheets/SheetDetail.tsx
 msgid "{0, plural, one {# cell chosen} other {# cells chosen}}"
@@ -265,6 +269,10 @@ msgstr "{lowCount, plural, one {# printer is running out of material} other {# p
 msgid "{n} (all of {unknownFrom} to {unknownTo} printed)"
 msgstr "{n} (all of {unknownFrom} to {unknownTo} printed)"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "{name} (centre)"
+msgstr "{name} (centre)"
+
 #: src/features/sheets/print/errors.ts
 msgid "{name} cannot be printed with this layout: {fields} is missing. Choose another layout."
 msgstr "{name} cannot be printed with this layout: {fields} is missing. Choose another layout."
@@ -454,6 +462,14 @@ msgstr "+ = printed too low"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "+ = rotated clockwise"
 msgstr "+ = rotated clockwise"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "+ across = the ink lies right of the middle of the gap, − across = left of it."
+msgstr "+ across = the ink lies right of the middle of the gap, − across = left of it."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "+ down = the ink lies below the cut, − down = above it."
+msgstr "+ down = the ink lies below the cut, − down = above it."
 
 #: src/features/settings/PrinterForm.tsx
 msgid "A community is stored. Leave the field empty to keep it."
@@ -745,6 +761,10 @@ msgstr "Asset tag (for example AT-0042), numeric ID (42) or a printed label link
 #: src/features/scan/GrocycodePage.tsx
 msgid "Assigned to"
 msgstr "Assigned to"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "At a crossing, look where the middle of the gap (across) or the cut (down) falls on the scale, and count its distance from the printed line. Between two ticks, estimate to 0.1 mm by eye."
+msgstr "At a crossing, look where the middle of the gap (across) or the cut (down) falls on the scale, and count its distance from the printed line. Between two ticks, estimate to 0.1 mm by eye."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
@@ -1568,6 +1588,10 @@ msgstr "Enter it again"
 msgid "Enter the printer's address."
 msgstr "Enter the printer's address."
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Enter the readings below, choose the crossing for each, and press Fit. Check the filled-in values, then save them."
+msgstr "Enter the readings below, choose the crossing for each, and press Fit. Check the filled-in values, then save them."
+
 #: src/features/settings/PrinterForm.tsx
 msgid "Enter the SNMP community, or turn status discovery off."
 msgstr "Enter the SNMP community, or turn status discovery off."
@@ -1789,6 +1813,10 @@ msgstr "Health"
 msgid "Healthy"
 msgstr "Healthy"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line."
+msgstr "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line."
+
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx
 msgctxt "action"
@@ -1820,6 +1848,14 @@ msgstr "Host"
 msgid "How long finished jobs stay in the history."
 msgstr "How long finished jobs stay in the history."
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "How to read one crossing"
+msgstr "How to read one crossing"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "How to read the calibration page"
+msgstr "How to read the calibration page"
+
 #: src/features/printers/PageStatus.tsx
 msgid "How to turn on status discovery"
 msgstr "How to turn on status discovery"
@@ -1832,6 +1868,10 @@ msgstr "HTTP {0}"
 #: src/shell/StatusBadge.tsx
 msgid "Idle"
 msgstr "Idle"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "If the sheet has no gap between the rows, the Z line sits on the cut. Peel off every other label (checkerboard) only if the cut is hard to see."
+msgstr "If the sheet has no gap between the rows, the Z line sits on the cut. Peel off every other label (checkerboard) only if the cut is hard to see."
 
 #: src/features/archive/ImportDialog.tsx
 msgid "Import"
@@ -2124,6 +2164,10 @@ msgstr "Light theme"
 msgid "Lines for Grocy's config.php"
 msgstr "Lines for Grocy's config.php"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Lines, scale and arrows"
+msgstr "Lines, scale and arrows"
+
 #: src/shell/LiveStatus.tsx
 msgid "Live updates paused"
 msgstr "Live updates paused"
@@ -2278,6 +2322,10 @@ msgstr "Message"
 #: src/features/settings/PrinterForm.tsx
 msgid "Model"
 msgstr "Model"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "More on labelyard.app"
+msgstr "More on labelyard.app"
 
 #: src/features/settings/PrinterForm.tsx
 msgid "Name"
@@ -2893,6 +2941,10 @@ msgstr "Part {done} of {parts} is done. Check the tape, then continue."
 msgid "Part {partNo} of {parts}"
 msgstr "Part {partNo} of {parts}"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Parts of the crossing"
+msgstr "Parts of the crossing"
+
 #: src/features/archive/ImportDialog.tsx
 msgid "Paste the export file or choose it."
 msgstr "Paste the export file or choose it."
@@ -2996,6 +3048,14 @@ msgstr "Print status"
 msgid "Print test page"
 msgstr "Print test page"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Print the check page in step 3. If every crossing is within ±0.5 mm, you are done; if not, measure again."
+msgstr "Print the check page in step 3. If every crossing is within ±0.5 mm, you are done; if not, measure again."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Print the page on a real sheet of this type. Writing a number on each cell, row by row, is optional; it helps when you take photos."
+msgstr "Print the page on a real sheet of this type. Writing a number on each cell, row by row, is optional; it helps when you take photos."
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
 msgstr "Print the same page again, now with the correction. Every crossing should then be within 0.5 mm. If not, measure again and adjust."
@@ -3063,6 +3123,10 @@ msgstr "Printer is stopped"
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer is stopped: {reasons}"
 msgstr "Printer is stopped: {reasons}"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate."
+msgstr "Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate."
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
@@ -3182,6 +3246,10 @@ msgstr "Queue timeout (seconds)"
 #: src/features/printers/model.ts
 msgid "Queued"
 msgstr "Queued"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Read at least the four outer crossings and the one in the centre."
+msgstr "Read at least the four outer crossings and the one in the centre."
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Read printer"
@@ -3937,6 +4005,10 @@ msgstr "Step 2: Enter the deviation"
 msgid "Step 3: Check the result"
 msgstr "Step 3: Check the result"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Steps"
+msgstr "Steps"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Stock entry"
 msgstr "Stock entry"
@@ -4195,6 +4267,10 @@ msgstr "The app of this item is not known."
 msgid "The app of this item is not set up."
 msgstr "The app of this item is not set up."
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4."
+msgstr "The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4."
+
 #: src/shell/SignIn.tsx
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
 msgstr "The bootstrap key no longer works because an admin key exists. Sign in with that key."
@@ -4284,6 +4360,18 @@ msgstr "The correction could not be reset."
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The correction could not be saved."
 msgstr "The correction could not be saved."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The crossings to read"
+msgstr "The crossings to read"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The crossings to read on {typeName}"
+msgstr "The crossings to read on {typeName}"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The cut between two rows."
+msgstr "The cut between two rows."
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The decision could not be saved. Try again."
@@ -4557,6 +4645,10 @@ msgstr "The margin could not be checked on this printer."
 msgid "The measurements are the same as in the current version. Change something first."
 msgstr "The measurements are the same as in the current version. Change something first."
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The middle of that gap (dash-dot line). The printed line should lie here."
+msgstr "The middle of that gap (dash-dot line). The printed line should lie here."
+
 #: src/features/archive/TypeForm.tsx
 msgid "The name in addresses and exports. It cannot be changed later."
 msgstr "The name in addresses and exports. It cannot be changed later."
@@ -4601,6 +4693,10 @@ msgstr "The number of rows"
 #: src/features/sheets/errors.ts
 msgid "The number of unconfirmed cells changed. Check the list and try again."
 msgstr "The number of unconfirmed cells changed. Check the list and try again."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top."
+msgstr "The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The page could not be queued."
@@ -4810,6 +4906,10 @@ msgstr "The roll could not be read."
 msgid "The roll was changed"
 msgstr "The roll was changed"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm."
+msgstr "The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm."
+
 #: src/features/settings/SettingField.tsx
 msgid "The secret comes from the container, but the URL does not. Set the URL in the container too."
 msgstr "The secret comes from the container, but the URL does not. Set the URL in the container too."
@@ -4941,6 +5041,10 @@ msgstr "The tray you chose is not available on this printer. It reports: {list}.
 #: src/features/sheets/print/errors.ts
 msgid "The tray you chose is not available: the printer reports no trays."
 msgstr "The tray you chose is not available: the printer reports no trays."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The two edges of the gap between two columns: the sides of the labels."
+msgstr "The two edges of the gap between two columns: the sides of the labels."
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "The values are filled in below. Nothing is saved yet."

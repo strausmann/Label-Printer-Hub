@@ -39,7 +39,7 @@ Bürodrucker, die IPP sprechen, bedrucken Etikettenbögen. Füg sie als **Seiten
 ## Nach dem Hinzufügen
 
 - **Testdruck.** Jeder Drucker hat einen Testdruck, damit du sofort siehst, dass Adresse und Protokoll stimmen.
-- **Seitendrucker kalibrieren.** Ein Seitendrucker druckt selten genau dorthin, wo die Seite es vorgibt. Druck die Kalibrierseite, miss, wie weit er daneben liegt, und der Hub verschiebt jeden Druck aus diesem Fach um das Gegenteil.
+- **Seitendrucker kalibrieren.** Ein Seitendrucker druckt selten genau dorthin, wo die Seite es vorgibt. Druck die Kalibrierseite, miss, wie weit er daneben liegt, und der Hub verschiebt jeden Druck aus diesem Fach um das Gegenteil. [Seitendrucker kalibrieren](/de/using/calibration/) führt dich Schritt für Schritt durch.
 - **Den Zustand im Blick behalten.** Die Seite des Druckers zeigt seinen Zustand live: bereit, druckt, Deckel offen, Material leer.
 
 Der Container muss das Netz der Drucker erreichen. Mit dem Standard-Bridge-Netz klappt das, solange der Host es erreicht; sonst prüf Routing und Firewalls zwischen Docker-Host und Druckern.

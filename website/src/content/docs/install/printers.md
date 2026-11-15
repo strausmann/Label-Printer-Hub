@@ -39,7 +39,7 @@ Office printers that speak IPP print label sheets. Add them as **Page printer (I
 ## After adding a printer
 
 - **Test print.** Each printer has a test print, so you see at once that the address and the protocol work.
-- **Calibrate page printers.** A page printer rarely prints exactly where the page says. Print the calibration page, measure how far it is off, and the hub moves every print on that tray by the opposite.
+- **Calibrate page printers.** A page printer rarely prints exactly where the page says. Print the calibration page, measure how far it is off, and the hub moves every print on that tray by the opposite. [Calibrate a page printer](/using/calibration/) walks you through it.
 - **Watch the status.** The printer's page shows its state live: ready, printing, cover open, out of material.
 
 The container needs to reach the printer's network. With the default bridge network that works as long as the host can reach it; if not, check routing and firewalls between the Docker host and the printers.

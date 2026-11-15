@@ -1,0 +1,82 @@
+---
+title: Calibrate a page printer
+description: Print the calibration page on a real sheet, read the deviation at five crossings and let Labelyard correct every print.
+---
+
+import Crossing from "../../../assets/guide/crossing.svg";
+import SheetCrossings from "../../../assets/guide/sheet-crossings.svg";
+import Screenshot from "../../../components/Screenshot.astro";
+
+A page printer rarely prints exactly where the page says. The paper moves a little in the tray, the print is a fraction too large or too small, and a sheet of labels leaves no room for that: a print that is half a millimetre off already touches the edge of a label. **Calibration** measures how far a tray is off. Labelyard then moves every print from that tray by the opposite.
+
+You do this once per printer and tray, and again when you change the paper or the tray. It takes about ten minutes. Open **Calibration** in the web app; it walks you through three steps: print the calibration page, enter the deviation, check the result.
+
+## What you need
+
+- The page printer, added as a **Page printer (IPP)** with its trays. See [Printers](/install/printers/#page-printers).
+- A real sheet of the sheet type you will print on. Print on the sheet itself, not on plain paper: the cuts of the labels are what you measure against.
+- The correct **sheet type**. If its measurements are wrong, the calibration cannot be right; see [Sheets and layouts](/using/sheets/).
+
+## Step 1: Print the calibration page
+
+Choose the printer, the tray and the sheet type, then press **Print calibration page** (or download the PDF and print it yourself). The page shows the cut lines of the sheet type and a small scale at every crossing between four labels.
+
+Writing a number on each cell, row by row, is optional. It helps when you take photos of the sheet.
+
+## Step 2: Enter the deviation
+
+### One crossing
+
+<div class="ly-guide-figure">
+<Crossing role="img" aria-label="How to read one crossing" />
+</div>
+
+1. The two edges of the gap between two columns: the sides of the labels.
+2. The middle of that gap (dash-dot line). The printed line should lie here.
+3. The cut between two rows.
+
+- Heavy solid line: the printed **S line**. Heavy dashed line: the printed **Z line**. S counts the gaps between columns, Z the gaps between rows.
+- The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm.
+- The arrows point to the plus side. In the example the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4.
+
+At a crossing, look where the middle of the gap (across) or the cut (down) falls on the scale, and count its distance from the printed line. Between two ticks, estimate to 0.1 mm by eye. The signs are:
+
+- **+ across** = the ink lies right of the middle of the gap, **− across** = left of it.
+- **+ down** = the ink lies below the cut, **− down** = above it.
+
+If the sheet has no gap between the rows, the Z line sits on the cut. Peel off every other label (checkerboard) only if the cut is hard to see.
+
+### Which crossings
+
+Read at least the four outer crossings and the one in the centre. The drawing shows them for a sheet with 4 columns and 12 rows; the web app draws the one of your sheet type.
+
+<div class="ly-guide-figure ly-guide-sheet">
+<SheetCrossings role="img" aria-label="The crossings to read on a sheet with 4 columns and 12 rows" />
+</div>
+
+1. S1 · Z1
+2. S3 · Z1
+3. S1 · Z11
+4. S3 · Z11
+5. S2 · Z6 (centre)
+
+The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top.
+
+### Enter the readings
+
+Enter the readings in the **readings helper**: choose the crossing for each, type the across and down values (a decimal comma or point both work) and press **Fit**. Labelyard fits the offset, the scale and the rotation of the tray to your readings and fills the values in below. Nothing is saved yet: check the values, then save them. A reading that does not fit the others is marked **check this reading**; read that crossing again.
+
+<div>
+<Screenshot shot="calibration" lang="en" alt="The calibration page of the web app: the three steps, the sheet type chosen and the readings helper below." />
+</div>
+
+## Step 3: Check the result
+
+Print the check page. It is the same page, now with the correction. If every crossing is within ±0.5 mm, you are done. If not, measure again and adjust.
+
+## Printer or sheet type?
+
+When the page is still off, the deviation tells you where to look:
+
+- Deviations that grow evenly across the page (offset, scale, rotation) come from the printer. The fit corrects them.
+- A jump between neighbouring gaps comes from the geometry of the sheet type. Correct the sheet type first, then calibrate again.

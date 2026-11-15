@@ -5,8 +5,10 @@ import { describe, expect, it } from "vitest";
 import { GEOMETRY_L4736, SHEET_TYPE } from "../test-api";
 import {
   canFit,
+  centreCrossing,
   completeReadings,
   crossingName,
+  crossingsToRead,
   emptyReading,
   parseNumber,
   readingsRequest,
@@ -87,5 +89,34 @@ describe("readings", () => {
         { col_gap: 1, row_gap: 11, across_mm: 1, down_mm: 1 },
       ],
     });
+  });
+});
+
+describe("centreCrossing", () => {
+  it("is the crossing in the middle of the grid, rounding up", () => {
+    expect(centreCrossing(4, 12)).toEqual({ col_gap: 2, row_gap: 6 });
+    expect(centreCrossing(3, 3)).toEqual({ col_gap: 1, row_gap: 1 });
+    expect(centreCrossing(2, 2)).toEqual({ col_gap: 1, row_gap: 1 });
+    expect(centreCrossing(5, 8)).toEqual({ col_gap: 2, row_gap: 4 });
+  });
+});
+
+describe("crossingsToRead", () => {
+  it("are the four outermost crossings and the centre one, in that order", () => {
+    expect(crossingsToRead(4, 12)).toEqual([
+      { col_gap: 1, row_gap: 1 },
+      { col_gap: 3, row_gap: 1 },
+      { col_gap: 1, row_gap: 11 },
+      { col_gap: 3, row_gap: 11 },
+      { col_gap: 2, row_gap: 6 },
+    ]);
+  });
+
+  it("drops what coincides: a 2 × 2 grid has one crossing, a 3 × 2 grid two", () => {
+    expect(crossingsToRead(2, 2)).toEqual([{ col_gap: 1, row_gap: 1 }]);
+    expect(crossingsToRead(3, 2)).toEqual([
+      { col_gap: 1, row_gap: 1 },
+      { col_gap: 2, row_gap: 1 },
+    ]);
   });
 });

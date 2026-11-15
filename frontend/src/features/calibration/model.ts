@@ -29,6 +29,17 @@ export function suggestedCrossings(cols: number, rows: number): Crossing[] {
   return all.filter((c, i) => all.findIndex((o) => o.col_gap === c.col_gap && o.row_gap === c.row_gap) === i);
 }
 
+/** The crossing in the middle of the grid, rounding up: S `ceil((cols−1)/2)`, Z `ceil((rows−1)/2)`. */
+export function centreCrossing(cols: number, rows: number): Crossing {
+  return { col_gap: Math.ceil(Math.max(cols - 1, 1) / 2), row_gap: Math.ceil(Math.max(rows - 1, 1) / 2) };
+}
+
+/** What the reading guide asks for: the four outermost crossings and the one in the centre, without doubles. */
+export function crossingsToRead(cols: number, rows: number): Crossing[] {
+  const all = [...suggestedCrossings(cols, rows), centreCrossing(cols, rows)];
+  return all.filter((c, i) => all.findIndex((o) => o.col_gap === c.col_gap && o.row_gap === c.row_gap) === i);
+}
+
 /** S counts the gaps between columns, Z the gaps between rows (the numbers printed on the page). */
 export const crossingName = (colGap: number, rowGap: number): string => `S${colGap} · Z${rowGap}`;
 

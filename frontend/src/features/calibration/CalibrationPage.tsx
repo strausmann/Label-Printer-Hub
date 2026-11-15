@@ -28,6 +28,7 @@ import { CalibrationSchematic, GapCrossing } from "./CalibrationSchematic";
 import { useCalibrationErrorText, useValueNames } from "./errors";
 import { parseNumber, usableTypes } from "./model";
 import { PrintResult } from "./PrintResult";
+import { ReadingGuide } from "./guide/ReadingGuide";
 import { ReadingsHelper } from "./ReadingsHelper";
 
 const calibrationApi = getRouteApi("/calibration");
@@ -229,6 +230,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
 
       <section aria-labelledby="cal-step2-h" className={`${PANEL} flex flex-col gap-5`}>
         <h2 id="cal-step2-h" className={SECTION_HEADING}>{t`Step 2: Enter the deviation`}</h2>
+        <ReadingGuide type={type ? { geometry: type.geometry, label: typeLabelWithKey(type) } : undefined} />
         {type && (
           <div className="flex flex-col gap-3">
             <h3 className="m-0 text-body font-bold">{t`Measure with the readings helper`}</h3>

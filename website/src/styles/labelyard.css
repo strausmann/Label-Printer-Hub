@@ -352,3 +352,20 @@ main:has(.ly-home) .content-panel {
     transform: none;
   }
 }
+
+/* The two drawings of the calibration guide: black on the page colour, as wide as the column allows. */
+.sl-markdown-content .ly-guide-figure {
+  max-width: 28rem;
+  margin-block: 1.25rem;
+}
+
+.sl-markdown-content .ly-guide-figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: var(--ink);
+}
+
+.sl-markdown-content .ly-guide-figure.ly-guide-sheet {
+  max-width: 22rem;
+}
