@@ -601,7 +601,9 @@ itself refuses non-admins (`SettingsPage.tsx:16-23`).
   already has, so one place reaches everything. In the System group an admin session sees the six settings sections
   (General, Printers, Integrations, Access and keys, Jobs, System) as direct entries, so every destination is two taps away
   (open the menu, tap the entry). Below the groups: Reload (R-331-6), About and licences, the theme switch, Sign out, and
-  the connection status the sidebar shows (`Sidebar.tsx:29-33`). Groups and entries come from one pure function used by
+  the connection status the sidebar shows (`Sidebar.tsx:29-33`), as the menu's last line and with the running version
+  („Connected · v1.7.0“ / „Verbunden · v1.7.0“; the update note when a newer version waits) — the same component as the
+  sidebar, not a copy (maintainer, 2026-11-15: a phone shows the version nowhere today). Groups and entries come from one pure function used by
   the sidebar and the menu; the settings sections from one list used by the menu and `SettingsLayout`.
 - **R-319-3 (role rule; maintainer confirmed 2026-11-14 — QU1):** entries that need the admin scope
   (Settings and its sections) are shown only to a session with `scope === "admin"`, in the menu **and in the desktop
