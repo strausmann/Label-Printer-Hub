@@ -643,8 +643,12 @@ msgid "Asset tag (for example AT-0042), numeric ID (42) or a printed label link.
 msgstr "Inventarnummer (zum Beispiel AT-0042), numerische ID (42) oder ein gedruckter Etikettenlink. Standorte brauchen das Präfix loc:, zum Beispiel loc:17."
 
 #: src/features/calibration/CalibrationSchematic.tsx
-msgid "At every crossing sits a small scale: ±2 mm, a tick every 0.2 mm."
-msgstr "An jeder Kreuzung sitzt eine kleine Skala: ±2 mm, ein Strich alle 0,2 mm."
+msgid "At every crossing sits a small scale: ±{half} mm, a tick every {step} mm."
+msgstr "An jeder Kreuzung sitzt eine kleine Skala: ±{half} mm, ein Strich alle {step} mm."
+
+#: src/features/calibration/CalibrationSchematic.tsx
+msgid "At every crossing sits a small scale."
+msgstr "An jeder Kreuzung sitzt eine kleine Skala."
 
 #. placeholder {0}: MAX.codes
 #: src/features/archive/TypeForm.tsx

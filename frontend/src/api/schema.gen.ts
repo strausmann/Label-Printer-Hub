@@ -1992,6 +1992,7 @@ export interface components {
             auth: components["schemas"]["InfoAuth"];
             /** Build Date */
             build_date: string;
+            calibration_scale: components["schemas"]["InfoCalibrationScale"];
             /**
              * Default Language
              * @enum {string}
@@ -2020,6 +2021,24 @@ export interface components {
             bootstrap_open: boolean;
             /** Sso Configured */
             sso_configured: boolean;
+        };
+        /**
+         * InfoCalibrationScale
+         * @description The mini scale at a crossing of the calibration page: the app draws its schematic from it.
+         */
+        InfoCalibrationScale: {
+            /** Half Mm */
+            half_mm: number;
+            /** Line Mm */
+            line_mm: number;
+            /** Step Mm */
+            step_mm: number;
+            /** Tick Centre Mm */
+            tick_centre_mm: number;
+            /** Tick Half Mm */
+            tick_half_mm: number;
+            /** Tick Whole Mm */
+            tick_whole_mm: number;
         };
         /**
          * InfoIntegration

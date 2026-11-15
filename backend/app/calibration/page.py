@@ -26,7 +26,9 @@ from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+from app.calibration import scale
 from app.calibration.fit import crossing_point
+from app.calibration.scale import LINE_MM
 from app.page_render.pdf import VectorPen, text_width_mm, write_pdf
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
 from app.sheets.errors import CalibrationTypeUnsuitableError
@@ -37,7 +39,6 @@ if TYPE_CHECKING:
 
 #: Plan 2 decision: the page size the squares are measured on is the sheet's own.
 CORNER_SQUARE_MM = 15.0
-LINE_MM = 0.1
 DASHED = (1.0, 0.5)
 DOTTED = (0.2, 0.4)
 LABEL_PT = 2.5
@@ -51,10 +52,7 @@ _EPS = 1e-9
 #: Room kept between the footer and a corner square, so rounding in the PDF cannot touch it.
 _FOOTER_SLACK_MM = 0.01
 
-# Mini scale at a crossing: ±2 mm, a tick every 0.2 mm.
-_SCALE_HALF_MM = 2.0
-_SCALE_STEP_MM = 0.2
-_TICK_TENTH_MM, _TICK_WHOLE_MM, _TICK_CENTRE_MM = 0.6, 1.2, 1.8
+# Mini scale at a crossing (±2 mm, a tick every 0.5 mm): its numbers are in ``scale``.
 # Ruler on a grid edge at a gap line: ±3 mm, a tick every 0.5 mm, drawn outwards.
 _RULER_HALF_MM = 3.0
 _RULER_STEP_MM = 0.5
@@ -235,15 +233,23 @@ class _Page:
 
 
 def _mini_scale(page: _Page, cx: float, cy: float, *, along_x: bool) -> None:
-    """The ±2 mm scale of a crossing.
+    """The ±2 mm scale of a crossing, a tick every 0.5 mm (``app.calibration.scale``).
 
     Deliberately all or nothing: a scale with some ticks missing would be counted wrongly by
     whoever reads it, so one tick touching a corner square omits the whole scale.
     """
     segs: list[tuple[float, float, float, float]] = []
-    for k in range(-10, 11):
-        off = k * _SCALE_STEP_MM
-        length = _TICK_CENTRE_MM if k == 0 else _TICK_WHOLE_MM if k % 5 == 0 else _TICK_TENTH_MM
+    ticks = round(scale.HALF_MM / scale.STEP_MM)
+    per_mm = round(1 / scale.STEP_MM)
+    for k in range(-ticks, ticks + 1):
+        off = k * scale.STEP_MM
+        length = (
+            scale.TICK_CENTRE_MM
+            if k == 0
+            else scale.TICK_WHOLE_MM
+            if k % per_mm == 0
+            else scale.TICK_HALF_MM
+        )
         h = length / 2
         segs.append(
             (cx + off, cy - h, cx + off, cy + h)

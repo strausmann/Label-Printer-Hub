@@ -1473,6 +1473,9 @@
             "title": "Build Date",
             "type": "string"
           },
+          "calibration_scale": {
+            "$ref": "#/components/schemas/InfoCalibrationScale"
+          },
           "default_language": {
             "enum": [
               "en",
@@ -1526,7 +1529,8 @@
           "display_name",
           "auth",
           "features",
-          "integrations"
+          "integrations",
+          "calibration_scale"
         ],
         "title": "Info",
         "type": "object"
@@ -1547,6 +1551,45 @@
           "bootstrap_open"
         ],
         "title": "InfoAuth",
+        "type": "object"
+      },
+      "InfoCalibrationScale": {
+        "description": "The mini scale at a crossing of the calibration page: the app draws its schematic from it.",
+        "properties": {
+          "half_mm": {
+            "title": "Half Mm",
+            "type": "number"
+          },
+          "line_mm": {
+            "title": "Line Mm",
+            "type": "number"
+          },
+          "step_mm": {
+            "title": "Step Mm",
+            "type": "number"
+          },
+          "tick_centre_mm": {
+            "title": "Tick Centre Mm",
+            "type": "number"
+          },
+          "tick_half_mm": {
+            "title": "Tick Half Mm",
+            "type": "number"
+          },
+          "tick_whole_mm": {
+            "title": "Tick Whole Mm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "half_mm",
+          "step_mm",
+          "line_mm",
+          "tick_half_mm",
+          "tick_whole_mm",
+          "tick_centre_mm"
+        ],
+        "title": "InfoCalibrationScale",
         "type": "object"
       },
       "InfoIntegration": {

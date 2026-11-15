@@ -7,8 +7,10 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict
+from itertools import pairwise
 
 import pytest
+from app.calibration import scale
 from app.calibration.fit import crossing_point
 from app.calibration.page import (
     CHECKERBOARD_SENTENCE,
@@ -136,14 +138,46 @@ def test_page_line_counts_l4736() -> None:
     assert xs == [round(crossing_point(L4736, i, 1)[0], 2) for i in (1, 2, 3)]
     ys = sorted(round(s["pts"][0][1], 2) for s in dotted)
     assert ys == [round(crossing_point(L4736, 1, j)[1], 2) for j in range(1, 12)]
-    # 33 crossings, each with a scale in both directions: one 1.8 mm centre tick each.
-    centre = Counter((_vertical(s)) for s in _strokes(pdf) if _len(s) == 1.8)
+    # 33 crossings, each with a scale in both directions: one centre tick each, the longest.
+    centre = Counter((_vertical(s)) for s in _strokes(pdf) if _len(s) == scale.TICK_CENTRE_MM)
     assert centre == {True: 33, False: 33}
-    # 21 ticks per scale: 1 centre, 4 whole millimetres, 16 tenths-of-a-millimetre pairs.
-    lengths = Counter((_vertical(s), _len(s)) for s in _strokes(pdf) if _len(s) in (0.6, 1.2))
-    assert lengths[(True, 0.6)] == lengths[(False, 0.6)] == 33 * 16
-    assert lengths[(True, 1.2)] == lengths[(False, 1.2)] == 33 * 4
+    # 9 ticks per scale: 1 centre, 4 whole millimetres, 4 half millimetres.
+    lengths = Counter(
+        (_vertical(s), _len(s))
+        for s in _strokes(pdf)
+        if _len(s) in (scale.TICK_HALF_MM, scale.TICK_WHOLE_MM)
+    )
+    assert lengths[(True, scale.TICK_HALF_MM)] == lengths[(False, scale.TICK_HALF_MM)] == 33 * 4
+    assert lengths[(True, scale.TICK_WHOLE_MM)] == lengths[(False, scale.TICK_WHOLE_MM)] == 33 * 4
     assert CHECKERBOARD_SENTENCE in pi.texts(pdf)
+
+
+def test_the_mini_scale_ticks_are_half_a_millimetre_apart_with_white_between() -> None:
+    """A colour laser fills in a hairline gap (#348): the 0.5 mm pitch and the ticks are held."""
+    pdf = _pdf(L4736)
+    cx, cy = crossing_point(L4736, 1, 1)
+    # The ticks of the scale along x at the first crossing: vertical, centred on the crossing's row.
+    ticks = sorted(
+        s["pts"][0][0] - cx
+        for s in _strokes(pdf)
+        if _vertical(s)
+        and _len(s) in (scale.TICK_HALF_MM, scale.TICK_WHOLE_MM, scale.TICK_CENTRE_MM)
+        and abs((s["pts"][0][1] + s["pts"][1][1]) / 2 - cy) < 0.01
+        and abs(s["pts"][0][0] - cx) < scale.HALF_MM + 0.01
+    )
+    assert [round(t, 2) for t in ticks] == [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0]
+    pitch = min(b - a for a, b in pairwise(ticks))
+    assert round(pitch, 2) == scale.STEP_MM == 0.5
+    # Whole millimetres are clearly longer than half millimetres, the centre is the longest.
+    assert scale.TICK_HALF_MM < scale.TICK_WHOLE_MM < scale.TICK_CENTRE_MM
+    assert scale.TICK_WHOLE_MM - scale.TICK_HALF_MM >= 0.4
+    # The ruler on the grid edge keeps its 0.5 mm pitch.
+    assert scale.STEP_MM == 0.5
+
+
+def test_the_white_between_two_mini_scale_ticks_survives_a_colour_laser() -> None:
+    """From the drawing constants alone: pitch minus stroke width is the white between two ticks."""
+    assert scale.STEP_MM - scale.LINE_MM >= scale.MIN_GAP_MM - 1e-9
 
 
 def test_page_line_counts_gapped_type() -> None:
