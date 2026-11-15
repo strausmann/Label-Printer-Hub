@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useId } from "react";
 import { crossingsToRead } from "../model";
 
 // The page is drawn on a 200 × 280 sheet; the grid takes the middle of it. Cells are not to scale:
@@ -13,9 +12,7 @@ const GRID = { x: 34, y: 30, w: 144, h: 232 };
  * numbered 1, 2, 3 … in the order of the list next to it. Black only (`currentColor`), digits and S/Z
  * numbers as the only text. Without `title` the drawing has no role and no name (the website export).
  */
-export function SheetCrossingsFigure({ cols, rows, title, idPrefix }: { cols: number; rows: number; title?: string; idPrefix?: string }) {
-  const generated = useId().replace(/[^A-Za-z0-9_-]/g, "");
-  const prefix = idPrefix ?? `sheet-${generated}`;
+export function SheetCrossingsFigure({ cols, rows, title }: { cols: number; rows: number; title?: string; /** Accepted for symmetry with CrossingFigure; this drawing has no ids. */ idPrefix?: string }) {
   const picks = crossingsToRead(cols, rows);
   const cw = GRID.w / cols;
   const ch = GRID.h / rows;
@@ -26,7 +23,7 @@ export function SheetCrossingsFigure({ cols, rows, title, idPrefix }: { cols: nu
 
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 280" {...a11y}>
-      <rect id={`${prefix}-page`} x="2" y="2" width="196" height="276" fill="none" stroke="currentColor" strokeWidth="1" />
+      <rect x="2" y="2" width="196" height="276" fill="none" stroke="currentColor" strokeWidth="1" />
       <g fill="none" stroke="currentColor" strokeWidth="0.5">
         {cells.map(({ c, r }) => (
           <rect key={`${c}-${r}`} x={GRID.x + c * cw + 0.75} y={GRID.y + r * ch + 0.75} width={cw - 1.5} height={ch - 1.5} />

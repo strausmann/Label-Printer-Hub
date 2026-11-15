@@ -1814,8 +1814,8 @@ msgid "Healthy"
 msgstr "Gesund"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
-msgid "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line."
-msgstr "Dicke durchgezogene Linie: die gedruckte S-Linie. Dicke gestrichelte Linie: die gedruckte Z-Linie."
+msgid "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing)."
+msgstr "Dicke durchgezogene Linie: die gedruckte S-Linie. Dicke gestrichelte Linie: die gedruckte Z-Linie (punktiert bei einem Bogen ohne Lücke zwischen den Zeilen, wie in der Zeichnung)."
 
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx
@@ -2775,6 +2775,10 @@ msgstr "An"
 msgid "on {printerName}"
 msgstr "auf {printerName}"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them."
+msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, deshalb lassen sich die Messwerte nicht berechnen. Gib die Werte unten direkt ein und speichere sie."
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
 msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Gib die Werte direkt ein."
@@ -3254,6 +3258,10 @@ msgstr "Lies mindestens die vier äußeren Kreuzungen und die in der Mitte ab."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Read printer"
 msgstr "Drucker auslesen"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Read the crossings marked in the drawing."
+msgstr "Lies die in der Zeichnung markierten Kreuzungen ab."
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Read the deviation at three or more crossings that are far apart, in both directions. + across = the ink lies to the right, + down = the ink lies below."
@@ -4697,6 +4705,10 @@ msgstr "Die Zahl der unbestätigten Zellen hat sich geändert. Prüfe die Liste 
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top."
 msgstr "Die Nummern in der Zeichnung folgen dieser Liste. S zählt die Lücken zwischen den Spalten von links, Z die Lücken zwischen den Zeilen von oben."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there."
+msgstr "Die Zahlen auf der Skala sind der Wert, den du eingibst, wenn die Mitte der Lücke (quer) oder der Schnitt (abwärts) dort liegt."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The page could not be queued."

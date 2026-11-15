@@ -12,6 +12,11 @@ import { useId } from "react";
  * the printed Z line, so the ink lies 0.6 mm right of the gap middle (across +0.6) and 0.4 mm below the
  * cut (down +0.4). 1 mm is 40 units; the scale is centred on the crossing at (120, 100).
  *
+ * The numbers on the scale are the value to enter (the fit adds a reading to the nominal crossing: printed =
+ * nominal + reading), not the position on the scale: where the gap middle falls left of 0 the ink lies right
+ * of it, so the left side is + and the right side −; likewise the top is + and the bottom −. The Z line is
+ * dotted because the drawn sheet has no gap between its rows, as the printed page does.
+ *
  * Without `title` the drawing has no role and no name: the website page sets its own, localised ones.
  */
 export function CrossingFigure({ title, idPrefix }: { title?: string; idPrefix?: string }) {
@@ -42,7 +47,7 @@ export function CrossingFigure({ title, idPrefix }: { title?: string; idPrefix?:
 
       {/* The printed lines: S solid, Z dashed. */}
       <line x1="120" x2="120" y1="0" y2="196" stroke="currentColor" strokeWidth="1.8" />
-      <line x1="0" x2="232" y1="100" y2="100" stroke="currentColor" strokeWidth="1.8" strokeDasharray="8 5" />
+      <line x1="0" x2="232" y1="100" y2="100" stroke="currentColor" strokeWidth="1.8" strokeDasharray="2 4" />
 
       {/* The scale: ±2 mm, a tick every 0.2 mm, a longer one every 1 mm, the longest at 0. */}
       <g stroke="currentColor" strokeWidth="0.9">
@@ -84,14 +89,14 @@ export function CrossingFigure({ title, idPrefix }: { title?: string; idPrefix?:
         <text x="84" y="163.5">2</text>
         <text x="40" y="73.5">3</text>
         <text x="206" y="73.5">3</text>
-        <text x="40" y="128">−2</text>
-        <text x="80" y="128">−1</text>
-        <text x="160" y="128">+1</text>
-        <text x="200" y="128">+2</text>
-        <text x="142" y="23.5" textAnchor="start">−2</text>
-        <text x="142" y="63.5" textAnchor="start">−1</text>
-        <text x="142" y="143.5" textAnchor="start">+1</text>
-        <text x="142" y="183.5" textAnchor="start">+2</text>
+        <text x="40" y="128">+2</text>
+        <text x="80" y="128">+1</text>
+        <text x="160" y="128">−1</text>
+        <text x="200" y="128">−2</text>
+        <text x="142" y="23.5" textAnchor="start">+2</text>
+        <text x="142" y="63.5" textAnchor="start">+1</text>
+        <text x="142" y="143.5" textAnchor="start">−1</text>
+        <text x="142" y="183.5" textAnchor="start">−2</text>
         <text x="114" y="96" textAnchor="end">0</text>
         <text x="140" y="48">−</text>
         <text x="213" y="48">+</text>

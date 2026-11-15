@@ -7,6 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it } from "vitest";
 import { i18n, initI18n } from "../../../i18n";
 import { GEOMETRY_L4736 } from "../../test-api";
+import { CrossingFigure } from "./CrossingFigure";
 import { ReadingGuide } from "./ReadingGuide";
 
 const TYPE = { geometry: { ...GEOMETRY_L4736, cols: 4, rows: 12 }, label: "Avery L4736REV (4736)" };
@@ -126,3 +127,67 @@ describe("the reading guide", () => {
     for (const id of figureIds) expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
+
+// The scale labels are the value to enter, not the position on the scale. The fit takes printed = nominal +
+// reading (backend/app/calibration/fit.py), so a reading is positive when the ink lies right of the gap
+// middle / below the cut, i.e. when the gap middle lies LEFT of / the cut ABOVE the printed line, which is
+// the centre of the scale at (120, 100), 40 units per mm.
+describe("the crossing figure's scale labels are the value to enter", () => {
+  const num = (text: string) => Number(text.replace("−", "-"));
+  const labels = (container: Element) => [...container.querySelectorAll("text")].map((t) => ({ text: t.textContent ?? "", x: Number(t.getAttribute("x")), y: Number(t.getAttribute("y")) }));
+
+  it("the figure's label at the gap middle is the value to enter", () => {
+    const { container } = render(<CrossingFigure />);
+    const gapMiddleX = Number(container.querySelector('line[stroke-dasharray="1 3 7 3"]')!.getAttribute("x1"));
+    const cutY = Number(container.querySelectorAll("rect")[0]!.getAttribute("y")) + Number(container.querySelectorAll("rect")[0]!.getAttribute("height"));
+    // The example of the legend: across +0.6, down +0.4.
+    expect((120 - gapMiddleX) / 40).toBeCloseTo(0.6);
+    expect((100 - cutY) / 40).toBeCloseTo(0.4);
+    // The across scale labels sit under the Z line (y 128); the label nearest the gap middle is +1, on the left.
+    const across = labels(container).filter((l) => l.y === 128);
+    const nearest = across.reduce((a, b) => (Math.abs(a.x - gapMiddleX) < Math.abs(b.x - gapMiddleX) ? a : b));
+    expect(nearest.text).toBe("+1");
+    expect(nearest.x).toBeLessThan(120);
+  });
+
+  it("a label left of 0 is positive and one right of 0 negative; above 0 positive, below negative", () => {
+    const { container } = render(<CrossingFigure />);
+    const all = labels(container);
+    const across = all.filter((l) => l.y === 128);
+    const down = all.filter((l) => l.x === 142 && /^[+−][12]$/.test(l.text));
+    expect(across).toHaveLength(4);
+    expect(down).toHaveLength(4);
+    // value to enter = - position on the scale (the position is the offset of the gap middle from the printed line).
+    for (const l of across) expect(num(l.text)).toBe(-(l.x - 120) / 40);
+    for (const l of down) expect(num(l.text)).toBe(-(l.y - 3.5 - 100) / 40);
+  });
+
+  it("the legend says the numbers are the value to enter", async () => {
+    show();
+    await open();
+    expect(screen.getByText(/The numbers on the scale are the value to enter/)).toBeVisible();
+  });
+});
+
+describe("the guide follows what the page offers", () => {
+  it("on a 4 × 12 type: five crossings and the fit step", async () => {
+    show();
+    await open();
+    expect(screen.getByText(/Read at least the four outer crossings and the one in the centre/)).toBeInTheDocument();
+    expect(screen.getByText(/press Fit/)).toBeInTheDocument();
+    expect(screen.queryByText(/cannot be fitted/)).toBeNull();
+  });
+
+  it.each([
+    ["2 columns", 2, 12],
+    ["2 rows", 4, 2],
+  ])("on a type with %s: no Fit step, the values are entered directly", async (_name, cols, rows) => {
+    show({ type: { geometry: { ...GEOMETRY_L4736, cols, rows }, label: "Avery L4736REV (4736)" } });
+    await open();
+    expect(screen.queryByText(/four outer crossings and the one in the centre/)).toBeNull();
+    expect(screen.queryByText(/press Fit/)).toBeNull();
+    expect(screen.getByText(/Read the crossings marked in the drawing/)).toBeInTheDocument();
+    expect(screen.getByText(/all crossings lie on one line, so the readings cannot be fitted/)).toBeInTheDocument();
+  });
+});
+

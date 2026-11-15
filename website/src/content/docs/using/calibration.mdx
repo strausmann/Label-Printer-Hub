@@ -35,7 +35,8 @@ Writing a number on each cell, row by row, is optional. It helps when you take p
 2. The middle of that gap (dash-dot line). The printed line should lie here.
 3. The cut between two rows.
 
-- Heavy solid line: the printed **S line**. Heavy dashed line: the printed **Z line**. S counts the gaps between columns, Z the gaps between rows.
+- Heavy solid line: the printed **S line**. Heavy dashed line: the printed **Z line** (dotted on a sheet without a gap between the rows, as in the drawing). S counts the gaps between columns, Z the gaps between rows.
+- The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there. In the example the middle of the gap falls at +0.6 and the cut at +0.4.
 - The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm.
 - The arrows point to the plus side. In the example the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4.
 
@@ -65,6 +66,8 @@ The numbers in the drawing follow this list. S counts the gaps between columns f
 ### Enter the readings
 
 Enter the readings in the **readings helper**: choose the crossing for each, type the across and down values (a decimal comma or point both work) and press **Fit**. Labelyard fits the offset, the scale and the rotation of the tray to your readings and fills the values in below. Nothing is saved yet: check the values, then save them. A reading that does not fit the others is marked **check this reading**; read that crossing again.
+
+On a sheet with only two columns or two rows all crossings lie on one line, so the readings cannot be fitted and the readings helper is not offered. Enter the values directly in the form below it.
 
 <div>
 <Screenshot shot="calibration" lang="en" alt="The calibration page of the web app: the three steps, the sheet type chosen and the readings helper below." />

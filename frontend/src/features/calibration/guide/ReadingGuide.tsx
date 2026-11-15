@@ -36,6 +36,8 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
   const typeName = type?.label ?? "";
   const outer = geometry ? suggestedCrossings(geometry.cols, geometry.rows) : [];
   const centre = geometry ? centreCrossing(geometry.cols, geometry.rows) : null;
+  // The readings helper is offered only when the crossings do not all lie on one line (ReadingsHelper).
+  const fits = !geometry || (geometry.cols > 2 && geometry.rows > 2);
   const isOuter = (c: { col_gap: number; row_gap: number }) => outer.some((o) => o.col_gap === c.col_gap && o.row_gap === c.row_gap);
 
   return (
@@ -67,7 +69,8 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
                   <li>{t`The cut between two rows.`}</li>
                 </ol>
                 <ul aria-label={t`Lines, scale and arrows`} className="m-0 flex list-disc flex-col gap-1.5 pl-5">
-                  <li>{t`Heavy solid line: the printed S line. Heavy dashed line: the printed Z line.`}</li>
+                  <li>{t`Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing).`}</li>
+                  <li>{t`The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there.`}</li>
                   <li>{t`The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm.`}</li>
                   <li>{t`The arrows point to the plus side. Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it, so across is +0.6 and down is +0.4.`}</li>
                 </ul>
@@ -79,7 +82,7 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
           <ol aria-labelledby={stepsId} className="m-0 -mt-2 flex list-decimal flex-col gap-3 pl-5">
             <li>{t`Print the page on a real sheet of this type. Writing a number on each cell, row by row, is optional; it helps when you take photos.`}</li>
             <li className="flex flex-col gap-3">
-              <span>{t`Read at least the four outer crossings and the one in the centre.`}</span>
+              <span>{fits ? t`Read at least the four outer crossings and the one in the centre.` : t`Read the crossings marked in the drawing.`}</span>
               {geometry && (
                 <Block
                   figure={<SheetCrossingsFigure cols={geometry.cols} rows={geometry.rows} title={t`The crossings to read on ${typeName}`} />}
@@ -104,7 +107,11 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
               <span>{t`+ down = the ink lies below the cut, − down = above it.`}</span>
             </li>
             <li>{t`If the sheet has no gap between the rows, the Z line sits on the cut. Peel off every other label (checkerboard) only if the cut is hard to see.`}</li>
-            <li>{t`Enter the readings below, choose the crossing for each, and press Fit. Check the filled-in values, then save them.`}</li>
+            <li>
+              {fits
+                ? t`Enter the readings below, choose the crossing for each, and press Fit. Check the filled-in values, then save them.`
+                : t`On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them.`}
+            </li>
             <li>{t`Print the check page in step 3. If every crossing is within ±0.5 mm, you are done; if not, measure again.`}</li>
             <li>{t`Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate.`}</li>
           </ol>

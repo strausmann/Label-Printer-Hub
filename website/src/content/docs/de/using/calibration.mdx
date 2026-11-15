@@ -35,7 +35,8 @@ Du kannst auf jedes Feld eine Nummer schreiben, Zeile für Zeile; das ist freiwi
 2. Die Mitte dieser Lücke (Strich-Punkt-Linie). Hier sollte die gedruckte Linie liegen.
 3. Der Schnitt zwischen zwei Zeilen.
 
-- Dicke durchgezogene Linie: die gedruckte **S-Linie**. Dicke gestrichelte Linie: die gedruckte **Z-Linie**. S zählt die Lücken zwischen den Spalten, Z die Lücken zwischen den Zeilen.
+- Dicke durchgezogene Linie: die gedruckte **S-Linie**. Dicke gestrichelte Linie: die gedruckte **Z-Linie** (punktiert bei einem Bogen ohne Lücke zwischen den Zeilen, wie in der Zeichnung). S zählt die Lücken zwischen den Spalten, Z die Lücken zwischen den Zeilen.
+- Die Zahlen auf der Skala sind der Wert, den du eingibst, wenn die Mitte der Lücke (quer) oder der Schnitt (abwärts) dort liegt. Im Beispiel liegt die Mitte der Lücke bei +0,6 und der Schnitt bei +0,4.
 - Die Skala liegt auf beiden Linien: 0 auf der gedruckten Linie, ein langer Strich alle 1 mm, ein kurzer alle 0,2 mm, bis ±2 mm.
 - Die Pfeile zeigen zur Plusseite. Im Beispiel liegt die Mitte der Lücke 0,6 mm links von der gedruckten Linie und der Schnitt 0,4 mm darüber, also ist quer +0,6 und abwärts +0,4.
 
@@ -65,6 +66,8 @@ Die Nummern in der Zeichnung folgen dieser Liste. S zählt die Lücken zwischen 
 ### Messwerte eingeben
 
 Gib die Messwerte im **Messwert-Helfer** ein: Wähle zu jedem die Kreuzung, tippe die Werte für quer und abwärts ein (Dezimalkomma oder -punkt gehen beide) und drücke **Berechnen**. Labelyard berechnet aus deinen Messwerten Versatz, Maßstab und Drehung des Fachs und trägt die Werte unten ein. Noch ist nichts gespeichert: Prüfe die Werte und speichere sie dann. Ein Messwert, der nicht zu den anderen passt, ist mit **diesen Messwert prüfen** markiert; lies diese Kreuzung noch einmal ab.
+
+Auf einem Bogen mit nur zwei Spalten oder zwei Zeilen liegen alle Kreuzungen auf einer Linie; die Messwerte lassen sich dann nicht berechnen, und der Messwert-Helfer wird nicht angeboten. Gib die Werte direkt in das Formular darunter ein.
 
 <div>
 <Screenshot shot="calibration" lang="de" alt="Die Kalibrierseite der Web-App: die drei Schritte, der gewählte Bogentyp und darunter der Messwert-Helfer." />

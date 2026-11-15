@@ -1814,8 +1814,8 @@ msgid "Healthy"
 msgstr "Healthy"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
-msgid "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line."
-msgstr "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line."
+msgid "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing)."
+msgstr "Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing)."
 
 #. placeholder {0}: entry.name
 #: src/features/about/DependencyLicences.tsx
@@ -2775,6 +2775,10 @@ msgstr "On"
 msgid "on {printerName}"
 msgstr "on {printerName}"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them."
+msgstr "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them."
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
 msgstr "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
@@ -3254,6 +3258,10 @@ msgstr "Read at least the four outer crossings and the one in the centre."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Read printer"
 msgstr "Read printer"
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Read the crossings marked in the drawing."
+msgstr "Read the crossings marked in the drawing."
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Read the deviation at three or more crossings that are far apart, in both directions. + across = the ink lies to the right, + down = the ink lies below."
@@ -4697,6 +4705,10 @@ msgstr "The number of unconfirmed cells changed. Check the list and try again."
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top."
 msgstr "The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top."
+
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there."
+msgstr "The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The page could not be queued."
