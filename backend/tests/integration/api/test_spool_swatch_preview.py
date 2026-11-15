@@ -30,10 +30,12 @@ from app.models.job import Job as DbJob
 from app.models.printer import Printer
 from app.printer_backends.mock_backend import MockPrinterBackend
 from app.schemas.label_data import LabelData
+from app.schemas.spool_swatch import SpoolSwatch
 from app.services.backend_router import BackendRouter
 from app.services.rate_limiter import _rate_limiter
 from app.services.spool_swatch import (
     SHEET_METRICS,
+    SWATCH_TAPES,
     layout_for_box,
     place_swatch,
     render_tape_swatch,
@@ -159,12 +161,14 @@ async def _lookup(client: AsyncClient) -> dict[str, Any]:
     return body
 
 
-async def _preview_png(client: AsyncClient, swatch: Any, url: str) -> Image.Image:
+async def _preview_png(
+    client: AsyncClient, swatch: Any, url: str, tape_mm: int = 62
+) -> Image.Image:
     r = await client.post(
         "/api/v1/render/preview",
         json={
             "content_type": "spool_swatch",
-            "tape_mm": 62,
+            "tape_mm": tape_mm,
             "data": {"qr_payload": url, "swatch": swatch},
         },
     )
@@ -191,6 +195,20 @@ async def test_preview_with_raw_swatch_renders_png(hub: Hub) -> None:
         body = await _lookup(client)
         image = await _preview_png(client, body["extra"]["swatch"], body["url"])
     assert image.size == (696, 425)
+
+
+async def test_preview_on_the_other_dk_widths(hub: Hub) -> None:
+    """29/54 mm across (the tape's dots wide), 38/50 mm along (an upright band the tape's dots
+    high), each exactly the image the job prints (#346)."""
+    async with hub.running() as (client, _):
+        body = await _lookup(client)
+        for tape_mm, side in ((29, "w"), (38, "h"), (50, "h"), (54, "w")):
+            image = await _preview_png(client, body["extra"]["swatch"], body["url"], tape_mm)
+            dots = SWATCH_TAPES[tape_mm].dots
+            assert (image.width if side == "w" else image.height) == dots, tape_mm
+            swatch = SpoolSwatch.model_validate(body["extra"]["swatch"])
+            expected = render_tape_swatch(swatch, body["url"], tape_mm)
+            assert image.convert("1").tobytes() == expected.tobytes(), tape_mm
 
 
 async def test_preview_refuses_an_unbounded_swatch(hub: Hub) -> None:

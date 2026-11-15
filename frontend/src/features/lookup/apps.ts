@@ -31,8 +31,8 @@ export const SPOOL_SWATCH: ContentType = "spool_swatch";
 export const contentTypesFor = (app: LookupApp): readonly ContentType[] =>
   app === "spoolman" ? [SPOOL_SWATCH, ...LOOKUP_CONTENT_TYPES] : LOOKUP_CONTENT_TYPES;
 
-/** QL tape widths the spool label is drawn for (the backend refuses the others). */
-export const SWATCH_TAPE_MM: readonly number[] = [62];
+/** QL DK endless widths the spool label is drawn for (backend `SWATCH_TAPES`; it refuses the others). */
+export const SWATCH_TAPE_MM: readonly number[] = [29, 38, 50, 54, 62];
 
 /** What the start layout depends on besides the app: the item's swatch data and the printer it goes to. */
 export interface DefaultContext {
@@ -46,7 +46,7 @@ export interface DefaultContext {
 
 /**
  * The layout an item starts with (#346). A Spoolman item with swatch data starts on the spool label when it
- * goes to a sheet printer or to a QL with a tape the spool label is drawn for; everything else (a P-touch,
+ * goes to a sheet printer or to a QL with a DK width the spool label is drawn for; everything else (a P-touch,
  * no printer yet, no swatch data, another app) starts on the default. P-touch tape never carries the spool label.
  */
 export const defaultContentTypeFor = (app: LookupApp, ctx?: DefaultContext): ContentType => {

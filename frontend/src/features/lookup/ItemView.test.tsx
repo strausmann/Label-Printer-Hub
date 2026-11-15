@@ -209,15 +209,15 @@ describe("the spool label of a Spoolman item (#346)", () => {
     expect(previews(calls).at(-1)).toMatchObject({ data: { swatch: { color_name: "Grey" } } });
   });
 
-  it("a tape without 62 mm shows the not-available message", async () => {
+  it("a tape without a spool label shows the not-available message", async () => {
     mockApi(
       spoolRoutes({
-        [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "29mm", tape_width_mm: 29 }),
+        [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "12mm", tape_width_mm: 12 }),
         "POST /api/v1/render/preview": respond(409, { error_code: "unsupported_tape", error_message: "x" }),
       }),
     );
     await renderApp({ path: "/spool/7" });
-    // On 29 mm the item starts on the default; picking the spool label by hand says it is not available.
+    // On 12 mm the item starts on the default; picking the spool label by hand says it is not available.
     const select = await screen.findByRole("combobox", { name: "Layout" });
     await waitFor(() => expect(select).toHaveValue("qr_two_lines"));
     await userEvent.selectOptions(select, "spool_swatch");
@@ -235,6 +235,13 @@ describe("the spool label of a Spoolman item (#346)", () => {
     await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_A.id);
     await waitFor(() => expect(layout).toHaveValue("qr_two_lines"));
+  });
+
+  it("a QL with 38 mm tape starts on the spool label", async () => {
+    mockApi(spoolRoutes({ [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "38mm", tape_width_mm: 38 }) }));
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
   });
 
   it("the user's own choice survives a printer change", async () => {

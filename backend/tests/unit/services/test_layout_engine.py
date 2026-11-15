@@ -138,6 +138,15 @@ def test_swatch_ignores_orientation_and_preset() -> None:
     assert turned.tobytes() == plain.tobytes()
 
 
+@pytest.mark.parametrize("tape_mm", [29, 38, 50, 54])
+def test_swatch_on_the_other_dk_widths(tape_mm: int) -> None:
+    from app.services.spool_swatch import render_tape_swatch
+
+    data = _swatch_data()
+    image = LayoutEngine().render(tape_mm, ContentType.SPOOL_SWATCH, data)
+    assert image.tobytes() == render_tape_swatch(data.swatch, data.qr_payload, tape_mm).tobytes()  # type: ignore[arg-type]
+
+
 def test_swatch_on_12mm_is_unsupported() -> None:
     with pytest.raises(UnsupportedTapeError) as exc:
         LayoutEngine().render(12, ContentType.SPOOL_SWATCH, _swatch_data())

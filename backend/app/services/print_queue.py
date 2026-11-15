@@ -1109,11 +1109,13 @@ class PrintQueue:
             preset=QlLayoutPreset(preset) if preset else None,
         )
         if content_type is ContentType.SPOOL_SWATCH:
-            # #346: rendered across; an along batch's backend turns it, so it is turned back
-            # here exactly as the first try did (recovery, re-send and retry alike).
+            # #346: rendered in its tape's own direction; turned for the batch's direction
+            # exactly as the first try did (recovery, re-send and retry alike).
             from app.services.spool_swatch import swatch_for_batch
 
-            image = swatch_for_batch(image, LabelOrientation(orientation) if orientation else None)
+            image = swatch_for_batch(
+                image, tape_mm, LabelOrientation(orientation) if orientation else None
+            )
         return image
 
     async def stop(self, timeout_s: float = 30.0) -> None:

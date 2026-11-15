@@ -25,7 +25,13 @@ from app.schemas.label_layout import LabelOrientation
 from app.schemas.spool_swatch import SpoolSwatch
 from app.services.spool_swatch import font
 from app.services.spool_swatch.font import Weight, text_mm, to_px
-from app.services.spool_swatch.layout import SwatchLayout, SwatchTier, layout_for_box
+from app.services.spool_swatch.layout import (
+    SwatchLayout,
+    SwatchTier,
+    layout_for_box,
+    swatch_layout,
+    tier_thresholds,
+)
 from app.services.spool_swatch.metrics import (
     TAPE_METRICS,
     FittedText,
@@ -399,31 +405,177 @@ def tape_box_hmm() -> tuple[int, int]:
     return round(inner[0] * 2540 / SWATCH_TAPE_DPI), round(inner[1] * 2540 / SWATCH_TAPE_DPI)
 
 
-def render_tape_swatch(swatch: SpoolSwatch, qr_payload: str) -> Image.Image:
-    """The 696 x 425 across image for 62 mm endless (R-346-9), tier ``full``."""
-    w, h = SWATCH_TAPE_PX
+class TapeSwatch(NamedTuple):
+    """How the spool label sits on one QL DK endless width (maintainer ruling 2026-11-15)."""
+
+    dots: int
+    """Printable dots across the tape at 300 dpi (``printer_models.ql``)."""
+    orientation: LabelOrientation
+    """``across``: the image is ``dots`` wide; ``along``: ``dots`` high, the backend turns it."""
+
+
+SWATCH_TAPES: Final[dict[int, TapeSwatch]] = {
+    29: TapeSwatch(306, LabelOrientation.ACROSS),
+    38: TapeSwatch(413, LabelOrientation.ALONG),
+    50: TapeSwatch(554, LabelOrientation.ALONG),
+    54: TapeSwatch(590, LabelOrientation.ACROSS),
+    62: TapeSwatch(696, LabelOrientation.ACROSS),
+}
+"""62 full, 54 without the footer, 50 and 38 full along the tape, 29 the core."""
+
+SWATCH_ALONG_MIN_MM: Final = 30.0
+"""An along label is as long as its content, but never shorter than this."""
+
+_CORE_C_MIN_29: Final = 1180
+"""29 mm: the core's left part gives up 0.2 mm so the QR keeps 4 px modules (version 3)."""
+
+
+def swatch_orientation(tape_mm: int) -> LabelOrientation | None:
+    """The direction the spool label prints in on ``tape_mm``; ``None`` where it does not."""
+    tape = SWATCH_TAPES.get(tape_mm)
+    return tape.orientation if tape else None
+
+
+def _hmm(px: int) -> int:
+    return round(px * 2540 / SWATCH_TAPE_DPI)
+
+
+def _runs_key(placement: SwatchPlacement) -> tuple[tuple[str, ...], bool]:
+    return tuple(r.text for r in placement.runs), placement.truncated
+
+
+def _tier_size(tier: SwatchTier, m: SwatchMetrics) -> tuple[int, int]:
+    return next((w, h) for t, w, h in tier_thresholds(m) if t is tier)
+
+
+def _shifted(layout: SwatchLayout, shift: int) -> SwatchLayout:
+    """``layout`` with the QR column and the right edge moved ``shift`` hmm to the left."""
+    qr_x, qr_y, edge = layout.qr_box
+    bar_x, bar_y, bar_w, bar_h = layout.bar
+    slot_x, slot_w = layout.caption_slot
+    return layout._replace(
+        box_w=layout.box_w - shift,
+        qr_box=(qr_x - shift, qr_y, edge),
+        left_w=layout.left_w - shift,
+        bar=(bar_x, bar_y, bar_w - shift if bar_w == layout.box_w else bar_w, bar_h),
+        caption_slot=(slot_x - shift, slot_w),
+    )
+
+
+def _clear_of_qr(placement: SwatchPlacement, m: SwatchMetrics) -> bool:
+    """No run reaches into the QR box (with its gap) or past the box edge."""
+    lay = placement.layout
+    qr_x, qr_y, edge = lay.qr_box
+    for run in placement.runs:
+        right = run.x + text_mm(run.text, run.weight, run.cap_mm) * 100 + m.run_margin
+        if right > lay.box_w:
+            return False
+        top = run.baseline - run.cap_mm * 100
+        beside = run.baseline > qr_y and top < qr_y + edge
+        if beside and run.x < qr_x and right > qr_x - m.qr_gap:
+            return False
+    return True
+
+
+def _trimmed(
+    swatch: SpoolSwatch, tier: SwatchTier, box_h: int, m: SwatchMetrics, min_w: int
+) -> SwatchLayout:
+    """The tier's layout made as short as this spool's texts allow (along labels).
+
+    The value columns keep their widths (their label slots depend on them); only the empty
+    space between the texts and the QR column goes: the QR column and the right edge slide left
+    while every text stays the same (no new wrap, shrink or cut) and nothing reaches into the
+    QR. The box never gets narrower than ``min_w``.
+    """
+    width = next(w for t, w, _ in tier_thresholds(m) if t is tier)
+    base = swatch_layout(tier, width, box_h, m)
+    want = _runs_key(place_swatch(swatch, base, m))
+
+    def fits(shift: int) -> bool:
+        placement = place_swatch(swatch, _shifted(base, shift), m)
+        return _runs_key(placement) == want and _clear_of_qr(placement, m)
+
+    low, high = 0, max(0, width - min_w)
+    while low < high:  # the largest shift that fits
+        mid = (low + high + 1) // 2
+        if fits(mid):
+            low = mid
+        else:
+            high = mid - 1
+    return _shifted(base, low)
+
+
+def tape_swatch_layout(
+    swatch: SpoolSwatch, tape_mm: int
+) -> tuple[SwatchLayout, SwatchMetrics, tuple[int, int]]:
+    """Layout, metrics and image size (px, as handed to the backend) of ``tape_mm``.
+
+    Raises:
+        UnsupportedTapeError: ``tape_mm`` has no spool label.
+    """
+    tape = SWATCH_TAPES.get(tape_mm)
+    if tape is None:
+        from app.printer_backends.exceptions import UnsupportedTapeError
+
+        raise UnsupportedTapeError(tape_mm=tape_mm)
     margin = SWATCH_TAPE_MARGIN_PX
-    box = tape_box_hmm()
+    m = TAPE_METRICS
+    if tape_mm == 62:
+        box = tape_box_hmm()
+        return layout_for_box(*box, m), m, SWATCH_TAPE_PX
+    across = _hmm(tape.dots - 2 * margin)
+    if tape.orientation is LabelOrientation.ACROSS:
+        if tape_mm == 29:
+            m = m._replace(c_min=_CORE_C_MIN_29)
+        tier, _, box_h = next(t for t in tier_thresholds(m) if across >= t[1])
+        layout = swatch_layout(tier, across, box_h, m)
+        return layout, m, (tape.dots, to_px(box_h, SWATCH_TAPE_DPI) + 2 * margin)
+    tier, _, box_h = next(t for t in tier_thresholds(m) if across >= t[2])
+    min_w = _hmm(math.ceil(SWATCH_ALONG_MIN_MM * SWATCH_TAPE_DPI / 25.4) - 2 * margin)
+    layout = _trimmed(swatch, tier, box_h, m, min_w)
+    return layout, m, (to_px(layout.box_w, SWATCH_TAPE_DPI) + 2 * margin, tape.dots)
+
+
+def render_tape_swatch(swatch: SpoolSwatch, qr_payload: str, tape_mm: int = 62) -> Image.Image:
+    """The spool label on ``tape_mm`` endless, in its own direction (``SWATCH_TAPES``).
+
+    ``across``: ``dots`` wide, as long as the tier (62 mm: 696 x 425, R-346-9). ``along``: an
+    upright landscape image ``dots`` high, the content centred across the tape; the QL backend
+    turns it as every along label.
+    """
+    layout, metrics, (w, h) = tape_swatch_layout(swatch, tape_mm)
+    margin = SWATCH_TAPE_MARGIN_PX
+    box_w_px, box_h_px = w - 2 * margin, to_px(layout.box_h, SWATCH_TAPE_DPI)
+    if tape_mm == 62:
+        box_h_px = h - 2 * margin
     image, _ = render_swatch(
         swatch,
         qr_payload,
-        layout=layout_for_box(*box, TAPE_METRICS),
-        width_px=w - 2 * margin,
-        height_px=h - 2 * margin,
+        layout=layout,
+        width_px=box_w_px,
+        height_px=box_h_px,
         dpi=SWATCH_TAPE_DPI,
-        metrics=TAPE_METRICS,
+        metrics=metrics,
     )
     canvas = Image.new("1", (w, h), 1)
-    canvas.paste(image, (margin, margin))
+    top = margin + (h - 2 * margin - box_h_px) // 2
+    canvas.paste(image, (margin, top))
     return canvas
 
 
-def swatch_for_batch(image: Image.Image, batch_orientation: LabelOrientation | None) -> Image.Image:
-    """The swatch's across image as handed to the backend in a batch of ``batch_orientation``.
+def swatch_for_batch(
+    image: Image.Image, tape_mm: int, batch_orientation: LabelOrientation | None
+) -> Image.Image:
+    """The swatch image as handed to the backend in a batch of ``batch_orientation``.
 
-    The QL backend turns every image of an ``along`` batch with ``ROTATE_270``; the swatch is
-    turned the other way first, so the printed bitmap equals the across image.
+    The QL backend turns every image of an ``along`` batch with ``ROTATE_270`` and none of an
+    ``across`` batch. The swatch prints in its own direction whatever the batch: an across label
+    in an along batch is turned the other way first, an along label in an across batch is turned
+    as the backend would have. ``None`` (no batch direction) leaves it as it is.
     """
+    native = swatch_orientation(tape_mm) or LabelOrientation.ACROSS
+    if batch_orientation is None or batch_orientation is native:
+        return image
     if batch_orientation is LabelOrientation.ALONG:
         return image.transpose(Image.Transpose.ROTATE_90)
-    return image
+    return image.transpose(Image.Transpose.ROTATE_270)

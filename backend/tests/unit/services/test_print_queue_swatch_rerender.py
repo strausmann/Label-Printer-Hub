@@ -45,13 +45,13 @@ class _QueuePrinter:
             await self.print_image(image, tape_mm=tape_mm, **options)
 
 
-def _payload(orientation: str) -> dict[str, Any]:
+def _payload(orientation: str, tape_mm: int = 62) -> dict[str, Any]:
     label = LabelData(source_app="spoolman", qr_payload=SAMPLE_URL, swatch=every_row())
     return {
         "label_data": label.model_dump(),
         "content_type": "spool_swatch",
-        "rendered_tape_mm": 62,
-        "tape_mm": 62,
+        "rendered_tape_mm": tape_mm,
+        "tape_mm": tape_mm,
         "options": {"copies": 1, "auto_cut": True, "orientation": orientation},
     }
 
@@ -114,5 +114,21 @@ async def test_recovered_single_swatch_is_across() -> None:
         await _printed(backend)
         assert backend.printed_orientations[-1] is LabelOrientation.ACROSS
         assert backend.printed_images[-1].tobytes() == _across().tobytes()
+    finally:
+        await queue.stop()
+
+
+async def test_recovered_along_swatch_on_38mm_is_handed_as_rendered() -> None:
+    backend = MockPrinterBackend(loaded_tape_mm=38)
+    store = MemoryJobStore()
+    row = DbJob(id=uuid4(), printer_id=_PRINTER, payload=_payload("along", 38))
+    await store.save_queued(row)
+    queue = PrintQueue([_QueuePrinter(backend)], store=store, engine=LayoutEngine())  # type: ignore[list-item]
+    await queue.start()
+    try:
+        await _printed(backend)
+        assert backend.printed_orientations[-1] is LabelOrientation.ALONG
+        native = render_tape_swatch(every_row(), SAMPLE_URL, 38)
+        assert backend.printed_images[-1].tobytes() == native.tobytes()
     finally:
         await queue.stop()

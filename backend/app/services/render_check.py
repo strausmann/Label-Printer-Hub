@@ -34,6 +34,7 @@ from app.services.layout_engine import LayoutEngine
 from app.services.lookup_gate import lookup_gate
 from app.services.lookup_service import LookupFailedError, UnknownAppError
 from app.services.ql_layout import resolve_layout
+from app.services.spool_swatch import SWATCH_TAPES
 
 _log = logging.getLogger(__name__)
 
@@ -56,7 +57,16 @@ def distinct_lookup_count(request: RenderCheckRequest) -> int:
 
 
 def validate_layout(request: RenderCheckRequest) -> None:
-    """Raise ``UnsupportedTapeError`` when the tape width or orientation is not available."""
+    """Raise ``UnsupportedTapeError`` when the tape width or orientation is not available.
+
+    A cart of spool labels only is checked against the spool label's own widths
+    (``SWATCH_TAPES``, #346): it takes no orientation and prints on DK widths the other layouts
+    do not have yet.
+    """
+    if request.tape_mm in SWATCH_TAPES and all(
+        item.content_type is ContentType.SPOOL_SWATCH for item in request.items
+    ):
+        return
     if request.tape_mm not in TAPE_GEOMETRY:
         raise UnsupportedTapeError(tape_mm=request.tape_mm)
     resolve_layout(request.tape_mm, request.orientation, request.layout_preset, None)

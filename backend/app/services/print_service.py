@@ -44,7 +44,7 @@ from app.services.print_error_codes import print_error_code
 from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_JOB
 from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.services.ql_layout import resolve_layout
-from app.services.spool_swatch import swatch_for_batch
+from app.services.spool_swatch import swatch_for_batch, swatch_orientation
 
 _log = logging.getLogger(__name__)
 
@@ -127,10 +127,11 @@ class PrintService:
     def _resolve_layout_for(
         self, tape_mm: int, content_type: ContentType, options: PrintOptions
     ) -> tuple[LabelOrientation, QlLayoutPreset | None]:
-        """As ``_resolve_layout``; the swatch label is always ``across`` without a preset (#346):
-        an orientation it is asked for, sent or stored, is ignored, never refused."""
+        """As ``_resolve_layout``; the swatch label takes its tape's own direction without a
+        preset (#346, ``SWATCH_TAPES``): an orientation it is asked for, sent or stored, is
+        ignored, never refused."""
         if content_type is ContentType.SPOOL_SWATCH:
-            return LabelOrientation.ACROSS, None
+            return swatch_orientation(tape_mm) or LabelOrientation.ACROSS, None
         return self._resolve_layout(tape_mm, options)
 
     async def submit_print_job(
@@ -566,7 +567,8 @@ class PrintService:
         # #258: one orientation for the whole batch; the backend rotates every image on that
         # one flag. Items without an orientation follow the one an item names explicitly;
         # different explicit orientations are refused instead of silently overridden.
-        # #346: a swatch item takes no part in choosing the flag; an all-swatch batch is across.
+        # #346: a swatch item takes no part in choosing the flag; an all-swatch batch takes the
+        # tape's spool label direction.
         deciding = [r for r in requests if r.content_type is not ContentType.SPOOL_SWATCH]
         explicit = sorted({str(r.options.orientation) for r in deciding if r.options.orientation})
         if len(explicit) > 1:
@@ -577,7 +579,7 @@ class PrintService:
             )
             orientation, _ = self._resolve_layout(tape_mm, named)
         else:
-            orientation = LabelOrientation.ACROSS
+            orientation = swatch_orientation(tape_mm) or LabelOrientation.ACROSS
         resolved_options = [
             req.options.model_copy(
                 update={
@@ -614,8 +616,9 @@ class PrintService:
                 )
             )
             if req.content_type is ContentType.SPOOL_SWATCH:
-                # The backend turns every image of an along batch; turned back first (#346).
-                image = swatch_for_batch(image, opts.orientation)
+                # The backend turns every image of an along batch and none of an across one; the
+                # swatch is turned so it prints in its own direction either way (#346).
+                image = swatch_for_batch(image, tape_mm, opts.orientation)
             return image, label_data.model_dump()
 
         prepared = await asyncio.gather(

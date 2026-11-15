@@ -231,3 +231,19 @@ async def test_render_check_names_unsupported_tape_for_a_swatch_on_12mm(caplog):
     assert r.error_message == "This layout is not available for this tape."
     assert r.error_detail == {"tape_mm": 12}
     assert not [rec for rec in caplog.records if rec.levelno >= logging.ERROR]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tape_mm", [29, 38, 50, 54])
+async def test_render_check_accepts_a_swatch_cart_on_the_other_dk_widths(tape_mm: int):
+    items = [_item("7", content_type=ContentType.SPOOL_SWATCH, app="spoolman")]
+    out = await check_items(_req(*items, tape_mm=tape_mm), _swatch_lookups())
+    assert [(r.ok, r.error_code) for r in out.results] == [(True, None)]
+
+
+@pytest.mark.asyncio
+async def test_render_check_refuses_a_mixed_cart_on_38mm():
+    """The other layouts have no 38 mm yet (#258): the whole check is refused, as before."""
+    items = [_item("7", content_type=ContentType.SPOOL_SWATCH, app="spoolman"), _item("A1")]
+    with pytest.raises(UnsupportedTapeError):
+        await check_items(_req(*items, tape_mm=38), _swatch_lookups())

@@ -14,7 +14,11 @@ describe("content types per app (#346)", () => {
   it.each([
     ["sheet printer", { hasSwatch: true, backend: "ipp" }, "spool_swatch"],
     ["QL 62 mm", { hasSwatch: true, backend: "brother_ql", tapeMm: 62 }, "spool_swatch"],
-    ["QL 29 mm (no spool label for that tape yet)", { hasSwatch: true, backend: "brother_ql", tapeMm: 29 }, "qr_two_lines"],
+    ["QL 54 mm", { hasSwatch: true, backend: "brother_ql", tapeMm: 54 }, "spool_swatch"],
+    ["QL 50 mm", { hasSwatch: true, backend: "brother_ql", tapeMm: 50 }, "spool_swatch"],
+    ["QL 38 mm", { hasSwatch: true, backend: "brother_ql", tapeMm: 38 }, "spool_swatch"],
+    ["QL 29 mm", { hasSwatch: true, backend: "brother_ql", tapeMm: 29 }, "spool_swatch"],
+    ["QL 12 mm (no spool label for that tape)", { hasSwatch: true, backend: "brother_ql", tapeMm: 12 }, "qr_two_lines"],
     ["QL, tape not known yet", { hasSwatch: true, backend: "brother_ql" }, "qr_two_lines"],
     ["P-touch 62 mm reading", { hasSwatch: true, backend: "ptouch", tapeMm: 62 }, "qr_two_lines"],
     ["P-touch", { hasSwatch: true, backend: "ptouch", tapeMm: 24 }, "qr_two_lines"],
