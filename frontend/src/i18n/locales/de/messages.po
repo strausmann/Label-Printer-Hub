@@ -1037,7 +1037,7 @@ msgstr "Transparent"
 
 #: src/features/notifications/NotificationCentre.tsx
 msgid "Clear all"
-msgstr "Alle löschen"
+msgstr "Alle ausblenden"
 
 #: src/features/about/DependencyLicences.tsx
 msgctxt "action"

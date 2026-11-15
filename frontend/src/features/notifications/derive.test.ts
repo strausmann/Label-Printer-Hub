@@ -241,6 +241,35 @@ describe("deriveNotifications: the list", () => {
     expect(entries[99]?.id).toBe(`job:${jobs[99]!.id}:done`);
   });
 
+  describe("a standing condition survives a busy install", () => {
+    const busy = Array.from({ length: 101 }, (_, i) => mkJob(`eeeeeeee-0000-4000-8000-${String(i).padStart(12, "0")}`, "done", { updated_at: new Date(NOW - (i + 1) * 1000).toISOString() }));
+    const offlineSince = new Date(NOW - 5 * 3_600_000).toISOString();
+    const base = { jobs: busy, printers: [A], statuses: { [A.id]: okStatus(A, { online: false }) }, firstSeen: { [`printer:${A.id}:offline`]: offlineSince } };
+
+    it("an offline printer survives 101 newer done jobs", () => {
+      const entries = run(base);
+      expect(entries).toHaveLength(100);
+      expect(entries.map((e) => e.id)).toContain(`printer:${A.id}:offline`);
+    });
+
+    it("a sheet warning and an unresolved failed job survive too, and the rest is capped", () => {
+      const failed = mkJob(J1, "failed", { updated_at: minutesAgo(600), error: "x" });
+      const entries = run({ ...base, jobs: [...busy, failed], sheets: [sheet("S1", 2)] });
+      const ids = entries.map((e) => e.id);
+      expect(ids).toContain(`printer:${A.id}:offline`);
+      expect(ids).toContain("sheet:S1:unconfirmed");
+      expect(ids).toContain(`job:${J1}:failed`);
+      expect(entries).toHaveLength(100);
+    });
+
+    it("the time of the printer entry stays across a re-derive", () => {
+      const first = run(base).find((e) => e.id === `printer:${A.id}:offline`);
+      const again = deriveNotifications({ sheets: [], ...base, now: NOW + 60_000 }).find((e) => e.id === `printer:${A.id}:offline`);
+      expect(first?.at).toBe(offlineSince);
+      expect(again?.at).toBe(offlineSince);
+    });
+  });
+
   it("is stable for entries of the same time", () => {
     const same = minutesAgo(5);
     const a = run({ printers: [A], jobs: [mkJob(J1, "done", { updated_at: same }), mkJob(J2, "done", { updated_at: same })] });

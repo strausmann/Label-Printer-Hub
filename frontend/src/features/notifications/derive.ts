@@ -172,7 +172,7 @@ function sheetEntry(sheet: SheetSummary, firstSeen: Record<string, string>, now:
 
 /**
  * Everything the notification centre and the overview's "Needs attention" show, from data the server already serves:
- * the print jobs of the last day, the printers with their status, and the sheets. Newest first, at most 100.
+ * the print jobs of the last day, the printers with their status, and the sheets. Newest first; at most 100, standing conditions (printer, sheet, unresolved errors) never cut.
  * Pure: the clock is `now`, and the moment a printer or sheet condition began is `firstSeen`.
  */
 export function deriveNotifications(input: DeriveInput): Notification[] {
@@ -193,6 +193,13 @@ export function deriveNotifications(input: DeriveInput): Notification[] {
     if (entry) entries.push(entry);
   }
 
-  entries.sort((a, b) => time(b.at) - time(a.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return entries.slice(0, MAX_ENTRIES);
+  const newestFirst = (a: Notification, b: Notification) => time(b.at) - time(a.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  // A standing condition (a printer or sheet entry, an unresolved error) is never displaced by finished or queued
+  // jobs: on a busy install 100 newer done jobs would otherwise push it out of the bell and the overview card, and
+  // its first-seen time would start over when they aged out. The cap applies to the remainder.
+  const standing = entries.filter((e) => e.kind !== "job" || (e.severity === "error" && !e.resolved));
+  const standingIds = new Set(standing.map((e) => e.id));
+  const rest = entries.filter((e) => !standingIds.has(e.id));
+  const kept = [...standing, ...rest.sort(newestFirst).slice(0, Math.max(0, MAX_ENTRIES - standing.length))];
+  return kept.sort(newestFirst);
 }
