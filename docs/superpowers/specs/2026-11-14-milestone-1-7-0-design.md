@@ -915,8 +915,9 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   - **Tiers `full`, `no_footer`, `first_column`:** at the top, full width, the **vendor line** and the **bar**. The
     vendor line holds the vendor name (bold, left) and the colour hex codes (right-aligned, upper case `#RRGGBB`, in up
     to two rows of the vendor block; every code is shown, several per row joined with ` · ` when there are more than
-    two); the hex block takes its width first, the vendor name gets the rest minus 1.0 mm. What does not fit follows
-    the text rule (R-346-7a). The bar is black, full width,
+    two). The hex block is at most **box width − 1.0 − 20.0 mm** wide, so the vendor always keeps a slot of at least
+    **20.0 mm**; the vendor gets the box width − the hex block's drawn width − 1.0 mm. What does not fit follows the
+    text rule (R-346-7a). The bar is black, full width,
     with the title (the material by default, R-346-3) in white bold, inset 0.6 mm inside the bar. Below the bar the
     **lower region**, down to the box bottom (`no_footer`, `first_column`) or to the footer rule (`full`): on the right
     the **QR column** — the QR **box** (square, quiet zone inside) starts **directly at the bar's bottom edge**; the
@@ -1048,9 +1049,16 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
     with `round` (round half to even) — never as one `draw.text` string, whose hinted, rounded advances add up
     (measured with Pillow 13: „Location“ drawn whole at 300 dpi ends 2 px past its design width, „Trock-“ at 150 dpi
     5 px). The font has no `kern` table and BASIC does not apply `GPOS`, so there is **no kerning**, consistently in
-    measurement and drawing. Drawn glyph-wise, the ink stays within the design width at 300 and 600 dpi on Pillow 11.3
-    and 13.0 alike, and the drawn widths of the two versions differ by at most 1 px; the Pillow version therefore no
-    longer matters, and `pillow>=11.0` stays without an upper bound.
+    measurement and drawing. Drawn glyph-wise, the ink stays within the design width **+ 1 px** at 300 and 600 dpi on
+    Pillow 11.3 and 13.0 alike (measured over start offsets 0–30 hmm: on 13.0 at 300 dpi the `+ 1` is used — „Nozzle“
+    at 2.0 hmm, „Düse“ at 4.5 hmm —, on 11.3 never), and the drawn widths of the two versions differ by at most 1 px.
+    The Pillow version therefore no longer matters: no upper bound; the floor rises to `pillow>=11.3`, the oldest
+    version the measurements cover. Tests use `tobytes()`/`getbbox()`, not `Image.getdata` (removed in Pillow 14).
+  - *Text normalisation:* every text is NFC-normalised before `text_mm` and `draw_glyphs`, and default-ignorable code
+    points (U+200B–U+200F, U+2060–U+2064, U+FE00–U+FE0F, U+00AD outside a chosen break …) are dropped; BASIC does no mark
+    positioning, so an NFD „Grün“ would put the diaeresis on the „n“. A soft hyphen in a label is a break point only:
+    removed from an unbroken line (`text_mm("Fluss\u00adrate")` then equals `text_mm("Flussrate")` = 10.381 mm on
+    sheets) and drawn as `-` at a break. A character the font lacks prints the `.notdef` box, measured and drawn alike.
   - *Font size* from the font file's design cap height: `font_size(cap_mm, dpi) = cap_mm × dpi / 25.4 / 0.668`
     (`OS/2.sCapHeight` 668 / `unitsPerEm` 1000), a **float** (sheet rows 28.290 px at 300 dpi, 56.580 at 600; tape rows
     22.101 at 300). A rendered `H` bbox is never used.
@@ -1078,6 +1086,8 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   0.55 mm (tape) above the row bottom; the vendor line at cap 2.9 (Ü top 3.76 mm, descender 0.93) 0.95 above its
   4.8 mm block; the bar text at cap 2.0 (Ü 2.59, descender 0.64) 0.75 above the bar bottom inside the 3.4 mm bar; the
   colour line at cap 1.9 (Ü 2.46, descender 0.61) 0.65 above its bottom, so its accents stay 0.09 mm under the bar.
+  At 300 dpi these accent margins are 0–1 px (bar „GRÜN“, vendor „ÜBERSEE“, colour „Ölgrün“ measured), at 600 dpi 2 px:
+  the baselines must not move closer to the line tops.
 
   **The L4737REV case, worked in the ruled order (QU16: labels fully written out, no abbreviations):**
   1. *Smaller row font:* nothing to gain on sheets — the rows sit at the OC-27 floor (design cap exactly 1.6 mm).
@@ -1104,13 +1114,13 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   |---|---|---|---|
   | Field label | onto a second line at a space or soft hyphen (above) | no (rows at the minimum) | `…` |
   | Value | onto the next line of its column, while the column uses fewer lines than the tier counts (6 / 5) | no (rows at the minimum) | `…` |
-  | Vendor | no (one line in its block) | 2.9 → 1.6 mm cap (tape 1.25) | `…` |
+  | Vendor | onto a second line at a space: at cap 2.9 where the box has ≥ 4.8 mm more height than the tier needs (the block grows by 4.8 mm and everything below moves down; on the reference media only the QL tape, 8.35 mm spare), otherwise as two rows of the row cap inside the 4.8 mm block | the two-row case is already the minimum (row cap) | the second line ends with `…` |
   | Bar title | no | 2.0 → 1.6 mm cap (tape 1.25) | `…` |
-  | Colour line | onto a second line while the left part has a free row (fewer than the counted lines above the columns) | 1.9 → 1.6 mm cap (tape 1.25) | `…` |
-  | Hex block (upper tiers) | all codes in up to two rows, several per row joined with ` · ` | no (rows at the minimum) | the codes that do not fit become `+N` |
-  | Hex line (`core`) | further rows while the left part has room down to the box bottom | no | `+N` |
+  | Colour line | onto a second line at cap 1.9, its baseline 3.0 mm under the first, when the left part has ≥ 3.0 mm free under the colour line (unused counted lines × pitch + the box's spare height) | 1.9 → 1.6 mm cap (tape 1.25), one line | `…` |
+  | Hex block (upper tiers) | codes per row = as many as fit the hex block's maximum width (L4737REV 39.3 mm: three, 34.78 mm), joined with ` · `, in up to two rows | no (rows at the minimum) | the last slot of the second row becomes `+N` for the remaining codes |
+  | Hex line (`core`) | further rows of as many codes as fit the left part (L4736REV 26.2 mm: two, 21.99 mm), while the left part has room down to the box bottom | no | the last slot becomes `+N` |
   | Footer | no (one line) | no | `…` |
-  | Caption `#{id}` | — (at most 21 characters, always fits the 7 mm minimum box) | — | — |
+  | Caption `#{id}` | no; it may use the 0.8 mm gap left of the QR box (`#8888` is 7.45 mm at cap 1.6; up to 7 digits fit the 12.3–15.5 mm boxes of the reference media, 3 at `Q_MIN`) | no (row minimum) | `…` |
 
   The 64-character cap on lookup text (R-346-4) stays: it is input validation, not layout.
 - **R-346-8 (drop tiers, exact thresholds, QR box):** the tier is the **first** of the list whose width **and** height
