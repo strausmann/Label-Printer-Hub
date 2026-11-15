@@ -1600,8 +1600,14 @@ class PrintQueue:
         run = self._live_run(run_id)
         if run.state not in ("awaiting_confirmation", "stopped"):
             raise RunStateError("run_not_held", "Only a stopped or waiting run can be discarded.")
+        await self._persist_cancelled(self._discard_now(run, code))
+
+    def _discard_now(self, run: TapeRun, code: str) -> list[Job]:
+        """The in-memory part of ``discard_run`` (no await): forget the held *run*, cancel its
+        waiting labels. Returns the cancelled jobs; the caller writes them (``_persist_cancelled``).
+        """
         # No await until the run is forgotten: a confirm or reprint after this sees no run.
-        del self._runs[run_id]
+        del self._runs[run.run_id]
         self._notify_run_change(run, "discarded")
         cancelled: list[Job] = []
         if run.state == "awaiting_confirmation":
@@ -1619,15 +1625,18 @@ class PrintQueue:
             depth = self._queue_depth(run.printer_id)
             self._notify_state_change(job, JobState.QUEUED, JobState.CANCELLED, queue_depth=depth)
         self._drop_pictures(run, run.job_ids)
-        for job in cancelled:
-            await self._store.mark_cancelled(UUID(job.id))
         logger.warning(
             "Run %s on %s discarded (%s): %d waiting labels cancelled",
-            run_id,
+            run.run_id,
             run.printer_id,
             code,
             len(cancelled),
         )
+        return cancelled
+
+    async def _persist_cancelled(self, jobs: Sequence[Job]) -> None:
+        for job in jobs:
+            await self._store.mark_cancelled(UUID(job.id))
 
     def _drop_pictures(self, run: TapeRun | None, keys: Sequence[str]) -> None:
         """Forget the PNG of these labels: in the run and on their in-memory jobs (#277 N2).
@@ -1668,6 +1677,12 @@ class PrintQueue:
         refuses a new batch of a key without a held run of its own while the printer is full,
         so the excess is at most the runs that were printing when the printer filled up.
         """
+        await self._persist_cancelled(self._bound_held_runs_now(run))
+
+    def _bound_held_runs_now(self, run: TapeRun) -> list[Job]:
+        """The in-memory part of ``_bound_held_runs`` (no await, #347): the over-limit runs are
+        discarded at once; returns their cancelled labels for the caller to write."""
+        cancelled: list[Job] = []
         held = self.held_runs(run.printer_id)
         own = [
             info
@@ -1683,10 +1698,11 @@ class PrintQueue:
             len(own) + 1 - MAX_HELD_RUNS_PER_KEY_PER_PRINTER,
         )
         if excess <= 0:
-            return
+            return cancelled
         for info in own[:excess]:
-            with contextlib.suppress(KeyError, RunStateError):
-                await self.discard_run(info.run_id, code="run_discarded_limit")
+            other = self._runs.get(info.run_id)
+            if other is not None and other.state in ("awaiting_confirmation", "stopped"):
+                cancelled.extend(self._discard_now(other, "run_discarded_limit"))
         if len(own) < excess:
             logger.warning(
                 "Printer %s holds %d runs (limit %d): no older run of the same key to discard",
@@ -1694,6 +1710,7 @@ class PrintQueue:
                 len(held) - len(own[:excess]),
                 MAX_HELD_RUNS_PER_PRINTER,
             )
+        return cancelled
 
     # --- queued-run caps and waiting pictures (263-76) -----------------------
 
@@ -2113,6 +2130,7 @@ class PrintQueue:
             JobState.CANCELLED,
             queue_depth=self._queue_depth(job.printer_id),
         )
+        self._settle_waiting_run(job.id)
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
         try:
@@ -2765,7 +2783,16 @@ class PrintQueue:
         # #347: the run moves on (waits for the next confirmation, or ends) in the same step as the
         # last group's labels turn done, before their rows are written: a client that sees every
         # label of the part done may continue at once, and the hub must already take it.
-        held: list[bool] = []
+        moved_on = False
+        to_cancel: list[Job] = []
+
+        def move_on() -> None:
+            # The run waits for the next part (bounded at once: the held limit is exact) or ends.
+            nonlocal moved_on
+            moved_on = True
+            if self._advance_run_now(run) and run is not None:
+                to_cancel.extend(self._bound_held_runs_now(run))
+
         for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
             if start > 0 and (
                 self._stopping
@@ -2805,25 +2832,24 @@ class PrintQueue:
                         printer_id, batch, run, active, later, exc, nothing_sent=False
                     )
                     return
-            last = group.stop >= len(batch.job_ids)
+            # The last group that prints is the one after which nothing of the sub-job is queued
+            # (labels after it may have been cancelled): not the last by position (#347). No
+            # await from this check until ``_complete_group`` calls ``move_on``.
+            last = not any(
+                (job := self._jobs.get(str(j))) is not None and job.state == JobState.QUEUED
+                for j in batch.job_ids[group.stop :]
+            )
             await self._complete_group(
-                printer_id,
-                batch,
-                active,
-                before_write=(lambda: held.append(self._advance_run_now(run))) if last else None,
+                printer_id, batch, active, before_write=move_on if last else None
             )
             # Printed: the pictures are not needed any more (I3). A retry re-renders from the row.
             self._drop_pictures(run, [job.id for job in active])
+            if last:
+                break  # nothing of this sub-job is left to take
         logger.info("Batch %s: sub-job done on %s", batch.batch_id, printer_id)
-        if not held:  # the last group had nothing left to print (cancelled labels)
-            held.append(self._advance_run_now(run))
-        if (
-            held[0]
-            and run is not None
-            and self._runs.get(run.run_id) is run
-            and run.state == "awaiting_confirmation"
-        ):
-            await self._bound_held_runs(run)
+        if not moved_on:  # the sub-job had nothing left to print (cancelled labels)
+            move_on()
+        await self._persist_cancelled(to_cancel)
 
     async def _wait_until_active(self, printer_id: UUID) -> bool:
         """Wait while the printer is paused; ``False`` when the worker must leave instead."""
@@ -3050,23 +3076,48 @@ class PrintQueue:
         """
         if run is None or self._runs.get(run.run_id) is not run or run.state != "printing":
             return False
-        nxt = run.current + 1
-        while nxt < len(run.sub_jobs):
+        nxt = self._next_open_part(run, run.current + 1)
+        if nxt is None:
+            del self._runs[run.run_id]
+            return False
+        run.current = nxt
+        run.state = "awaiting_confirmation"
+        run.held_since = time.monotonic()
+        # No job event follows this state: the jobs page learns of the waiting run here.
+        self._notify_run_change(run, "awaiting_confirmation")
+        logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
+        return True
+
+    def _next_open_part(self, run: TapeRun, start: int) -> int | None:
+        """The first sub-job from *start* on with a queued label, or ``None``."""
+        for nxt in range(start, len(run.sub_jobs)):
             s, e = run.sub_jobs[nxt]
             if any(
                 (job := self._jobs.get(j)) is not None and job.state == JobState.QUEUED
                 for j in run.job_ids[s:e]
             ):
-                run.current = nxt
-                run.state = "awaiting_confirmation"
-                run.held_since = time.monotonic()
-                # No job event follows this state: the jobs page learns of the waiting run here.
-                self._notify_run_change(run, "awaiting_confirmation")
-                logger.info("Run %s: sub-job %d waits for a confirmation", run.run_id, nxt + 1)
-                return True
-            nxt += 1
-        del self._runs[run.run_id]
-        return False
+                return nxt
+        return None
+
+    def _settle_waiting_run(self, job_id: str) -> None:
+        """A label of a waiting part was cancelled (#347 review M3): when nothing of that part is
+        queued any more, the run waits for the next part with a queued label, or it is over.
+        No await: it runs in the step of the cancel."""
+        for run in list(self._runs.values()):
+            if run.state != "awaiting_confirmation" or job_id not in run.job_ids:
+                continue
+            nxt = self._next_open_part(run, run.current)
+            if nxt == run.current:
+                return
+            if nxt is None:
+                del self._runs[run.run_id]
+                self._drop_pictures(run, run.job_ids)
+                self._notify_run_change(run, "finished")
+                logger.info("Run %s: every waiting label was cancelled", run.run_id)
+                return
+            run.current = nxt
+            self._notify_run_change(run, "awaiting_confirmation")
+            return
 
 
 def _state_of(job: Job) -> JobState:

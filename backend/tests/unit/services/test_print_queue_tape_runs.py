@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -270,6 +271,27 @@ class _SlowDoneStore(MemoryJobStore):
         await super().mark_done(job_id)
 
 
+async def _drained(queue: PrintQueue, printer: TapeRoll) -> None:
+    """Wait until everything queued for *printer* so far is through: one more label, queued
+    behind it, has printed (the queue is FIFO per printer). Event-driven, no sleep."""
+    sentinel = await queue.submit(printer.id, _img(), 12)
+    await queue.wait_for_job(sentinel, timeout_s=3.0)
+
+
+async def _start(
+    printer: TapeRoll, store: _SlowDoneStore, n: int, *, slot: UUID | None = None
+) -> tuple[PrintQueue, UUID, list[UUID]]:
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    ids = [uuid4() for _ in range(n)]
+    for jid in ids:
+        await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={"tape_mm": 12}))
+    run_id = await queue.enqueue_batch(
+        printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+    )
+    return queue, run_id, ids
+
+
 async def test_a_part_whose_labels_are_done_takes_the_continue_while_its_rows_are_written() -> None:
     """#347: the print status offers Continue as soon as every label of the part is done (the job
     events say so). The rows of the last group are written after those events; the run must
@@ -298,12 +320,160 @@ async def test_a_part_whose_labels_are_done_takes_the_continue_while_its_rows_ar
         store.release.set()
 
         await _until(lambda: queue.run_info(run_id) is None)
-        await asyncio.sleep(0.1)
-        # the second part printed once: the end of the first part did not hold or start it again
-        assert printer.calls == [10] * 5 + [1]
+        await _drained(queue, printer)
+        # the second part printed once (the last 1 is the drain label): the end of the first
+        # part did not hold or start it again
+        assert printer.calls == [10] * 5 + [1] + [1]
         assert (await queue.get(ids[50])).state == JobState.COMPLETED
     finally:
         store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_part_whose_tail_was_cancelled_takes_the_continue_after_its_last_group() -> None:
+    """#347 review I1: labels 41-50 of part 1 are cancelled while queued. Group 4 is then the last
+    group that prints; once it is done the client sees part 1 over and offers Continue, while the
+    rows of group 4 are still being written. The run must wait already."""
+    printer = TapeRoll()
+    printer.gate = asyncio.Event()
+    store = _SlowDoneStore()
+    queue, run_id, ids = await _start(printer, store, 51)
+    store.slow = ids[30]  # the first row of group 4
+    try:
+        await printer.started.wait()  # group 1 is at the printer
+        for jid in ids[40:50]:
+            assert await queue.cancel(str(jid))
+        printer.gate.set()
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        assert await _states(queue, ids[:40]) == [JobState.COMPLETED] * 40
+        assert await _states(queue, ids[40:50]) == [JobState.CANCELLED] * 10
+        assert (await queue.get(ids[50])).state == JobState.QUEUED
+        info = queue.run_info(run_id)
+        assert info is not None and info.state == "awaiting_confirmation"
+
+        await queue.confirm_run(run_id)
+        store.release.set()
+
+        await _until(lambda: queue.run_info(run_id) is None)
+        await _drained(queue, printer)
+        assert printer.calls == [10] * 4 + [1] + [1]
+        assert (await queue.get(ids[50])).state == JobState.COMPLETED
+    finally:
+        printer.gate.set()
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_the_last_part_ends_the_run_while_its_rows_are_written() -> None:
+    """#347 review M1a: when the last part's labels are done the run is over at once: a Continue
+    then is refused as for a finished run (KeyError, the API's 404), and nothing starts again."""
+    printer = TapeRoll()
+    store = _SlowDoneStore()
+    queue, run_id, ids = await _start(printer, store, 51)
+    store.slow = ids[50]
+    try:
+        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
+        await queue.confirm_run(run_id)
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        assert (await queue.get(ids[50])).state == JobState.COMPLETED
+        assert queue.run_info(run_id) is None
+        with pytest.raises(KeyError):
+            await queue.confirm_run(run_id)
+        store.release.set()
+        await _drained(queue, printer)
+        assert printer.calls == [10] * 5 + [1] + [1]
+    finally:
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_discard_while_the_rows_are_written_cancels_the_waiting_part_only() -> None:
+    """#347 review M1c: a discard in the write window cancels label 51; the rows of the printed
+    group are still written done, and nothing prints twice."""
+    printer = TapeRoll()
+    store = _SlowDoneStore()
+    queue, run_id, ids = await _start(printer, store, 51)
+    store.slow = ids[40]
+    try:
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        await queue.discard_run(run_id)
+        assert (await queue.get(ids[50])).state == JobState.CANCELLED
+        store.release.set()
+        await _drained(queue, printer)
+        assert printer.calls == [10] * 5 + [1]  # the 1 is the drain label
+        rows = [await store.get(j) for j in ids]
+        assert [r.state for r in rows if r is not None][:50] == [DbJobState.DONE.value] * 50
+        assert queue.run_info(run_id) is None
+    finally:
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+def _waits(queue: PrintQueue, run_id: UUID) -> bool:
+    info = queue.run_info(run_id)
+    return info is not None and info.state == "awaiting_confirmation"
+
+
+async def test_the_held_limit_applies_when_the_part_ends_not_after_its_rows() -> None:
+    """#347 review M3a: the run waits from the step that ends its part, so the limit of held runs
+    (two per key on a printer) is applied in that step too, not after the rows are written."""
+    printer = TapeRoll()
+    store = _SlowDoneStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    runs: list[tuple[UUID, list[UUID]]] = []
+    try:
+        for _ in range(2):
+            ids = [uuid4() for _ in range(51)]
+            run_id = await queue.enqueue_batch(
+                printer_id=printer.id,
+                images=[_img() for _ in ids],
+                job_ids=ids,
+                tape_mm=12,
+                options={},
+            )
+            runs.append((run_id, ids))
+            await _until(partial(_waits, queue, run_id))
+        # The slow row is set before the batch is queued: the worker may take it at once.
+        third_ids = [uuid4() for _ in range(51)]
+        store.slow = third_ids[MAX_LABELS_PER_TAPE_JOB - 1]
+        third = await queue.enqueue_batch(
+            printer_id=printer.id,
+            images=[_img() for _ in third_ids],
+            job_ids=third_ids,
+            tape_mm=12,
+            options={},
+        )
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        # the third run waits and the oldest is already discarded, while the rows are written
+        assert [i.run_id for i in queue.held_runs(printer.id)] == [runs[1][0], third]
+        assert (await queue.get(runs[0][1][50])).error_code == "run_discarded_limit"
+        store.release.set()
+        await _drained(queue, printer)
+        assert [i.run_id for i in queue.held_runs(printer.id)] == [runs[1][0], third]
+    finally:
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_cancelling_every_label_of_the_waiting_part_ends_the_run() -> None:
+    """#347 review M3b: a waiting part whose labels are all cancelled leaves nothing to continue:
+    the run is over instead of waiting for ever."""
+    printer = TapeRoll()
+    states: list[str] = []
+    queue, run_id, ids, _ = await _run(
+        printer, 52, on_run_change=lambda _r, _p, state: states.append(state)
+    )
+    try:
+        await _until(lambda: queue.run_info(run_id).state == "awaiting_confirmation")  # type: ignore[union-attr]
+        assert await queue.cancel(str(ids[50]))
+        assert queue.run_info(run_id) is not None  # label 52 still waits
+        assert await queue.cancel(str(ids[51]))
+        assert queue.run_info(run_id) is None
+        assert states[-1] == "finished"
+        with pytest.raises(KeyError):
+            await queue.confirm_run(run_id)
+    finally:
         await queue.stop(timeout_s=2.0)
 
 
