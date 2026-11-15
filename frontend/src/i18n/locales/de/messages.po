@@ -2164,13 +2164,13 @@ msgstr "Hell"
 msgid "Light theme"
 msgstr "Helles Design"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Lines and scale"
+msgstr "Linien und Skala"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Lines for Grocy's config.php"
 msgstr "Zeilen für Grocys config.php"
-
-#: src/features/calibration/guide/ReadingGuide.tsx
-msgid "Lines, scale and arrows"
-msgstr "Linien, Skala und Pfeile"
 
 #: src/shell/LiveStatus.tsx
 msgid "Live updates paused"

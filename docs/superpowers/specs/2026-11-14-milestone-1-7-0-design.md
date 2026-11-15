@@ -717,8 +717,8 @@ rendered from the e2e fixtures. #337 pulls part A of #240 forward; the rest of #
   (R-337-3). Without a chosen sheet type the guide shows figure 1 and the steps; figure 2 appears once a type is chosen.
 - **R-337-2 (figures):** black only (`currentColor`), lines told apart by style and number, never by colour — like the
   printed page. Figure 1, one crossing: the two gap edges, the middle of the gap, the row cut, the printed S line and Z
-  line, the ±2 mm scale with ticks every 0.2 mm and labels 0, ±1, ±2, the arrows "across" and "down" with their `+`
-  side. Figure 2, the sheet schema: the grid of the chosen sheet type with the five crossings to read marked — the four of
+  line, the ±2 mm scale with ticks every 0.2 mm and labels 0, ±1, ±2 (the value to enter: left of and above 0 is `+`, right of and below 0 is `−`). The
+  scale labels carry the only sign in the drawing; there are no arrows. Figure 2, the sheet schema: the grid of the chosen sheet type with the five crossings to read marked — the four of
   `suggestedCrossings(cols, rows)` (`model.ts:20-30`) plus the centre one, S `ceil((cols−1)/2)`, Z `ceil((rows−1)/2)`.
   The drawings carry only numbers and signs; every word is in the legend text below each figure (translatable, read by a
   screen reader). In the app each figure is `role="img"` with an accessible name: "How to read one crossing" / „So liest

@@ -68,7 +68,7 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
                   <li>{t`The middle of that gap (dash-dot line). The printed line should lie here.`}</li>
                   <li>{t`The cut between two rows.`}</li>
                 </ol>
-                <ul aria-label={t`Lines, scale and arrows`} className="m-0 flex list-disc flex-col gap-1.5 pl-5">
+                <ul aria-label={t`Lines and scale`} className="m-0 flex list-disc flex-col gap-1.5 pl-5">
                   <li>{t`Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing).`}</li>
                   <li>{t`The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there.`}</li>
                   <li>{t`The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm.`}</li>

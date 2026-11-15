@@ -2164,13 +2164,13 @@ msgstr "light"
 msgid "Light theme"
 msgstr "Light theme"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Lines and scale"
+msgstr "Lines and scale"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Lines for Grocy's config.php"
 msgstr "Lines for Grocy's config.php"
-
-#: src/features/calibration/guide/ReadingGuide.tsx
-msgid "Lines, scale and arrows"
-msgstr "Lines, scale and arrows"
 
 #: src/shell/LiveStatus.tsx
 msgid "Live updates paused"

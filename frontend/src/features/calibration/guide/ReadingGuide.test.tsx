@@ -116,14 +116,12 @@ describe("the reading guide", () => {
     for (const text of texts) expect(text).toMatch(/^[SZ]?[0-9+−±.,]*$/);
   });
 
-  it("two figures on one page share no id", async () => {
+  it("the figures have no ids, so two figures on one page cannot share one", async () => {
     const { container } = show();
     await open();
-    const ids = [...container.querySelectorAll("[id]")].map((e) => e.id).filter((id) => id.length > 0);
-    // The guide's own panel ids are not part of the figures; the figures' ids must be unique among all.
+    expect(container.querySelectorAll("svg [id]")).toHaveLength(0);
+    const ids = [...container.querySelectorAll("[id]")].map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
-    const figureIds = [...container.querySelectorAll("svg [id]")].map((e) => e.id);
-    for (const id of figureIds) expect(id).toMatch(/^[A-Za-z0-9_-]+$/);
   });
 });
 
