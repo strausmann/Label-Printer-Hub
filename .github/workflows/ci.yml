@@ -97,6 +97,9 @@ jobs:
       # itself (with the exact `TOTAL` line) instead of in a separate
       # `coverage report` step that pytest-cov would silently swallow.
       #
+      # -m "not slow and not swatch_reference": swatch_reference pins drawn ink widths and runs
+      # in the swatch-text-metrics job on both Pillow versions instead (#346).
+      #
       # -m "not slow" excludes wall-clock SSE timing tests (marked @pytest.mark.slow
       # in tests/integration/test_sse_flush.py).  These tests use real asyncio
       # sleep timers and are too slow for every-commit CI.  Run them separately
@@ -107,7 +110,7 @@ jobs:
         # Required settings are read at import time; obviously fake CI-only values.
         env:
           LABELYARD_PUBLIC_URL: http://localhost:8000
-        run: pytest -m "not slow" --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
+        run: pytest -m "not slow and not swatch_reference" --cov=app --cov-report=xml --cov-fail-under=80 --junitxml=junit.xml -o junit_family=legacy -v
 
       # Shown on its own so the log proves the image-measured test ran (-rA lists its PASSED line).
       - name: Rendered calibration page test ran
@@ -149,6 +152,40 @@ jobs:
       - name: No-op (no Python project yet — skipped)
         if: steps.pyproject.outputs.exists != 'true'
         run: echo "No pyproject.toml found — skipping Python checks for this branch"
+
+  # The swatch label's text metrics on the oldest and newest supported Pillow (#346): both
+  # files whole, without -m, so the reference widths and every version-independent test run.
+  swatch-text-metrics:
+    name: Swatch text metrics (Pillow ${{ matrix.pillow }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pillow: ["11.3.*", "13.*"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python (with cache)
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install -e ".[dev]"
+          pip install "pillow==${{ matrix.pillow }}"
+
+      - name: Derive fake test secret key
+        run: echo "LABELYARD_SECRET_KEY=$(printf %s test-secret-key-0123456789abcdef | base64 | tr '+/' '-_')" >> "$GITHUB_ENV"
+
+      - name: Swatch metrics and drawing
+        working-directory: backend
+        env:
+          LABELYARD_PUBLIC_URL: http://localhost:8000
+        run: pytest tests/unit/services/test_spool_swatch_metrics.py tests/unit/services/test_spool_swatch_drawing.py -v
 
   scripts:
     name: Scripts — unit tests
