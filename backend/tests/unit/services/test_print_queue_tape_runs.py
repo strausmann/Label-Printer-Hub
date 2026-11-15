@@ -14,6 +14,7 @@ the end of the unknown group plus the labels that were not started.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from functools import partial
 from typing import Any
@@ -538,6 +539,211 @@ async def test_labels_of_a_limit_discarded_run_are_not_left_queued_when_the_done
                 await asyncio.sleep(0.01)
                 row = await store.get(discarded)
         assert row.state == DbJobState.CANCELLED.value
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
+class _CancelWindowStore(_SlowDoneStore):
+    """``_SlowDoneStore`` plus two hooks: ``mark_done`` of ``fail_on`` raises ``exc``, and
+    ``mark_cancelled`` of ``gate_cancel`` sets ``cancel_reached`` and waits for
+    ``cancel_release`` (then raises ``cancel_exc`` if set). The test lands a cancel exactly in
+    that write."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_on: UUID | None = None
+        self.exc: BaseException = RuntimeError("store down")
+        self.gate_cancel: UUID | None = None
+        self.cancel_reached = asyncio.Event()
+        self.cancel_release = asyncio.Event()
+        self.cancel_exc: BaseException | None = None
+
+    async def mark_done(self, job_id: UUID) -> None:
+        if job_id == self.fail_on:
+            raise self.exc
+        await super().mark_done(job_id)
+
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+        if job_id == self.gate_cancel:
+            self.cancel_reached.set()
+            await self.cancel_release.wait()
+            if self.cancel_exc is not None:
+                raise self.cancel_exc
+        await super().mark_cancelled(job_id, allow_printing=allow_printing)
+
+
+async def _held_runs(
+    queue: PrintQueue, store: MemoryJobStore, printer: TapeRoll, count: int = 2
+) -> list[list[UUID]]:
+    """*count* runs of 51 labels, each waiting for the Continue of its second part."""
+    held: list[list[UUID]] = []
+    for _ in range(count):
+        ids = [uuid4() for _ in range(51)]
+        for jid in ids:
+            await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={}))
+        run_id = await queue.enqueue_batch(
+            printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+        )
+        await _until(partial(_waits, queue, run_id))
+        held.append(ids)
+    return held
+
+
+async def _third_run_in_its_write_window(
+    queue: PrintQueue, store: _CancelWindowStore, printer: TapeRoll
+) -> tuple[UUID, list[UUID]]:
+    """A third run of 51 labels; group 4's rows are being written and labels 41-49 are
+    cancelled, so cancelling label 50 empties the part and the held limit discards the oldest
+    run."""
+    ids = [uuid4() for _ in range(51)]
+    store.slow = ids[30]  # group 4's first row: the write window
+    for jid in ids:
+        await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={}))
+    run_id = await queue.enqueue_batch(
+        printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+    )
+    await asyncio.wait_for(store.reached.wait(), 3.0)
+    for jid in ids[40:49]:
+        assert await queue.cancel(str(jid))
+    return run_id, ids
+
+
+async def test_a_client_cancel_in_the_discarded_rows_write_still_stores_them() -> None:
+    """#347 re-review 3 N2 (M2): ``cancel()`` empties the part, the held limit discards the
+    oldest run, and the client goes away while the discarded rows are written. The label's own
+    row is already ``cancelled``; the discarded row is written by the shielded retry."""
+    printer = TapeRoll()
+    store = _CancelWindowStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    try:
+        held = await _held_runs(queue, store, printer)
+        run_id, ids = await _third_run_in_its_write_window(queue, store, printer)
+        discarded = held[0][50]
+        store.gate_cancel = discarded
+        task = asyncio.create_task(queue.cancel(str(ids[49])))
+        await asyncio.wait_for(store.cancel_reached.wait(), 3.0)
+        task.cancel()  # the client goes away inside the discarded rows' write
+        store.cancel_release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        own = await store.get(ids[49])
+        assert own is not None and own.state == DbJobState.CANCELLED.value
+        row = await store.get(discarded)
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+        assert _waits(queue, run_id)
+    finally:
+        store.release.set()
+        store.cancel_release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+@pytest.mark.parametrize("own_error", [None, RuntimeError("store down")])
+async def test_discarded_rows_are_stored_when_the_labels_own_write_is_cut_short(
+    own_error: BaseException | None,
+) -> None:
+    """#347 re-review 3 N1: the client goes away (``None``: a task cancel) or the store fails
+    while ``cancel()`` writes the label's own row. The runs the held limit discarded in that
+    step must still be written ``cancelled``, not left ``queued`` while memory says they are
+    gone; the label itself is kept as unpersisted."""
+    printer = TapeRoll()
+    store = _CancelWindowStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    try:
+        held = await _held_runs(queue, store, printer)
+        run_id, ids = await _third_run_in_its_write_window(queue, store, printer)
+        discarded = held[0][50]
+        store.gate_cancel = ids[49]
+        store.cancel_exc = own_error
+        task = asyncio.create_task(queue.cancel(str(ids[49])))
+        await asyncio.wait_for(store.cancel_reached.wait(), 3.0)
+        if own_error is None:
+            task.cancel()
+        store.cancel_release.set()
+        with pytest.raises(asyncio.CancelledError if own_error is None else RuntimeError):
+            await task
+        assert str(ids[49]) in queue._unpersisted
+        row = await store.get(discarded)
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+        assert _waits(queue, run_id)
+    finally:
+        store.release.set()
+        store.cancel_release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_worker_cancelled_in_the_error_paths_write_keeps_the_original_error() -> None:
+    """#347 re-review 3 N2 (M3): the rows of the printed group fail, the worker's error path
+    writes the discarded run's rows, and the worker is cancelled inside that write. The shielded
+    retry finishes the write and the worker ends with the original error, not the cancel."""
+    printer = TapeRoll()
+    store = _CancelWindowStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    try:
+        held = await _held_runs(queue, store, printer)
+        ids = [uuid4() for _ in range(51)]
+        for jid in ids:
+            await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={}))
+        store.fail_on = ids[MAX_LABELS_PER_TAPE_JOB - 1]
+        discarded = held[0][50]
+        store.gate_cancel = discarded
+        worker = queue._workers[printer.id]
+        await queue.enqueue_batch(
+            printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+        )
+        await asyncio.wait_for(store.cancel_reached.wait(), 3.0)  # inside the error path
+        worker.cancel()
+        store.cancel_release.set()
+        done, _ = await asyncio.wait({worker}, timeout=3.0)
+        assert worker in done
+        assert not worker.cancelled()
+        assert isinstance(worker.exception(), RuntimeError)
+        row = await store.get(discarded)
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+    finally:
+        store.cancel_release.set()
+        await queue.stop(timeout_s=2.0)
+
+
+async def test_a_failed_write_of_discarded_rows_in_the_error_path_is_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#347 re-review 3 N2 (M1): when the error path cannot store the discarded run's rows, it
+    says so: a warning of the queue's logger with the run and the number of rows."""
+    printer = TapeRoll()
+    store = _CancelWindowStore()
+    queue = PrintQueue([printer], store=store)
+    await queue.start()
+    caplog.set_level(logging.WARNING, logger="app.services.print_queue")
+    try:
+        held = await _held_runs(queue, store, printer)
+        ids = [uuid4() for _ in range(51)]
+        for jid in ids:
+            await store.save_queued(DbJob(id=jid, printer_id=printer.id, payload={}))
+        store.fail_on = ids[MAX_LABELS_PER_TAPE_JOB - 1]
+        store.gate_cancel = held[0][50]
+        store.cancel_exc = RuntimeError("store down")
+        store.cancel_release.set()
+        run_id = await queue.enqueue_batch(
+            printer_id=printer.id, images=[_img() for _ in ids], job_ids=ids, tape_mm=12, options={}
+        )
+        await asyncio.wait_for(store.cancel_reached.wait(), 3.0)
+
+        def logged() -> list[logging.LogRecord]:
+            return [
+                r
+                for r in caplog.records
+                if r.name == "app.services.print_queue"
+                and r.levelno == logging.WARNING
+                and "discarded runs could not be stored" in r.getMessage()
+            ]
+
+        await _until(lambda: bool(logged()))
+        message = logged()[0].getMessage()
+        assert str(run_id) in message
+        assert ": 1 cancelled labels" in message
     finally:
         await queue.stop(timeout_s=2.0)
 

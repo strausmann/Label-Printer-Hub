@@ -1621,6 +1621,10 @@ class PrintQueue:
                 if job is None or job.state != JobState.QUEUED:
                     continue
                 JobStateMachine.transition(job, JobState.CANCELLED)
+                # The code lives in memory only: ``mark_cancelled`` stores no reason, and the row
+                # has no code field (only ``error`` text, which cancelled rows leave empty).
+                # Storing it would change the store contract; after a restart the row still says
+                # ``cancelled`` (#347 re-review 3 N3).
                 job.error_code = code
                 job.error_message = "The waiting part of the print was discarded."
                 job.error_msg = job.error_message
@@ -1641,6 +1645,29 @@ class PrintQueue:
     async def _persist_cancelled(self, jobs: Sequence[Job]) -> None:
         for job in jobs:
             await self._store.mark_cancelled(UUID(job.id))
+
+    async def _persist_discarded(
+        self, run_id: UUID | None, jobs: Sequence[Job], *, keep_original: bool
+    ) -> None:
+        """Write the rows of labels the held limit discarded (already cancelled in memory).
+
+        A cancel during the write still finishes it (``_persist_through_cancel``). A store error
+        is logged with the run and the count, never raised: the caller's own outcome stands.
+        *keep_original*: the caller is handling another exception and re-raises it, so a cancel
+        that lands here is swallowed instead of replacing it; otherwise the cancel propagates.
+        """
+        try:
+            await self._persist_through_cancel(lambda: self._persist_cancelled(jobs))
+        except Exception:
+            logger.warning(
+                "Run %s: %d cancelled labels of discarded runs could not be stored",
+                run_id,
+                len(jobs),
+                exc_info=True,
+            )
+        except asyncio.CancelledError:
+            if not keep_original:
+                raise
 
     def _drop_pictures(self, run: TapeRun | None, keys: Sequence[str]) -> None:
         """Forget the PNG of these labels: in the run and on their in-memory jobs (#277 N2).
@@ -2138,22 +2165,17 @@ class PrintQueue:
         settled_run, discarded = self._settle_printing_run(job.id)
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
+        # The held limit may have discarded runs in this step; their rows follow the cancelled
+        # label's, and are written even when that write fails or the client goes away (N1).
         try:
             await self._store.mark_cancelled(UUID(job.id))
         except BaseException:
             self._unpersisted.add(job.id)
+            if discarded:
+                await self._persist_discarded(settled_run, discarded, keep_original=True)
             raise
         if discarded:
-            # The held limit discarded runs in this step; their rows follow the cancelled label's.
-            try:
-                await self._persist_through_cancel(lambda: self._persist_cancelled(discarded))
-            except Exception:
-                logger.warning(
-                    "Run %s: %d cancelled labels of discarded runs could not be stored",
-                    settled_run,
-                    len(discarded),
-                    exc_info=True,
-                )
+            await self._persist_discarded(settled_run, discarded, keep_original=False)
         if job.kind is not None:
             await notify_ended(
                 job.kind, UUID(job.id), state="cancelled", started=False, error_code="cancelled"
@@ -2877,19 +2899,7 @@ class PrintQueue:
             # The labels of limit-discarded runs are gone in memory already; their rows are
             # written even when the group's rows failed or the worker is cancelled (R1).
             if to_cancel:
-                try:
-                    await self._persist_through_cancel(lambda: self._persist_cancelled(to_cancel))
-                except Exception:
-                    logger.warning(
-                        "Run %s: %d cancelled labels of discarded runs could not be stored",
-                        batch.run_id,
-                        len(to_cancel),
-                        exc_info=True,
-                    )
-                except asyncio.CancelledError:
-                    # Cancelled again during this write (the shielded retry finished it): the
-                    # original exception propagates, re-raised below.
-                    pass
+                await self._persist_discarded(batch.run_id, to_cancel, keep_original=True)
             raise
 
     async def _wait_until_active(self, printer_id: UUID) -> bool:
