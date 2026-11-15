@@ -34,7 +34,12 @@ function CartPreview({ item, tapeMm, layout }: { item: CartItem; tapeMm: number;
   return (
     <section aria-label={t`Preview of ${name}`} className="flex flex-col gap-2">
       {lookup.data ? (
-        <CartPreviewImage item={lookup.data} contentType={item.content_type} tapeMm={tapeMm} layout={layout} />
+        <CartPreviewImage
+          item={lookup.data}
+          contentType={item.content_type}
+          tapeMm={tapeMm}
+          layout={item.content_type === "spool_swatch" ? undefined : layout}
+        />
       ) : (
         <p role={lookup.isError ? undefined : "status"} className="text-ink-2">
           {lookup.isError ? t`No preview available.` : t`Drawing the label…`}
@@ -124,6 +129,7 @@ export function CartPage() {
   const flagText = useFlagText();
   const failing = cart.items.filter((i) => check.flags.get(itemKey(i))?.ok === false);
   const labels = cart.items.reduce((sum, i) => sum + i.copies, 0);
+  const allSwatch = cart.items.length > 0 && cart.items.every((i) => i.content_type === "spool_swatch");
 
   const send = async () => {
     if (!selected) return;
@@ -213,12 +219,15 @@ export function CartPage() {
             <PrinterPicker printers={usable} value={selected?.id ?? null} onChange={choose} loading={printers.isPending} statuses={statuses} />
             {layout.active && (
               <>
-                <LayoutPicker
-                  orientation={layout.choice.orientation}
-                  preset={layout.choice.preset}
-                  onOrientation={layout.setOrientation}
-                  onPreset={layout.setPreset}
-                />
+                {/* A cart of spool labels only has nothing to turn or arrange (#346). */}
+                {!allSwatch && (
+                  <LayoutPicker
+                    orientation={layout.choice.orientation}
+                    preset={layout.choice.preset}
+                    onOrientation={layout.setOrientation}
+                    onPreset={layout.setPreset}
+                  />
+                )}
                 {cart.items.length > 0 && <CartPreviews items={cart.items} tapeMm={tapeMm} layout={layout.options} />}
               </>
             )}

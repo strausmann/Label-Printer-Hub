@@ -834,6 +834,10 @@ msgstr "Zurück zu den Bögen"
 msgid "Backend"
 msgstr "Backend"
 
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Bar shows"
+msgstr "Balken zeigt"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Battery"
 msgstr "Batterie"
@@ -1568,6 +1572,14 @@ msgstr "Der Bogen wird gezeichnet …"
 msgid "Driver"
 msgstr "Treiber"
 
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Drying temperature field"
+msgstr "Feld Trocknungstemperatur"
+
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Drying time field"
+msgstr "Feld Trocknungsdauer"
+
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "Earlier prints of {item}"
 msgstr "Frühere Drucke von {item}"
@@ -1701,6 +1713,10 @@ msgstr "Fehlgeschlagen"
 msgid "Feed mark printed"
 msgstr "Einzugsmarke gedruckt"
 
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Filament name"
+msgstr "Filamentname"
+
 #: src/features/about/DependencyLicences.tsx
 msgid "Filter by package or licence"
 msgstr "Nach Paket oder Lizenz filtern"
@@ -1767,6 +1783,10 @@ msgstr "Berechnen"
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "fits {needed}"
 msgstr "passt für {needed}"
+
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Flow ratio field"
+msgstr "Feld Flussrate"
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "For example ipp://printer.example.invalid:631/ipp/print"
@@ -2067,6 +2087,10 @@ msgstr "Schlüsselname"
 msgid "Key, description or product code"
 msgstr "Schlüssel, Beschreibung oder Produktcode"
 
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Keys of the extra fields in your Spoolman."
+msgstr "Schlüssel der Zusatzfelder in deinem Spoolman."
+
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
 #: src/features/notifications/useEntryText.ts
@@ -2076,6 +2100,10 @@ msgstr "Schlüssel, Beschreibung oder Produktcode"
 #: src/shell/PrintToasts.tsx
 msgid "Label"
 msgstr "Etikett"
+
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Label fields"
+msgstr "Etikettenfelder"
 
 #: src/features/archive/ArchivePage.tsx
 #: src/features/archive/TypeForm.tsx
@@ -2327,6 +2355,7 @@ msgstr "von Hand markiert"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
+#: src/features/settings/SpoolmanLabelFields.tsx
 #: src/shell/labels.ts
 msgid "Material"
 msgstr "Material"
@@ -2794,6 +2823,10 @@ msgstr "Benachrichtigungen, nichts ungelesen"
 msgid "Now at this address"
 msgstr "Jetzt an dieser Adresse"
 
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Nozzle temperature field"
+msgstr "Feld Düsentemperatur"
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "off"
 msgstr "aus"
@@ -3089,6 +3122,10 @@ msgstr "Rastermaß"
 #: src/features/settings/PrinterForm.tsx
 msgid "Port"
 msgstr "Port"
+
+#: src/features/settings/SpoolmanLabelFields.tsx
+msgid "Pressure advance field"
+msgstr "Feld Pressure Advance"
 
 #: src/features/lookup/CartPage.tsx
 #: src/features/lookup/ItemView.tsx
@@ -4086,6 +4123,10 @@ msgstr "Spule"
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Spool ID."
 msgstr "Spulen-ID."
+
+#: src/features/lookup/apps.ts
+msgid "Spool label"
+msgstr "Spulenetikett"
 
 #: src/features/lookup/apps.ts
 msgid "Spoolman"

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
@@ -217,5 +217,56 @@ describe("CartPage checks and previews", () => {
     await screen.findByRole("list", { name: "Cart" });
     await vi.waitFor(() => expect(calls.some((c) => c.path === `/api/v1/printers/${PRINTER_B.id}/status`)).toBe(true));
     expect(calls.filter((c) => c.path === "/api/v1/render/check")).toEqual([]);
+  });
+});
+
+describe("spool labels in the cart (#346)", () => {
+  const SWATCH = { spool_id: 7, language: "en", vendor: "TecBears", title: "PETG", color_name: "Orange", color_hexes: ["FF5F00"] };
+  const spoolLine = (id: string) => ({ app: "spoolman", id, name: `Spool ${id}`, content_type: "spool_swatch", copies: 1 });
+  const otherLine = { app: "snipeit", id: "1", name: "Item one", content_type: "qr_two_lines", copies: 1 };
+  const cartRoutes = (cart: unknown[]) => {
+    localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    localStorage.setItem("lph.printer", PRINTER_B.id);
+    reloadCart();
+    return {
+      "GET /api/v1/printers": [PRINTER_A, { ...PRINTER_B, paused: false }],
+      [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "62mm", tape_width_mm: 62 }),
+      "GET /api/v1/lookup/snipeit/1": { app: "snipeit", id: "1", name: "Item one", url: "https://assets.example.invalid/1", extra: {} },
+      "GET /api/v1/lookup/spoolman/7": { app: "spoolman", id: "7", name: "Spool 7", url: "https://spoolman.example.invalid/spool/show/7", extra: { swatch: SWATCH } },
+      "GET /api/v1/lookup/spoolman/8": { app: "spoolman", id: "8", name: "Spool 8", url: "https://spoolman.example.invalid/spool/show/8", extra: { swatch: { ...SWATCH, spool_id: 8 } } },
+      "POST /api/v1/render/preview": () => pngResponse(),
+      "POST /api/v1/render/check": { results: cart.map((_, index) => ({ index, ok: true })) },
+      [`POST /api/v1/print/${PRINTER_B.id}/batch`]: { batch_id: "cccccccc-0000-4000-8000-000000000001", printer_id: PRINTER_B.id, queued_at: "x", job_ids: ["a", "b"] },
+    };
+  };
+
+  it("a cart of spool labels hides the layout picker", async () => {
+    const { calls } = mockApi(cartRoutes([spoolLine("7"), spoolLine("8")]));
+    await renderApp({ path: "/cart" });
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(screen.queryByRole("radiogroup", { name: "Direction" })).toBeNull();
+    const preview = JSON.parse(calls.filter((c) => c.path === "/api/v1/render/preview").at(-1)!.body!);
+    expect(preview).toMatchObject({ content_type: "spool_swatch", data: { swatch: SWATCH } });
+    expect(preview).not.toHaveProperty("orientation");
+  });
+
+  it("a mixed cart keeps the picker and sends the swatch item without orientation", async () => {
+    const { calls } = mockApi(cartRoutes([otherLine, spoolLine("7")]));
+    await renderApp({ path: "/cart" });
+    expect(await screen.findByRole("radiogroup", { name: "Direction" })).toBeVisible();
+    await waitFor(() => expect(calls.filter((c) => c.path === "/api/v1/render/preview").length).toBeGreaterThanOrEqual(2));
+    const previews = calls.filter((c) => c.path === "/api/v1/render/preview").map((c) => JSON.parse(c.body!));
+    const swatchPreview = previews.find((p) => p.content_type === "spool_swatch");
+    expect(swatchPreview).toBeDefined();
+    expect(swatchPreview).not.toHaveProperty("orientation");
+    await userEvent.click(screen.getByRole("radio", { name: "Along" }));
+    await userEvent.click(screen.getByRole("button", { name: "Print 2 labels" }));
+    await screen.findByText(/2 labels sent to Office QL-820NWB/);
+    const post = calls.find((c) => c.path === `/api/v1/print/${PRINTER_B.id}/batch`)!;
+    const sent = JSON.parse(post.body!).items as { content_type: string; options: Record<string, unknown> }[];
+    expect(sent).toEqual([
+      { content_type: "qr_two_lines", options: { copies: 1, orientation: "along" }, lookup: { app: "snipeit", identifier: "1" } },
+      { content_type: "spool_swatch", options: { copies: 1 }, lookup: { app: "spoolman", identifier: "7" } },
+    ]);
   });
 });

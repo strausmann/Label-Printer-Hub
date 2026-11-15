@@ -12,8 +12,8 @@ import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/a
 import { HINT } from "../settings/controls";
 import { PANEL } from "../ui";
 import {
-  DEFAULT_CONTENT_TYPE,
-  LOOKUP_CONTENT_TYPES,
+  contentTypesFor,
+  defaultContentTypeFor,
   QR_PATH_APP,
   safeHref,
   useAppName,
@@ -120,14 +120,17 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const { usable, selected, choose } = usePrinterChoice(printers.data);
   const status = usePrinterStatus(selected?.id ?? "", !!selected);
   const statuses = usePrinterStatuses(usable);
-  const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
+  const [contentType, setContentType] = useState<ContentType>(() => defaultContentTypeFor(item.app));
   const [copies, setCopies] = useState(1);
   const print = usePrintNow();
   // A page printer prints onto sheets (the sheet section); only tape printers get the tape preview.
   const pagePrinter = selected?.backend === "ipp";
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
   const layout = useLabelLayout(selected, tapeMm);
-  const preview = usePreviewImage(item, contentType, tapeMm, !printers.isPending && !pagePrinter && !(selected && status.isPending), layout.options);
+  // The spool label has no direction or arrangement to pick (#346): the picker hides and nothing is sent.
+  const swatch = contentType === "spool_swatch";
+  const layoutOptions = swatch ? undefined : layout.options;
+  const preview = usePreviewImage(item, contentType, tapeMm, !printers.isPending && !pagePrinter && !(selected && status.isPending), layoutOptions);
 
   const appName = appNames(item.app);
   const printerName = selected?.name ?? "";
@@ -162,7 +165,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
         {!pagePrinter && (
         <section aria-labelledby="preview-h" className={`${PANEL} flex flex-col gap-3`}>
           <h2 id="preview-h" className="text-section font-bold">{t`Preview`}</h2>
-          <LabelPreview preview={preview} layout={layout.options} />
+          <LabelPreview preview={preview} layout={layoutOptions} />
         </section>
         )}
 
@@ -178,14 +181,14 @@ function ItemDetail({ item }: { item: LookupResult }) {
           <label className="flex flex-col gap-1.5">
             <span className="font-bold">{t`Layout`}</span>
             <select className={FIELD} value={contentType} onChange={(e) => setContentType(e.target.value as ContentType)}>
-              {LOOKUP_CONTENT_TYPES.map((c) => (
+              {contentTypesFor(item.app).map((c) => (
                 <option key={c} value={c}>
                   {contentLabel(c)}
                 </option>
               ))}
             </select>
           </label>
-          {layout.active && (
+          {layout.active && !swatch && (
             <LayoutPicker
               orientation={layout.choice.orientation}
               preset={layout.choice.preset}
@@ -211,7 +214,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
               <Button
                 className={PRIMARY_BUTTON}
                 isDisabled={!selected || print.isPending || readOnly}
-                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem, layout: layout.options })}
+                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem, layout: layoutOptions })}
               >
                 {t`Print now`}
               </Button>

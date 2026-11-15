@@ -24,6 +24,16 @@ export const LOOKUP_CONTENT_TYPES: readonly ContentType[] = [
 ];
 export const DEFAULT_CONTENT_TYPE: ContentType = "qr_two_lines";
 
+/** The swatch-style spool label (#346): Spoolman items only, 62 mm tape or a sheet, never turned. */
+export const SPOOL_SWATCH: ContentType = "spool_swatch";
+
+/** The layouts an item of `app` offers, in the order the choice lists them. Spoolman leads with the spool label. */
+export const contentTypesFor = (app: LookupApp): readonly ContentType[] =>
+  app === "spoolman" ? [SPOOL_SWATCH, ...LOOKUP_CONTENT_TYPES] : LOOKUP_CONTENT_TYPES;
+
+/** The layout an item of `app` starts with: the spool label for Spoolman, else the default. */
+export const defaultContentTypeFor = (app: LookupApp): ContentType => contentTypesFor(app)[0] === SPOOL_SWATCH ? SPOOL_SWATCH : DEFAULT_CONTENT_TYPE;
+
 const APP_NAMES = { snipeit: msg`Snipe-IT`, grocy: msg`Grocy`, spoolman: msg`Spoolman` };
 
 /** For code outside React (search sources); components use `useAppName`. */
@@ -50,6 +60,8 @@ export function useContentTypeLabel(): (type: ContentType) => string {
         return t`Code and title, no QR code`;
       case "text_one_line":
         return t`Code only, no QR code`;
+      case "spool_swatch":
+        return t`Spool label`;
       default:
         return type;
     }

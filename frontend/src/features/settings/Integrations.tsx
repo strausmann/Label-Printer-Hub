@@ -16,6 +16,7 @@ import { SaveFeedback, useErrorText } from "./feedback";
 import { GrocyLabelSettings } from "./GrocyLabelSettings";
 import { SettingField } from "./SettingField";
 import { Section, WithSettings } from "./sections";
+import { SPOOLMAN_LABEL_KEYS, SpoolmanLabelFields } from "./SpoolmanLabelFields";
 
 type Integration = "snipeit" | "grocy" | "spoolman" | "paperless";
 const SECRET_SUFFIX: Record<Integration, string | null> = { snipeit: "api_key", grocy: "api_key", spoolman: null, paperless: "token" };
@@ -45,7 +46,8 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
   const urlKey = `integrations.${name}.url`;
   const secretKey = SECRET_SUFFIX[name] ? `integrations.${name}.${SECRET_SUFFIX[name]}` : null;
   const timeoutKey = `integrations.${name}.timeout`;
-  const keys = [urlKey, ...(secretKey ? [secretKey] : []), timeoutKey];
+  // The spool label's fields (#346) are saved with the Spoolman card but are not part of the connection test.
+  const keys = [urlKey, ...(secretKey ? [secretKey] : []), timeoutKey, ...(name === "spoolman" ? SPOOLMAN_LABEL_KEYS : [])];
   const urlView = draft.view(urlKey);
   const secretView = secretKey ? draft.view(secretKey) : undefined;
   if (!urlView) return null;
@@ -110,6 +112,7 @@ function IntegrationCard({ name, views }: { name: Integration; views: SettingVie
         {draft.view(timeoutKey) ? (
           <SettingField view={draft.view(timeoutKey)!} label={label("timeout")} value={draft.valueOf(timeoutKey)} onChange={change(timeoutKey)} />
         ) : null}
+        {name === "spoolman" ? <SpoolmanLabelFields draft={draft} /> : null}
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button

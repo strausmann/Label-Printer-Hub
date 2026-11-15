@@ -11,7 +11,7 @@ import { Button } from "react-aria-components";
 import { NotFoundPage } from "../../pages/placeholders";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
-import { DEFAULT_CONTENT_TYPE, isLookupApp, useAppName } from "../lookup/apps";
+import { defaultContentTypeFor, isLookupApp, useAppName } from "../lookup/apps";
 import { useCart, type LookupApp } from "../lookup/cart";
 import { resolveInput } from "../lookup/labelUrl";
 import { useRecent, type RecentItem, type RecentKind } from "../lookup/recent";
@@ -180,7 +180,7 @@ function Recent({ app }: { app: LookupApp }) {
               kind={_(KIND_LABEL[item.kind])}
               age={ago(item.at, now)}
               onPrint={() => {
-                cart.add({ app, id: item.id, name: item.name, content_type: DEFAULT_CONTENT_TYPE, copies: 1 });
+                cart.add({ app, id: item.id, name: item.name, content_type: defaultContentTypeFor(app), copies: 1 });
                 setAdded(item.name);
               }}
             />
