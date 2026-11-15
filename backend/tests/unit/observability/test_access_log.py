@@ -67,7 +67,12 @@ def _app() -> FastAPI:
         return PlainTextResponse("ok")
 
     @app.get("/readiness")
-    async def readiness() -> PlainTextResponse:
+    async def readiness(request: Request) -> PlainTextResponse:
+        # Like the hub's /readiness: it needs a read key, and answers 503 when not ready.
+        if request.headers.get("x-label-hub-key") == "wrong":
+            raise HTTPException(status_code=401, detail="invalid_key")
+        if request.query_params.get("state") == "not-ready":
+            return PlainTextResponse("not-ready", status_code=503)
         return PlainTextResponse("ready")
 
     return app
@@ -200,6 +205,13 @@ async def test_header_value_not_in_key_format_gives_a_dash_user() -> None:
         "client_secret=abc12345secret",
         "password=abc12345secret",
         "access_token=abc12345secret",
+        "accesstoken=abc12345secret",
+        "X-Api-Key=abc12345secret",
+        "auth=abc12345secret",
+        "sig=abc12345secret",
+        "passphrase=abc12345secret",
+        "sessionId=abc12345secret",
+        "new_key=abc12345secret",
     ],
 )
 async def test_secret_looking_params_are_masked(query: str) -> None:
@@ -310,6 +322,115 @@ async def test_probes_are_left_out_by_default() -> None:
         await client.get("/readiness")
         await client.get("/whoami")
     assert len(lines) == 1 and '"GET /whoami HTTP/1.1"' in lines[0]
+
+
+async def test_probe_refusals_are_logged() -> None:
+    """/readiness takes a key: a refused key there must reach the log (and CrowdSec)."""
+    lines: list[str] = []
+    async with _client(lines) as client:
+        await client.get("/readiness", headers={"X-Label-Hub-Key": "wrong"})
+        await client.get("/readiness?state=not-ready")
+        await client.get("/readiness")
+    assert len(lines) == 1, lines
+    assert '"GET /readiness HTTP/1.1" 401 ' in lines[0]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["keyword", "author", "monkey", "keyboard", "sessions_page_size"],
+)
+async def test_harmless_names_are_not_masked(name: str) -> None:
+    lines: list[str] = []
+    async with _client(lines) as client:
+        await client.get(f"/whoami?{name}=visible")
+    assert f"{name}=visible" in lines[0]
+
+
+async def test_disconnect_before_response_is_499() -> None:
+    lines: list[str] = []
+
+    async def hangs_up(scope: Scope, receive: Receive, send: Send) -> None:
+        await receive()  # http.disconnect: the app returns without an answer
+
+    app = AccessLogMiddleware(hangs_up, write=lines.append, clock=lambda: FIXED)
+
+    async def receive() -> Message:
+        return {"type": "http.disconnect"}
+
+    async def send(message: Message) -> None:
+        return None
+
+    scope: Scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/x",
+        "query_string": b"",
+        "headers": [],
+        "client": ("192.0.2.10", 1),
+    }
+    await app(scope, receive, send)
+    assert '"GET /x HTTP/1.1" 499 0 ' in lines[0]
+
+
+async def test_cancelled_before_response_is_499() -> None:
+    lines: list[str] = []
+
+    async def slow(scope: Scope, receive: Receive, send: Send) -> None:
+        await asyncio.Event().wait()
+
+    app = AccessLogMiddleware(slow, write=lines.append, clock=lambda: FIXED)
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        return None
+
+    scope: Scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/x",
+        "query_string": b"",
+        "headers": [],
+        "client": ("192.0.2.10", 1),
+    }
+    task = asyncio.create_task(app(scope, receive, send))
+    await asyncio.sleep(0)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert '"GET /x HTTP/1.1" 499 0 ' in lines[0]
+
+
+@pytest.mark.parametrize(("version", "shown"), [("1.0", "HTTP/1.0"), ("2", "HTTP/2.0")])
+async def test_http_version_as_nginx_writes_it(version: str, shown: str) -> None:
+    lines: list[str] = []
+
+    async def ok(scope: Scope, receive: Receive, send: Send) -> None:
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    app = AccessLogMiddleware(ok, write=lines.append, clock=lambda: FIXED)
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        return None
+
+    scope: Scope = {
+        "type": "http",
+        "http_version": version,
+        "method": "GET",
+        "path": "/x",
+        "query_string": b"",
+        "headers": [],
+        "client": ("192.0.2.10", 1),
+    }
+    await app(scope, receive, send)
+    assert f'"GET /x {shown}" 204 0 ' in lines[0]
 
 
 async def test_probes_logged_when_included() -> None:

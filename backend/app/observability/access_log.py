@@ -30,11 +30,17 @@ What the line holds:
   does, so a client cannot end a field or start a second line.
 - ``$status`` is the status the hub answered; ``$body_bytes_sent`` the body bytes it sent.
   The middleware is pure ASGI: it passes every message on at once, so a live event stream
-  is never buffered; its line is written when the response ends.
+  is never buffered; its line is written when the response ends. Without an answer the
+  status is 500 after an error and 499 (nginx's "client closed") after a hang-up or cancel.
+- Probes (``/healthz``, ``/readiness``) are left out only when they answer 2xx or 503.
+  ``/readiness`` takes a read key, so a refused key there (401, 403, 429) is always logged.
+- Requests that uvicorn itself rejects before the app sees them (a malformed request line,
+  oversized headers) get no line.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import sys
@@ -59,14 +65,35 @@ PROBE_PATHS = frozenset({"/healthz", "/readiness"})
 KEY_HEADER = b"x-label-hub-key"
 TOKEN_PARAM = "token"
 MASK = "***"
+CLIENT_CLOSED = 499  # nginx's status for a client that closed the connection before the answer
 
 _HANDLER_NAME = "labelyard-access-stdout"
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-# A parameter whose decoded name contains one of these is masked whatever its value.
-_SENSITIVE_NAME = re.compile(
-    r"token|key|secret|passw|pwd|auth|session|signature|credential|^sig$", re.IGNORECASE
+# A parameter is masked whatever its value when a word of its decoded name is one of these
+# (``api_key``, ``apiKey``, ``X-Api-Key``, ``sessionId``), or the name ends in a word that never
+# names anything harmless (``accesstoken``). ``keyword``, ``author`` or ``monkey`` stay visible.
+_SENSITIVE_WORDS = frozenset(
+    {
+        "apikey",
+        "auth",
+        "credential",
+        "credentials",
+        "key",
+        "passphrase",
+        "passwd",
+        "password",
+        "pwd",
+        "secret",
+        "session",
+        "sig",
+        "signature",
+        "token",
+    }
 )
+_SENSITIVE_ENDINGS = ("token", "secret", "password", "passwd", "passphrase", "apikey")
+_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
 _KEY_CHARS = re.compile(r"[A-Za-z0-9_-]+")
+_NGINX_VERSIONS = {"2": "2.0", "3": "3.0"}  # ASGI writes "2", nginx "HTTP/2.0"
 _QUERY_SPLIT = re.compile(r"([&;])")
 
 
@@ -112,6 +139,12 @@ def _escape(text: str) -> str:
     return "".join(out)
 
 
+def _is_sensitive_name(name: str) -> bool:
+    words = [w.lower() for w in _WORD.findall(name)]
+    joined = "".join(words)
+    return any(w in _SENSITIVE_WORDS for w in words) or joined.endswith(_SENSITIVE_ENDINGS)
+
+
 def _mask_param(part: str) -> str:
     name, sep, value = part.partition("=")
     if not sep:
@@ -119,8 +152,7 @@ def _mask_param(part: str) -> str:
     if name == TOKEN_PARAM:
         prefix = visible_key(unquote(value))
         return f"{name}={prefix}{MASK}" if prefix else f"{name}={MASK}"
-    decoded = unquote(unquote(name))
-    if _SENSITIVE_NAME.search(decoded):
+    if _is_sensitive_name(unquote(unquote(name))):
         return f"{name}={MASK}"
     return hide_key_shapes(part)
 
@@ -157,11 +189,11 @@ class AccessLogMiddleware:
         self._clock = clock
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or (
-            not self._include_probes and scope.get("path") in PROBE_PATHS
-        ):
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        # Decided when the response ends: /readiness takes a key, so a refusal there is logged.
+        probe = not self._include_probes and scope.get("path") in PROBE_PATHS
 
         status: int | None = None
         sent = 0
@@ -174,11 +206,20 @@ class AccessLogMiddleware:
                 sent += len(message.get("body", b""))
             await send(message)
 
+        failed = False
         try:
             await self.app(scope, receive, send_counted)
+        except asyncio.CancelledError:
+            raise
+        except BaseException:
+            failed = True
+            raise
         finally:
-            # Also on an error or a dropped connection: the request happened.
-            self._log(scope, status if status is not None else 500, sent)
+            # Also on an error or a dropped connection: the request happened. Without an answer,
+            # an error is a 500 (what the server answers) and a hang-up or cancel is nginx's 499.
+            final = status if status is not None else (500 if failed else CLIENT_CLOSED)
+            if not (probe and (200 <= final < 300 or final == 503)):
+                self._log(scope, final, sent)
 
     def _log(self, scope: Scope, status: int, sent: int) -> None:
         try:
@@ -206,7 +247,9 @@ class AccessLogMiddleware:
         query = scope.get("query_string", b"").decode("latin-1")
         if query:
             target += "?" + mask_query(query)
-        request = f"{scope.get('method', '-')} {target} HTTP/{scope.get('http_version', '1.1')}"
+        version = str(scope.get("http_version", "1.1"))
+        version = _NGINX_VERSIONS.get(version, version)
+        request = f"{scope.get('method', '-')} {target} HTTP/{version}"
         return (
             f"{_escape(addr)} - {user} [{format_time_local(self._clock())}] "
             f'"{_escape(request)}" {status} {sent} "{_field(referer)}" "{_field(agent)}"'

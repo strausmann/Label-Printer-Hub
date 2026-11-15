@@ -47,6 +47,8 @@ _KEY_SHAPE = re.compile(
     rf"lh(?:_|%(?:25)?5f)pat(?:_|%(?:25)?5f)(?:[A-Za-z0-9_-]|{_PCT}){{8,}}",
     re.IGNORECASE,
 )
+# uvicorn.access is switched off by the hub's own access log (app.observability.access_log,
+# #366); its filter stays so that a run that turns it back on still hides the token.
 _LOGGERS = ("uvicorn.access", "uvicorn.error")
 
 
