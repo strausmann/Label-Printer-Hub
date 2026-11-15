@@ -4,7 +4,8 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { SHEET_TYPE, sheetRead, type Call } from "../../test-api";
+import { renderApp } from "../../../test-utils";
+import { SHEET_TYPE, mockApi, sheetRead, type Call } from "../../test-api";
 import { NEW_9, P, USED_17, body, expectType, previewFor, previewPage, routes, sheet } from "./testkit";
 import { LINE, cartView, itemView, previews, resetBetweenTests } from "./SheetSection.kit";
 import type * as Debounced from "./useDebounced";
@@ -64,6 +65,70 @@ describe("choosing cells and skipping one", () => {
   });
 });
 
+/** A first page whose new cells carry the given labels; `null` takes the item name (Flour). */
+function labelled(cells: Array<{ cell: number; purpose: string | null; truncated?: boolean }>) {
+  const page = previewPage("L4736-0001", cells.map((c) => c.cell), USED_17);
+  for (const [i, c] of cells.entries()) page.cells[c.cell - 1] = { ...page.cells[c.cell - 1]!, item_index: i, purpose: c.purpose, truncated: c.truncated ?? false };
+  return previewFor("L4736-0001", cells.map((c) => c.cell), USED_17, { pages: [page] });
+}
+const TEN = Array.from({ length: 10 }, (_, i) => ({ cell: 18 + i, purpose: "Eggs" }));
+
+describe("the cell list of the preview (#150)", () => {
+  it("ten consecutive cells with the same item show as one row with the count", async () => {
+    await itemView(routes({ preview: labelled(TEN) }), 10);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–27 → Eggs (10×)")).toBeVisible();
+    expect(within(preview).queryByText(/^Cell 18 →/)).toBeNull();
+  });
+
+  it("a gap in the cell numbers starts a new row", async () => {
+    await itemView(routes({ preview: labelled([18, 19, 21, 22].map((cell) => ({ cell, purpose: "Eggs" }))) }), 4);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–19 → Eggs (2×)")).toBeVisible();
+    expect(within(preview).getByText("Cells 21–22 → Eggs (2×)")).toBeVisible();
+  });
+
+  it("different items next to each other stay separate rows", async () => {
+    await itemView(routes({ preview: labelled([{ cell: 18, purpose: "Eggs" }, { cell: 19, purpose: "Flour" }, { cell: 20, purpose: "Flour" }]) }), 3);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cell 18 → Eggs")).toBeVisible();
+    expect(within(preview).getByText("Cells 19–20 → Flour (2×)")).toBeVisible();
+  });
+
+  it("the shortened-text line is gone", async () => {
+    await itemView(routes({ preview: labelled([{ cell: 18, purpose: "Eggs", truncated: true }, { cell: 19, purpose: "Eggs", truncated: true }]) }), 2);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    await within(preview).findByText(/Eggs/);
+    expect(within(preview).queryByText(/Text shortened to fit/)).toBeNull();
+  });
+
+  it("a truncated group carries the shortened mark", async () => {
+    const cells = [...TEN.map((c) => ({ ...c, truncated: true })), { cell: 28, purpose: "Milk", truncated: true }];
+    await itemView(routes({ preview: labelled(cells) }), 11);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–27 → Eggs (10×, shortened)")).toBeVisible();
+    expect(within(preview).getByText("Cell 28 → Milk (shortened)")).toBeVisible();
+  });
+
+  it("a row without truncation has no mark, and truncated cells do not join untruncated ones", async () => {
+    await itemView(routes({ preview: labelled([{ cell: 18, purpose: "Eggs" }, { cell: 19, purpose: "Eggs" }, { cell: 20, purpose: "Eggs", truncated: true }]) }), 3);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–19 → Eggs (2×)")).toBeVisible();
+    expect(within(preview).getByText("Cell 20 → Eggs (shortened)")).toBeVisible();
+    expect(within(preview).queryByText(/Cells 18–19.*shortened/)).toBeNull();
+  });
+
+  it("reads in German with the range, the count and the mark", async () => {
+    mockApi(routes({ preview: labelled([...TEN, { cell: 28, purpose: "Milch", truncated: true }, { cell: 30, purpose: "Mehl" }]) }));
+    await renderApp({ path: "/lookup/grocy/7", language: "de" });
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "Kopien" }), { target: { value: "12" } });
+    const preview = await screen.findByRole("region", { name: "Vorschau" });
+    expect(await within(preview).findByText("Zellen 18–27 → Eggs (10×)")).toBeVisible();
+    expect(within(preview).getByText("Zelle 28 → Milch (gekürzt)")).toBeVisible();
+    expect(within(preview).getByText("Zelle 30 → Mehl")).toBeVisible();
+  });
+});
+
 describe("the preview", () => {
   it("shows counts, the cells it fills and the zoom", async () => {
     await itemView(routes());
@@ -84,8 +149,8 @@ describe("the preview", () => {
     page.cells[19] = { ...page.cells[19]!, hw_margin: true };
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { pages: [page] }) }));
     expect(await screen.findByText("Code only on this sheet type")).toBeVisible();
-    expect(screen.getByText(/shortened/)).toBeVisible();
     expect(screen.getByText(/unprintable margin/)).toBeVisible();
+    expect(screen.queryByText(/Text shortened to fit/)).toBeNull();
   });
 
   it("lists what was printed before", async () => {

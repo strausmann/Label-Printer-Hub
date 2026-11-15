@@ -808,8 +808,12 @@ msgid "Cell {0}, {state}"
 msgstr "Cell {0}, {state}"
 
 #: src/features/sheets/print/SheetPreview.tsx
-msgid "Cell {cell} → {label}"
-msgstr "Cell {cell} → {label}"
+msgid "Cell {from} → {label}"
+msgstr "Cell {from} → {label}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cell {from} → {label} (shortened)"
+msgstr "Cell {from} → {label} (shortened)"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Cell {inspected} is chosen"
@@ -836,6 +840,14 @@ msgstr "Cells {cells} are in use by something else now. Print the labels again a
 #: src/features/jobs/RetryError.tsx
 msgid "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
 msgstr "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cells {from}–{to} → {label} ({count}×, shortened)"
+msgstr "Cells {from}–{to} → {label} ({count}×, shortened)"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cells {from}–{to} → {label} ({count}×)"
+msgstr "Cells {from}–{to} → {label} ({count}×)"
 
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "cells {mapped}"
@@ -3681,10 +3693,6 @@ msgstr "Testing…"
 #: src/features/sheets/cellState.ts
 msgid "text shortened"
 msgstr "text shortened"
-
-#: src/features/sheets/print/SheetPreview.tsx
-msgid "Text shortened to fit: cells {shortened}"
-msgstr "Text shortened to fit: cells {shortened}"
 
 #: src/features/jobs/RunControls.tsx
 msgid "That did not work. Try again."

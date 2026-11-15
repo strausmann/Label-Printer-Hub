@@ -808,8 +808,12 @@ msgid "Cell {0}, {state}"
 msgstr "Zelle {0}, {state}"
 
 #: src/features/sheets/print/SheetPreview.tsx
-msgid "Cell {cell} → {label}"
-msgstr "Zelle {cell} → {label}"
+msgid "Cell {from} → {label}"
+msgstr "Zelle {from} → {label}"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cell {from} → {label} (shortened)"
+msgstr "Zelle {from} → {label} (gekürzt)"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Cell {inspected} is chosen"
@@ -836,6 +840,14 @@ msgstr "Die Zellen {cells} sind inzwischen anderweitig belegt. Drucke die Etiket
 #: src/features/jobs/RetryError.tsx
 msgid "Cells {cells} may or may not have been printed. Resolve them on the sheet first, then retry."
 msgstr "Die Zellen {cells} wurden möglicherweise gedruckt. Kläre sie zuerst auf dem Bogen, dann versuche es erneut."
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cells {from}–{to} → {label} ({count}×, shortened)"
+msgstr "Zellen {from}–{to} → {label} ({count}×, gekürzt)"
+
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Cells {from}–{to} → {label} ({count}×)"
+msgstr "Zellen {from}–{to} → {label} ({count}×)"
 
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "cells {mapped}"
@@ -3681,10 +3693,6 @@ msgstr "Wird getestet…"
 #: src/features/sheets/cellState.ts
 msgid "text shortened"
 msgstr "Text gekürzt"
-
-#: src/features/sheets/print/SheetPreview.tsx
-msgid "Text shortened to fit: cells {shortened}"
-msgstr "Text gekürzt, damit er passt: Zellen {shortened}"
 
 #: src/features/jobs/RunControls.tsx
 msgid "That did not work. Try again."
