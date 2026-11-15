@@ -32,7 +32,7 @@ Das **Spulenetikett** ist das erste Layout, das eine Spoolman-Spule anbietet. Es
   <figcaption>Ein Beispiel mit zwei ausgedachten Spulen. Das gedruckte Etikett folgt demselben Aufbau.</figcaption>
 </figure>
 
-Zeilen ohne Wert fallen weg. Restgewicht und Preis stehen absichtlich nicht drauf: Sie ändern sich, und der QR-Code führt zu den aktuellen Werten in Spoolman.
+Zeilen ohne Wert fallen weg. Das Etikett ist in Atkinson Hyperlegible Next gesetzt; Text in Schriften, die sie nicht abdeckt (zum Beispiel Kyrillisch, Chinesisch oder Arabisch), druckt als leere Kästchen. Restgewicht und Preis stehen absichtlich nicht drauf: Sie ändern sich, und der QR-Code führt zu den aktuellen Werten in Spoolman.
 
 ### Material und Filamentname
 
@@ -50,7 +50,7 @@ Düsentemperatur, Pressure Advance, Flussrate und Trocknung kommen aus den Zusat
 | Trocknungstemperatur | `drying_condiftions_temp` | Filament |
 | Trocknungsdauer | `drying_condiftions_time` | Filament |
 
-Nutzt dein Spoolman andere Schlüssel, änderst du sie unter **Einstellungen > Integrationen > Spoolman > Etikettenfelder**. Ein leerer Schlüssel liest nichts. Ein Wert, der nicht zur Form seines Felds passt, lässt nur seine eigene Zeile weg.
+Nutzt dein Spoolman andere Schlüssel, änderst du sie unter **Einstellungen > Integrationen > Spoolman > Etikettenfelder**. Ein leerer Schlüssel liest nichts. Leg diese Zusatzfelder in Spoolman als Zahlenfelder (Ganzzahl oder Kommazahl) oder als Bereiche an; ein Textfeld speichert die Zahl als Text, und der Hub lässt diese Zeile weg. Ein Wert, der nicht zur Form seines Felds passt, oder ein Bereich, der von hoch nach niedrig eingetragen ist, lässt nur seine eigene Zeile weg.
 
 ### Wo es passt
 

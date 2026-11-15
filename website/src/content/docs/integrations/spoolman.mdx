@@ -32,7 +32,7 @@ The **Spool label** is the first layout a Spoolman spool offers. It shows what y
   <figcaption>A sample with two fictitious spools. The printed label follows the same layout.</figcaption>
 </figure>
 
-Rows without a value are left out. The remaining weight and the price are left out on purpose: they change, and the QR code leads to the current values in Spoolman.
+Rows without a value are left out. The label is set in Atkinson Hyperlegible Next; text in scripts the font does not cover (for example Cyrillic, Chinese or Arabic) prints as empty boxes. The remaining weight and the price are left out on purpose: they change, and the QR code leads to the current values in Spoolman.
 
 ### Material and filament name
 
@@ -50,7 +50,7 @@ Nozzle temperature, pressure advance, flow ratio and drying come from Spoolman's
 | Drying temperature | `drying_condiftions_temp` | filament |
 | Drying time | `drying_condiftions_time` | filament |
 
-If your Spoolman uses other keys, change them under **Settings > Integrations > Spoolman > Label fields**. An empty key reads nothing. A value that is not in the shape of its field leaves only its own row out.
+If your Spoolman uses other keys, change them under **Settings > Integrations > Spoolman > Label fields**. An empty key reads nothing. Create these extra fields in Spoolman as number fields (integer or float) or as ranges; a text field holds its number as text, and the hub leaves that row out. A value that is not in the shape of its field, or a range entered high to low, leaves only its own row out.
 
 ### Where it fits
 

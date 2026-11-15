@@ -1122,6 +1122,12 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   | Footer | no (one line) | no | `…` |
   | Caption `#{id}` | no; it may use the 0.8 mm gap left of the QR box (`#8888` is 7.45 mm at cap 1.6; up to 7 digits fit the 12.3–15.5 mm boxes of the reference media, 3 at `Q_MIN`) | no (row minimum) | `…` |
 
+  Where a vendor is wrapped, the split is the most balanced one whose two lines both fit (on L4737REV
+  „Shenzhen Example“ / „Filament Corp“, not „Shenzhen Example Filament“ / „Corp“); only when no split lets
+  both lines fit is the first line the longest that fits and the second cut. Field labels, values and the
+  colour line break at the last break point that lets the first line fit; a value prefers the break after
+  its ` · ` separator (implementation, review 2026-11-15).
+
   The 64-character cap on lookup text (R-346-4) stays: it is input validation, not layout.
 - **R-346-8 (drop tiers, exact thresholds, QR box):** the tier is the **first** of the list whose width **and** height
   the content box meets (both ≥, compared in hundredths of a millimetre); thresholds are fixed per metric set, not per
