@@ -71,7 +71,7 @@ def test_settings_default_database_url_has_aiosqlite_driver() -> None:
     )
 
 
-def test_settings_respects_legacy_prefix_database_url_env(
+def test_settings_respects_labelyard_database_url_env(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:

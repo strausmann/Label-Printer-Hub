@@ -369,6 +369,11 @@ class BrandGuardTest(unittest.TestCase):
         self.add("docs/supply-chain.md", f"image: ghcr.io/x/{SLUG}-backend\n{SLUG}\n")
         self.assertEqual(self.rules(), ["slug", "slug"])
 
+    def test_verify_group_with_trailing_name_is_a_hit(self) -> None:
+        # counter-test: the allowance is the whole group token, not its start
+        self.add("docs/supply-chain.md", f"x/{self.GROUP}-backend\n")
+        self.assertEqual(self.rules(), ["slug"])
+
     METRIC = "printer_" + "hub_sse_active_subscribers"
 
     def test_kept_sse_metric_allowed_in_its_module_and_the_adr(self) -> None:

@@ -212,12 +212,15 @@ def _is_verify_group(path: str, line: str, m: re.Match[str]) -> bool:
         path in VERIFY_COMMAND_FILES
         and line.startswith(_VERIFY_GROUP_START, m.start() - 1)
         and line.startswith(_VERIFY_GROUP_END, m.end())
+        # the whole group, not the start of a longer name such as `(...|labelyard)-backend`
+        and line[m.end() + len(_VERIFY_GROUP_END) :][:1] in ("", "/", "'", '"', " ", "\\")
     )
 
 
-# The Prometheus metric names of the SSE module keep their old prefix (ADR 0026): dashboards and alerts
-# of existing installs read them. They are named in one module, the ADR row and the tests of that
-# module; nowhere else.
+# The Prometheus metric names of the SSE module keep their old prefix (ADR 0026): dashboards and
+# alerts of existing installs read them. They are named in the module that registers them and in
+# the ADR row; nowhere else. The rule matches the prefix with its trailing underscore only: a bare
+# `printer_hub` (a logger name, say) is out of its scope.
 KEPT_METRIC_FILES: tuple[str, ...] = (
     "backend/app/observability/sse_metrics.py",
     "docs/decisions/*-rename-to-labelyard.md",

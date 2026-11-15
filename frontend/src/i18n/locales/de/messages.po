@@ -2160,10 +2160,6 @@ msgstr "Noch keine Client-Schlüssel. Lege unter <0>Zugang und Schlüssel</0> ei
 msgid "No code found in this photo. Hold the camera closer and try again."
 msgstr "In diesem Foto wurde kein Code gefunden. Halte die Kamera näher heran und versuche es erneut."
 
-#: src/features/calibration/CalibrationSchematic.tsx
-msgid "No corner marks are drawn at the inner crossings: there the gap lines and the scale show the cut."
-msgstr "An den inneren Kreuzungen werden keine Eckmarken gezeichnet: dort zeigen die Lückenlinien und die Skala den Schnitt."
-
 #: src/features/calibration/CalibrationPage.tsx
 msgid "No correction stored for this tray."
 msgstr "Für dieses Fach ist keine Korrektur gespeichert."
@@ -5019,6 +5015,10 @@ msgstr "Was gedruckt wurde"
 #: src/features/jobs/JobDetail.tsx
 msgid "What went wrong"
 msgstr "Was schiefgelaufen ist"
+
+#: src/features/calibration/CalibrationSchematic.tsx
+msgid "Where a label corner would touch the scale, its corner mark is left out; the gap lines and the scale show the cut."
+msgstr "Wo eine Etikettenecke die Skala berühren würde, entfällt ihre Eckmarke; die Lückenlinien und die Skala zeigen den Schnitt."
 
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Where gap line {s} and gap line {z} cross, read the small scales against the middle of the physical gap, in millimetres."

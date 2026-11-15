@@ -114,7 +114,7 @@ export function CalibrationSchematic({ geometry: g, typeName }: { geometry: Geom
             : t`At every crossing sits a small scale.`}
         </li>
         <li>{t`Rulers with a tick every 0.5 mm run along every gap line on all four edges of the grid.`}</li>
-        <li>{t`No corner marks are drawn at the inner crossings: there the gap lines and the scale show the cut.`}</li>
+        <li>{t`Where a label corner would touch the scale, its corner mark is left out; the gap lines and the scale show the cut.`}</li>
         {(noGapDown || noGapAcross) && (
           <li>
             {noGapDown && noGapAcross
