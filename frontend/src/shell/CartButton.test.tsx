@@ -62,6 +62,15 @@ describe("CartButton: the cart icon in the top bar", () => {
     expect(within(link).getByText("2")).toBeInTheDocument();
   });
 
+  it("the badge reads 99+ from 100 entries on while the name keeps the real count", async () => {
+    store(Array.from({ length: 100 }, (_, i) => line(String(i), 1)));
+    reloadCart();
+    mockApi(routes);
+    await renderApp({ path: "/printers" });
+    const link = within(header()).getByRole("link", { name: "Cart, 100 items" });
+    expect(within(link).getByText("99+")).toBeInTheDocument();
+  });
+
   it("says one item in the singular", async () => {
     store([line("7", 5)]);
     reloadCart();

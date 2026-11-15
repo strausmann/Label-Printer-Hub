@@ -1299,7 +1299,7 @@ msgstr "Schneidet das Band an, lässt aber das Trägerpapier ganz, damit ein Str
 #: src/shell/ThemeSwitch.tsx
 msgctxt "the chosen theme, after the word Theme"
 msgid "dark"
-msgstr "dunkel"
+msgstr "Dunkel"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Dark theme"
@@ -2114,7 +2114,7 @@ msgstr "Lizenz unbekannt"
 #: src/shell/ThemeSwitch.tsx
 msgctxt "the chosen theme, after the word Theme"
 msgid "light"
-msgstr "hell"
+msgstr "Hell"
 
 #: src/shell/ThemeSwitch.tsx
 msgid "Light theme"
@@ -4963,8 +4963,8 @@ msgid "Theme"
 msgstr "Design"
 
 #: src/shell/ThemeSwitch.tsx
-msgid "Theme: {chosen}"
-msgstr "Design: {chosen}"
+msgid "Theme: {chosen}. Switch to {next}"
+msgstr "Design: {chosen}. Wechseln zu {next}"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "There is no page printer yet. Add one under Settings › Printers."

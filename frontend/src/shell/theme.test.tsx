@@ -79,15 +79,31 @@ describe("ThemeSwitch", () => {
   it("the compact button on a narrow phone cycles system, light, dark and back", async () => {
     await renderSwitch();
     const cycle = () => screen.getByRole("button", { name: /^Theme: / });
-    expect(cycle()).toHaveAccessibleName("Theme: system");
+    expect(cycle()).toHaveAccessibleName("Theme: system. Switch to light");
     await userEvent.click(cycle());
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
-    expect(cycle()).toHaveAccessibleName("Theme: light");
+    expect(cycle()).toHaveAccessibleName("Theme: light. Switch to dark");
     await userEvent.click(cycle());
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(localStorage.getItem(THEME_KEY)).toBe("dark");
+    expect(cycle()).toHaveAccessibleName("Theme: dark. Switch to system");
     await userEvent.click(cycle());
     expect(document.documentElement).not.toHaveAttribute("data-theme");
     expect(screen.getByRole("radio", { name: "System theme" })).toBeChecked();
+  });
+
+  it("the compact button names the current and the next theme in German", async () => {
+    await initI18n("de");
+    render(
+      <I18nProvider i18n={i18n}>
+        <ThemeSwitch />
+      </I18nProvider>,
+    );
+    const cycle = () => screen.getByRole("button", { name: /^Design: / });
+    expect(cycle()).toHaveAccessibleName("Design: System. Wechseln zu Hell");
+    await userEvent.click(cycle());
+    expect(cycle()).toHaveAccessibleName("Design: Hell. Wechseln zu Dunkel");
+    await userEvent.click(cycle());
+    expect(cycle()).toHaveAccessibleName("Design: Dunkel. Wechseln zu System");
   });
 });

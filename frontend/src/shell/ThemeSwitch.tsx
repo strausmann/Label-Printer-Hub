@@ -32,14 +32,15 @@ export function ThemeSwitch() {
   };
 
   const chosen = word[choice];
+  const next = word[order[(order.indexOf(choice) + 1) % order.length]!];
 
   return (
     <>
-    {/* Below 400 px the three-way switch would push the other controls off the screen (320 px): one button cycles through it. */}
+    {/* Below 640 px the three-way switch would push the other controls off the screen (320 px): one button cycles through it. */}
     <Button
-      aria-label={t`Theme: ${chosen}`}
+      aria-label={t`Theme: ${chosen}. Switch to ${next}`}
       onPress={() => apply(order[(order.indexOf(choice) + 1) % order.length]!)}
-      className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-1 data-[focus-visible]:outline-link min-[400px]:hidden"
+      className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-1 data-[focus-visible]:outline-link sm:hidden"
     >
       {current.icon}
     </Button>
@@ -50,7 +51,7 @@ export function ThemeSwitch() {
       onChange={(value) => {
         if (isTheme(value)) apply(value);
       }}
-      className="hidden rounded-r2 bg-sunken p-0.5 min-[400px]:flex"
+      className="hidden rounded-r2 bg-sunken p-0.5 sm:flex"
     >
       {options.map((option) => (
         <Radio
