@@ -110,9 +110,12 @@ test.describe.serial("scan", () => {
     const jobs = (await (await page.request.get("/api/v1/jobs?limit=50")).json()) as Array<{ id: string }>;
     expect(jobs.length).toBeGreaterThan(0);
     const id = jobs[0]!.id;
-    await page.keyboard.press("/");
-    await search.fill(id.slice(0, 6));
+    // On a phone the search is a magnifier that opens a dialog (#320): a new field, so the code is typed again.
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.keyboard.press("/");
+    const phoneField = page.getByRole("dialog", { name: "Search" }).getByRole("combobox", { name: "Search" });
+    await expect(phoneField).toBeFocused();
+    await phoneField.fill(id.slice(0, 6));
     await expect(page.getByRole("option", { name: new RegExp(id.slice(0, 8)) })).toBeVisible();
     await shot(page, "task-14-search-phone.png");
     expect(await noSideScroll(page)).toBe(true);

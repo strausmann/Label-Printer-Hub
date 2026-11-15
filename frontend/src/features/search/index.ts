@@ -12,4 +12,5 @@ registerSearchSource(printersSource);
 registerSearchSource(jobsSource);
 
 export { GlobalSearch } from "./GlobalSearch";
+export { SearchDialog } from "./SearchDialog";
 export { registerSearchSource, type SearchResult, type SearchSource } from "./registry";

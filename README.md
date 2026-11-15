@@ -183,11 +183,11 @@ Grocy can send its own labels (products, stock entries, chores, batteries and re
 
 ### On a phone
 
-The same pages adapt to a phone held next to the printer. **Menu** at the top left opens every area, calibration, the settings and the integrations included.
+The same pages adapt to a phone held next to the printer. **Menu** at the top left opens every area, calibration, the settings and the integrations included. The magnifier at the top opens the search.
 
-| Overview | Printer details | Sheets | Menu |
-|:---:|:---:|:---:|:---:|
-| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png"><img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png"><img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png"><img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-menu-dark-phone.png"><img src="docs/screenshots/phone-menu-light-phone.png" alt="The phone menu with every area of the hub." width="240"></picture> |
+| Overview | Printer details | Sheets | Menu | Search |
+|:---:|:---:|:---:|:---:|:---:|
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png"><img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png"><img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png"><img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-menu-dark-phone.png"><img src="docs/screenshots/phone-menu-light-phone.png" alt="The phone menu with every area of the hub." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-search-dark-phone.png"><img src="docs/screenshots/phone-search-light-phone.png" alt="The search dialog on a phone, with a sheet type typed." width="240"></picture> |
 
 ## Roadmap
 

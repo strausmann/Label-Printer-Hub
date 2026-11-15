@@ -52,7 +52,10 @@ test.describe("integrations", () => {
     await expect(options.first()).toHaveText("Look up HH-AK0042 in Snipe-IT");
     await shot(page, "eint-search-desktop.png");
 
+    // On a phone the search is a magnifier that opens a dialog (#320).
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("dialog", { name: "Search" }).getByRole("combobox", { name: "Search" }).fill("HH-AK0042");
     await expect(options).toHaveCount(3);
     await shot(page, "eint-search-phone.png");
     expect(await noSideScroll(page)).toBe(true);

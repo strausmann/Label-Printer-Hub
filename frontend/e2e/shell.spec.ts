@@ -171,6 +171,31 @@ test.describe("shell", () => {
     });
   });
 
+  test("phone: the magnifier opens the search, Escape returns focus to it", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const header = page.locator("header");
+    await expect(header.getByRole("combobox", { name: "Search" })).toHaveCount(0);
+    const magnifier = header.getByRole("button", { name: "Search", exact: true });
+    await magnifier.click();
+    const dialog = page.getByRole("dialog", { name: "Search" });
+    await expect(dialog).toBeVisible();
+    const field = dialog.getByRole("combobox", { name: "Search" });
+    await expect(field).toBeFocused();
+    await field.fill("workshop");
+    await expect(dialog.getByRole("option").first()).toBeVisible();
+    // The first Escape closes the list, the second the dialog.
+    await page.keyboard.press("Escape");
+    await expect(dialog.getByRole("listbox")).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(magnifier).toBeFocused();
+    // The inline field is back from 1024 px.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(header.getByRole("combobox", { name: "Search" })).toBeVisible();
+    await expect(header.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
+  });
+
   // Behind an auth proxy the manifest must be fetched with the session cookie (#225); the gate for the
   // attribute is `src/manifest-link.test.ts`. Playwright cannot observe the cookie here: the request
   // that `Page.getAppManifest` triggers is browser-initiated and its headers come back without `Cookie`

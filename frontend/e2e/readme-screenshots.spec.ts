@@ -21,6 +21,7 @@ import { signInWith } from "./fixtures";
  *   jobs            jobs
  *   sheets          sheets
  *   phone-menu      (phone only, no website shot) the menu open as admin
+ *   phone-search    (phone only, no website shot) the search dialog with a sheet code typed
  *   sheet-archive   sheet-archive
  *   calibration     calibration
  *   calibration-guide  (phone only) the reading guide of step 2, opened
@@ -56,6 +57,7 @@ const TEXT = {
   en: {
     connected: /^Connected/,
     menu: "Menu",
+    search: "Search",
     overview: "Overview",
     skip: "Skip",
     calibration: "Calibration",
@@ -76,6 +78,7 @@ const TEXT = {
   de: {
     connected: /^Verbunden/,
     menu: "Menü",
+    search: "Suchen",
     overview: "Übersicht",
     skip: "Überspringen",
     calibration: "Kalibrierung",
@@ -215,6 +218,21 @@ const VIEWS: View[] = [
       await expect(page.getByRole("link", { name: "L4736-0001" })).toBeVisible();
       await page.getByRole("button", { name: text.menu, exact: true }).click();
       await expect(page.getByRole("dialog", { name: text.menu })).toBeVisible();
+    },
+  },
+  {
+    // The search dialog the magnifier opens on a phone, with a sheet type typed: the field and its results.
+    name: "phone-search",
+    phone: true,
+    only: "phone",
+    open: async (page, text) => {
+      await page.goto("/sheets");
+      await expect(page.getByRole("link", { name: "L4736-0001" })).toBeVisible();
+      await page.locator("header").getByRole("button", { name: text.search, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: text.search });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("combobox", { name: text.search }).fill("L4736");
+      await expect(dialog.getByRole("option").first()).toBeVisible();
     },
   },
   {

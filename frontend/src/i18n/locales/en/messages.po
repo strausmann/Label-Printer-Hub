@@ -1143,6 +1143,7 @@ msgstr "Clients"
 #: src/features/archive/ImportDialog.tsx
 #: src/features/notifications/NotificationCentre.tsx
 #: src/features/scan/CameraScanner.tsx
+#: src/features/search/SearchDialog.tsx
 #: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/shell/PhoneMenu.tsx
@@ -3742,7 +3743,8 @@ msgid "Scopes"
 msgstr "Scopes"
 
 #: src/features/archive/ArchivePage.tsx
-#: src/features/search/GlobalSearch.tsx
+#: src/features/search/SearchDialog.tsx
+#: src/features/search/useSearch.ts
 msgid "Search"
 msgstr "Search"
 
@@ -3750,7 +3752,7 @@ msgstr "Search"
 msgid "Search by code"
 msgstr "Search by code"
 
-#: src/features/search/GlobalSearch.tsx
+#: src/features/search/SearchResults.tsx
 msgid "Search results"
 msgstr "Search results"
 

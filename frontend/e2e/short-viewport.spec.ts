@@ -132,6 +132,19 @@ test.describe("short viewport (on-screen keyboard)", () => {
   const keyboard = async (mode: Mode) => {
     if (mode.visible) await coverWithKeyboard(page, mode.visible);
   };
+  /** Below 1024 px the search is a magnifier that opens a dialog (#320); from there on it is the inline field. */
+  const isPhone = (mode: Mode) => mode.width < 1024;
+  const searchField = () => page.getByRole("combobox", { name: "Search" });
+  /** Puts the focus into the search field: the inline one, or the one in the dialog the magnifier opens. */
+  async function focusSearch(mode: Mode) {
+    if (isPhone(mode)) {
+      await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
+      await expect(searchField()).toBeFocused();
+    } else {
+      await searchField().click();
+    }
+  }
 
   async function openAddSheet() {
     await page.goto("/sheets");
@@ -151,10 +164,10 @@ test.describe("short viewport (on-screen keyboard)", () => {
     const cart = header.getByRole("link", { name: "Cart, 120 items" });
     await expect(cart).toBeVisible();
     await expect(cart).toContainText("99+");
-    // Below 1024 px About, the theme and Sign out live in the menu (#319); the top bar keeps Menu, Search, the bell and the cart.
+    // Below 1024 px About, the theme and Sign out live in the menu (#319); the top bar keeps Menu, the Search magnifier, the bell and the cart.
     const controls: Array<[string, Locator]> = [
       ["the menu button", header.getByRole("button", { name: "Menu", exact: true })],
-      ["the search field", header.getByRole("combobox", { name: "Search" })],
+      ["the search button", header.getByRole("button", { name: "Search", exact: true })],
       ["the bell", header.getByRole("button", { name: /^Notifications/ })],
       ["the cart", cart],
     ];
@@ -284,9 +297,10 @@ test.describe("short viewport (on-screen keyboard)", () => {
       });
 
       test("Global search: the field and the first result are in sight", async () => {
+        test.skip(isPhone(mode), "a phone has the search dialog, see the next case");
         await prepare(mode);
         await page.goto("/sheets");
-        const search = page.getByRole("combobox", { name: "Search" });
+        const search = searchField();
         await search.click();
         await keyboard(mode);
         await page.keyboard.type("L4736");
@@ -296,12 +310,40 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expectInSight(page, first, "the first result");
       });
 
+      test("Search dialog: the field, the first result and the close button are in sight", async () => {
+        test.skip(!isPhone(mode), "a wide screen keeps the inline field, see the case above");
+        await prepare(mode);
+        await page.goto("/sheets");
+        await focusSearch(mode);
+        await keyboard(mode);
+        await page.keyboard.type("L4736");
+        const dialog = page.getByRole("dialog", { name: "Search" });
+        const first = page.getByRole("listbox", { name: "Search results" }).getByRole("option").first();
+        await expect(first).toBeVisible();
+        await expectInSight(page, searchField(), "the search field");
+        await expectInSight(page, first, "the first result");
+        await expectInSight(page, dialog.getByRole("button", { name: "Close" }), "the close button");
+        await expectInSight(page, dialog, "the dialog");
+        // The first Escape closes the results, the second the dialog; the magnifier has the focus again.
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("listbox")).toHaveCount(0);
+        await expect(dialog).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(page.locator("header").getByRole("button", { name: "Search", exact: true })).toBeFocused();
+      });
+
       test("Notifications: the actions and the first entry are in sight", async () => {
         await prepare(mode);
         await page.goto("/sheets");
         // The search field has the focus and the keyboard is up (a covered mode shrinks the visual viewport only).
-        await page.getByRole("combobox", { name: "Search" }).click();
+        await focusSearch(mode);
         await keyboard(mode);
+        // On a phone the search dialog covers the bell: closing it leaves the keyboard-sized screen as it is.
+        if (isPhone(mode)) {
+          await page.keyboard.press("Escape");
+          await expect(page.getByRole("dialog")).toBeHidden();
+        }
         await page.getByRole("button", { name: /^Notifications/ }).click();
         const panel = dialogOf(page);
         await expect(panel).toBeVisible();
@@ -320,7 +362,7 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.goto("/sheets");
         await putInCart(page, 3);
         await page.reload();
-        await page.getByRole("combobox", { name: "Search" }).click();
+        await focusSearch(mode);
         await keyboard(mode);
         const cart = page.locator("header").getByRole("link", { name: "Cart, 3 items" });
         await expect(cart).toBeVisible();
@@ -659,8 +701,7 @@ test.describe("short viewport (on-screen keyboard)", () => {
         test.skip(mode.width > 1000, "the results hang from the top bar on a wide screen");
         await prepare(mode);
         await page.goto("/sheets");
-        const search = page.getByRole("combobox", { name: "Search" });
-        await search.click();
+        await focusSearch(mode);
         await page.evaluate(([h]) => (window as unknown as { __keyboard(h: number, t: number): void }).__keyboard(h!, 0), [PAN.height]);
         await page.keyboard.type("L4736");
         const results = page.getByRole("listbox", { name: "Search results" });

@@ -33,7 +33,7 @@ export function TopBar({ livePaused = false }: { livePaused?: boolean }) {
         <span>{t`Scan`}</span>
       </Link>
 
-      <div className="ml-auto flex items-center sm:gap-1">
+      <div className="flex items-center sm:gap-1 lg:ml-auto">
         <NotificationCentre livePaused={livePaused} />
         <CartButton />
         <Link

@@ -140,4 +140,13 @@ describe("global search", () => {
     expect(other).toHaveValue("/");
     other.remove();
   });
+
+  it("slash focuses the inline field on desktop and opens no dialog", async () => {
+    mockApi({});
+    await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
+    await userEvent.keyboard("/");
+    expect(field()).toHaveFocus();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+  });
 });

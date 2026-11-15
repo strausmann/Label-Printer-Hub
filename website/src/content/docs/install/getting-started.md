@@ -110,7 +110,7 @@ Browsers allow installing and camera access only on a secure origin: serve the h
 
 The app has a **Scan** shortcut on the home-screen icon. Set `LABELYARD_PUBLIC_URL` to the address people open; with an `https` value the session cookies are `Secure`, so a browser will not send them to a plain-`http` name of the same hub.
 
-On the phone, **Menu** at the top left opens every area: calibration, settings and the integrations.
+On the phone, **Menu** at the top left opens every area: calibration, settings and the integrations. The magnifier at the top opens the search.
 
 Pull down at the top of a page to reload it, in the browser and in the installed app; or use **Menu > Reload**.
 
