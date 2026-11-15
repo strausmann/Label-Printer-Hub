@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.6.1](https://github.com/strausmann/labelyard/compare/v1.6.0...v1.6.1) (2026-11-15)
+
+### Bug Fixes
+
+* **api:** a non-ASCII API key gets 401, not 500, on webhooks ([#357](https://github.com/strausmann/labelyard/issues/357)) ([fd42a9d](https://github.com/strausmann/labelyard/commit/fd42a9d2f24cab1dd30f7ad7ca8a6b5aaef2aa25)), closes [#301](https://github.com/strausmann/labelyard/issues/301)
+
 ## [1.6.0](https://github.com/strausmann/Label-Printer-Hub/compare/v1.5.2...v1.6.0) (2026-11-15)
 
 ### Features
