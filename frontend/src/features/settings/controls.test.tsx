@@ -123,3 +123,28 @@ describe("SelectField without a selected option", () => {
     expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Tray A");
   });
 });
+
+describe("SelectField list placement", () => {
+  it("opens its list above the trigger when the visible area is short", async () => {
+    await initI18n("en");
+    const view = Object.assign(new EventTarget(), { height: 400, offsetTop: 0 });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: view });
+    try {
+      render(
+        <I18nProvider i18n={i18n}>
+          <SelectField label="Printer" value="a" onChange={() => {}} options={[{ id: "a", label: "Alpha" }, { id: "b", label: "Beta" }]} />
+        </I18nProvider>,
+      );
+      const trigger = screen.getByRole("button", { name: /Printer/ });
+      // Sits at 330-374 in a visible area of 400: 26 px below it, 318 above.
+      trigger.getBoundingClientRect = () => ({ top: 330, bottom: 374, left: 0, right: 200, width: 200, height: 44, x: 0, y: 330, toJSON() {} });
+      await userEvent.click(trigger);
+      const popover = document.querySelector<HTMLElement>('[data-trigger="Select"]')!;
+      expect(popover).not.toBeNull();
+      expect(popover.getAttribute("data-placement")).toBe("top");
+      expect(parseFloat(popover.style.maxHeight)).toBeLessThanOrEqual(318);
+    } finally {
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: undefined });
+    }
+  });
+});

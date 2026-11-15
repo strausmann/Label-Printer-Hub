@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useLingui } from "@lingui/react/macro";
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Button,
   Checkbox,
@@ -25,6 +25,7 @@ import {
   TextField,
 } from "react-aria-components";
 import { FIELD } from "../../shell/SignIn";
+import { useListRoom } from "../../shell/useListRoom";
 
 const FOCUS =
   "data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link";
@@ -193,16 +194,27 @@ export function SelectField({
   /** Shown while no option is selected. */
   placeholder?: string;
 }) {
+  // The list is placed against the visible area (see useListRoom): React Aria alone measures against the page and would
+  // run the list under the on-screen keyboard or the tab bar.
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const { room, measure } = useListRoom(trigger, open);
   return (
     <Select
       selectedKey={value}
       onSelectionChange={(key) => onChange(String(key))}
+      isOpen={open}
+      onOpenChange={(isOpen) => {
+        if (isOpen) measure();
+        setOpen(isOpen);
+      }}
       isDisabled={isDisabled}
       isInvalid={isInvalid}
       className="flex min-w-0 flex-col gap-1.5"
     >
       <Label className={LABEL}>{label}</Label>
       <Button
+        ref={trigger}
         className={`press flex h-11 w-full items-center justify-between gap-2 rounded-r2 border border-line-strong bg-sunken px-3 text-left text-ink data-[disabled]:opacity-60 data-[invalid]:border-bad ${FOCUS}`}
       >
         {/* One line, cut at the end: a long value (a 64-character key) must not outgrow the 44 px button. The list shows it in full. */}
@@ -215,7 +227,7 @@ export function SelectField({
           <path d="M2 4.5 6 8.5 10 4.5" />
         </svg>
       </Button>
-      <Popover className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
+      <Popover placement={room.placement} maxHeight={room.maxHeight} shouldFlip={false} offset={4} className="flex w-(--trigger-width) origin-(--trigger-anchor-point) flex-col rounded-r2 border border-line-strong bg-surface p-1 shadow-lg data-[entering]:animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
         {/* The popover is as tall as the room beside the trigger (it sets max-height); a long list scrolls inside it instead of covering the trigger. */}
         <ListBox className="max-h-[inherit] overflow-y-auto overscroll-contain outline-none">
           {grouped(options).map((group, index) =>

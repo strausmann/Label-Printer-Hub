@@ -394,6 +394,26 @@ test.describe("short viewport (on-screen keyboard)", () => {
         // Nothing was saved: the next test loads the page again with the stored values.
       });
 
+      test("Select: with the keyboard up, a select near the bottom shows its trigger and first option in sight", async () => {
+        test.skip(!mode.visible, "the keyboard covers the screen only in the covered modes");
+        await prepare(mode);
+        await page.goto("/settings/integrations");
+        const panel = page.getByRole("group", { name: "Grocy labels" });
+        const printer = panel.getByRole("group", { name: "Recipe" }).getByRole("button", { name: /Printer$/ });
+        await printer.scrollIntoViewIfNeeded();
+        await coverWithKeyboard(page, mode.visible!);
+        // Place the trigger deterministically just above the keyboard, so the list has to open upwards.
+        const placed = await printer.boundingBox();
+        const view = await visible(page);
+        await page.evaluate((dy) => window.scrollBy(0, dy), placed!.y + placed!.height - (view.bottom - 10));
+        // A mispositioned run fails here, not later.
+        await expectWithin(printer, view.bottom - 60, view.bottom, "the Printer select");
+        await printer.click();
+        await expectInSight(page, printer, "the Printer select");
+        await expectInSight(page, page.locator('[role="option"]').first(), "the first printer option");
+        await page.keyboard.press("Escape");
+      });
+
       /** New sheet with a type chosen: the tallest state of the form, with the keyboard still open. */
       async function openTallAddSheet() {
         const dialog = await openAddSheet();
