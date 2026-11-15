@@ -114,6 +114,8 @@ Auf dem Handy öffnet **Menü** oben links jeden Bereich: Kalibrierung, Einstell
 
 Ziehe oben auf einer Seite nach unten, um sie neu zu laden, im Browser und in der installierten App; oder nimm **Menü > Neu laden**.
 
+In der installierten App hält sich die Geste zurück: Sie tut nichts unterhalb des Seitenanfangs, in einer scrollbaren Liste, hinter einem offenen Dialog, in einem Textfeld oder solange noch eine Änderung gespeichert wird. In einem Browser-Tab gilt stattdessen das eigene Neuladen des Browsers, und diese Schutzregeln greifen dort nicht: Wer dort nach unten zieht, kann die Seite neu laden, während eine Änderung noch gespeichert wird. **Menü > Neu laden** wartet, bis das Speichern fertig ist.
+
 ## 5. Webhooks: drucken, wenn etwas passiert
 
 Der Hub nimmt Ereignisse von Spoolman und Grocy an und druckt das Etikett des Eintrags, den das Ereignis nennt.

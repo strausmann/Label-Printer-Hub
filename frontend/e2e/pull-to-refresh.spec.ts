@@ -98,6 +98,43 @@ test.describe.serial("pull to refresh", () => {
     expect(await markerSurvives(app.page)).toBe(true);
   });
 
+  test("installed app: a pull with the menu open does not reload", async () => {
+    await app.page.goto("/");
+    await app.page.getByRole("button", { name: "Menu", exact: true }).click();
+    await expect(app.page.getByRole("dialog", { name: "Menu" })).toBeVisible();
+    await mark(app.page);
+    await drag(app.cdp, 340, 200, 200); // on the dim area beside the sheet
+    await app.page.waitForTimeout(800);
+    expect(await markerSurvives(app.page)).toBe(true);
+    await app.page.keyboard.press("Escape");
+  });
+
+  test("installed app: a pull while a write is in flight does not reload", async () => {
+    await app.page.goto("/sheets/L4736-0001");
+    // Hold the write on its way: it is still pending when the finger lets go. It never reaches the hub.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await app.page.route("**/api/v1/**", async (route) => {
+      if (route.request().method() === "GET") return route.continue();
+      await held;
+      await route.abort().catch(() => {}); // the test may be over by now
+    });
+    await app.page.getByRole("button", { name: "Mark cells as used" }).click();
+    await app.page.getByRole("gridcell", { name: /^Cell 48,/ }).click();
+    await app.page.getByRole("textbox", { name: /^Purpose/ }).fill("e2e pull probe");
+    await app.page.getByRole("button", { name: "Mark 1 cell as used" }).click();
+    await expect(app.page.locator('[role="dialog"], [role="alertdialog"]')).toHaveCount(0); // so the dialog guard is not what holds it
+    // Marking a cell scrolled the page down; the pull must start at the top, so that only the pending write can stop it.
+    await app.page.evaluate(() => window.scrollTo(0, 0));
+    await expect.poll(() => app.page.evaluate(() => window.scrollY)).toBe(0);
+    await mark(app.page);
+    await drag(app.cdp, 195, 30, 200);
+    await app.page.waitForTimeout(800);
+    expect(await markerSurvives(app.page)).toBe(true);
+    release();
+    await app.page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
   test("browser tab: the own gesture is off", async () => {
     await tab.page.goto("/");
     await mark(tab.page);

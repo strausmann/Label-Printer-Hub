@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { useLingui } from "@lingui/react/macro";
 import { useIsMutating } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { canStartPull, insideInnerScroller, isStandalone, isTextField, lockDirection, PULL_THRESHOLD, pullDistance, pullOutcome, reloadApp } from "./pullToRefresh";
 
 type Phase = "idle" | "undecided" | "pulling";
+const dialogOpen = () => document.querySelector('[role="dialog"], [role="alertdialog"]') !== null;
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
 /**
@@ -16,6 +18,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
  * text field or while a write is in flight, and a first move that is more sideways than down is left alone for good.
  */
 export function PullToRefresh() {
+  const { t } = useLingui();
   const [standalone] = useState(() => isStandalone());
   const pending = useIsMutating();
   const pendingRef = useRef(pending);
@@ -44,7 +47,7 @@ export function PullToRefresh() {
       const ok = canStartPull({
         scrollY: window.scrollY,
         standalone: true,
-        dialogOpen: document.querySelector('[role="dialog"], [role="alertdialog"]') !== null,
+        dialogOpen: dialogOpen(),
         textFieldFocused: isTextField(document.activeElement),
         insideScroller: insideInnerScroller(event.target instanceof Element ? event.target : null, root),
         pendingWrites: pendingRef.current,
@@ -78,7 +81,8 @@ export function PullToRefresh() {
       if (phase !== "pulling") return reset();
       const outcome = pullOutcome(distance);
       phase = "idle";
-      if (outcome === "reload") {
+      // A write that started during the pull (or a dialog that opened) is as good a reason as one that was there before.
+      if (outcome === "reload" && pendingRef.current === 0 && !dialogOpen()) {
         setPull({ distance, reloading: true });
         reloadApp();
       } else {
@@ -103,37 +107,56 @@ export function PullToRefresh() {
   const visible = pull.distance > 0 || pull.reloading;
   const armed = pull.distance >= PULL_THRESHOLD;
   const still = reducedMotion();
-  // Follows the finger from above the edge; under reduced motion it only fades in place.
-  const travel = still ? 0 : pull.distance - 44;
-  const progress = Math.min(1, pull.distance / PULL_THRESHOLD);
+  // With motion the disc follows the finger from above the edge. Without, it fades in below the top bar, clear of the
+  // search field, instead of popping up on top of it.
+  const travel = pull.distance - 44;
   return (
-    <div
-      aria-hidden="true"
-      data-testid="pull-indicator"
-      data-armed={armed ? "true" : "false"}
-      data-reloading={pull.reloading ? "true" : undefined}
-      className="pointer-events-none fixed inset-x-0 z-40 flex justify-center"
-      style={{ top: "env(safe-area-inset-top)", opacity: visible ? 1 : 0, transform: still ? undefined : `translateY(${travel}px)` }}
-    >
-      <span
-        className={`flex size-11 items-center justify-center rounded-full border border-line bg-surface shadow-md transition-colors duration-150 ${armed ? "text-link" : "text-ink-3"}`}
+    <>
+      <div role="status" className="sr-only">
+        {pull.reloading ? t`Reloading…` : armed ? t`Release to reload` : pull.distance > 0 ? t`Pull down to reload` : ""}
+      </div>
+      <div
+        aria-hidden="true"
+        data-testid="pull-indicator"
+        data-armed={armed ? "true" : "false"}
+        data-placement={still ? "below-bar" : "edge"}
+        data-reloading={pull.reloading ? "true" : undefined}
+        className="pointer-events-none fixed inset-x-0 z-40 flex justify-center transition-opacity duration-150"
+        style={{
+          top: still ? "calc(env(safe-area-inset-top) + 4.5rem)" : "env(safe-area-inset-top)",
+          opacity: visible ? 1 : 0,
+          transform: still ? undefined : `translateY(${travel}px)`,
+        }}
       >
-        <svg
-          viewBox="0 0 24 24"
-          width="22"
-          height="22"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={pull.reloading ? "animate-spin motion-reduce:animate-none" : undefined}
-          style={still || pull.reloading ? undefined : { transform: `rotate(${progress * 270}deg)` }}
+        {/* Armed is told by shape, not by colour alone: the arrow down becomes the reload arrows, and the disc grows. */}
+        <span
+          data-icon={pull.reloading ? "reloading" : armed ? "reload" : "arrow"}
+          className={`flex size-11 items-center justify-center rounded-full border bg-surface shadow-lg transition-[transform,color,border-color] duration-150 ${
+            armed || pull.reloading ? "scale-110 border-link text-link" : "border-line-strong text-ink-3"
+          }`}
         >
-          <path d="M20 12a8 8 0 1 1-2.6-5.9" />
-          <path d="M20 4v5h-5" />
-        </svg>
-      </span>
-    </div>
+          <svg
+            viewBox="0 0 24 24"
+            width="22"
+            height="22"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={pull.reloading ? "animate-spin motion-reduce:animate-none" : undefined}
+          >
+            {armed || pull.reloading ? (
+              <>
+                <path d="M20 12a8 8 0 1 1-2.6-5.9" />
+                <path d="M20 4v5h-5" />
+              </>
+            ) : (
+              <path d="M12 5v14M6 13l6 6 6-6" />
+            )}
+          </svg>
+        </span>
+      </div>
+    </>
   );
 }

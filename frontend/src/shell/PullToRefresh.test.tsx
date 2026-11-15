@@ -1,15 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { I18nProvider } from "@lingui/react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as Actual from "./pullToRefresh";
+import { i18n, initI18n } from "../i18n";
 import { PullToRefresh } from "./PullToRefresh";
 import * as ptr from "./pullToRefresh";
 
 vi.mock("./pullToRefresh", async (importActual) => ({ ...(await importActual<typeof Actual>()), reloadApp: vi.fn() }));
+
+beforeAll(() => initI18n("en"));
 
 let standalone = true;
 let reduced = false;
@@ -46,10 +50,12 @@ function Holder({ children }: { children?: React.ReactNode }) {
 function Mount({ children }: { children?: React.ReactNode }) {
   const [client] = useState(() => new QueryClient());
   return (
-    <QueryClientProvider client={client}>
-      <PullToRefresh />
-      <Holder>{children}</Holder>
-    </QueryClientProvider>
+    <I18nProvider i18n={i18n}>
+      <QueryClientProvider client={client}>
+        <PullToRefresh />
+        <Holder>{children}</Holder>
+      </QueryClientProvider>
+    </I18nProvider>
   );
 }
 
@@ -196,5 +202,70 @@ describe("PullToRefresh", () => {
     standalone = false;
     render(<Mount />);
     expect(document.documentElement).not.toHaveAttribute("data-standalone");
+  });
+
+  it("a write that starts during the pull cancels the reload", async () => {
+    function Writer() {
+      const m = useMutation({ mutationFn: () => new Promise<void>(() => {}) });
+      return (
+        <>
+          <button onClick={() => m.mutate()}>save</button>
+          {m.isPending && <span>pending</span>}
+        </>
+      );
+    }
+    render(
+      <Mount>
+        <Writer />
+      </Mount>,
+    );
+    touch("touchstart", [[100, 100]]);
+    touch("touchmove", [[100, 160]]);
+    touch("touchmove", [[100, 300]]);
+    expect(indicator()).toHaveAttribute("data-armed", "true");
+    await act(async () => {
+      screen.getByText("save").click();
+    });
+    await waitFor(() => expect(screen.getByText("pending")).toBeInTheDocument());
+    touch("touchend", []);
+    expect(ptr.reloadApp).not.toHaveBeenCalled();
+  });
+
+  it("a dialog that opens during the pull cancels the reload", () => {
+    render(<Mount />);
+    touch("touchstart", [[100, 100]]);
+    touch("touchmove", [[100, 160]]);
+    touch("touchmove", [[100, 300]]);
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    document.body.append(dialog);
+    touch("touchend", []);
+    dialog.remove();
+    expect(ptr.reloadApp).not.toHaveBeenCalled();
+  });
+
+  it("armed is told by shape and by words, not by colour alone", () => {
+    render(<Mount />);
+    touch("touchstart", [[100, 100]]);
+    touch("touchmove", [[100, 160]]);
+    touch("touchmove", [[100, 200]]);
+    const disc = indicator()!.firstElementChild!;
+    expect(disc).toHaveAttribute("data-icon", "arrow");
+    expect(screen.getByRole("status")).toHaveTextContent("Pull down to reload");
+    touch("touchmove", [[100, 300]]);
+    expect(disc).toHaveAttribute("data-icon", "reload");
+    expect(screen.getByRole("status")).toHaveTextContent("Release to reload");
+  });
+
+  it("under reduced motion the indicator sits clear of the top bar and fades", () => {
+    reduced = true;
+    render(<Mount />);
+    expect(indicator()).toHaveAttribute("data-placement", "below-bar");
+    expect(indicator()!.className).toContain("transition-opacity");
+  });
+
+  it("with motion the indicator starts at the edge", () => {
+    render(<Mount />);
+    expect(indicator()).toHaveAttribute("data-placement", "edge");
   });
 });

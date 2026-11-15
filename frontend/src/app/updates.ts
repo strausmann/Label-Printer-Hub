@@ -249,6 +249,11 @@ export function noteServerVersion(serverVersion: string | null | undefined): voi
   }
 }
 
+/** Is a new version waiting (the state the "New version available" banner shows)? */
+export function updateIsWaiting(): boolean {
+  return waitingWorker || versionMismatch;
+}
+
 export function useUpdating(): boolean {
   return useSyncExternalStore(
     (listener) => {

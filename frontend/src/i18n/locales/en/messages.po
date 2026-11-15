@@ -3305,6 +3305,10 @@ msgstr "Product ID or barcode."
 msgid "Public URL"
 msgstr "Public URL"
 
+#: src/shell/PullToRefresh.tsx
+msgid "Pull down to reload"
+msgstr "Pull down to reload"
+
 #: src/features/sheets/SheetDetail.tsx
 msgid "Purpose (optional)"
 msgstr "Purpose (optional)"
@@ -3439,6 +3443,10 @@ msgstr "Rectangle"
 msgid "Red"
 msgstr "Red"
 
+#: src/shell/PullToRefresh.tsx
+msgid "Release to reload"
+msgstr "Release to reload"
+
 #: src/shell/PhoneMenu.tsx
 #: src/shell/UpdatePrompt.tsx
 msgid "Reload"
@@ -3447,6 +3455,10 @@ msgstr "Reload"
 #: src/features/scan/CameraScanner.tsx
 msgid "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
 msgstr "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
+
+#: src/shell/PullToRefresh.tsx
+msgid "Reloading…"
+msgstr "Reloading…"
 
 #: src/features/calibration/ReadingsHelper.tsx
 #: src/features/lookup/CartPage.tsx

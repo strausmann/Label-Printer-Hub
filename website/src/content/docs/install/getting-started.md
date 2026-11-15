@@ -114,6 +114,8 @@ On the phone, **Menu** at the top left opens every area: calibration, settings a
 
 Pull down at the top of a page to reload it, in the browser and in the installed app; or use **Menu > Reload**.
 
+In the installed app the hub keeps the gesture out of the way: it does nothing below the top of a page, inside a list that scrolls, behind an open dialog, in a text field or while a change is still being saved. In a browser tab the browser's own pull to refresh applies instead, and these safeguards do not: pulling down there can reload the page while a change is still being saved. **Menu > Reload** waits for the save to finish.
+
 ## 5. Webhooks: print when something happens
 
 The hub accepts events from Spoolman and Grocy and prints the label of the item the event names.

@@ -9,6 +9,8 @@
  * overscroll there. Everything that decides is pure and lives here; `PullToRefresh.tsx` only wires events to it.
  */
 
+import { applyUpdate, updateIsWaiting } from "../app/updates";
+
 /** Distance of the indicator (px, after resistance) at which letting go reloads. */
 export const PULL_THRESHOLD = 72;
 /** The indicator never travels further than this. */
@@ -74,7 +76,13 @@ export function isTextField(el: Element | null): boolean {
   return !!editable && editable.getAttribute("contenteditable") !== "false";
 }
 
-/** The one place the gesture and the menu entry both end in. */
+/**
+ * The one place the gesture and the menu entry both end in (and the update notice, #354, will too).
+ *
+ * With a new version waiting this applies it: a plain reload would be answered by the old service worker from its
+ * precache and show the old app again (see `applyUpdate`). Without one it is a plain reload.
+ */
 export function reloadApp(): void {
-  window.location.reload();
+  if (updateIsWaiting()) void applyUpdate();
+  else window.location.reload();
 }
