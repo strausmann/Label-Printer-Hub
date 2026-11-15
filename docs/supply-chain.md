@@ -27,7 +27,7 @@ receive the same multi-arch image (`linux/amd64`, `linux/arm64`).
 | Backend licence list | Python packages and bundled fonts, with licence and text | `/licenses/backend.json` of the running app; About page | in the image from 1.6.0, generated at build time; the About page says the list is missing in builds without it |
 | BuildKit SBOM (SPDX) | Attached to each platform image by the build | registry, read without pulling | published with every image; see the notes below |
 | BuildKit provenance | How and where the image was built | registry, read without pulling | published with every image, `mode=max` set explicitly by the image workflow |
-| Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | attached to every release from 1.6.1 on |
+| Image SBOM as a release asset | CycloneDX document of the whole image, `labelyard-<version>.cdx.json` | the GitHub release | attached by the release workflow before the release is published; 1.6.0 has none |
 | SPDX headers in every own file | `reuse lint` clean | repository | checked in CI on every pull request |
 | Image signature | Keyless cosign signature of the image index | registry, next to the image | from release 1.6.0 and its previews; see "Verify the signature" |
 
@@ -188,10 +188,10 @@ Where a package ships no text, one kept under `frontend/licenses/` is used (the 
 
 ## The release asset
 
-From release 1.6.1 on, every GitHub release has one asset, `labelyard-<version>.cdx.json`: a CycloneDX
-document of the image of that release, generated from the published image. It is built by the image workflow
-and attached by the release workflow to the draft release. Releases are immutable once published, so the draft
-is published only after the asset is attached. Release 1.6.0 has no asset; use the registry commands above for it. A preview build
+The release workflow attaches `labelyard-<version>.cdx.json` to the release before publishing it: a CycloneDX
+document of the image of that release, generated from the published image by the image workflow. Releases are
+immutable once published, so the release stays a draft until the asset is attached. 1.6.0 has no asset; its
+images carry the SBOM as an attestation, see the registry commands above. A preview build
 (`<version>-rc.N`) has no release and therefore no asset; use the registry commands above for it (GHCR only, see above).
 
 ## The lists at `/about`

@@ -157,18 +157,20 @@ jobs:
       id-token: write
 
   # semantic-release has already pushed the tag and created the draft release
-  # when the image jobs run, so a failed image build leaves a tag and a draft
-  # without images; publish-release is skipped, nothing is published. The
-  # images job failing already fails the run; this job makes the gap readable:
-  # which version is missing and how to finish it. The rebuild reruns the failed
-  # jobs of this run, which keeps refs/heads/main as the ref, so the images are
-  # signed and release-sbom and publish-release run again. The version and the
-  # run id come in through env and are validated before they are printed. No
-  # secret is touched.
-  images-missing:
-    name: Report missing images
-    needs: [release, images]
-    if: always() && needs.release.outputs.new-release-published == 'true' && !inputs.dry_run && needs.images.result != 'success'
+  # when the later jobs run. If any of images, release-sbom or publish-release
+  # does not succeed, publish-release has not published, and the tag and the
+  # draft are left behind. A failed job already fails the run; this job makes
+  # the leftover draft readable: which version, which job, and how to finish it.
+  # It fires on every path that ends without a published release, not only on
+  # failed images, so a stuck draft is never signalled only by a red job. The
+  # rebuild reruns the failed jobs of this run, which keeps refs/heads/main as
+  # the ref, so the images are signed and the later jobs run again. The version
+  # and the run id come in through env and are validated before they are
+  # printed. No secret is touched.
+  release-unfinished:
+    name: Report unpublished release
+    needs: [release, images, release-sbom, publish-release]
+    if: always() && needs.release.outputs.new-release-published == 'true' && !inputs.dry_run && needs.publish-release.result != 'success'
     runs-on: ubuntu-24.04
     permissions: {}
     steps:
@@ -176,6 +178,8 @@ jobs:
         env:
           VERSION: ${{ needs.release.outputs.new-release-version }}
           IMAGES_RESULT: ${{ needs.images.result }}
+          SBOM_RESULT: ${{ needs.release-sbom.result }}
+          PUBLISH_RESULT: ${{ needs.publish-release.result }}
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -186,15 +190,24 @@ jobs:
           fi
           VERSION="${VERSION#v}"
           {
-            echo "## Release images missing: ${VERSION}"
+            echo "## Release not published: ${VERSION}"
             echo
-            echo "The tag \`v${VERSION}\` and a draft GitHub Release exist, but the image jobs ended with \`${IMAGES_RESULT}\`."
-            echo "The release was not published. GHCR and Docker Hub may still carry the previous version."
+            echo "The tag \`v${VERSION}\` and a draft GitHub Release exist, but the release was not published."
+            echo
+            echo "| Job | Result |"
+            echo "|---|---|"
+            echo "| Release images | \`${IMAGES_RESULT}\` |"
+            echo "| Release SBOM | \`${SBOM_RESULT}\` |"
+            echo "| Publish release | \`${PUBLISH_RESULT}\` |"
+            echo
+            if [ "$IMAGES_RESULT" != "success" ]; then
+              echo "GHCR and Docker Hub may still carry the previous version."
+            fi
             echo "A later release run does not publish this draft; it stays a draft until it is finished."
             echo
-            echo "Rerun the failed jobs of this run. That reruns the images, the release SBOM and the"
-            echo "publish job on refs/heads/main, so the images are signed, the SBOM is attached to the"
-            echo "draft and the release is published:"
+            echo "Rerun the failed jobs of this run. That reruns the failed jobs and the ones after them"
+            echo "on refs/heads/main, so the images are signed, the SBOM is attached to the draft and the"
+            echo "release is published:"
             echo
             echo '```sh'
             if [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
@@ -209,7 +222,8 @@ jobs:
             echo "the SBOM from the new run's \`release-sbom\` artifact to the draft by hand, then publish"
             echo "the draft (publishing locks it: attach the SBOM first). Caution: this dispatch"
             echo "moves \`latest\`, \`X.Y\` and \`X\` to ${VERSION}; use it only if ${VERSION} is the newest"
-            echo "stable release, otherwise re-point those tags afterwards:"
+            echo "stable release, otherwise re-point those tags afterwards. Pass \`--latest\` only if"
+            echo "${VERSION} is the highest published version, otherwise \`--latest=false\`:"
             echo
             echo '```sh'
             echo "gh workflow run docker-publish.yml --ref main -f tag=${VERSION}"
@@ -218,7 +232,7 @@ jobs:
             echo "gh release edit v${VERSION} --draft=false --latest"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::error::Release images for ${VERSION} were not published; see the step summary for the rebuild command"
+          echo "::error::Release ${VERSION} was not published (images: ${IMAGES_RESULT}, SBOM: ${SBOM_RESULT}, publish: ${PUBLISH_RESULT}); see the step summary"
 
   # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced to
   # the DRAFT release (`gh release` finds a draft by its pending tag). A draft is
@@ -266,9 +280,10 @@ jobs:
   # Publishes the draft once the images and the SBOM asset are in place. Runs
   # only when every job before it succeeded (no always()), so a failed image or
   # SBOM job leaves the draft unpublished. Publishing locks the tag and the
-  # assets (immutable releases), so the asset is checked first. `--latest`
-  # mirrors what @semantic-release/github sends for a release from main: the
-  # release guard only admits the next version, so it is the newest one.
+  # assets (immutable releases), so the asset is checked first. The release
+  # becomes "Latest" only when no published release has a higher version:
+  # a first run is always the newest, but `gh run rerun --failed` of an older
+  # run can publish its draft after a newer release exists.
   publish-release:
     name: Publish release
     needs: [release, images, release-sbom]
@@ -306,7 +321,19 @@ jobs:
               exit 1
               ;;
           esac
-          gh release edit "v${VERSION}" --draft=false --latest
+          # Highest published stable version; drafts are left out. A pre-release
+          # (version with `-`) is never latest.
+          highest=$(gh api --paginate "repos/${GH_REPO}/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | .tag_name' \
+            | sed -n 's/^v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$/\1/p' \
+            | sort -V | tail -n 1)
+          if [[ "$VERSION" != *-* ]] && { [ -z "$highest" ] || [ "$(printf '%s\n%s\n' "$highest" "$VERSION" | sort -V | tail -n 1)" = "$VERSION" ]; }; then
+            latest=--latest
+          else
+            latest=--latest=false
+            echo "::notice::v${VERSION} is not the highest published version (${highest:-none}); not marked as latest"
+          fi
+          gh release edit "v${VERSION}" --draft=false "$latest"
           published=$(gh api "repos/${GH_REPO}/releases/tags/v${VERSION}" --jq '"\(.draft) \(.immutable)"')
           echo "published release: draft and immutable = ${published}"
           test "${published%% *}" = "false"

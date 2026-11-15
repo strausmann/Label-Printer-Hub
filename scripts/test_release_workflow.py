@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import subprocess
 import tempfile
@@ -42,8 +43,10 @@ def _step_script(job: str, step_name: str) -> str:
 
 
 # Stand-in for gh. It answers `release view` from GH_FAKE_DRAFT / GH_FAKE_ASSETS
-# (comma-separated asset names) and `api .../releases/tags/...` from GH_FAKE_AFTER,
-# applies the --jq filter with jq, and appends every call to GH_FAKE_LOG.
+# (comma-separated asset names), `api .../releases/tags/...` from GH_FAKE_AFTER and
+# `api .../releases?...` (the release list) from GH_FAKE_RELEASES (comma-separated
+# tag names of published releases), applies the --jq filter with jq, and appends
+# every call to GH_FAKE_LOG.
 FAKE_GH = textwrap.dedent(
     """\
     #!/usr/bin/env bash
@@ -54,18 +57,23 @@ FAKE_GH = textwrap.dedent(
     for i in "${!args[@]}"; do
       if [ "${args[$i]}" = "--jq" ]; then jq_filter="${args[$((i + 1))]}"; fi
     done
-    case "$1 $2" in
-      "release view")
+    case "$*" in
+      "release view "*)
         doc=$(python3 -c 'import json, os
     names = [n for n in os.environ.get("GH_FAKE_ASSETS", "").split(",") if n]
     print(json.dumps({"isDraft": os.environ["GH_FAKE_DRAFT"] == "true",
                       "assets": [{"name": n} for n in names]}))')
         ;;
-      "api "*)
+      "api "*/releases/tags/*)
         doc=$(python3 -c 'import json, os
     print(json.dumps({"draft": os.environ.get("GH_FAKE_AFTER", "false") == "true", "immutable": True}))')
         ;;
-      "release edit"|"release upload")
+      "api "*"/releases?"*)
+        doc=$(python3 -c 'import json, os
+    tags = [t for t in os.environ.get("GH_FAKE_RELEASES", "").split(",") if t]
+    print(json.dumps([{"tag_name": t, "draft": False} for t in tags] + [{"tag_name": "v99.0.0", "draft": True}]))')
+        ;;
+      "release edit "*|"release upload "*)
         exit 0
         ;;
       *)
@@ -91,7 +99,8 @@ class _FakeGhCase(unittest.TestCase):
         self.log.touch()
 
     def run_script(self, script: str, *, draft: bool, assets: list[str], after_draft: bool = False,
-                   version: str = "1.6.1", cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+                   version: str = "1.6.1", releases: tuple[str, ...] = ("v1.6.0", "v1.5.2"),
+                   cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         env = {
             "PATH": f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(self.tmp),
@@ -102,6 +111,7 @@ class _FakeGhCase(unittest.TestCase):
             "GH_FAKE_DRAFT": "true" if draft else "false",
             "GH_FAKE_ASSETS": ",".join(assets),
             "GH_FAKE_AFTER": "true" if after_draft else "false",
+            "GH_FAKE_RELEASES": ",".join(releases),
         }
         return subprocess.run(["bash", "-c", script], cwd=cwd or self.tmp, env=env,
                               capture_output=True, text=True, check=False)
@@ -131,7 +141,7 @@ class ConfigTest(unittest.TestCase):
 
     def test_only_publish_release_publishes_a_draft(self) -> None:
         # Counted in the parsed `run:` scripts, not in the file text, so comments and the
-        # recovery instructions printed by images-missing do not count.
+        # recovery instructions printed by release-unfinished do not count.
         publishers = []
         for workflow in sorted(WORKFLOWS.glob("*.yml")):
             jobs = yaml.safe_load(workflow.read_text(encoding="utf-8")).get("jobs", {})
@@ -143,6 +153,145 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(publishers, ["release.yml:publish-release"])
 
 
+# --------------------------------------------------------------------------- job `if:`
+# A small evaluator for the subset of GitHub expressions the release jobs use: paths,
+# 'strings', ==, !=, !, &&, || and the status functions always() and success(). As on
+# GitHub, an `if:` without a status function is `success() && (<expr>)`, and success()
+# is true only when every job in `needs` succeeded.
+
+_TOKEN = re.compile(r"\s*(&&|\|\||==|!=|!|\(|\)|'[^']*'|[A-Za-z_][\w.-]*\(\)|[A-Za-z_][\w.-]*)")
+
+
+def _tokens(expr: str) -> list[str]:
+    out, pos = [], 0
+    expr = expr.strip()
+    while pos < len(expr):
+        match = _TOKEN.match(expr, pos)
+        if not match:
+            raise ValueError(f"cannot parse {expr[pos:]!r}")
+        out.append(match.group(1))
+        pos = match.end()
+    return out
+
+
+def evaluate_if(expr: str, ctx: dict[str, object], needs: list[str]) -> bool:
+    toks = _tokens(expr)
+    if not any(t in ("always()", "success()", "failure()", "cancelled()") for t in toks):
+        toks = ["success()", "&&", "(", *toks, ")"]
+    pos = 0
+
+    def peek() -> str | None:
+        return toks[pos] if pos < len(toks) else None
+
+    def take() -> str:
+        nonlocal pos
+        pos += 1
+        return toks[pos - 1]
+
+    def primary() -> object:
+        tok = take()
+        if tok == "(":
+            value = disjunction()
+            assert take() == ")"
+            return value
+        if tok.startswith("'"):
+            return tok[1:-1]
+        if tok == "always()":
+            return True
+        if tok == "success()":
+            return all(ctx[f"needs.{n}.result"] == "success" for n in needs)
+        if tok in ("failure()", "cancelled()"):
+            raise ValueError(f"{tok} is not modelled")
+        return ctx[tok]
+
+    def comparison() -> object:
+        left = primary()
+        if peek() in ("==", "!="):
+            op, right = take(), primary()
+            equal = str(left).lower() == str(right).lower()
+            return equal if op == "==" else not equal
+        return left
+
+    def unary() -> object:
+        if peek() == "!":
+            take()
+            return not _truthy(unary())
+        return comparison()
+
+    def conjunction() -> object:
+        value = unary()
+        while peek() == "&&":
+            take()
+            right = unary()
+            value = _truthy(value) and _truthy(right)
+        return value
+
+    def disjunction() -> object:
+        value = conjunction()
+        while peek() == "||":
+            take()
+            right = conjunction()
+            value = _truthy(value) or _truthy(right)
+        return value
+
+    result = disjunction()
+    assert pos == len(toks), f"trailing tokens in {expr!r}"
+    return _truthy(result)
+
+
+def _truthy(value: object) -> bool:
+    return value not in (None, False, "", 0)
+
+
+def _ctx(images: str = "success", sbom: str = "success", publish: str = "success",
+         published: str = "true", dry_run: object = None) -> dict[str, object]:
+    return {
+        "needs.release.result": "success",
+        "needs.release.outputs.new-release-published": published,
+        "needs.images.result": images,
+        "needs.release-sbom.result": sbom,
+        "needs.publish-release.result": publish,
+        "inputs.dry_run": dry_run,
+    }
+
+
+class JobConditionTest(unittest.TestCase):
+    def _runs(self, job: str, ctx: dict[str, object]) -> bool:
+        spec = _release_jobs()[job]
+        needs = spec["needs"] if isinstance(spec["needs"], list) else [spec["needs"]]
+        return evaluate_if(str(spec["if"]), ctx, needs)
+
+    def test_publish_runs_only_when_images_and_sbom_succeeded(self) -> None:
+        self.assertTrue(self._runs("publish-release", _ctx()))
+        self.assertFalse(self._runs("publish-release", _ctx(images="failure", sbom="skipped")))
+        self.assertFalse(self._runs("publish-release", _ctx(sbom="failure")))
+        self.assertFalse(self._runs("publish-release", _ctx(dry_run=True)))
+        self.assertFalse(self._runs("publish-release", _ctx(published="false")))
+
+    def test_unpublished_release_is_reported_whichever_job_failed(self) -> None:
+        cases = {
+            "images": _ctx(images="failure", sbom="skipped", publish="skipped"),
+            "images cancelled": _ctx(images="cancelled", sbom="skipped", publish="skipped"),
+            "sbom": _ctx(sbom="failure", publish="skipped"),
+            "publish": _ctx(publish="failure"),
+        }
+        for name, ctx in cases.items():
+            with self.subTest(failed=name):
+                self.assertTrue(self._runs("release-unfinished", ctx))
+
+    def test_no_report_when_published_or_nothing_was_released(self) -> None:
+        self.assertFalse(self._runs("release-unfinished", _ctx()))
+        self.assertFalse(self._runs("release-unfinished", _ctx(published="false", images="skipped",
+                                                              sbom="skipped", publish="skipped")))
+        self.assertFalse(self._runs("release-unfinished", _ctx(dry_run=True, images="skipped",
+                                                              sbom="skipped", publish="skipped")))
+
+    def test_evaluator_applies_implicit_success(self) -> None:
+        # Guards the evaluator itself: without a status function a failed need skips the job.
+        self.assertFalse(evaluate_if("inputs.x == 'a'", {"inputs.x": "a", "needs.a.result": "failure"}, ["a"]))
+        self.assertTrue(evaluate_if("always() && inputs.x == 'a'", {"inputs.x": "a", "needs.a.result": "failure"}, ["a"]))
+
+
 class PublishReleaseTest(_FakeGhCase):
     SCRIPT = _step_script("publish-release", "Publish the draft release")
 
@@ -150,6 +299,48 @@ class PublishReleaseTest(_FakeGhCase):
         result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"])
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("release edit v1.6.1 --draft=false --latest", self.calls())
+
+    def _edit_calls(self) -> list[str]:
+        return [c for c in self.calls() if c.startswith("release edit")]
+
+    def test_rerun_of_an_older_run_is_not_marked_latest(self) -> None:
+        # `gh run rerun --failed` of the 1.6.1 run after 1.7.0 was published. The fake
+        # list also carries a draft v99.0.0, which must not count.
+        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"],
+                                 releases=("v1.7.0", "v1.6.0"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._edit_calls(), ["release edit v1.6.1 --draft=false --latest=false"])
+        self.assertIn("not the highest published version (1.7.0)", result.stdout)
+
+    def test_versions_compare_numerically_not_as_text(self) -> None:
+        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.10.0.cdx.json"],
+                                 version="1.10.0", releases=("v1.9.0", "v1.6.0"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._edit_calls(), ["release edit v1.10.0 --draft=false --latest"])
+
+    def test_highest_published_version_is_found_numerically(self) -> None:
+        # As text, 1.9.0 sorts above 1.10.0 and 1.9.1 would wrongly become latest.
+        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.9.1.cdx.json"],
+                                 version="1.9.1", releases=("v1.9.0", "v1.10.0"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._edit_calls(), ["release edit v1.9.1 --draft=false --latest=false"])
+
+    def test_first_release_is_latest(self) -> None:
+        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], releases=())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._edit_calls(), ["release edit v1.6.1 --draft=false --latest"])
+
+    def test_non_release_tags_do_not_count(self) -> None:
+        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"],
+                                 releases=("v2.0.0-rc.1", "nightly", "v1.6.0"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._edit_calls(), ["release edit v1.6.1 --draft=false --latest"])
+
+    def test_pre_release_is_never_latest(self) -> None:
+        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.7.0-rc.1.cdx.json"],
+                                 version="1.7.0-rc.1", releases=("v1.6.0",))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self._edit_calls(), ["release edit v1.7.0-rc.1 --draft=false --latest=false"])
 
     def test_draft_without_sbom_is_not_published(self) -> None:
         result = self.run_script(self.SCRIPT, draft=True, assets=[])
