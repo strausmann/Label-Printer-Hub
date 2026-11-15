@@ -42,7 +42,7 @@ export const usePrinter = (id: string) =>
 export const usePrinterStatus = (
   id: string,
   enabled = true,
-  options: { staleTime?: number; refetchOnMount?: boolean | "always" } = {},
+  options: { staleTime?: number; refetchOnMount?: boolean | "always"; retry?: boolean } = {},
 ) => useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`), enabled, ...options });
 
 /** The query of one printer's status; every reader of statuses shares this key, so they share one request. */

@@ -79,8 +79,8 @@ describe("the tray the page starts on (#344)", () => {
     const app = await openWith(() => respond(503, apiErrorBody("unavailable", "Down.")), {
       seed: (client) => client.setQueryData(statusKey(P), pageStatus(P, { last_sheet_tray: "bypass" }), { updatedAt: Date.now() - 60_000 }),
     });
-    // Two retries (1 s, 2 s) come first; then the page gives up on the status.
-    await waitFor(() => expect(tray(app)).toBe("main"), { timeout: 8000 });
+    // The status is not retried: the page gives up on it at once.
+    await waitFor(() => expect(tray(app)).toBe("main"), { timeout: 4000 });
     expect(await trayButton()).toHaveTextContent("Main tray");
   });
 
@@ -102,7 +102,7 @@ describe("the trays named by each step (#344)", () => {
 
   it("each step names its tray", async () => {
     await open({}, "bypass");
-    expect((await screen.findAllByText("Prints from: Bypass")).length).toBeGreaterThanOrEqual(2);
+    expect(await screen.findByText("Prints from: Bypass")).toBeVisible();
     expect(screen.getByText("Saves for: Bypass")).toBeVisible();
   });
 
@@ -111,14 +111,22 @@ describe("the trays named by each step (#344)", () => {
     const warning = await screen.findByText(/The calibration page was printed from/);
     expect(warning).toHaveTextContent("Bypass");
     expect(warning).toHaveTextContent("Main tray");
-    expect(warning.querySelector("strong")).toHaveTextContent("Check the tray:");
+    expect(screen.getByText("Check the tray:")).toBeVisible();
   });
 
   it("warns when sheets print from another tray", async () => {
     await open({ last_sheet_tray: "bypass" });
     const warning = await screen.findByText(/Sheets last printed from/);
     expect(warning).toHaveTextContent("Bypass");
-    expect(warning.querySelector("strong")).toHaveTextContent("Check the tray:");
+    expect(screen.getByText("Check the tray:")).toBeVisible();
+  });
+
+  it("with both warnings the lead and each phrase appear once", async () => {
+    await open({ last_sheet_tray: "bypass", last_calibration_print: { tray: "bypass", at: hourAgo() } });
+    await screen.findByText(/Sheets last printed from/);
+    expect(screen.getAllByText("Check the tray:")).toHaveLength(1);
+    expect(screen.getAllByText(/The calibration page was printed from/)).toHaveLength(1);
+    expect(screen.getAllByText(/^Prints from:/)).toHaveLength(1);
   });
 
   it("no warning when the trays agree", async () => {

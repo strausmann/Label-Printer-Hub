@@ -73,7 +73,7 @@ export function CalibrationPage() {
   const defaultTray = capabilities.data?.trays?.find((x) => x.is_default && trays.some((y) => y.key === x.key))?.key;
   // The tray sheets last printed from is the one to calibrate (#344), and only the printer's own answer says which it is:
   // a status held in the cache may be minutes old, so it is asked again before a tray is chosen.
-  const status = usePrinterStatus(printer?.id ?? "", printer !== undefined, { staleTime: 0, refetchOnMount: "always" });
+  const status = usePrinterStatus(printer?.id ?? "", printer !== undefined, { staleTime: 0, refetchOnMount: "always", retry: false });
   // Only while no tray is named in the address. Once the address names one, a refetch (after a print) changes nothing here.
   const choosing = !trays.some((x) => x.key === search.tray) && trays.length > 0 && status.fetchStatus === "fetching";
   const tray = choosing
@@ -224,7 +224,6 @@ function Workbench({ printer, tray, trayLabel, labelOf, lastSheetTray, lastCalib
     <>
       <CurrentValues stored={stored}>
         <div className="flex flex-col gap-5">
-        <TrayLine kind="prints" label={trayLabel} />
         {type && (
           <PrintAction
             printerId={printer.id}
@@ -554,17 +553,10 @@ function ValuesForm({ printer, tray, trayLabel, warnings, hasStored, fields, onC
       {message === "reset" && reset.isSuccess && <p role="status" className="m-0 text-ok">{t`Reset. This tray prints without correction.`}</p>}
 
       {(requestedLabel || sheetsLabel) && (
-        <div className="flex flex-col gap-2 rounded-r2 border border-warn bg-sunken p-3">
-          {requestedLabel && (
-            <p className="m-0 [overflow-wrap:anywhere]">
-              <strong>{t`Check the tray:`}</strong> {t`The calibration page was printed from ${requestedLabel}, but you are saving for ${trayLabel}.`}
-            </p>
-          )}
-          {sheetsLabel && (
-            <p className="m-0 [overflow-wrap:anywhere]">
-              <strong>{t`Check the tray:`}</strong> {t`Sheets last printed from ${sheetsLabel}; this correction applies to ${trayLabel} only.`}
-            </p>
-          )}
+        <div className="flex flex-col gap-1 rounded-r2 border border-warn bg-sunken p-3 [overflow-wrap:anywhere]">
+          <strong>{t`Check the tray:`}</strong>
+          {requestedLabel && <p className="m-0">{t`The calibration page was printed from ${requestedLabel}, but you are saving for ${trayLabel}.`}</p>}
+          {sheetsLabel && <p className="m-0">{t`Sheets last printed from ${sheetsLabel}; this correction applies to ${trayLabel} only.`}</p>}
         </div>
       )}
 
