@@ -38,6 +38,9 @@ export function GlobalSearch() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const field = useRef<HTMLInputElement>(null);
 
+  // The dialog belongs to the phone layout: a window that grows past 1024 px must not leave it open for the next shrink.
+  if (desktop && dialogOpen) setDialogOpen(false);
+
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;

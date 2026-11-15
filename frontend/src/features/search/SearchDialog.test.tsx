@@ -123,7 +123,8 @@ describe("search dialog (below 1024 px)", () => {
     mockApi({});
     await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
     await openDialog();
-    const layer = dialog().closest("[data-rac]")!.parentElement!.closest<HTMLElement>("div.fixed") ?? document.querySelector<HTMLElement>("div.fixed.z-50")!;
+    const layer = dialog().parentElement!.parentElement!; // dialog > modal > overlay
+    expect(layer).toHaveClass("fixed");
     fireEvent.pointerDown(layer, { pointerId: 1, isPrimary: true, button: 0 });
     fireEvent.pointerUp(layer, { pointerId: 1, isPrimary: true, button: 0 });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -139,6 +140,28 @@ describe("search dialog (below 1024 px)", () => {
     await openDialog();
     expect(field()).toHaveValue("");
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("a window that grows to a desktop closes the dialog for good", async () => {
+    const listeners = new Set<() => void>();
+    let desktop = false;
+    window.matchMedia = ((query: string) => ({
+      matches: query === DESKTOP_QUERY ? desktop : false,
+      media: query,
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+    })) as unknown as typeof window.matchMedia;
+    mockApi({});
+    await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
+    await openDialog();
+    desktop = true;
+    act(() => listeners.forEach((fn) => fn()));
+    await screen.findByRole("combobox", { name: "Search" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    desktop = false;
+    act(() => listeners.forEach((fn) => fn()));
+    expect(await screen.findByRole("button", { name: "Search" })).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("slash opens the dialog; a slash typed into the field is just text", async () => {
@@ -160,11 +183,14 @@ describe("search dialog (below 1024 px)", () => {
     mockApi({});
     await renderApp({ path: "/", info: { integrations: set(true, false, false) } });
     await openDialog();
+    // Not from the text field (a focused field blocks the pull on its own): only the open dialog is left to stop it.
+    within(dialog()).getByRole("button", { name: "Close" }).focus();
+    expect(field()).not.toHaveFocus();
     const touch = (type: string, y: number) => {
       const event = new Event(type, { bubbles: true, cancelable: true });
       Object.defineProperty(event, "touches", { value: type === "touchend" ? [] : [{ clientX: 100, clientY: y }] });
       act(() => {
-        field().dispatchEvent(event);
+        dialog().dispatchEvent(event);
       });
       return event;
     };

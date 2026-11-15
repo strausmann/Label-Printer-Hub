@@ -135,7 +135,7 @@ test.describe("short viewport (on-screen keyboard)", () => {
   /** Below 1024 px the search is a magnifier that opens a dialog (#320); from there on it is the inline field. */
   const isPhone = (mode: Mode) => mode.width < 1024;
   const searchField = () => page.getByRole("combobox", { name: "Search" });
-  /** Puts the focus into the search field: the inline one, or the one in the dialog the magnifier opens. */
+  /** Puts the focus into the search field: the inline one, or the one in the dialog the magnifier opens (the dialog covers the page until it is closed). */
   async function focusSearch(mode: Mode) {
     if (isPhone(mode)) {
       await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
@@ -364,6 +364,11 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.reload();
         await focusSearch(mode);
         await keyboard(mode);
+        // On a phone the search dialog dims and hides the top bar: closing it leaves the keyboard-sized screen as it is.
+        if (isPhone(mode)) {
+          await page.keyboard.press("Escape");
+          await expect(page.getByRole("dialog")).toBeHidden();
+        }
         const cart = page.locator("header").getByRole("link", { name: "Cart, 3 items" });
         await expect(cart).toBeVisible();
         await expectInSight(page, cart, "the cart icon");
