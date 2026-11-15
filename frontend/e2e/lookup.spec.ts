@@ -56,4 +56,44 @@ test.describe("lookup", () => {
     await expect(page.getByText(/2 labels sent to Workshop PT-P750W/)).toBeVisible();
     await expect(page.getByText("The cart is empty.")).toBeVisible();
   });
+
+  // The status is served from the test (the service worker would answer the route first).
+  test.describe("with a QL printer", () => {
+    test.use({ serviceWorkers: "block" });
+    test("the cart flags an item whose QR code is too long", async ({ signedInPage: page }) => {
+      const printers = (await (await page.request.get("/api/v1/printers")).json()) as { id: string; name: string }[];
+      const ql = printers.find((p) => p.name === "Office QL-820NWB")!;
+      // The hub's mock QL is unpolled, so the test serves its status: 62 mm tape loaded.
+      await page.route(new RegExp(`/api/v1/printers/${ql.id}/status$`), async (route) => {
+        const response = await route.fetch();
+        const body = (await response.json()) as Record<string, unknown>;
+        Object.assign(body, { online: true, polled: true, stale: false, tape_loaded: "62mm", tape_width_mm: 62, last_probe_age_s: 3, note: null });
+        await route.fulfill({ response, json: body });
+      });
+      // The fixture lookup builds the link from the identifier, so a long identifier is a link the QR code cannot hold (the route takes identifiers up to 256 characters).
+      const long = "a".repeat(250);
+      await page.evaluate(
+        ([printer, id]) => {
+          localStorage.setItem("lph.printer", printer!);
+          localStorage.setItem(
+            "lph.cart",
+            JSON.stringify([
+              { app: "snipeit", id: "42", name: "Short link", content_type: "qr_two_lines", copies: 1 },
+              { app: "snipeit", id: id!, name: "Long link", content_type: "qr_two_lines", copies: 1 },
+            ]),
+          );
+        },
+        [ql.id, long],
+      );
+      await page.goto("/cart");
+      const rows = page.getByRole("list", { name: "Cart" }).getByRole("listitem");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(1)).toContainText(/The QR code does not fit this tape: \d+ of at most \d+ bytes\./);
+      await expect(rows.nth(0)).not.toContainText("does not fit");
+      await expect(page.getByText("1 item will not print.")).toBeVisible();
+      // The flag warns, it does not forbid: the print button stays usable.
+      await expect(page.getByRole("button", { name: "Print 2 labels" })).toBeEnabled();
+      await shot(page, "task-12-cart-flag.png");
+    });
+  });
 });

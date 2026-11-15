@@ -5,7 +5,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { mockApi, PRINTER_A, respond } from "../test-api";
+import { mockApi, pngResponse, PRINTER_B, PRINTER_A, respond, status } from "../test-api";
 import { CART_KEY, reloadCart } from "./cart";
 
 const BATCH = "cccccccc-0000-4000-8000-000000000001";
@@ -109,5 +109,98 @@ describe("CartPage", () => {
     await renderApp({ path: "/cart" });
     expect(await screen.findByText("The cart is empty.")).toBeVisible();
     expect(screen.queryByRole("button", { name: /^Print/ })).toBeNull();
+  });
+});
+
+describe("CartPage checks and previews", () => {
+  const QL = { tape_loaded: "62mm", tape_width_mm: 62 };
+  const lookup = (app: string, id: string, name: string) => ({ app, id, name, url: `https://assets.example.invalid/${id}`, extra: { secondary: [] } });
+  const pass = (n: number) => ({ results: Array.from({ length: n }, (_, index) => ({ index, ok: true })) });
+  const qlRoutes = (cart: unknown[], extra: Record<string, unknown> = {}) => {
+    localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    localStorage.setItem("lph.printer", PRINTER_B.id);
+    reloadCart();
+    return {
+      "GET /api/v1/printers": [PRINTER_A, { ...PRINTER_B, paused: false }],
+      [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, QL),
+      "GET /api/v1/lookup/snipeit/1": lookup("snipeit", "1", "Item one"),
+      "GET /api/v1/lookup/snipeit/2": lookup("snipeit", "2", "Item two"),
+      "GET /api/v1/lookup/snipeit/3": lookup("snipeit", "3", "Item three"),
+      "POST /api/v1/render/preview": () => pngResponse(),
+      "POST /api/v1/render/check": pass(cart.length),
+      ...extra,
+    };
+  };
+  const line = (id: string, content_type: string) => ({ app: "snipeit", id, name: `Item ${id === "1" ? "one" : id === "2" ? "two" : "three"}`, content_type, copies: 1 });
+  const TOO_LONG = { results: [{ index: 0, ok: false, error_code: "qr_payload_too_long", error_detail: { length: 812, max_bytes: 122 }, error_message: "English sentence from the server." }] };
+
+  it("shows one preview per content type", async () => {
+    mockApi(qlRoutes([line("1", "qr_two_lines"), line("2", "qr_two_lines"), line("3", "qr_only")]));
+    await renderApp({ path: "/cart" });
+    await vi.waitFor(() => expect(screen.getAllByRole("img", { name: "Label preview" })).toHaveLength(2));
+    expect(screen.getByRole("region", { name: "Preview of Item one" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Preview of Item three" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Preview of Item two" })).toBeNull();
+  });
+
+  it("says how many layouts are not shown", async () => {
+    const types = ["qr_only", "qr_one_line", "qr_two_lines", "qr_three_lines", "text_one_line", "text_two_lines"];
+    const cart = types.map((type, n) => ({ app: "snipeit", id: String(n + 1), name: `Item ${n + 1}`, content_type: type, copies: 1 }));
+    mockApi(qlRoutes(cart, { "POST /api/v1/render/check": pass(6) }));
+    await renderApp({ path: "/cart" });
+    expect(await screen.findByText("2 more layouts are not shown.")).toBeVisible();
+    expect(screen.getAllByRole("region", { name: /^Preview of / })).toHaveLength(4);
+  });
+
+  it("flags an item whose QR code does not fit", async () => {
+    const { calls } = mockApi(qlRoutes([line("1", "qr_two_lines")], { "POST /api/v1/render/check": TOO_LONG }));
+    await renderApp({ path: "/cart" });
+    const row = within(await screen.findByRole("list", { name: "Cart" })).getByRole("listitem");
+    expect(await within(row).findByText("The QR code does not fit this tape: 812 of at most 122 bytes.")).toBeVisible();
+    expect(row).not.toHaveTextContent("English sentence");
+    expect(row).toHaveAccessibleDescription("The QR code does not fit this tape: 812 of at most 122 bytes.");
+    const body = JSON.parse(calls.find((c) => c.path === "/api/v1/render/check")!.body!);
+    expect(body).toMatchObject({ tape_mm: 62, items: [{ content_type: "qr_two_lines", lookup: { app: "snipeit", identifier: "1" } }] });
+  });
+
+  it("flags only the items the check refused", async () => {
+    const two = { results: [{ index: 0, ok: true }, { index: 1, ok: false, error_code: "integration_item_not_found" }] };
+    mockApi(qlRoutes([line("1", "qr_two_lines"), line("2", "qr_one_line")], { "POST /api/v1/render/check": two }));
+    await renderApp({ path: "/cart" });
+    const rows = within(await screen.findByRole("list", { name: "Cart" })).getAllByRole("listitem");
+    expect(await within(rows[1]!).findByText("This item no longer exists in its app.")).toBeVisible();
+    expect(rows[0]).not.toHaveAccessibleDescription();
+    expect(screen.getByText("1 item will not print.")).toBeVisible();
+  });
+
+  it("summarises the items that will not print", async () => {
+    mockApi(qlRoutes([line("1", "qr_two_lines")], { "POST /api/v1/render/check": TOO_LONG }));
+    await renderApp({ path: "/cart" });
+    expect(await screen.findByText("1 item will not print.")).toBeVisible();
+  });
+
+  it("the print button stays enabled with a flag", async () => {
+    mockApi(qlRoutes([line("1", "qr_two_lines")], { "POST /api/v1/render/check": TOO_LONG }));
+    await renderApp({ path: "/cart" });
+    await screen.findByText("1 item will not print.");
+    expect(screen.getByRole("button", { name: "Print 1 label" })).toBeEnabled();
+  });
+
+  it("a failed check shows no flags", async () => {
+    mockApi(qlRoutes([line("1", "qr_two_lines")], { "POST /api/v1/render/check": respond(429, { detail: { error_code: "rate_limit_exceeded", error_message: "Slow down." } }) }));
+    await renderApp({ path: "/cart" });
+    expect(await screen.findByText("Could not check the items; the print still checks them.")).toBeVisible();
+    expect(screen.queryByText(/will not print/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Print 1 label" })).toBeEnabled();
+  });
+
+  it("no check without a known tape", async () => {
+    const { calls } = mockApi(
+      qlRoutes([line("1", "qr_two_lines")], { [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: null, tape_width_mm: null }) }),
+    );
+    await renderApp({ path: "/cart" });
+    await screen.findByRole("list", { name: "Cart" });
+    await vi.waitFor(() => expect(calls.some((c) => c.path === `/api/v1/printers/${PRINTER_B.id}/status`)).toBe(true));
+    expect(calls.filter((c) => c.path === "/api/v1/render/check")).toEqual([]);
   });
 });

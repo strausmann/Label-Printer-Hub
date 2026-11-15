@@ -18,7 +18,7 @@ async function toDataUrl(blob: Blob): Promise<string> {
   return `data:${blob.type || "image/png"};base64,${btoa(binary)}`;
 }
 
-const PREVIEW_DEBOUNCE_MS = 200;
+export const PREVIEW_DEBOUNCE_MS = 200;
 
 export const lookupKey = (app: string, id: string) => ["lookup", app, id] as const;
 

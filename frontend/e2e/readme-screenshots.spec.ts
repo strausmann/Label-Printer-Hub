@@ -24,6 +24,7 @@ import { signInWith } from "./fixtures";
  *   calibration     calibration
  *   print-dialog    print-dialog
  *   cart-sheet      cart-sheet
+ *   cart-check      cart-check
  *   grocy-labels    grocy-labels
  *
  * Desktop is 1440 x 900 in light and dark for every view; the phone (390 x 844) shows `overview`, `printer-detail`
@@ -60,6 +61,7 @@ const TEXT = {
     ontoSheet: "Print onto a sheet",
     ontoSheetButton: "Print onto sheet",
     grocyLabels: "Grocy labels",
+    wontPrint: /will not print\./,
   },
   de: {
     connected: /^Verbunden/,
@@ -72,6 +74,7 @@ const TEXT = {
     ontoSheet: "Auf einen Bogen drucken",
     ontoSheetButton: "Auf den Bogen drucken",
     grocyLabels: "Grocy-Etiketten",
+    wontPrint: /nicht gedruckt\./,
   },
 } satisfies Record<Lang, unknown>;
 type Text = (typeof TEXT)["en"];
@@ -101,6 +104,28 @@ async function fillCart(page: Page) {
     localStorage.setItem("lph.printer", p);
     const line = (n: string, copies: number) => ({ app: "grocy", id: n, name: "Flour", content_type: "qr_two_lines", copies });
     localStorage.setItem("lph.cart", JSON.stringify([line("7", 6), line("8", 3)]));
+  }, printer);
+}
+
+/**
+ * A cart on a Brother QL with 62 mm tape: two layouts to preview and one item whose link the QR code cannot hold. The
+ * hub's QL is not polled, so the tape is served from here (the fixtures have no tape reading for it).
+ */
+async function fillQlCart(page: Page) {
+  const printer = await id(page, "Office QL-820NWB");
+  await page.route(new RegExp(`/api/v1/printers/${printer}/status$`), async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as Record<string, unknown>;
+    Object.assign(body, { online: true, polled: true, stale: false, tape_loaded: "62mm", tape_width_mm: 62, last_probe_age_s: 3, note: null });
+    await route.fulfill({ response, json: body });
+  });
+  await page.evaluate((p) => {
+    localStorage.setItem("lph.printer", p);
+    const line = (app: string, n: string, name: string, content_type: string, copies: number) => ({ app, id: n, name, content_type, copies });
+    localStorage.setItem(
+      "lph.cart",
+      JSON.stringify([line("snipeit", "42", "Cordless drill", "qr_two_lines", 1), line("spoolman", "7", "PLA red", "qr_only", 2), line("snipeit", "a".repeat(250), "Shelf label", "qr_two_lines", 1)]),
+    );
   }, printer);
 }
 
@@ -190,6 +215,19 @@ const VIEWS: View[] = [
     },
   },
   {
+    name: "cart-check",
+    phone: false,
+    open: async (page, text) => {
+      await page.goto("/");
+      await fillQlCart(page);
+      await page.goto("/cart");
+      await expect(page.getByText(text.wontPrint)).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole("img", { name: text.preview })).toHaveCount(2);
+      // Bring the flagged item's top below the sticky top bar: its note, the layout choice and the previews fit one view.
+      await page.getByRole("link", { name: "Shelf label" }).evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 88));
+    },
+  },
+  {
     name: "grocy-labels",
     phone: false,
     open: async (page, text) => {
@@ -208,6 +246,7 @@ async function newContext(browser: Browser, scheme: Scheme, size: Size, lang: La
     viewport: { width: size.width, height: size.height },
     deviceScaleFactor: 1,
     colorScheme: scheme,
+    serviceWorkers: "block",
     reducedMotion: "reduce",
     locale: lang === "de" ? "de-DE" : "en-US",
     timezoneId: "UTC",

@@ -22,6 +22,11 @@ msgstr "{0, plural, one {# cell marked as used} other {# cells marked as used}}"
 msgid "{0, plural, one {# column} other {# columns}}"
 msgstr "{0, plural, one {# column} other {# columns}}"
 
+#. placeholder {0}: failing.length
+#: src/features/lookup/CartPage.tsx
+msgid "{0, plural, one {# item will not print.} other {# items will not print.}}"
+msgstr "{0, plural, one {# item will not print.} other {# items will not print.}}"
+
 #. placeholder {0}: g.cols * g.rows
 #. placeholder {0}: page.cellCount
 #: src/features/archive/ArchivePage.tsx
@@ -171,6 +176,10 @@ msgstr "{hidden, plural, one {# more print notification} other {# more print not
 msgid "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
 msgstr "{hidden, plural, one {# used-up sheet hidden} other {# used-up sheets hidden}}"
 
+#: src/features/lookup/CartPage.tsx
+msgid "{hiddenTypes, plural, one {# more layout is not shown.} other {# more layouts are not shown.}}"
+msgstr "{hiddenTypes, plural, one {# more layout is not shown.} other {# more layouts are not shown.}}"
+
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "{item}: printed before {count}× on {only}, last on {last}"
 msgstr "{item}: printed before {count}× on {only}, last on {last}"
@@ -186,6 +195,10 @@ msgstr "{item}: printed before {count}× on {sheetCount} sheets, last on {last}"
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "{item}: printed before on {sheet} on {when}, cell {cells}"
 msgstr "{item}: printed before on {sheet} on {when}, cell {cells}"
+
+#: src/features/lookup/CartPage.tsx
+msgid "{kind}, for example {name}."
+msgstr "{kind}, for example {name}."
 
 #: src/features/archive/TypeForm.tsx
 msgid "{label} is too long: at most {max} characters."
@@ -1121,6 +1134,10 @@ msgstr "Corner radius"
 #: src/features/archive/TypeForm.tsx
 msgid "Corner radius (mm)"
 msgstr "Corner radius (mm)"
+
+#: src/features/lookup/CartPage.tsx
+msgid "Could not check the items; the print still checks them."
+msgstr "Could not check the items; the print still checks them."
 
 #: src/features/printers/PauseResumeButton.tsx
 msgid "Could not pause the printer."
@@ -3615,10 +3632,6 @@ msgstr "Show the unconfirmed cells"
 msgid "Show them"
 msgstr "Show them"
 
-#: src/features/lookup/CartPage.tsx
-msgid "Shows the first item: {name}."
-msgstr "Shows the first item: {name}."
-
 #: src/shell/SignIn.tsx
 msgid "Sign in"
 msgstr "Sign in"
@@ -4003,6 +4016,18 @@ msgstr "The address saved for this printer is not valid. Enter the address again
 #: src/features/sheets/print/errors.ts
 msgid "The app behind an item did not answer ({code}). Check Settings › Integrations."
 msgstr "The app behind an item did not answer ({code}). Check Settings › Integrations."
+
+#: src/features/lookup/CartPage.tsx
+msgid "The app of this item did not answer."
+msgstr "The app of this item did not answer."
+
+#: src/features/lookup/CartPage.tsx
+msgid "The app of this item is not known."
+msgstr "The app of this item is not known."
+
+#: src/features/lookup/CartPage.tsx
+msgid "The app of this item is not set up."
+msgstr "The app of this item is not set up."
 
 #: src/shell/SignIn.tsx
 msgid "The bootstrap key no longer works because an admin key exists. Sign in with that key."
@@ -4579,6 +4604,14 @@ msgstr "The printers could not be loaded."
 msgid "The printers could not be loaded. A saved printer is shown by its short name."
 msgstr "The printers could not be loaded. A saved printer is shown by its short name."
 
+#: src/features/lookup/CartPage.tsx
+msgid "The QR code does not fit this tape: {length} of at most {max} bytes."
+msgstr "The QR code does not fit this tape: {length} of at most {max} bytes."
+
+#: src/features/lookup/CartPage.tsx
+msgid "The QR code does not fit this tape."
+msgstr "The QR code does not fit this tape."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "The queue could not be loaded."
 msgstr "The queue could not be loaded."
@@ -4832,6 +4865,10 @@ msgstr "This is not a valid sheet type export."
 msgid "This item cannot be shown"
 msgstr "This item cannot be shown"
 
+#: src/features/lookup/CartPage.tsx
+msgid "This item no longer exists in its app."
+msgstr "This item no longer exists in its app."
+
 #: src/features/jobs/RetryError.tsx
 msgid "This job cannot be retried: its stored page can no longer be drawn."
 msgstr "This job cannot be retried: its stored page can no longer be drawn."
@@ -4869,6 +4906,10 @@ msgstr "This key may not settle a device swap."
 #: src/features/jobs/RetryError.tsx
 msgid "This key may not use this printer."
 msgstr "This key may not use this printer."
+
+#: src/features/lookup/CartPage.tsx
+msgid "This label cannot be drawn."
+msgstr "This label cannot be drawn."
 
 #: src/pages/placeholders.tsx
 msgid "This page is not available yet."
