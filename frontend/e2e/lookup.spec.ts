@@ -77,12 +77,16 @@ test.describe("lookup", () => {
       await sheet.click();
       await page.getByRole("option", { name: /L4736-0001/ }).click();
       await expect(sheet).toHaveValue("L4736-0001");
+      const trayButton = section.getByRole("button", { name: /Tray/ });
+      const trayLabel = ((await trayButton.textContent()) ?? "").replace("Tray", "").trim();
+      expect(trayLabel).not.toBe("");
       const add = section.getByRole("button", { name: "Add to cart" });
       await expect(add).toBeEnabled();
       await add.click();
       await expect(page.locator("header").getByRole("link", { name: /^Cart, 1 item/ })).toBeVisible();
       await section.getByRole("link", { name: "Open cart" }).click();
-      await expect(page).toHaveURL(/\/cart\?sheet=L4736-0001/);
+      await expect(page).toHaveURL(/\/cart\?sheet=L4736-0001&tray=[^&]+$/);
+      await expect(page.getByRole("region", { name: "Print onto a sheet" }).getByRole("button", { name: /Tray/ })).toContainText(trayLabel);
       await expect(page.getByRole("region", { name: "Print onto a sheet" }).getByRole("combobox", { name: "Sheet", exact: true })).toHaveValue("L4736-0001");
     } finally {
       // Net zero: the entry leaves the cart again and the printer choice is reset.

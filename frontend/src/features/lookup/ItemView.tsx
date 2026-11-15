@@ -218,6 +218,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
             )}
             <Button
               className="press inline-flex h-11 items-center justify-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink hover:bg-sunken data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link"
+              aria-describedby="print-h"
               onPress={() => cart.add(asItem)}
             >
               {t`Add to cart`}

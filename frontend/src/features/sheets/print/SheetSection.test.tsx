@@ -42,6 +42,9 @@ describe("the sheet section replaces the tape preview for page printers", () => 
     expect(screen.getAllByRole("button", { name: "Add to cart" })).toHaveLength(2);
     expect(within(screen.getByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" })).toBeVisible();
     expect(within(screen.getByRole("region", { name: "Print onto a sheet" })).getByRole("button", { name: "Add to cart" })).toBeVisible();
+    // A screen reader tells them apart by the heading each is described by.
+    expect(within(screen.getByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" })).toHaveAccessibleDescription("Print");
+    expect(within(screen.getByRole("region", { name: "Print onto a sheet" })).getByRole("button", { name: "Add to cart" })).toHaveAccessibleDescription("Print onto a sheet");
   });
 
   it("the printer list names kind and state", async () => {
