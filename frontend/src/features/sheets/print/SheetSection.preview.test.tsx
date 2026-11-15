@@ -118,6 +118,46 @@ describe("the cell list of the preview (#150)", () => {
     expect(within(preview).queryByText(/Cells 18–19.*shortened/)).toBeNull();
   });
 
+  it("thirteen cells that are not next to each other fold into a details with the cell count (#150)", async () => {
+    const apart = Array.from({ length: 13 }, (_, i) => ({ cell: 2 + i * 2, purpose: "Eggs" }));
+    await itemView(routes({ preview: labelled(apart) }), 13);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    const summary = await within(preview).findByText("Show the 13 cells");
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(within(details).getAllByText(/^Cell \d+ → Eggs$/)).toHaveLength(13);
+  });
+
+  it("one run of thirteen consecutive cells stays unfolded as a single row (#150)", async () => {
+    const run = Array.from({ length: 13 }, (_, i) => ({ cell: 18 + i, purpose: "Eggs" }));
+    await itemView(routes({ preview: labelled(run) }), 13);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–30 → Eggs (13×)")).toBeVisible();
+    expect(within(preview).queryByText(/^Show the/)).toBeNull();
+  });
+
+  it("a cell left out splits a run into two rows (#150)", async () => {
+    const answer = (init: RequestInit) => {
+      const skip = (JSON.parse(String(init.body)) as { placements: Array<{ skip?: number[] }> }).placements[0]?.skip ?? [];
+      return labelled([18, 19, 20, 21].filter((c) => !skip.includes(c)).map((cell) => ({ cell, purpose: "Eggs" })));
+    };
+    await itemView(routes({ preview: answer }), 4);
+    expect(await screen.findByText("Cells 18–21 → Eggs (4×)")).toBeVisible();
+    await userEvent.click(await screen.findByRole("gridcell", { name: /^Cell 19, new/ }));
+    expect(await screen.findByText("Cell 18 → Eggs")).toBeVisible();
+    expect(screen.getByText("Cells 20–21 → Eggs (2×)")).toBeVisible();
+  });
+
+  it("rows never reach across pages (#150)", async () => {
+    const first = labelled([46, 47, 48].map((cell) => ({ cell, purpose: "Eggs" })));
+    const second = labelled([1, 2].map((cell) => ({ cell, purpose: "Eggs" })));
+    const preview = { ...first, pages: [first.pages[0]!, { ...second.pages[0]!, sheet_code: "L4736-0002" }], free_after: [45, 46] };
+    await itemView(routes({ preview }), 5);
+    const region = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(region).findByText("Cells 46–48 → Eggs (3×)")).toBeVisible();
+    expect(within(region).getByText("Cells 1–2 → Eggs (2×)")).toBeVisible();
+  });
+
   it("reads in German with the range, the count and the mark", async () => {
     mockApi(routes({ preview: labelled([...TEN, { cell: 28, purpose: "Milch", truncated: true }, { cell: 30, purpose: "Mehl" }]) }));
     await renderApp({ path: "/lookup/grocy/7", language: "de" });

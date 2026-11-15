@@ -185,7 +185,7 @@ function PageView({
             : r.truncated
               ? t`Cells ${from}–${to} → ${label} (${count}×, shortened)`
               : t`Cells ${from}–${to} → ${label} (${count}×)`;
-        return <li key={from} className="[overflow-wrap:anywhere]">{text}</li>;
+        return <li key={`${from}-${to}`} className="[overflow-wrap:anywhere]">{text}</li>;
       })}
     </ul>
   );
