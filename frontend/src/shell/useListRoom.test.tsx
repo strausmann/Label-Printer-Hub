@@ -88,6 +88,17 @@ describe("useListRoom", () => {
     expect(result.current.room).toEqual({ placement: "bottom start", maxHeight: 324 });
   });
 
+  it("a hidden child of the tab bar (zero rect) does not count", () => {
+    tabBarAt(500);
+    const hidden = document.createElement("div");
+    hidden.getBoundingClientRect = () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0, x: 0, y: 0, toJSON() {} });
+    document.querySelector("[data-tabbar]")!.append(hidden);
+    const { result } = renderHook(() => useListRoom(anchorAt(100, 144), true));
+    act(() => result.current.measure());
+    // The same room as without the hidden child.
+    expect(result.current.room).toEqual({ placement: "bottom start", maxHeight: 344 });
+  });
+
   it("the tab bar is ignored inside a dialog", () => {
     tabBarAt(500);
     const dialog = document.createElement("div");

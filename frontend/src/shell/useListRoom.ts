@@ -28,8 +28,10 @@ export function useListRoom(anchor: RefObject<HTMLElement | null>, open: boolean
     // The tab bar limits the list, but not inside a dialog: the dialog covers it, and with the keyboard open the bar
     // sits right above the keyboard, so counting it would take a strip of the room off for nothing.
     const bar = el.closest(DIALOG) ? null : document.querySelector("[data-tabbar]");
-    // The topmost box of the bar and its children: the raised Scan button sticks out above the bar itself.
-    const lowest = bar && getComputedStyle(bar).display !== "none" ? Math.min(...[bar, ...Array.from(bar.children)].map((n) => n.getBoundingClientRect().top)) : undefined;
+    // The topmost box of the bar and its children: the raised Scan button sticks out above the bar itself. A child that is not
+    // laid out (display: none) reads a 0x0 rect at the top of the page and must not count.
+    const tops = (bar ? [bar, ...Array.from(bar.children)] : []).map((n) => n.getBoundingClientRect()).filter((r, i) => i === 0 || (r.width > 0 && r.height > 0)).map((r) => r.top);
+    const lowest = bar && getComputedStyle(bar).display !== "none" ? Math.min(...tops) : undefined;
     const next = listRoom(el.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: OPTION });
     setRoom((prev) => (sameRoom(prev, next) ? prev : next));
   };
