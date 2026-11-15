@@ -367,7 +367,9 @@ async def _correct_one(
     if current.geometry_hash == geometry_hash(geometry):
         await _mark(session, CORRECTED_KEY, key, correction.revision)  # already corrected
         return
-    if existing.origin != "seed" or current.geometry_hash != correction.previous_geometry_hash:
+    if existing.origin != "seed":
+        return  # never a shipped type here: nothing to correct and nothing worth a line per start
+    if current.geometry_hash != correction.previous_geometry_hash:
         logger.info("seed correction skipped for %s: geometry edited locally", log_value(key))
         return
     added = await ts.add_version_locked(

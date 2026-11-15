@@ -201,6 +201,14 @@ export function deriveNotices(notices: readonly SheetTypeNotice[]): Notification
 }
 
 /**
+ * The feed: what `deriveNotifications` made, plus the hub's notices, newest first. The notices join after the
+ * derivation, so its 100-entry cap and its standing rule never touch them, and nothing cuts the merged list.
+ */
+export function mergeFeed(derived: readonly Notification[], notices: readonly SheetTypeNotice[]): Notification[] {
+  return [...derived, ...deriveNotices(notices)].sort(newestFirst);
+}
+
+/**
  * Everything the notification centre and the overview's "Needs attention" show, from data the server already serves:
  * the print jobs of the last day, the printers with their status, and the sheets. Newest first; at most 100, standing conditions (printer, sheet, unresolved errors) never cut.
  * Pure: the clock is `now`, and the moment a printer or sheet condition began is `firstSeen`.

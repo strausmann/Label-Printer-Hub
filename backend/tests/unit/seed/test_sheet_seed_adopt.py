@@ -17,6 +17,7 @@ from app.models.sheet import Sheet, SheetType, SheetTypeVersion
 from app.seed import sheet_seed
 from app.seed.sheet_seed import (
     ADOPTED_KEY,
+    CORRECTED_KEY,
     NOTICES_KEY,
     SEED_ACTOR,
     load_seed,
@@ -394,13 +395,18 @@ async def test_adoption_never_deletes_a_version(async_session_factory: Factory) 
 
 
 async def test_internal_keys_do_not_reach_the_settings_store(
-    async_session_factory: Factory,
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # an install on revision 1 (the L4731REV correction writes the third row) plus an adoption
+    real = sheet_seed.load_seed
+    monkeypatch.setattr(sheet_seed, "load_seed", lambda: real(REV1))
+    await run_sheet_seed(async_session_factory)
+    monkeypatch.undo()
     await _import(async_session_factory, K6121, "A6121", replace(_shipped(K6121), margin_top=900))
     await run_sheet_seed(async_session_factory)
     async with async_session_factory() as s:
         keys = set((await s.execute(select(AppSetting.key))).scalars())
-        assert {ADOPTED_KEY, NOTICES_KEY} <= keys
+        assert {ADOPTED_KEY, CORRECTED_KEY, NOTICES_KEY} <= keys
         store = SettingsStore()
         await store.load(s)
     assert not {v.key for v in store.describe()} & keys

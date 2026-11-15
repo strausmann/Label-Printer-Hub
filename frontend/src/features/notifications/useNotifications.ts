@@ -8,7 +8,7 @@ import { queryString } from "../../api/queryString";
 import { useFeature } from "../../app/session";
 import { printerStatusQuery, usePrinters, type Job, type PrinterStatus } from "../printers/api";
 import { useSheets } from "../sheets/api";
-import { deriveNotices, deriveNotifications, newestFirst, NOTICES_KEY, WINDOW_MS, type Notification, type SheetTypeNotice } from "./derive";
+import { deriveNotifications, mergeFeed, NOTICES_KEY, WINDOW_MS, type Notification, type SheetTypeNotice } from "./derive";
 import { badgeOf, clearAll, dismiss, isVisible, markAllRead, notificationStore, trackFirstSeen, type StoredState } from "./store";
 
 /** Under `["jobs"]`, the prefix every job event invalidates (and the reconnect resync re-reads). */
@@ -70,8 +70,8 @@ export function useNotifications(): Feed {
 
   const entries = useMemo(
     () =>
-      [
-        ...deriveNotifications({
+      mergeFeed(
+        deriveNotifications({
           jobs: jobs.data ?? [],
           printers: printers.data ?? [],
           statuses,
@@ -79,9 +79,8 @@ export function useNotifications(): Feed {
           firstSeen: state.firstSeen,
           now,
         }),
-        // Joined after the derivation: outside its 100-entry cap and its standing rule.
-        ...deriveNotices(sheetsOn ? (notices.data ?? []) : []),
-      ].sort(newestFirst),
+        sheetsOn ? (notices.data ?? []) : [],
+      ),
     [jobs.data, printers.data, statuses, sheets.data, sheetsOn, notices.data, state.firstSeen, now],
   );
 

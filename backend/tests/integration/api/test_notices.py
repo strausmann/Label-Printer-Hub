@@ -12,7 +12,7 @@ from uuid import uuid4
 import bcrypt
 from app.models.api_key import ApiKey
 from app.models.app_setting import AppSetting
-from app.seed.sheet_seed import NOTICES_KEY
+from app.seed.sheet_seed import ADOPTED_KEY, CORRECTED_KEY, NOTICES_KEY
 
 
 def _factory():
@@ -21,7 +21,7 @@ def _factory():
     return _engine_module.async_session
 
 
-async def _read_key() -> dict[str, str]:
+async def _read_key(scope: str = "read") -> dict[str, str]:
     plaintext = f"lh_pat_{uuid4().hex}"
     async with _factory()() as s:
         s.add(
@@ -29,13 +29,17 @@ async def _read_key() -> dict[str, str]:
                 name=f"notices-{uuid4().hex[:6]}",
                 key_hash=bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=4)).decode(),
                 key_prefix=plaintext[:16],
-                scopes=["read"],
+                scopes=[scope],
                 enabled=True,
                 rate_limit_per_minute=6000,
             )
         )
         await s.commit()
     return {"X-Label-Hub-Key": plaintext}
+
+
+async def _admin_key() -> dict[str, str]:
+    return await _read_key("admin")
 
 
 def _record(key: str, age: timedelta, kind: str = "sheet_type_verified", code: str = "6121"):
@@ -88,3 +92,22 @@ async def test_info_carries_no_notices(api_client_with_seed) -> None:
     assert anonymous.status_code == 200 and "notices" not in anonymous.json()
     keyed = await api_client_with_seed.get("/api/v1/info", headers=await _read_key())
     assert "notices" not in keyed.json()
+    # signed in: /info reads the session cookie
+    key = (await _read_key("print"))["X-Label-Hub-Key"]
+    signed_in = await api_client_with_seed.post("/api/v1/auth/session", json={"key": key})
+    assert signed_in.status_code == 204
+    with_session = await api_client_with_seed.get("/api/v1/info")
+    assert with_session.status_code == 200 and "notices" not in with_session.json()
+
+
+async def test_internal_rows_are_not_listed_by_the_settings_api(api_client_with_seed) -> None:
+    async with _factory()() as s:
+        for key in (ADOPTED_KEY, CORRECTED_KEY):
+            s.add(AppSetting(key=key, value_json=json.dumps({"avery-zweckform-6121": 2})))
+        await s.commit()
+    await _store([_record("avery-zweckform-6121", timedelta(days=1))])
+    admin = await _admin_key()
+    resp = await api_client_with_seed.get("/api/v1/settings", headers=admin)
+    assert resp.status_code == 200
+    listed = {row["key"] for row in resp.json()}
+    assert listed and not listed & {ADOPTED_KEY, CORRECTED_KEY, NOTICES_KEY}

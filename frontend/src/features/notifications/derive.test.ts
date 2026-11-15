@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { job, PAGE_PRINTER, pageStatus, PRINTER_A, PRINTER_B, status } from "../test-api";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { SheetSummary } from "../sheets/api";
-import { deriveNotices, deriveNotifications, newestFirst, type SheetTypeNotice } from "./derive";
+import { deriveNotices, deriveNotifications, mergeFeed, type SheetTypeNotice } from "./derive";
 
 const NOW = Date.parse("2026-11-14T12:00:00Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -312,10 +312,10 @@ describe("deriveNotices", () => {
   });
 
   it("notices are merged newest first and never cut by the job cap", () => {
-    const jobs = Array.from({ length: 100 }, (_, i) => mkJob(`aaaaaaaa-0000-4000-8000-${String(i).padStart(12, "0")}`, "done", { updated_at: minutesAgo(60 + i) }));
-    const base = run({ jobs, printers: [A] });
-    expect(base).toHaveLength(100);
-    const merged = [...base, ...deriveNotices([notice("a", { id: "n1", at: minutesAgo(1) }), notice("b", { id: "n2", at: minutesAgo(200) })])].sort(newestFirst);
+    const jobs = Array.from({ length: 120 }, (_, i) => mkJob(`aaaaaaaa-0000-4000-8000-${String(i).padStart(12, "0")}`, "done", { updated_at: minutesAgo(60 + i) }));
+    const derived = run({ jobs, printers: [A] });
+    expect(derived).toHaveLength(100);
+    const merged = mergeFeed(derived, [notice("a", { id: "n1", at: minutesAgo(1) }), notice("b", { id: "n2", at: minutesAgo(400) })]);
     expect(merged).toHaveLength(102);
     expect(merged[0]?.id).toBe("n1");
     expect(merged[101]?.id).toBe("n2");

@@ -160,7 +160,9 @@ async def test_locally_edited_geometry_is_left_alone(
     )
 
 
-async def test_non_seed_origin_is_left_alone(async_session_factory: Factory) -> None:
+async def test_non_seed_origin_is_left_alone(
+    async_session_factory: Factory, caplog: pytest.LogCaptureFixture
+) -> None:
     fields = ts.TypeFields(
         key=KEY,
         prefix="L4731",
@@ -171,11 +173,15 @@ async def test_non_seed_origin_is_left_alone(async_session_factory: Factory) -> 
     )
     async with async_session_factory() as s:
         await ts.create_type(s, fields, OLD, actor="admin", origin="imported")
-    report = await run_sheet_seed(async_session_factory)
+    with caplog.at_level(logging.INFO, logger="app.seed.sheet_seed"):
+        report = await run_sheet_seed(async_session_factory)
+        await run_sheet_seed(async_session_factory)
     assert report.corrected == [] and report.versions_added == []
     versions = await _versions(async_session_factory)
     assert [v.version for v in versions] == [1] and versions[0].geometry_hash == geometry_hash(OLD)
     assert await _notices(async_session_factory) == []
+    # a never-shipped type is no "locally edited" shipped type: no line on any start
+    assert not [r for r in caplog.records if "seed correction skipped" in r.getMessage()]
 
 
 async def test_correction_runs_once(

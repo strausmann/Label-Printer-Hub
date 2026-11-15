@@ -150,6 +150,30 @@ def test_seed_file_ships_in_package() -> None:
     assert Path(str(SEED_FILE)).name == "sheet_types.json"
 
 
+N6121 = (
+    "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print within "
+    "+0.3 / \u00b10.2 mm. 5 columns of 38.1 mm with no horizontal gap (190.5 mm), rows 21.18 mm "
+    "(275.34 mm); left edge 9.9 mm from the template, top 10.8 mm confirmed by the calibration "
+    "print. Corner radius unknown. 65 labels per sheet; `-65` is the pack of 65 sheets."
+)
+N3490 = (
+    "Verified on real sheets 2026-11-15: HP Color LaserJet, tray 1, check print within "
+    "\u22120.33 to \u22120.50 mm across and \u00b10.3 mm down. Square-cut labels edge to edge, "
+    "no side margin, top margin 4.5 mm. No usable margin: the sheet code is not printed in the "
+    "margin (until #350)."
+)
+N4737 = (
+    "Vendor template pages not reachable (HTTP 403). Size 63.5 x 29.6 mm and 27 per sheet "
+    "confirmed by the Avery Zweckform catalogue 2022 "
+    "(https://www.avery-zweckform.com/sites/default/files/2022-01/X93000-2022_Hauptkatalog_deutsch.pdf); "  # noqa: E501
+    "grid, pitch and margins from Labelplanet LP27/63 only (same size and count, listed there "
+    "without the L4737 code). Corner radius not stated anywhere; measure. No vertical gap "
+    "(pitch 29.6 = label height). Labelplanet notes the height is sometimes manufactured slightly "
+    "below 29.6 mm. Material: removable. Left margin measured 6.95 mm on two check prints "
+    "(Labelplanet: 7.25); the die cut sits off-centre."
+)
+
+
 def _geometry(key: str):  # type: ignore[no-untyped-def]
     return _by_key()[key].version.geometry  # type: ignore[attr-defined]
 
@@ -166,6 +190,8 @@ def test_6121_entry() -> None:
     assert t.type.verified and t.type.allow_qr and t.version.version == 1  # type: ignore[attr-defined]
     assert t.type.source_url is None  # type: ignore[attr-defined]
     assert t.type.source_name == "Avery Zweckform Word template 6121"  # type: ignore[attr-defined]
+    assert t.type.description == "Universal labels"  # type: ignore[attr-defined]
+    assert t.type.notes == N6121  # type: ignore[attr-defined]
 
 
 def test_3490_entry() -> None:
@@ -183,7 +209,7 @@ def test_3490_entry() -> None:
     assert (g.pitch_x, g.pitch_y, g.margin_left, g.margin_top) == (70, 36, 0, 4.5)
     assert g.corner_radius is None and g.page_size == "A4" and g.shape == "rectangle"
     assert t.type.verified and t.type.allow_qr and t.version.version == 1  # type: ignore[attr-defined]
-    assert "(until #350)" in t.type.notes  # type: ignore[attr-defined]
+    assert t.type.notes == N3490  # type: ignore[attr-defined]
 
 
 def test_l4737rev_entry() -> None:
@@ -200,10 +226,7 @@ def test_l4737rev_entry() -> None:
         "https://www.labelplanet.co.uk/label-templates-for-rounded-rectangle-labels/"
         "label-templates-27-per-sheet-lp27-63/"
     )
-    notes = t.type.notes  # type: ignore[attr-defined]
-    assert notes.startswith("Vendor template pages not reachable (HTTP 403).")
-    assert "Left margin measured 6.95 mm on two check prints (Labelplanet: 7.25)" in notes
-    assert notes.endswith("the die cut sits off-centre.")
+    assert t.type.notes == N4737  # type: ignore[attr-defined]
     g = t.version.geometry  # type: ignore[attr-defined]
     assert (g.label_w, g.label_h, g.cols, g.rows) == (63.5, 29.6, 3, 9)
     assert (g.pitch_x, g.pitch_y, g.margin_left, g.margin_top) == (66.0, 29.6, 6.95, 15.3)
