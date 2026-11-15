@@ -260,6 +260,9 @@ class BatchJob:
     options: dict[str, Any]
     # #277: the tape run this sub-job belongs to (``None``: a bare batch, no follow-up sub-jobs).
     run_id: UUID | None = None
+    # #347: the part of the run this batch prints, fixed when the batch is made (the run's
+    # ``current`` moves on while the batch waits in the queue).
+    part: int | None = None
 
 
 RunState = Literal["printing", "awaiting_confirmation", "stopped"]
@@ -1380,6 +1383,7 @@ class PrintQueue:
             tape_mm=run.tape_mm,
             options=dict(run.options),
             run_id=run.run_id,
+            part=run.current,
         )
 
     # --- tape runs (#277) ---------------------------------------------------
@@ -2131,14 +2135,7 @@ class PrintQueue:
             queue_depth=self._queue_depth(job.printer_id),
         )
         self._settle_waiting_run(job.id)
-        discarded = self._settle_printing_run(job.id)
-        if discarded:
-            try:
-                await self._persist_cancelled(discarded)
-            except Exception:
-                logger.warning(
-                    "Could not store the cancelled labels of discarded runs", exc_info=True
-                )
+        settled_run, discarded = self._settle_printing_run(job.id)
         # A store failure propagates (the route answers 5xx instead of a false
         # success); the job stays cancelled in memory, so this process never prints it.
         try:
@@ -2146,6 +2143,17 @@ class PrintQueue:
         except BaseException:
             self._unpersisted.add(job.id)
             raise
+        if discarded:
+            # The held limit discarded runs in this step; their rows follow the cancelled label's.
+            try:
+                await self._persist_through_cancel(lambda: self._persist_cancelled(discarded))
+            except Exception:
+                logger.warning(
+                    "Run %s: %d cancelled labels of discarded runs could not be stored",
+                    settled_run,
+                    len(discarded),
+                    exc_info=True,
+                )
         if job.kind is not None:
             await notify_ended(
                 job.kind, UUID(job.id), state="cancelled", started=False, error_code="cancelled"
@@ -2793,7 +2801,7 @@ class PrintQueue:
         # label of the part done may continue at once, and the hub must already take it.
         moved_on = False
         to_cancel: list[Job] = []
-        part = run.current if run is not None else None
+        part = batch.part
 
         def move_on() -> None:
             # The run waits for the next part (bounded at once: the held limit is exact) or ends.
@@ -2801,7 +2809,7 @@ class PrintQueue:
             # (``_settle_printing_run``): the run is then past this part, not to be advanced again.
             nonlocal moved_on
             moved_on = True
-            if run is not None and run.current != part:
+            if run is not None and part is not None and run.current != part:
                 return
             if self._advance_run_now(run) and run is not None:
                 to_cancel.extend(self._bound_held_runs_now(run))
@@ -2869,8 +2877,19 @@ class PrintQueue:
             # The labels of limit-discarded runs are gone in memory already; their rows are
             # written even when the group's rows failed or the worker is cancelled (R1).
             if to_cancel:
-                with contextlib.suppress(Exception):
+                try:
                     await self._persist_through_cancel(lambda: self._persist_cancelled(to_cancel))
+                except Exception:
+                    logger.warning(
+                        "Run %s: %d cancelled labels of discarded runs could not be stored",
+                        batch.run_id,
+                        len(to_cancel),
+                        exc_info=True,
+                    )
+                except asyncio.CancelledError:
+                    # Cancelled again during this write (the shielded retry finished it): the
+                    # original exception propagates, re-raised below.
+                    pass
             raise
 
     async def _wait_until_active(self, printer_id: UUID) -> bool:
@@ -3121,27 +3140,27 @@ class PrintQueue:
                 return nxt
         return None
 
-    def _settle_printing_run(self, job_id: str) -> list[Job]:
+    def _settle_printing_run(self, job_id: str) -> tuple[UUID | None, list[Job]]:
         """A label of a printing part was cancelled (#347 re-review R2): when nothing of that part
         is queued or at the printer any more, the part is over in memory (its last group is only
         being written). The run then waits for the next part now, not after the writes.
-        No await. Returns the labels of runs the held limit discarded; the caller stores them."""
+        No await. Returns the run and the labels of runs the held limit discarded (to be stored)."""
         for run in list(self._runs.values()):
             if run.state != "printing" or job_id not in run.job_ids:
                 continue
             s, e = run.sub_jobs[run.current]
             if job_id not in run.job_ids[s:e]:
-                return []
+                return None, []
             if any(
                 (job := self._jobs.get(j)) is not None
                 and job.state in (JobState.QUEUED, JobState.PRINTING)
                 for j in run.job_ids[s:e]
             ):
-                return []
+                return None, []
             if self._advance_run_now(run):
-                return self._bound_held_runs_now(run)
-            return []
-        return []
+                return run.run_id, self._bound_held_runs_now(run)
+            return None, []
+        return None, []
 
     def _settle_waiting_run(self, job_id: str) -> None:
         """A label of a waiting part was cancelled (#347 review M3): when nothing of that part is

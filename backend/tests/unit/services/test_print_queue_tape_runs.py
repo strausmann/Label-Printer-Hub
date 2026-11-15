@@ -445,6 +445,39 @@ async def test_cancelling_the_tail_during_the_row_writes_never_gives_a_409_windo
         await queue.stop(timeout_s=2.0)
 
 
+async def test_a_part_emptied_by_cancels_before_the_worker_takes_it_does_not_advance_twice() -> (
+    None
+):
+    """#347 re-review 2 I1: part 2 is confirmed while the printer is paused, all its labels are
+    cancelled (the cancel advances the run to part 3), part 3 is confirmed. When the worker then
+    takes part 2's (empty) batch it must not advance the run again: part 3 is printing."""
+    printer = TapeRoll()
+    store = _SlowDoneStore()
+    queue, run_id, ids = await _start(printer, store, 101)  # parts 50 / 50 / 1
+    try:
+        await _until(lambda: _waits(queue, run_id))
+        await queue.pause_printer(printer.id, reason="user")
+        await queue.confirm_run(run_id)  # part 2 is queued, the worker is held by the pause
+        for jid in ids[50:100]:
+            assert await queue.cancel(str(jid))
+        assert _waits(queue, run_id)  # the cancel moved the run on to part 3
+        await queue.confirm_run(run_id)  # part 3 is queued behind part 2's item
+        printer.gate = asyncio.Event()
+        printer.started.clear()
+        await queue.resume_printer(printer.id)
+        await asyncio.wait_for(printer.started.wait(), 3.0)  # part 3's label is at the printer
+        info = queue.run_info(run_id)
+        state = info.state if info else None
+        printer.gate.set()
+        await _drained(queue, printer)
+        assert (await queue.get(ids[100])).state == JobState.COMPLETED
+        assert state == "printing", f"run state while part 3 prints: {state}"
+    finally:
+        if printer.gate is not None:
+            printer.gate.set()
+        await queue.stop(timeout_s=2.0)
+
+
 class _FailingDoneStore(MemoryJobStore):
     """A store whose ``mark_done`` of one label raises *exc* (a failing or cut-short write)."""
 
