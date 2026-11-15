@@ -59,11 +59,11 @@ def distinct_lookup_count(request: RenderCheckRequest) -> int:
 def validate_layout(request: RenderCheckRequest) -> None:
     """Raise ``UnsupportedTapeError`` when the tape width or orientation is not available.
 
-    A cart of spool labels only is checked against the spool label's own widths
-    (``SWATCH_TAPES``, #346): it takes no orientation and prints on DK widths the other layouts
-    do not have yet.
+    A cart with spool labels on one of their own DK widths (``SWATCH_TAPES``, #346) is checked
+    item by item instead: the spool labels pass, every other label gets an ``unsupported_tape``
+    verdict that says only the spool label prints there.
     """
-    if request.tape_mm in SWATCH_TAPES and all(
+    if request.tape_mm in SWATCH_TAPES and any(
         item.content_type is ContentType.SPOOL_SWATCH for item in request.items
     ):
         return
@@ -132,7 +132,16 @@ async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderC
                 {"length": exc.length, "max_bytes": exc.max_bytes},
             )
         except UnsupportedTapeError as exc:
-            # #346: a layout of one tape width (the swatch on 62 mm) checked on another.
+            only_swatch = exc.tape_mm in SWATCH_TAPES and exc.tape_mm not in TAPE_GEOMETRY
+            if content_type is not ContentType.SPOOL_SWATCH and only_swatch:
+                # #346: a DK width only the spool label has (until #258).
+                return (
+                    "unsupported_tape",
+                    f"Only the spool label prints on {exc.tape_mm} mm tape; this layout needs "
+                    "62 mm tape.",
+                    {"tape_mm": exc.tape_mm, "spool_label_only": True},
+                )
+            # #346: a layout of one tape width checked on another.
             return (
                 "unsupported_tape",
                 "This layout is not available for this tape.",

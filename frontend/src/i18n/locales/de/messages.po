@@ -2923,6 +2923,14 @@ msgstr "Nur ein Bogentyp liegt daneben; andere Bögen sitzen mit derselben Korre
 msgid "Only the first {listed} of {reported} trays are listed."
 msgstr "Aufgelistet sind nur die ersten {listed} von {reported} Fächern."
 
+#: src/features/lookup/PrinterPicker.tsx
+msgid "Only the spool label prints on {tapeMm} mm tape. Remove the other labels from the cart or load 62 mm tape."
+msgstr "Auf {tapeMm}-mm-Band druckt nur das Spulenetikett. Nimm die anderen Etiketten aus dem Warenkorb oder leg 62-mm-Band ein."
+
+#: src/features/lookup/CartPage.tsx
+msgid "Only the spool label prints on {tapeMm} mm tape. Remove this label or load 62 mm tape."
+msgstr "Auf {tapeMm}-mm-Band druckt nur das Spulenetikett. Nimm dieses Etikett heraus oder leg 62-mm-Band ein."
+
 #: src/features/archive/errors.ts
 msgid "Only your own types can be deleted. Archive this one instead."
 msgstr "Nur eigene Typen lassen sich löschen. Archiviere diesen stattdessen."

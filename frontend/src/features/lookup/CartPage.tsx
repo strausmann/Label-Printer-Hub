@@ -83,6 +83,14 @@ function useFlagText(): (result: RenderCheckResult) => string {
       }
       case "content_type_data_mismatch":
         return t`This item has no data for this layout.`;
+      case "unsupported_tape": {
+        // #346: a DK width only the spool label has; the other layouts follow with #258.
+        const tapeMm = Number(result.error_detail?.tape_mm);
+        if (result.error_detail?.spool_label_only === true && Number.isFinite(tapeMm)) {
+          return t`Only the spool label prints on ${tapeMm} mm tape. Remove this label or load 62 mm tape.`;
+        }
+        return result.error_message ?? t`This label cannot be drawn.`;
+      }
       case "render_failed":
         return t`The label could not be drawn for this tape.`;
       case "integration_item_not_found":

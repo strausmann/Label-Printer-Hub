@@ -104,6 +104,23 @@ class UnsupportedTapeError(PrinterError):
         )
 
 
+class SpoolLabelOnlyTapeError(UnsupportedTapeError):
+    """A batch on a DK width only the spool label has (29, 38, 50, 54 mm, #346) holds other
+    labels: those layouts need 62 mm QL tape or a P-touch (other DK widths follow with #258).
+
+    HTTP-Status: 409, ``unsupported_tape`` with ``content_types`` naming the other layouts.
+    """
+
+    def __init__(self, *, tape_mm: int, content_types: tuple[str, ...]) -> None:
+        super().__init__(tape_mm=tape_mm)
+        self.content_types = content_types
+        Exception.__init__(
+            self,
+            f"Only the spool label prints on {tape_mm}mm tape; the other labels "
+            f"({', '.join(content_types)}) need 62mm QL tape.",
+        )
+
+
 class NoTapeLoadedError(PrinterError):
     """Raised when preflight returns loaded_tape_mm=None (no tape inserted).
 

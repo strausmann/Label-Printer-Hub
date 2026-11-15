@@ -2923,6 +2923,14 @@ msgstr "Only one sheet type is off; other sheets sit with the same correction"
 msgid "Only the first {listed} of {reported} trays are listed."
 msgstr "Only the first {listed} of {reported} trays are listed."
 
+#: src/features/lookup/PrinterPicker.tsx
+msgid "Only the spool label prints on {tapeMm} mm tape. Remove the other labels from the cart or load 62 mm tape."
+msgstr "Only the spool label prints on {tapeMm} mm tape. Remove the other labels from the cart or load 62 mm tape."
+
+#: src/features/lookup/CartPage.tsx
+msgid "Only the spool label prints on {tapeMm} mm tape. Remove this label or load 62 mm tape."
+msgstr "Only the spool label prints on {tapeMm} mm tape. Remove this label or load 62 mm tape."
+
 #: src/features/archive/errors.ts
 msgid "Only your own types can be deleted. Archive this one instead."
 msgstr "Only your own types can be deleted. Archive this one instead."

@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
-from app.printer_backends.exceptions import ConflictingOrientationError, UnsupportedTapeError
+from app.printer_backends.exceptions import (
+    ConflictingOrientationError,
+    SpoolLabelOnlyTapeError,
+    UnsupportedTapeError,
+)
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.schemas.content_type import ContentType
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
@@ -312,14 +316,25 @@ async def test_single_swatch_job_on_38mm_is_along() -> None:
         await queue.stop()
 
 
+async def test_all_swatch_batch_on_38mm_is_not_refused() -> None:
+    svc, backend, _, queue = await _live(tape_mm=38)
+    try:
+        await svc.submit_batch_job([_swatch_request()], half_cut=False)
+        await _printed(backend, 1)
+    finally:
+        await queue.stop()
+
+
 async def test_mixed_batch_on_38mm_is_refused_for_the_other_label() -> None:
     """Only the spool label has the other DK widths so far (#258): a mixed batch there fails on
     the other item, as before; the turning of a swatch in a mixed batch is covered on 62 mm and
     by ``swatch_for_batch`` for every width."""
     svc, _, _, queue = await _live(tape_mm=38)
     try:
-        with pytest.raises(UnsupportedTapeError):
+        with pytest.raises(SpoolLabelOnlyTapeError) as exc:
             await svc.submit_batch_job([_request(), _swatch_request()], half_cut=False)
+        assert exc.value.tape_mm == 38
+        assert exc.value.content_types == ("qr_three_lines",)
     finally:
         await queue.stop()
 

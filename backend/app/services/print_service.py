@@ -32,19 +32,21 @@ from app.printer_backends.exceptions import (
     NoTapeLoadedError,
     PrinterDisabledError,
     QrPayloadTooLongError,
+    SpoolLabelOnlyTapeError,
     TapeMismatchError,
 )
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
 from app.schemas.print_request import PrintOptions, PrintRequest, RawLabelData
+from app.schemas.tape_geometry import TAPE_GEOMETRY
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_gate import lookup_gate
 from app.services.print_error_codes import print_error_code
 from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_JOB
 from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.services.ql_layout import resolve_layout
-from app.services.spool_swatch import swatch_for_batch, swatch_orientation
+from app.services.spool_swatch import SWATCH_TAPES, swatch_for_batch, swatch_orientation
 
 _log = logging.getLogger(__name__)
 
@@ -564,6 +566,16 @@ class PrintService:
             raise NoTapeLoadedError()
 
         tape_mm = preflight.loaded_tape_mm
+        others = sorted(
+            {
+                str(r.content_type)
+                for r in requests
+                if r.content_type is not ContentType.SPOOL_SWATCH
+            }
+        )
+        if others and tape_mm in SWATCH_TAPES and tape_mm not in TAPE_GEOMETRY:
+            # #346: refused before any lookup, naming the layouts that cannot print here.
+            raise SpoolLabelOnlyTapeError(tape_mm=tape_mm, content_types=tuple(others))
         # #258: one orientation for the whole batch; the backend rotates every image on that
         # one flag. Items without an orientation follow the one an item names explicitly;
         # different explicit orientations are refused instead of silently overridden.

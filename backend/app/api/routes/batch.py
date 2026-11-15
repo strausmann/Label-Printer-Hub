@@ -29,6 +29,7 @@ from app.printer_backends.exceptions import (
     PrinterOfflineError,
     QrPayloadTooLongError,
     SnmpQueryError,
+    SpoolLabelOnlyTapeError,
     TapeMismatchError,
     UnsupportedTapeError,
 )
@@ -255,6 +256,14 @@ async def create_batch(
             error_code = "no_tape_loaded"
             error_msg = "No tape loaded — insert a Brother TZe or DK cartridge."
             error_detail: dict[str, object] = {}
+        elif isinstance(exc, SpoolLabelOnlyTapeError):
+            # #346: name the layouts that cannot print on this DK width (fixed text, no str(exc)).
+            error_code = "unsupported_tape"
+            error_msg = (
+                f"Only the spool label prints on {exc.tape_mm} mm tape. Remove the other labels "
+                "from the cart or load 62 mm tape."
+            )
+            error_detail = {"tape_mm": exc.tape_mm, "content_types": list(exc.content_types)}
         else:
             error_code = "unsupported_tape"
             error_msg = "The currently loaded tape width is not supported by the layout engine."

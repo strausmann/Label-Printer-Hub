@@ -269,4 +269,28 @@ describe("spool labels in the cart (#346)", () => {
       { content_type: "spool_swatch", options: { copies: 1 }, lookup: { app: "spoolman", identifier: "7" } },
     ]);
   });
+
+  it("on 38 mm tape the other labels are flagged and a print names why", async () => {
+    const routes = cartRoutes([otherLine, spoolLine("7")]);
+    const { calls } = mockApi({
+      ...routes,
+      [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "38mm", tape_width_mm: 38 }),
+      "POST /api/v1/render/check": {
+        results: [
+          { index: 0, ok: false, error_code: "unsupported_tape", error_message: "x", error_detail: { tape_mm: 38, spool_label_only: true } },
+          { index: 1, ok: true },
+        ],
+      },
+      [`POST /api/v1/print/${PRINTER_B.id}/batch`]: respond(409, {
+        detail: { error_code: "unsupported_tape", error_message: "x", error_detail: { tape_mm: 38, content_types: ["qr_two_lines"] } },
+      }),
+    });
+    await renderApp({ path: "/cart" });
+    expect(await screen.findByText("Only the spool label prints on 38 mm tape. Remove this label or load 62 mm tape.")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: /Print 2 labels/ }));
+    expect(
+      await screen.findByText("Only the spool label prints on 38 mm tape. Remove the other labels from the cart or load 62 mm tape."),
+    ).toBeVisible();
+    expect(calls.some((c) => c.path === `/api/v1/print/${PRINTER_B.id}/batch`)).toBe(true);
+  });
 });

@@ -102,6 +102,11 @@ export function usePrintErrorText(): (error: unknown) => string {
           ? t`The link in the QR code is ${length} bytes long, but this layout holds at most ${max} bytes. Pick another arrangement or a shorter link.`
           : t`The link in the QR code is too long for this layout.`;
       }
+      if (error.code === "unsupported_tape" && Array.isArray(error.errorDetail?.content_types)) {
+        // #346: a cart with other labels on a DK width only the spool label has.
+        const tapeMm = Number(error.errorDetail?.tape_mm);
+        return t`Only the spool label prints on ${tapeMm} mm tape. Remove the other labels from the cart or load 62 mm tape.`;
+      }
       if (error.code === "conflicting_orientation") return t`These labels ask for different directions (along and across). Print them in separate runs.`;
       if (error.detail && !/^HTTP \d+$/.test(error.detail)) return error.detail;
     }

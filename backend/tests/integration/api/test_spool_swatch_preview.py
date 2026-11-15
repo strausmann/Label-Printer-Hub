@@ -307,3 +307,41 @@ async def test_webhook_spoolman_label_is_unchanged(hub: Hub) -> None:
         row = await _done(r.json()["job_id"])
     assert row.payload["content_type"] == "qr_two_lines"
     assert row.payload["label_data"]["title"] == "TecBears Orange"
+
+
+async def test_mixed_batch_on_38mm_names_the_layouts_that_cannot_print(hub: Hub) -> None:
+    """#346: on a DK width only the spool label has, a cart with other labels is refused with a
+    message that says so, naming the other layouts; nothing is queued."""
+    hub.backend._loaded_tape_mm = 38
+    items = [
+        {"content_type": "spool_swatch", "lookup": {"app": "spoolman", "identifier": "12"}},
+        {"content_type": "qr_two_lines", "lookup": {"app": "spoolman", "identifier": "12"}},
+    ]
+    async with hub.running() as (client, _):
+        r = await client.post("/api/v1/print/ql-1/batch", json={"items": items})
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["error_code"] == "unsupported_tape"
+    assert detail["error_message"] == (
+        "Only the spool label prints on 38 mm tape. Remove the other labels from the cart or "
+        "load 62 mm tape."
+    )
+    assert detail["error_detail"] == {"tape_mm": 38, "content_types": ["qr_two_lines"]}
+    assert hub.backend.printed_images == []
+
+
+async def test_render_check_on_38mm_flags_only_the_other_labels(hub: Hub) -> None:
+    items = [
+        {"content_type": "spool_swatch", "lookup": {"app": "spoolman", "identifier": "12"}},
+        {"content_type": "qr_two_lines", "lookup": {"app": "spoolman", "identifier": "12"}},
+    ]
+    async with hub.running() as (client, _):
+        r = await client.post("/api/v1/render/check", json={"tape_mm": 38, "items": items})
+    assert r.status_code == 200, r.text
+    first, second = r.json()["results"]
+    assert (first["ok"], first["error_code"]) == (True, None)
+    assert (second["ok"], second["error_code"]) == (False, "unsupported_tape")
+    assert second["error_message"] == (
+        "Only the spool label prints on 38 mm tape; this layout needs 62 mm tape."
+    )
+    assert second["error_detail"] == {"tape_mm": 38, "spool_label_only": True}

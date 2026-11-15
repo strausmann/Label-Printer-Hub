@@ -242,8 +242,17 @@ async def test_render_check_accepts_a_swatch_cart_on_the_other_dk_widths(tape_mm
 
 
 @pytest.mark.asyncio
-async def test_render_check_refuses_a_mixed_cart_on_38mm():
-    """The other layouts have no 38 mm yet (#258): the whole check is refused, as before."""
+async def test_render_check_flags_the_other_labels_of_a_mixed_cart_on_38mm():
+    """The other layouts have no 38 mm yet (#258): each gets its own verdict naming why."""
     items = [_item("7", content_type=ContentType.SPOOL_SWATCH, app="spoolman"), _item("A1")]
+    out = await check_items(_req(*items, tape_mm=38), _swatch_lookups())
+    swatch, other = out.results
+    assert (swatch.ok, swatch.error_code) == (True, None)
+    assert (other.ok, other.error_code) == (False, "unsupported_tape")
+    assert other.error_detail == {"tape_mm": 38, "spool_label_only": True}
+
+
+@pytest.mark.asyncio
+async def test_render_check_without_spool_labels_on_38mm_is_refused_as_before():
     with pytest.raises(UnsupportedTapeError):
-        await check_items(_req(*items, tape_mm=38), _swatch_lookups())
+        await check_items(_req(_item("A1"), tape_mm=38), _swatch_lookups())
