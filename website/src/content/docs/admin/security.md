@@ -51,14 +51,15 @@ Log tools that read nginx logs read it as is, CrowdSec among them. The access lo
 - **Key prefix, never a key.** A key in the URL `token` (Grocy's webhook) shows only its public prefix, the first 16 characters, followed by `***`. A key in the `X-Label-Hub-Key` header shows the same prefix in the user field. That prefix is the one in the key list under **Settings > Access and keys**, so you can match a refused call to a key. The prefix is taken from the value as sent: an unknown or guessed key shows its prefix too. A value that is not in key format shows `***` (in the URL) or `-` (in the user field). Every other parameter whose name looks like a key, token, secret or password shows `***`. No other header is written except the referer and the user agent.
 - **Honest status codes.** Refusals keep the status the hub answered: `401` for a missing or wrong key, `403` for a key without the right scope, `429` past a rate limit.
 - **No forged lines.** Quotes, backslashes and control characters in the request, the referer and the user agent are written as `\xHH`, as nginx does, so a client cannot start a second line.
-- **Health checks are left out**, so probes do not flood the log.
+- **Successful health checks are left out**, so probes do not flood the log: `/healthz` and `/readiness` get no line when they answer `2xx` or `503`. `/readiness` takes a `read` key, so a refused key there (`401`, `403`, `429`) is always logged.
+- **A hang-up is `499`.** A request the client gives up on before the hub answers is written with nginx's `499`. Requests that the web server rejects before the hub sees them, such as a malformed request line, get no line.
 
 Two settings control it (see [configuration](/reference/configuration/)):
 
 | Variable | Default | Effect |
 |---|---|---|
 | `LABELYARD_ACCESS_LOG` | `true` | `false` turns the access log off completely |
-| `LABELYARD_ACCESS_LOG_PROBES` | `false` | `true` also logs `/healthz` and `/readiness` |
+| `LABELYARD_ACCESS_LOG_PROBES` | `false` | `true` also logs successful `/healthz` and `/readiness` calls |
 
 ### Read it with CrowdSec
 
@@ -118,6 +119,8 @@ What the stock scenarios of the collection count (checked against `crowdsecurity
 | [`crowdsecurity/http-bad-user-agent`](https://github.com/crowdsecurity/hub/blob/master/scenarios/crowdsecurity/http-bad-user-agent.yaml) | user agents of known scanners | the second such request within a minute |
 
 The two brute-force scenarios are defined in the [`http-generic-bf` file](https://github.com/crowdsecurity/hub/blob/master/scenarios/crowdsecurity/http-generic-bf.yaml) of the [`base-http-scenarios` collection](https://github.com/crowdsecurity/hub/blob/master/collections/crowdsecurity/base-http-scenarios.yaml); they count `POST` only. A refused `GET` counts in `http-probing` when it is answered `403`, and not at all when it is answered `401`. No stock scenario counts `429`: the hub's own rate limits stay the answer to too many calls. The collection's `crowdsecurity/nginx-req-limit-exceeded` reads nginx's error log, not this access log, and does not apply.
+
+The scenarios can also hit your own users: a browser whose session expired can send a few `POST` requests that answer `401` in a row, and one busy tab of the web UI sends many `GET` requests. Put the ranges your users come from into the whitelist above, and watch `cscli decisions list` for the first days after you turn it on.
 
 ## Reporting a vulnerability
 

@@ -68,8 +68,8 @@ access_log:
   en: 'Writes one line per HTTP request to stdout in nginx combined format, so CrowdSec and other log tools can read it. A key shows only its public prefix. `false` turns the access log off completely. See [security](/admin/security/#access-log).'
   de: 'Schreibt je HTTP-Anfrage eine Zeile im nginx-Format „combined“ auf stdout, damit CrowdSec und andere Log-Werkzeuge sie lesen können. Von einem Schlüssel erscheint nur sein öffentliches Präfix. `false` schaltet das Zugriffsprotokoll ganz ab. Siehe [Sicherheit](/de/admin/security/#zugriffsprotokoll).'
 access_log_probes:
-  en: 'Also writes the health checks `/healthz` and `/readiness` to the access log. Off by default, so probes do not flood it.'
-  de: 'Schreibt auch die Zustandsprüfungen `/healthz` und `/readiness` ins Zugriffsprotokoll. Standardmäßig aus, damit Prüfaufrufe es nicht fluten.'
+  en: 'Also writes successful health checks (`/healthz` and `/readiness` answering 2xx or 503) to the access log. Off by default, so probes do not flood it; a refused key on `/readiness` is logged either way.'
+  de: 'Schreibt auch erfolgreiche Zustandsprüfungen (`/healthz` und `/readiness` mit Antwort 2xx oder 503) ins Zugriffsprotokoll. Standardmäßig aus, damit Prüfaufrufe es nicht fluten; ein abgewiesener Schlüssel an `/readiness` erscheint in jedem Fall.'
 sign_in_limit_per_minute:
   en: 'Browser sign-in attempts per minute and client address. Behind a proxy all clients share the proxy''s address unless the proxy is trusted (`FORWARDED_ALLOW_IPS`).'
   de: 'Anmeldeversuche im Browser pro Minute und Client-Adresse. Hinter einem Proxy teilen sich alle Clients dessen Adresse, solange der Proxy nicht als vertrauenswürdig eingetragen ist (`FORWARDED_ALLOW_IPS`).'

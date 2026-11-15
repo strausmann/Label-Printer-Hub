@@ -145,7 +145,8 @@ class Settings(BaseSettings):
     other log tools). Off: no access log at all, uvicorn's lines stay off too."""
 
     access_log_probes: bool = False
-    """#366: also log ``/healthz`` and ``/readiness`` (left out by default)."""
+    """#366: also log successful ``/healthz`` and ``/readiness`` calls (2xx or 503; left out by
+    default). A refused key on ``/readiness`` is logged either way."""
 
     sign_in_limit_per_minute: int = Field(default=10, gt=0)
     """Browser sign-in attempts per minute and client address (default 10). Keep the default

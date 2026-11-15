@@ -181,7 +181,7 @@ Schreibt je HTTP-Anfrage eine Zeile im nginx-Format „combined“ auf stdout, d
 
 Standard: `False`
 
-Schreibt auch die Zustandsprüfungen `/healthz` und `/readiness` ins Zugriffsprotokoll. Standardmäßig aus, damit Prüfaufrufe es nicht fluten.
+Schreibt auch erfolgreiche Zustandsprüfungen (`/healthz` und `/readiness` mit Antwort 2xx oder 503) ins Zugriffsprotokoll. Standardmäßig aus, damit Prüfaufrufe es nicht fluten; ein abgewiesener Schlüssel an `/readiness` erscheint in jedem Fall.
 
 ### `LABELYARD_SIGN_IN_LIMIT_PER_MINUTE`
 

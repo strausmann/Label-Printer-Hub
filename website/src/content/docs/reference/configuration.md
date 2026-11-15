@@ -181,7 +181,7 @@ Writes one line per HTTP request to stdout in nginx combined format, so CrowdSec
 
 Default: `False`
 
-Also writes the health checks `/healthz` and `/readiness` to the access log. Off by default, so probes do not flood it.
+Also writes successful health checks (`/healthz` and `/readiness` answering 2xx or 503) to the access log. Off by default, so probes do not flood it; a refused key on `/readiness` is logged either way.
 
 ### `LABELYARD_SIGN_IN_LIMIT_PER_MINUTE`
 

@@ -51,14 +51,15 @@ Log-Werkzeuge, die nginx-Logs lesen, lesen es unverändert, CrowdSec auch. Das Z
 - **Schlüssel-Präfix, nie ein Schlüssel.** Von einem Schlüssel im URL-Parameter `token` (Grocys Webhook) erscheint nur sein öffentliches Präfix, die ersten 16 Zeichen, gefolgt von `***`. Ein Schlüssel im Header `X-Label-Hub-Key` erscheint mit demselben Präfix im Benutzerfeld. Das Präfix ist dasselbe wie in der Schlüsselliste unter **Einstellungen > Zugang und Schlüssel**, so ordnest du einen abgewiesenen Aufruf einem Schlüssel zu. Das Präfix stammt aus dem gesendeten Wert: Auch ein unbekannter oder geratener Schlüssel zeigt sein Präfix. Ein Wert, der kein Schlüsselformat hat, erscheint als `***` (in der URL) oder `-` (im Benutzerfeld). Jeder andere Parameter, dessen Name nach Schlüssel, Token, Geheimnis oder Passwort aussieht, erscheint als `***`. Außer Referer und User-Agent wird kein Header geschrieben.
 - **Ehrliche Statuscodes.** Abweisungen behalten den Status, den der Hub geantwortet hat: `401` bei fehlendem oder falschem Schlüssel, `403` bei einem Schlüssel ohne passenden Bereich, `429` über einer Ratenbegrenzung.
 - **Keine gefälschten Zeilen.** Anführungszeichen, Backslashes und Steuerzeichen in Anfrage, Referer und User-Agent werden wie bei nginx als `\xHH` geschrieben, damit ein Client keine zweite Zeile beginnen kann.
-- **Zustandsprüfungen fehlen**, damit Prüfaufrufe das Protokoll nicht fluten.
+- **Erfolgreiche Zustandsprüfungen fehlen**, damit Prüfaufrufe das Protokoll nicht fluten: `/healthz` und `/readiness` bekommen keine Zeile, wenn sie mit `2xx` oder `503` antworten. `/readiness` braucht einen `read`-Schlüssel, ein dort abgewiesener Schlüssel (`401`, `403`, `429`) erscheint deshalb immer.
+- **Ein Abbruch ist `499`.** Eine Anfrage, die der Client aufgibt, bevor der Hub antwortet, erscheint mit nginx’ `499`. Anfragen, die der Webserver abweist, bevor der Hub sie sieht, etwa mit kaputter Anfragezeile, bekommen keine Zeile.
 
 Zwei Einstellungen steuern es (siehe [Konfiguration](/de/reference/configuration/)):
 
 | Variable | Standard | Wirkung |
 |---|---|---|
 | `LABELYARD_ACCESS_LOG` | `true` | `false` schaltet das Zugriffsprotokoll ganz ab |
-| `LABELYARD_ACCESS_LOG_PROBES` | `false` | `true` protokolliert auch `/healthz` und `/readiness` |
+| `LABELYARD_ACCESS_LOG_PROBES` | `false` | `true` protokolliert auch erfolgreiche Aufrufe von `/healthz` und `/readiness` |
 
 ### Mit CrowdSec lesen
 
@@ -118,6 +119,8 @@ Was die mitgelieferten Szenarien der Sammlung zählen (geprüft mit `crowdsecuri
 | [`crowdsecurity/http-bad-user-agent`](https://github.com/crowdsecurity/hub/blob/master/scenarios/crowdsecurity/http-bad-user-agent.yaml) | User-Agents bekannter Scanner | die zweite solche Anfrage innerhalb einer Minute |
 
 Die beiden Brute-Force-Szenarien stehen in der [Datei `http-generic-bf`](https://github.com/crowdsecurity/hub/blob/master/scenarios/crowdsecurity/http-generic-bf.yaml) der [Sammlung `base-http-scenarios`](https://github.com/crowdsecurity/hub/blob/master/collections/crowdsecurity/base-http-scenarios.yaml); sie zählen nur `POST`. Ein abgewiesenes `GET` zählt bei `http-probing`, wenn die Antwort `403` ist, und gar nicht, wenn sie `401` ist. Kein mitgeliefertes Szenario zählt `429`: Auf zu viele Aufrufe antworten weiter die Ratenbegrenzungen des Hubs. `crowdsecurity/nginx-req-limit-exceeded` aus der Sammlung liest das Fehlerprotokoll von nginx, nicht dieses Zugriffsprotokoll, und greift hier nicht.
+
+Die Szenarien können auch deine eigenen Nutzer treffen: Ein Browser mit abgelaufener Sitzung schickt womöglich mehrere `POST`-Anfragen hintereinander, die mit `401` antworten, und ein reger Tab der Weboberfläche schickt viele `GET`-Anfragen. Nimm die Bereiche, aus denen deine Nutzer kommen, in die Ausnahmeliste oben auf, und behalte in den ersten Tagen nach dem Einschalten `cscli decisions list` im Blick.
 
 ## Eine Lücke melden
 
