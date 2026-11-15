@@ -41,8 +41,8 @@ function MenuItems({ onNavigate }: { onNavigate: () => void }) {
         const headingId = `menu-group-${group.id}`;
         return (
           <div key={group.id} className="flex flex-col gap-2">
-            {/* The System heading would sit right above the Settings heading: Settings names the group itself. */}
-            {heading && !settings ? (
+            {/* A group that holds only Settings gets no heading of its own: Settings names it (and would sit right below it). */}
+            {heading && !(settings && entries.length === 0) ? (
               <p id={headingId} className="px-3 text-small font-bold text-ink-3">
                 {heading}
               </p>
@@ -111,10 +111,10 @@ export function PhoneMenu() {
         // The overlay is the visible area, not the screen: with the on-screen keyboard open the sheet stays inside it.
         className="fixed inset-x-0 top-(--vv-top) z-50 h-(--vvh) bg-ink/40 data-[entering]:animate-[fadein_200ms_ease-out] motion-reduce:data-[entering]:animate-none"
       >
-        <Modal className="h-full w-[min(20rem,86vw)] overflow-y-auto overscroll-contain border-r border-line bg-surface data-[entering]:animate-[menuin_200ms_cubic-bezier(0.23,1,0.32,1)] motion-reduce:data-[entering]:animate-none">
-          <Dialog aria-label={t`Menu`} className="flex min-h-full flex-col outline-none">
-            {/* Sticky: the sheet scrolls, the close button stays in reach. */}
-            <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface px-4 pt-3 pb-1">
+        <Modal className="h-full w-[min(20rem,86vw)] border-r border-line bg-surface data-[entering]:animate-[menuin_200ms_cubic-bezier(0.23,1,0.32,1)] motion-reduce:data-[entering]:animate-none">
+          <Dialog aria-label={t`Menu`} className="flex h-full flex-col outline-none">
+            {/* Header and footer stay put; only the entries scroll. The insets keep them clear of a notch and rounded corners. */}
+            <div className="flex shrink-0 items-center gap-2 bg-surface pt-[max(0.75rem,env(safe-area-inset-top))] pr-4 pb-1 pl-[max(1rem,env(safe-area-inset-left))]">
               <Heading slot="title" className="min-w-0 flex-1 text-section font-bold">
                 {t`Menu`}
               </Heading>
@@ -122,10 +122,10 @@ export function PhoneMenu() {
                 <CloseIcon width={20} height={20} />
               </Button>
             </div>
-            <div className="flex-1">
+            <div data-testid="menu-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <MenuItems onNavigate={close} />
             </div>
-            <div className="flex flex-col gap-3 border-t border-line px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            <div className="flex shrink-0 flex-col gap-3 border-t border-line pt-4 pr-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]">
               <div className="flex items-center gap-1">
                 <Link to="/about" onClick={close} aria-label={t({ message: "About and licences", context: "link to the about page" })} className={ICON_BUTTON}>
                   <InfoIcon />

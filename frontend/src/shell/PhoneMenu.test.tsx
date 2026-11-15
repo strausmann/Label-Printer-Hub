@@ -36,10 +36,12 @@ describe("PhoneMenu", () => {
       .flatMap((g) => g.entries)
       .map((e) => e.id)
       .filter((id) => id !== "settings");
-    expect(expected).toContain("calibration");
-    for (const label of ["Overview", "Printers", "Jobs", "Sheets", "Sheet archive", "Calibration", "Paperless ASN", "Kept / Hangar / Grocy"]) {
-      expect(names).toContain(label);
-    }
+    expect(expected).toEqual(["overview", "printers", "jobs", "sheets", "sheet-archive", "calibration", "asn", "kept"]);
+    const labelOf: Record<string, string> = {
+      overview: "Overview", printers: "Printers", jobs: "Jobs", sheets: "Sheets", "sheet-archive": "Sheet archive",
+      calibration: "Calibration", asn: "Paperless ASN", kept: "Kept / Hangar / Grocy",
+    };
+    for (const id of expected) expect(names).toContain(labelOf[id]);
     expect(names).toEqual(expect.arrayContaining(["General", "Printers", "Integrations", "Access and keys", "Jobs", "System"]));
     expect(names.filter((n) => n === "Jobs")).toHaveLength(2);
   });
@@ -125,5 +127,18 @@ describe("PhoneMenu", () => {
     expect(jobs.some((l) => l.getAttribute("data-status") === "active")).toBe(true);
     const printers = within(menu).getAllByRole("link", { name: "Printers" });
     expect(printers.every((l) => l.getAttribute("data-status") !== "active")).toBe(true);
+  });
+
+  it.each([
+    ["an integration link", "Grocy", "/integrations/grocy"],
+    ["a settings link", "Access and keys", "/settings/access"],
+    ["the About link", "About and licences", "/about"],
+  ])("%s closes the menu", async (_what, name, path) => {
+    mockApi({});
+    const { router } = await renderApp({ path: "/", info: { features: FEATURES } });
+    const menu = await open();
+    await userEvent.click(within(menu).getByRole("link", { name }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(path));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Menu" })).toBeNull());
   });
 });

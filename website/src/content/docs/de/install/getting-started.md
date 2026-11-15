@@ -108,9 +108,9 @@ Installieren und auf die Kamera zugreifen erlauben Browser nur auf einer sichere
 - **iPhone und iPad (Safari):** Hub öffnen, Teilen > *Zum Home-Bildschirm*.
 - **Desktop (Chrome, Edge):** das Installationssymbol in der Adressleiste.
 
-Auf dem Handy öffnet **Menü** oben links jeden Bereich: Kalibrierung, Einstellungen und die Integrationen.
-
 Das Symbol auf dem Startbildschirm hat eine Kurzwahl **Scannen**. Setz `LABELYARD_PUBLIC_URL` auf die Adresse, die die Leute öffnen; mit einem `https`-Wert sind die Sitzungs-Cookies `Secure`, und ein Browser schickt sie nicht an einen reinen `http`-Namen desselben Hubs.
+
+Auf dem Handy öffnet **Menü** oben links jeden Bereich: Kalibrierung, Einstellungen und die Integrationen.
 
 ## 5. Webhooks: drucken, wenn etwas passiert
 

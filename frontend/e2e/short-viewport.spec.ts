@@ -193,11 +193,12 @@ test.describe("short viewport (on-screen keyboard)", () => {
         const menu = page.getByRole("dialog", { name: "Menu" });
         await expect(menu).toBeVisible();
         await keyboard(mode);
-        const sheet = frameOf(menu);
+        const sheet = menu.getByTestId("menu-scroll");
         const close = menu.locator('button[aria-label="Close"]');
         const first = menu.locator('nav[aria-label="Pages"] a').first();
         await expectInSight(page, close, "the close button");
         await expectInSight(page, first, "the first entry");
+        await expectInSight(page, menu.locator('button[aria-label="Sign out"]'), "the Sign out button");
         await expectInSight(page, sheet, "the sheet");
         // More entries than fit: the sheet scrolls, the page behind does not move.
         const scroll = await sheet.evaluate((el) => ({ over: el.scrollHeight > el.clientHeight, page: window.scrollY }));
@@ -206,6 +207,8 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await last.scrollIntoViewIfNeeded();
         await expectInSight(page, last, "the last entry after scrolling");
         await expectInSight(page, close, "the close button after scrolling");
+        // The footer is pinned: reachable without scrolling the list, before and after.
+        await expectInSight(page, menu.locator('button[aria-label="Sign out"]'), "the Sign out button after scrolling");
         expect(await page.evaluate(() => window.scrollY), "the page behind stays put").toBe(scroll.page);
         await page.keyboard.press("Escape");
         await expect(menu).toBeHidden();
