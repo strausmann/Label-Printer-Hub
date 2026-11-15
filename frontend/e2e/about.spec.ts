@@ -106,10 +106,12 @@ test.describe.serial("about", () => {
     await expect(filter).toBeInViewport();
   });
 
-  test("phone: the top bar link opens the about page", async () => {
+  test("phone: the menu link opens the about page", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
-    await page.getByRole("banner").getByRole("link", { name: "About and licences" }).click();
+    // About lives in the pinned footer of the phone menu (#319), no longer in the top bar.
+    await page.getByRole("button", { name: "Menu", exact: true }).click();
+    await page.getByRole("dialog", { name: "Menu" }).getByRole("link", { name: "About and licences" }).click();
     await expect(page).toHaveURL(/\/about$/);
     await expect(page.getByRole("heading", { level: 1, name: "About" })).toBeVisible();
     expect(await noSideScroll(page)).toBe(true);
