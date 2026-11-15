@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.6.0](https://github.com/strausmann/Label-Printer-Hub/compare/v1.5.2...v1.6.0) (2026-11-15)
+
+### Features
+
+* **config:** read LABELYARD_* settings and keep PRINTER_HUB_* as a fallback ([f98d38a](https://github.com/strausmann/Label-Printer-Hub/commit/f98d38a8d5c860e3e35d850966b6d4adbd8c9e93))
+* name the backend, CLI and API Labelyard ([1feea1d](https://github.com/strausmann/Label-Printer-Hub/commit/1feea1db53c2e87274e2ec2a09f85732a0718c5f))
+* **ui:** list every shipped third-party licence on the about page ([9f71334](https://github.com/strausmann/Label-Printer-Hub/commit/9f713343a2452d37b68b52d12a5312be20a4ba65)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* **web:** show the Labelyard name, logo and tagline ([286b54f](https://github.com/strausmann/Label-Printer-Hub/commit/286b54f1637271014bbb27052fc3ccf3c11b1ebd))
+
+### Bug Fixes
+
+* **about:** link pre-release builds to their commit, not a missing tag ([b2d36c9](https://github.com/strausmann/Label-Printer-Hub/commit/b2d36c94e3ee1b5eb2aa2914d337c6c52c445682)), closes [#327](https://github.com/strausmann/Label-Printer-Hub/issues/327)
+* **auth:** name the bootstrap variable the deployment set ([392a65e](https://github.com/strausmann/Label-Printer-Hub/commit/392a65e5debdc8ed282f7aa06c80d6370b4092e0))
+* **brand:** let users copy the verify commands, and cover the kept metric names in the guard ([b9240b4](https://github.com/strausmann/Label-Printer-Hub/commit/b9240b465903b1471ad5f6b4e92730fe216867e3)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **calibration:** announce the pending note and say in the legend that inner corners have no marks ([4162ce1](https://github.com/strausmann/Label-Printer-Hub/commit/4162ce1d1b4bdc7edb07ba342b1d1713af6ff580)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **calibration:** check a label corner against its own crossing only, and run the image test in CI ([31fb54a](https://github.com/strausmann/Label-Printer-Hub/commit/31fb54ad340776bde9f78296d9ba1e3ae559f93c)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **calibration:** explain the disabled check button, keep focus on an enabled button, say the values stay ([d9fcf60](https://github.com/strausmann/Label-Printer-Hub/commit/d9fcf60db8d2018b9464be3f34fa292b255b63a4)), closes [#349](https://github.com/strausmann/Label-Printer-Hub/issues/349)
+* **calibration:** leave out a label-corner mark that would come within the white of a tick ([a1e96c4](https://github.com/strausmann/Label-Printer-Hub/commit/a1e96c414743099591119436e92033274a62e3a7)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348) [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **calibration:** make the check print the obvious next step once a correction is stored ([b874741](https://github.com/strausmann/Label-Printer-Hub/commit/b874741719b6cb5278c16d808fc5e35f7777d8cb)), closes [#349](https://github.com/strausmann/Label-Printer-Hub/issues/349)
+* **calibration:** say so when the calibration page is pressed while it is still being queued ([d78958d](https://github.com/strausmann/Label-Printer-Hub/commit/d78958d83bd72b76a20213e13619de466a9fa493)), closes [#349](https://github.com/strausmann/Label-Printer-Hub/issues/349)
+* **calibration:** serve the mini scale from the calibration routes, not the public info ([04f30a6](https://github.com/strausmann/Label-Printer-Hub/commit/04f30a69bc62bbee1c46411a3b79febc793aacaa)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **calibration:** space the mini scale ticks 0.5 mm apart and draw the app schematic to the same scale ([a8d18d4](https://github.com/strausmann/Label-Printer-Hub/commit/a8d18d49ee9836edf5d626877bc131ede748eb59)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **calibration:** word the corner-mark legend for every sheet type; tighten the brand guard ([2e8b663](https://github.com/strausmann/Label-Printer-Hub/commit/2e8b663a84b3b5f2a80fc5709470a2f952952b1b)), closes [#348](https://github.com/strausmann/Label-Printer-Hub/issues/348)
+* **config:** keep input values out of the DEBUG configuration error ([3bbba4f](https://github.com/strausmann/Label-Printer-Hub/commit/3bbba4fb5b70ef12e3b9a6ed2be23af9a657c78e))
+* **config:** make the prefix rename hold in CI and for empty values ([abcdfe0](https://github.com/strausmann/Label-Printer-Hub/commit/abcdfe0084cb80798a303ca48e563aa2c06d369d))
+* **docker:** drop pip, setuptools and wheel from the runtime venv ([f438b8c](https://github.com/strausmann/Label-Printer-Hub/commit/f438b8c476c20914e1c1472a3d1d14b48192658a)), closes [#332](https://github.com/strausmann/Label-Printer-Hub/issues/332)
+* **docker:** remove the base image's pip from the runtime stage ([9535e73](https://github.com/strausmann/Label-Printer-Hub/commit/9535e7387ea3bc863d768ac747a3f048a517ab13)), closes [#332](https://github.com/strausmann/Label-Printer-Hub/issues/332)
+* **docs:** close the review holes in the prose rules ([e8a9d78](https://github.com/strausmann/Label-Printer-Hub/commit/e8a9d7892216ea9dfa04a6e4aea38edee360aa62))
+* **logs:** satisfy lint line length and brand guard ([61c0329](https://github.com/strausmann/Label-Printer-Hub/commit/61c0329bb15efbc30b869de8009b510089e3c3c6)), closes [#324](https://github.com/strausmann/Label-Printer-Hub/issues/324)
+* **logs:** write application warnings to the container output ([463e6e2](https://github.com/strausmann/Label-Printer-Hub/commit/463e6e24f675d0f6bdd90448dd2603cdcaab5bc8)), closes [#324](https://github.com/strausmann/Label-Printer-Hub/issues/324)
+* **pwa:** let the server answer /frontend.cdx.json ([7304be2](https://github.com/strausmann/Label-Printer-Hub/commit/7304be23f4baa94a7b4668e146df4c86d76a4856))
+* **sheets:** allow QR codes on 10 mm labels by default ([47c7f56](https://github.com/strausmann/Label-Printer-Hub/commit/47c7f563afea1c7da38337d4fd5eb900f9f84489)), closes [#330](https://github.com/strausmann/Label-Printer-Hub/issues/330)
+* **ui:** cap the licence list, handle load errors, name every button ([7568028](https://github.com/strausmann/Label-Printer-Hub/commit/75680281f5ab25a0274db6aff50ebfffb17f1ec3)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* **ui:** close the sheet type list on Escape while nothing is chosen ([db54ed9](https://github.com/strausmann/Label-Printer-Hub/commit/db54ed9c5495e421c8603863ece18c51f3ba6b7a)), closes [#318](https://github.com/strausmann/Label-Printer-Hub/issues/318) [#322](https://github.com/strausmann/Label-Printer-Hub/issues/322)
+* **ui:** draw the sidebar as one fixed box without a scroller inside ([0fde66d](https://github.com/strausmann/Label-Printer-Hub/commit/0fde66d15c5213cce8fce733fa4352825ba7e5d0)), closes [#341](https://github.com/strausmann/Label-Printer-Hub/issues/341)
+* **ui:** drop the obsolete catalogue entries of the calibration page ([1fb405e](https://github.com/strausmann/Label-Printer-Hub/commit/1fb405e42999e844b7e20444112db5af43e3d608)), closes [#349](https://github.com/strausmann/Label-Printer-Hub/issues/349)
+* **ui:** drop the obsolete licence text catalogue entries ([1d690d8](https://github.com/strausmann/Label-Printer-Hub/commit/1d690d86de72ed6d4064d3ef9464ec917fe8723f)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* **ui:** give dialogs a close button and close them with one tap outside ([c32bad1](https://github.com/strausmann/Label-Printer-Hub/commit/c32bad16344eecdb8707f12bf599f2d9c18a6604)), closes [#318](https://github.com/strausmann/Label-Printer-Hub/issues/318)
+* **ui:** group equal cells in the sheet preview list and drop the shortened-text line ([1643704](https://github.com/strausmann/Label-Printer-Hub/commit/1643704c1fea7f7678ea28884fa8c0dd06cd20d8)), closes [#150](https://github.com/strausmann/Label-Printer-Hub/issues/150)
+* **ui:** keep focused rows clear of the bars, search field with a clear button ([31f632c](https://github.com/strausmann/Label-Printer-Hub/commit/31f632c6f5522c42562e8cb08b005359468c3daf)), closes [#154](https://github.com/strausmann/Label-Printer-Hub/issues/154)
+* **ui:** list each earlier print once and sum it up per item ([83494e8](https://github.com/strausmann/Label-Printer-Hub/commit/83494e841ddf737a9ff360f57481fd4dd059fb1c)), closes [#340](https://github.com/strausmann/Label-Printer-Hub/issues/340)
+* **ui:** name the bootstrap variable the deployment set ([e7c652e](https://github.com/strausmann/Label-Printer-Hub/commit/e7c652e791360a2739bd0ba830755e4d02ed9547))
+* **ui:** offer to try the preview again once it stops asking by itself ([7f0e8f0](https://github.com/strausmann/Label-Printer-Hub/commit/7f0e8f02729e7dfcd98161eca82e7ab9c12e1305)), closes [#339](https://github.com/strausmann/Label-Printer-Hub/issues/339)
+* **ui:** say how often an item was printed before when the list is cut ([aea5e5f](https://github.com/strausmann/Label-Printer-Hub/commit/aea5e5ffb6072ff8940c89a5ae63bbb60796fc61)), closes [#340](https://github.com/strausmann/Label-Printer-Hub/issues/340)
+* **ui:** say in words when too many previews run and ask again by itself ([cbdd33f](https://github.com/strausmann/Label-Printer-Hub/commit/cbdd33fdd90f9475e1a6b4a6286361bd8360eef8)), closes [#339](https://github.com/strausmann/Label-Printer-Hub/issues/339)
+* **ui:** show the capacity alert only for the sheet that was asked about ([c2673b5](https://github.com/strausmann/Label-Printer-Hub/commit/c2673b5161716798d8655a4bf381688c1e33d965))
+* warn about a changed listen port and let the CLI start without settings ([f53568f](https://github.com/strausmann/Label-Printer-Hub/commit/f53568f0ea496c26a0f7be2d698e072c66c6091c))
+
 ## [1.5.2](https://github.com/strausmann/Label-Printer-Hub/compare/v1.5.1...v1.5.2) (2026-11-14)
 
 ### Bug Fixes
