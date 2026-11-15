@@ -629,6 +629,7 @@ msgid "Add these lines to Grocy's <0>data/config.php</0> and replace <1><print-k
 msgstr "Add these lines to Grocy's <0>data/config.php</0> and replace <1><print-key></1> with an API key of this hub."
 
 #: src/features/lookup/ItemView.tsx
+#: src/features/sheets/print/SheetSection.tsx
 msgid "Add to cart"
 msgstr "Add to cart"
 
@@ -643,6 +644,10 @@ msgstr "added by hand"
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Added to the cart: {added}"
 msgstr "Added to the cart: {added}"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "Added to the cart."
+msgstr "Added to the cart."
 
 #. placeholder {0}: result.version
 #. placeholder {1}: result.key
@@ -2896,6 +2901,10 @@ msgstr "Open {code}"
 #: src/features/jobs/RetryError.tsx
 msgid "Open {sheetCode}"
 msgstr "Open {sheetCode}"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "Open cart"
+msgstr "Open cart"
 
 #: src/features/lookup/ItemView.tsx
 msgid "Open in {appName}"

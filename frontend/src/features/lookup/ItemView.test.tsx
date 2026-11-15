@@ -122,7 +122,7 @@ describe("ItemView", () => {
   it("Add to cart stores the item and shows the cart link", async () => {
     mockApi(routes());
     await renderApp({ path: "/asset/42" });
-    await userEvent.click(await screen.findByRole("button", { name: "Add to cart" }));
+    await userEvent.click(within(await screen.findByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" }));
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([
       { app: "snipeit", id: "42", name: "Cordless drill", content_type: "qr_two_lines", copies: 1 },
     ]);

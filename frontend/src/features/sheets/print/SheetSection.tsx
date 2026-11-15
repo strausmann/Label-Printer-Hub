@@ -3,13 +3,14 @@
 
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";
 import { useSession } from "../../../app/session";
 import { cellsTaken, insufficientCells, planChanged, queuedJobs } from "../../../api/errorDetail";
 import { PRIMARY_BUTTON } from "../../../shell/SignIn";
 import { useSheetTypes } from "../../archive/api";
-import type { CartItem } from "../../lookup/cart";
+import { useCart, type CartItem } from "../../lookup/cart";
 import { ApiError } from "../../../api/client";
 import { usePrinterStatus, type Printer } from "../../printers/api";
 import { describePrinter } from "../../printers/model";
@@ -27,9 +28,11 @@ import { lastType } from "./lastType";
 import {
   expandItems,
   fittingFirst,
+  cartLink,
   freeOf,
   judgeSheet,
   MAX_ITEMS,
+  pickTray,
   placementFor,
   type Fill,
   type PlacementIn,
@@ -47,6 +50,10 @@ export interface SheetSectionProps {
   printer: Printer;
   /** A sheet code from `/cart?sheet=<code>`. */
   preselectedSheet?: string | undefined;
+  /** A tray key from `/cart?tray=<key>`; used while the printer has that tray and nothing else was chosen. */
+  preselectedTray?: string | undefined;
+  /** The item view: offers "Add to cart" beside the print button, to collect the item for one sheet run. */
+  addToCart?: boolean;
   /**
    * Called once the hub accepted the print (202), with the lines this print took (a snapshot from the press,
    * including lines whose pages an earlier partial print already queued). The caller removes exactly those.
@@ -76,7 +83,7 @@ type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: stri
  * will look like, and the print. The preview is the server's: the print sends back what the preview
  * promised (`expected_cells`), and a changed plan is shown again and confirmed again.
  */
-export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQueued }: SheetSectionProps) {
+export function SheetSection({ items, printer, preselectedSheet, preselectedTray, addToCart, onAccepted, onQueued }: SheetSectionProps) {
   const { t } = useLingui();
   const status = usePrinterStatus(printer.id);
   // Archived types are asked for too: their existing sheets keep printing, only new sheets are refused.
@@ -84,6 +91,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const sheetsQuery = useSheets({ state: "active" });
   const linked = useSheet(preselectedSheet ?? "");
   const print = usePrintSheets(printer.id);
+  const cart = useCart();
 
   // After a partial print only the items whose pages were not queued are previewed and printed. With a cart the
   // queued copies leave the cart, so the cart is the rest and nothing else is remembered; only the item view,
@@ -107,6 +115,8 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
   const [typeChoice, setTypeChoice] = useState<string | null>(null);
   const [targetChoice, setTargetChoice] = useState<Target | null>(null);
   const [trayChoice, setTrayChoice] = useState<string | null>(null);
+  // The sheet and type the item was added to the cart for; the status line holds only while they are still the choice.
+  const [addedFor, setAddedFor] = useState<string | null>(null);
   const [fillMode, setFillMode] = useState<Fill["mode"]>("first_free");
   // Chosen and skipped cells are cells of one sheet; they are read back only while that sheet is the target.
   const [cellState, setCellState] = useState<{ sheet: string; chosen: readonly number[]; skipped: readonly number[] } | null>(null);
@@ -185,7 +195,7 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
 
   // --- tray ---
   const trays = (status.data?.trays ?? []).filter((x) => x.enabled);
-  const tray = trays.find((x) => x.key === trayChoice) ?? trays.find((x) => x.is_default) ?? trays[0] ?? null;
+  const tray = pickTray(trays, trayChoice, preselectedTray);
 
   // --- the request ---
   const fill: Fill = { mode: sheetCode ? fillMode : "first_free", chosen, skipped };
@@ -244,6 +254,13 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
     setTargetChoice(next);
     setCellState(null);
     forget();
+  };
+  const addKey = JSON.stringify([target, typeKey]);
+  const added = addedFor === addKey;
+  const addItemsToCart = () => {
+    for (const item of items) cart.add(item);
+    if (typeKey) lastType.set(printer.id, typeKey);
+    setAddedFor(addKey);
   };
   const toggle = (list: readonly number[], cell: number, limit = Infinity) =>
     list.includes(cell) ? list.filter((n) => n !== cell) : list.length < limit ? [...list, cell].sort((a, b) => a - b) : list;
@@ -482,9 +499,24 @@ export function SheetSection({ items, printer, preselectedSheet, onAccepted, onQ
 
       {needed > 0 && (
         <div className="flex flex-col gap-2">
-          <Button className={`${PRIMARY_BUTTON} max-sm:w-full`} isDisabled={!canPrint} onPress={submit}>
-            {buttonText}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button className={`${PRIMARY_BUTTON} max-sm:w-full`} isDisabled={!canPrint} onPress={submit}>
+              {buttonText}
+            </Button>
+            {addToCart && (
+              <Button className={`${SECONDARY_BUTTON} max-sm:w-full`} aria-describedby="sheet-section-h" isDisabled={!target} onPress={addItemsToCart}>
+                {t`Add to cart`}
+              </Button>
+            )}
+          </div>
+          {addToCart && added && (
+            <p role="status" className="m-0">
+              {t`Added to the cart.`}{" "}
+              <Link {...cartLink(target, tray?.key ?? null, trays.length)} className="text-link underline underline-offset-2">
+                {t`Open cart`}
+              </Link>
+            </p>
+          )}
           {readOnly && <p className={`${HINT} m-0`}>{t`Printing needs a print or admin key.`}</p>}
         </div>
       )}

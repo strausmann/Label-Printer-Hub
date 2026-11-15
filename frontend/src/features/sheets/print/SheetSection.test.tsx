@@ -38,7 +38,10 @@ describe("the sheet section replaces the tape preview for page printers", () => 
     expect(screen.queryByRole("img", { name: "Label preview" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Print now" })).toBeNull();
     expect(calls.some((c) => c.path === "/api/v1/render/preview")).toBe(false);
-    expect(screen.getByRole("button", { name: "Add to cart" })).toBeVisible();
+    // Two Add to cart buttons: the item's own in the Print panel, and the sheet section's.
+    expect(screen.getAllByRole("button", { name: "Add to cart" })).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" })).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "Print onto a sheet" })).getByRole("button", { name: "Add to cart" })).toBeVisible();
   });
 
   it("the printer list names kind and state", async () => {

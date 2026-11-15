@@ -42,9 +42,9 @@ test.describe("lookup", () => {
 
   test("the cart collects items from QR paths and prints them as one batch", async ({ signedInPage: page }) => {
     await page.goto("/product/3");
-    await page.getByRole("button", { name: "Add to cart" }).click();
+    await page.getByRole("region", { name: "Print", exact: true }).getByRole("button", { name: "Add to cart" }).click();
     await page.goto("/loc/5");
-    await page.getByRole("button", { name: "Add to cart" }).click();
+    await page.getByRole("region", { name: "Print", exact: true }).getByRole("button", { name: "Add to cart" }).click();
     await page.getByRole("link", { name: "Cart (2)" }).click();
     await expect(page.getByRole("list", { name: "Cart" }).getByRole("listitem")).toHaveCount(2);
 
@@ -55,6 +55,43 @@ test.describe("lookup", () => {
     await page.getByRole("button", { name: "Print 2 labels" }).click();
     await expect(page.getByText(/2 labels sent to Workshop PT-P750W/)).toBeVisible();
     await expect(page.getByText("The cart is empty.")).toBeVisible();
+  });
+
+  test("the item's sheet section adds to the cart and the cart opens with that sheet", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/");
+    const printers = (await (await page.request.get("/api/v1/printers")).json()) as { id: string; name: string }[];
+    const pagePrinter = printers.find((p) => p.name === "Office page printer")!;
+    await page.evaluate((id) => {
+      localStorage.setItem("lph.printer", id);
+      localStorage.removeItem("lph.cart");
+    }, pagePrinter.id);
+    try {
+      await page.goto("/lookup/grocy/7");
+      const section = page.getByRole("region", { name: "Print onto a sheet" });
+      await expect(section).toBeVisible();
+      // The test only adds to the cart; it assumes the sheet has no free cells to fill, other specs use it too.
+      await section.getByRole("combobox", { name: "Sheet type" }).click();
+      await page.getByRole("option", { name: /L4736/ }).first().click();
+      const sheet = section.getByRole("combobox", { name: "Sheet", exact: true });
+      await sheet.click();
+      await page.getByRole("option", { name: /L4736-0001/ }).click();
+      await expect(sheet).toHaveValue("L4736-0001");
+      const add = section.getByRole("button", { name: "Add to cart" });
+      await expect(add).toBeEnabled();
+      await add.click();
+      await expect(page.locator("header").getByRole("link", { name: /^Cart, 1 item/ })).toBeVisible();
+      await section.getByRole("link", { name: "Open cart" }).click();
+      await expect(page).toHaveURL(/\/cart\?sheet=L4736-0001/);
+      await expect(page.getByRole("region", { name: "Print onto a sheet" }).getByRole("combobox", { name: "Sheet", exact: true })).toHaveValue("L4736-0001");
+    } finally {
+      // Net zero: the entry leaves the cart again and the printer choice is reset.
+      await page.evaluate((id) => {
+        localStorage.removeItem("lph.cart");
+        localStorage.removeItem("lph.printer");
+        localStorage.removeItem(`lph.sheetType.${id}`);
+      }, pagePrinter.id);
+    }
   });
 
   // The status is served from the test (the service worker would answer the route first).

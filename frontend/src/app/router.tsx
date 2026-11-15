@@ -165,9 +165,9 @@ const cartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cart",
   component: CartPage,
-  validateSearch: (search: Record<string, unknown>): { sheet?: string | undefined } => {
+  validateSearch: (search: Record<string, unknown>): { sheet?: string | undefined; tray?: string | undefined } => {
     const sheet = text(search.sheet);
-    return { sheet: sheet && parseSheetCode(`sheet:${sheet}`) ? sheet : undefined };
+    return { sheet: sheet && parseSheetCode(`sheet:${sheet}`) ? sheet : undefined, tray: sheetTypeKey(search.tray) };
   },
 });
 

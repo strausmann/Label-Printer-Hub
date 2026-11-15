@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { sheetSummary } from "../../test-api";
 import type { CartItem } from "../../lookup/cart";
-import { countItems, expandItems, fittingFirst, freeOf, judgeSheet, MAX_ITEMS, placementFor, type Fill } from "./plan";
+import { cartLink, countItems, expandItems, fittingFirst, freeOf, judgeSheet, MAX_ITEMS, pickTray, placementFor, type Fill } from "./plan";
 
 const line = (app: CartItem["app"], id: string, copies: number, content_type: CartItem["content_type"] = "qr_two_lines"): CartItem => ({
   app,
@@ -83,5 +83,49 @@ describe("fittingFirst", () => {
       ["A", false],
       ["D", false],
     ]);
+  });
+});
+
+describe("cartLink", () => {
+  it("carries an existing sheet and the tray", () => {
+    expect(cartLink(SHEET, "tray-1", 2)).toEqual({ to: "/cart", search: { sheet: "L4736-0001", tray: "tray-1" } });
+  });
+  it("a new sheet carries no sheet", () => {
+    expect(cartLink({ kind: "new" }, "tray-1", 2).search).toEqual({ tray: "tray-1" });
+  });
+  it("one tray carries no tray", () => {
+    expect(cartLink(SHEET, "tray-1", 1).search).toEqual({ sheet: "L4736-0001" });
+  });
+  it("a target not known yet carries no sheet", () => {
+    expect(cartLink(null, "tray-1", 2).search).toEqual({ tray: "tray-1" });
+  });
+  it("no tray chosen carries no tray", () => {
+    expect(cartLink(SHEET, null, 3).search).toEqual({ sheet: "L4736-0001" });
+  });
+});
+
+describe("pickTray", () => {
+  const trays = [
+    { key: "tray-1", is_default: false },
+    { key: "tray-2", is_default: true },
+    { key: "tray-3", is_default: false },
+  ];
+  it("the choice wins", () => {
+    expect(pickTray(trays, "tray-3", "tray-1")?.key).toBe("tray-3");
+  });
+  it("then the address tray", () => {
+    expect(pickTray(trays, null, "tray-1")?.key).toBe("tray-1");
+  });
+  it("an address tray the printer does not have falls back to the default", () => {
+    expect(pickTray(trays, null, "tray-9")?.key).toBe("tray-2");
+  });
+  it("a choice the printer does not have falls through to the address tray", () => {
+    expect(pickTray(trays, "gone", "tray-3")?.key).toBe("tray-3");
+  });
+  it("without a default the first", () => {
+    expect(pickTray([{ key: "a", is_default: false }], null)?.key).toBe("a");
+  });
+  it("no trays gives null", () => {
+    expect(pickTray([], "tray-1", "tray-2")).toBeNull();
   });
 });

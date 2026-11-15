@@ -239,7 +239,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
           )}
         </section>
 
-        {pagePrinter && selected && <SheetSection items={[asItem]} printer={selected} />}
+        {pagePrinter && selected && <SheetSection items={[asItem]} printer={selected} addToCart />}
       </div>
     </div>
   );

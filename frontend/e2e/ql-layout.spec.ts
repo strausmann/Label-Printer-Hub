@@ -119,7 +119,7 @@ test.describe("QL 62 mm layout choice", () => {
       const box = await page.getByRole("radio", { name: "Compact" }).locator("xpath=ancestor::label").boundingBox();
       expect(box!.height).toBeGreaterThanOrEqual(44);
       await shot(page, `task-21b-item-${width}-${scheme}.png`);
-      await page.getByRole("button", { name: "Add to cart" }).click();
+      await page.getByRole("region", { name: "Print", exact: true }).getByRole("button", { name: "Add to cart" }).click();
       await page.goto("/cart");
       await expect(page.getByRole("radio", { name: "Compact" })).toBeChecked();
       await expect(page.getByRole("img", { name: "Label preview" })).toBeVisible();
