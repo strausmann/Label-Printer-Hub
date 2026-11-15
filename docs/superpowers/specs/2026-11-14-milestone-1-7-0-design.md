@@ -1218,6 +1218,10 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   and arrangement); the cart hides it when every item is a spool label. A preview on a tape printer without 62 mm
   shows the existing "not available for this tape" message. The settings group of R-346-5 is a react-aria
   `Disclosure` with five key fields and the title source.
+  **Default refined (maintainer, 2026-11-15):** a Spoolman item starts on the spool label only when it has swatch
+  data and goes to a sheet printer or a QL with a tape the spool label is drawn for (today 62 mm); otherwise (P-touch,
+  other tape, no printer, no swatch data, a recent entry added from the integration page) it starts on `qr_two_lines`.
+  The default is picked again when printer or tape change, never over the user's own choice.
 - **R-346-13 (scope):** the Spoolman webhook keeps `qr_two_lines`/`qr_three_lines` with the remaining-weight line of
   R-284 (QU8, accepted); other DK widths than 62 mm follow with #258; the vendor stays text.
 - **R-346-14 (sample image, maintainer 2026-11-15):** the README and the website page `integrations/spoolman` (en and

@@ -67,6 +67,8 @@ A cell smaller than the short version is refused before any cell is reserved. Lo
 
 On tape, the spool label prints only on 62 mm endless tape, always across the tape. The direction and arrangement settings do not apply to it, so the item view and the cart hide them for the spool label. On another tape the preview says it is not available.
 
+A spool opens on the spool label when it goes to a sheet printer or to a QL with 62 mm tape. On a P-touch, on other tape, or when Spoolman returned nothing for the label, it opens on **QR code, code and title**. Changing the printer or the tape picks again, until you choose a layout yourself; your choice then stays.
+
 ## Printing when a spool changes
 
 Spoolman events can call the hub, which prints the spool's label, with the remaining filament as a third line (for example `851g remaining`) when the event carries it. These labels keep the short QR layout. See [webhooks](/integrations/webhooks/).

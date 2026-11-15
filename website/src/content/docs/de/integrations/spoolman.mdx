@@ -67,6 +67,8 @@ Eine Zelle, die kleiner ist als die kurze Fassung, wird abgelehnt, bevor eine Ze
 
 Auf Band druckt das Spulenetikett nur auf 62-mm-Endlosband, immer quer zum Band. Richtung und Anordnung gelten dafür nicht, deshalb blenden die Artikelansicht und der Warenkorb sie beim Spulenetikett aus. Auf einem anderen Band sagt die Vorschau, dass es nicht verfügbar ist.
 
+Eine Spule öffnet mit dem Spulenetikett, wenn sie an einen Bogendrucker oder an einen QL mit 62-mm-Band geht. Auf einem P-touch, auf anderem Band oder wenn Spoolman nichts für das Etikett geliefert hat, öffnet sie mit **QR-Code, Code und Titel**. Wechselst du Drucker oder Band, wird neu gewählt, bis du selbst ein Layout aussuchst; deine Wahl bleibt dann.
+
 ## Drucken, wenn sich eine Spule ändert
 
 Ereignisse aus Spoolman können den Hub aufrufen, der dann das Etikett der Spule druckt, mit dem restlichen Filament als dritter Zeile (zum Beispiel `851 g übrig`), wenn das Ereignis es mitbringt. Diese Etiketten behalten das kurze QR-Layout. Siehe [Webhooks](/de/integrations/webhooks/).
