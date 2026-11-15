@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import math
+import shutil
 from collections import Counter
 from dataclasses import asdict
 from itertools import pairwise
@@ -14,6 +16,7 @@ from app.calibration import scale
 from app.calibration.fit import crossing_point
 from app.calibration.page import (
     CHECKERBOARD_SENTENCE,
+    _scale_segments,
     draw_calibration_page,
     footer_text,
     render_calibration_page,
@@ -180,6 +183,75 @@ def test_the_white_between_two_mini_scale_ticks_survives_a_colour_laser() -> Non
     assert scale.STEP_MM - scale.LINE_MM >= scale.MIN_GAP_MM - 1e-9
 
 
+def _render_crop(pdf: bytes, cx: float, cy: float, half_mm: float, dpi: int = 600):
+    """The square of ``2 * half_mm`` around (cx, cy) as a grey image, and its pixels per mm."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    ppm = dpi / 25.4
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d, "page.pdf")
+        src.write_bytes(pdf)
+        out = Path(d, "crop")
+        side = round(2 * half_mm * ppm)
+        subprocess.run(
+            [
+                "pdftoppm", "-r", str(dpi), "-gray", "-png", "-singlefile",
+                "-x", str(round((cx - half_mm) * ppm)), "-y", str(round((cy - half_mm) * ppm)),
+                "-W", str(side), "-H", str(side), str(src), str(out),
+            ],
+            check=True,
+        )  # fmt: skip
+        with Image.open(out.with_suffix(".png")) as im:
+            return im.convert("L").copy(), ppm
+
+
+@pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="needs poppler's pdftoppm")
+def test_a_corner_mark_never_comes_within_the_white_of_a_tick() -> None:
+    """Measured on the 600 dpi image of a 2.5 mm gap sheet (#348), not from the constants.
+
+    The label-corner legs of such a sheet sit at +-1.25 mm of the crossing, between the ticks at
+    1.0 and 1.5 mm. Every ink pixel that is neither tick nor on the gap lines through the crossing
+    must keep ``MIN_GAP_MM`` from the ticks.
+    """
+    half = 4.0
+    cx, cy = crossing_point(L4736, 2, 5)
+    im, ppm = _render_crop(_pdf(L4736), cx, cy, half)
+    w, h = im.size
+    ink = {(x, y) for y in range(h) for x in range(w) if im.getpixel((x, y)) < 128}
+    # Where the ticks are (this only classifies pixels; the clearance is measured below).
+    pad = 0.075 * ppm
+
+    def px(mm_x: float, mm_y: float) -> tuple[float, float]:
+        return (mm_x - cx + half) * ppm, (mm_y - cy + half) * ppm
+
+    rects = []
+    for along_x in (True, False):
+        for x1, y1, x2, y2 in _scale_segments(cx, cy, along_x=along_x):
+            (a, b), (c, d) = px(x1, y1), px(x2, y2)
+            rects.append((min(a, c) - pad, min(b, d) - pad, max(a, c) + pad, max(b, d) + pad))
+
+    def is_tick(p: tuple[int, int]) -> bool:
+        return any(r[0] <= p[0] + 0.5 <= r[2] and r[1] <= p[1] + 0.5 <= r[3] for r in rects)
+
+    centre = half * ppm  # the gap lines run through the middle of the crop
+    ticks = {p for p in ink if is_tick(p)}
+    other = [
+        p
+        for p in ink - ticks
+        if abs(p[0] + 0.5 - centre) > 0.1 * ppm and abs(p[1] + 0.5 - centre) > 0.1 * ppm
+    ]
+    assert len(ticks) > 100  # the scales are really in the image
+    clearance = min(
+        (math.hypot(p[0] - t[0], p[1] - t[1]) / ppm for p in other for t in ticks),
+        default=math.inf,
+    )
+    assert clearance >= scale.MIN_GAP_MM, f"other ink {clearance:.2f} mm from a tick"
+
+
 def test_page_line_counts_gapped_type() -> None:
     pdf = _pdf(G7160)
     assert len([s for s in _long(pdf, G7160, vertical=True) if s["dash"] is None]) == 2
@@ -225,7 +297,11 @@ def test_page_has_rulers_with_half_millimetre_ticks_on_all_edges() -> None:
 def test_page_has_a_corner_mark_at_every_label_corner() -> None:
     pdf = _pdf(L4736)
     marks = [s for s in _strokes(pdf) if _len(s) == 1.5]
-    assert len(marks) == 4 * 48 * 2  # two legs per corner, four corners per label
+    # Two legs per corner. A corner inside the scale of a crossing has no mark (see
+    # test_a_corner_mark_never_comes_within_the_white_of_a_tick): of the 4 x 12 labels that
+    # leaves the outer corners (2 sides x 2 corners x 12 rows) and the corners on the top and
+    # bottom edge of the grid next to the 3 column gaps (3 x 2 x 2).
+    assert len(marks) == 2 * (2 * 2 * 12 + 3 * 2 * 2)
     # The first label's top left corner: legs run right and down, hugging the label.
     x, y = L4736.margin_left / 100, L4736.margin_top / 100
     near = [
@@ -256,9 +332,9 @@ def test_page_is_gray_only_and_corners_empty(g: Geometry) -> None:
 def test_l4731_leaves_out_the_corner_marks_inside_the_squares() -> None:
     pdf = _pdf(L4731)
     marks = [s for s in _strokes(pdf) if _len(s) == 1.5]
-    # 189 labels x 4 corners x 2 legs, less the corners that lie inside a square:
-    # top left (8.6 / 13.5), top right (201.4 / 13.5) and both bottom corners.
-    assert len(marks) == (4 * 189 - 4) * 2
+    # The corners that lie inside a square have no mark, nor have those inside the scale of a
+    # crossing (pinned: 128 corners keep their mark on this 7 x 27 sheet).
+    assert len(marks) == 128 * 2
     assert not any(
         abs(p[0] - 8.6) < 0.01 and abs(p[1] - 13.5) < 0.01 for s in marks for p in s["pts"]
     )
@@ -496,11 +572,11 @@ def test_a_gap_line_on_the_edge_is_not_clipped_and_one_0_01_mm_inside_is() -> No
 def test_a_mark_whose_legs_point_away_from_the_square_is_kept() -> None:
     # The label's bottom right corner is at (16, 16): legs run to -x and -y, both outside the
     # square. Only the bounding box of the L overlaps it, which is not "a point inside".
-    g = Geometry("A4", 21000, 29700, 1000, 1000, 3, 3, 1000, 1000, 600, 600, None, "rectangle")
+    # A 6 mm gap keeps the corner far from the scale of the crossing (3 mm away, the scale
+    # reaches 2 mm), so the mark is not left out for that reason.
+    g = Geometry("A4", 21000, 29700, 1000, 1000, 3, 3, 1600, 1600, 600, 600, None, "rectangle")
     pdf = _pdf(g)
 
-    # Neighbouring labels share this corner, so each leg is drawn twice: once by the corner
-    # of the label whose box overlaps the square, once by the neighbour whose box does not.
     def legs(to: tuple[float, float]) -> int:
         return sum(
             1
@@ -509,6 +585,6 @@ def test_a_mark_whose_legs_point_away_from_the_square_is_kept() -> None:
             and any(abs(p[0] - to[0]) < 0.005 and abs(p[1] - to[1]) < 0.005 for p in s["pts"])
         )
 
-    assert legs((14.5, 16.0)) == 2
-    assert legs((16.0, 14.5)) == 2
+    assert legs((14.5, 16.0)) == 1
+    assert legs((16.0, 14.5)) == 1
     assert _marks_at(pdf, 6.0, 6.0) == []  # the top left corner of that label is inside
