@@ -26,10 +26,15 @@ function anchorAt(top: number, bottom: number, parent: HTMLElement = document.bo
   parent.append(el);
   return { current: el };
 }
-function tabBarAt(top: number) {
+function tabBarAt(top: number, raisedChildTop?: number) {
   const bar = document.createElement("nav");
   bar.setAttribute("data-tabbar", "");
   bar.getBoundingClientRect = () => ({ top, bottom: top + 60, left: 0, right: 390, width: 390, height: 60, x: 0, y: top, toJSON() {} });
+  if (raisedChildTop !== undefined) {
+    const child = document.createElement("a");
+    child.getBoundingClientRect = () => ({ top: raisedChildTop, bottom: raisedChildTop + 60, left: 150, right: 240, width: 90, height: 60, x: 150, y: raisedChildTop, toJSON() {} });
+    bar.append(child);
+  }
   document.body.append(bar);
 }
 
@@ -75,6 +80,14 @@ describe("useListRoom", () => {
     expect(result.current.room).toEqual({ placement: "bottom start", maxHeight: 344 });
   });
 
+  it("a child that sticks out above the tab bar (the raised Scan button) limits the room", () => {
+    tabBarAt(500, 480);
+    const { result } = renderHook(() => useListRoom(anchorAt(100, 144), true));
+    act(() => result.current.measure());
+    // 480 (top of the child) - 144 - 12
+    expect(result.current.room).toEqual({ placement: "bottom start", maxHeight: 324 });
+  });
+
   it("the tab bar is ignored inside a dialog", () => {
     tabBarAt(500);
     const dialog = document.createElement("div");
@@ -100,11 +113,21 @@ describe("useListRoom", () => {
     expect(add).not.toHaveBeenCalled();
   });
 
-  it("stops listening when it closes", () => {
+  it("stops listening when it closes: every listener it added is removed", () => {
+    const add = vi.spyOn(vv, "addEventListener");
     const remove = vi.spyOn(vv, "removeEventListener");
     const anchor = anchorAt(100, 144);
     const { rerender } = renderHook(({ open }) => useListRoom(anchor, open), { initialProps: { open: true } });
+    expect(add).toHaveBeenCalledTimes(2);
     rerender({ open: false });
-    expect(remove).toHaveBeenCalled();
+    expect(remove.mock.calls.map((c) => c[0]).sort()).toEqual(add.mock.calls.map((c) => c[0]).sort());
+  });
+
+  it("falls back to the layout viewport without visualViewport", () => {
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: null });
+    vi.stubGlobal("innerHeight", 400);
+    const { result } = renderHook(() => useListRoom(anchorAt(300, 344), true));
+    act(() => result.current.measure());
+    expect(result.current.room).toEqual({ placement: "top start", maxHeight: 288 });
   });
 });

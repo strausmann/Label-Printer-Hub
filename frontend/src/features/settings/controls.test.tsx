@@ -142,9 +142,10 @@ describe("SelectField list placement", () => {
       const popover = document.querySelector<HTMLElement>('[data-trigger="Select"]')!;
       expect(popover).not.toBeNull();
       expect(popover.getAttribute("data-placement")).toBe("top");
+      // Not an exact number: jsdom has no layout, so React Aria sets its own max-height here; the exact room is the hook tests' job.
       expect(parseFloat(popover.style.maxHeight)).toBeLessThanOrEqual(318);
     } finally {
-      Object.defineProperty(window, "visualViewport", { configurable: true, value: undefined });
+      Reflect.deleteProperty(window, "visualViewport");
     }
   });
 });
