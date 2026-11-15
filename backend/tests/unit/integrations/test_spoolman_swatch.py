@@ -366,3 +366,27 @@ def test_build_swatch_never_raises_on_garbage() -> None:
 
 def test_language_is_stored() -> None:
     assert _build(_full(), language="de").language == "de"
+
+
+@pytest.mark.parametrize(
+    ("key", "raw", "field"),
+    [
+        ("nozzle_temperature", "[240, 220]", "nozzle_c"),
+        ("drying_condiftions_time", "[8, 6]", "drying_h"),
+    ],
+)
+def test_reversed_range_drops_only_its_row(key: str, raw: str, field: str) -> None:
+    """Review I1: Spoolman lets a range run high to low; only that row goes, never the label."""
+    payload = _full()
+    payload["filament"]["extra"][key] = raw
+    swatch = _build(payload)
+    assert swatch is not None
+    assert getattr(swatch, field) is None
+    assert swatch.bed_c == 80
+    assert swatch.pressure_advance == pytest.approx(0.029)
+    assert swatch.drying_c == 65
+    assert swatch.location == "Shelf A2"
+    if field == "nozzle_c":
+        assert swatch.drying_h == (6.0, 8.0)
+    else:
+        assert swatch.nozzle_c == (220, 240)

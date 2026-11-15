@@ -70,7 +70,8 @@ def _number(value: object, *, integer: bool) -> int | float | None:
 def parse_extra(raw: object, kind: ExtraKind) -> ExtraValue | None:
     """One extra-field value (JSON text) in the shape of ``kind``, else ``None``.
 
-    A range with one ``null`` end is the other end twice. Never raises.
+    A range with one ``null`` end is the other end twice; a range whose low end is above its
+    high end is refused (only its own row drops). Never raises.
     """
     if not isinstance(raw, str) or len(raw) > EXTRA_RAW_MAX:
         return None
@@ -90,6 +91,8 @@ def parse_extra(raw: object, kind: ExtraKind) -> ExtraValue | None:
         return None
     low = high if low is None else low
     high = low if high is None else high
+    if low > high:  # type: ignore[operator]
+        return None  # a range entered high to low is not in the shape of its field
     return (low, high)  # type: ignore[return-value]
 
 
