@@ -100,6 +100,12 @@ function useClock(): number {
   return now;
 }
 
+/** "now" under a minute: the panel's clock moves once a minute, so seconds would be stale on screen (and differ per render). */
+function ageLabel(seconds: number, locale: string): string {
+  if (seconds < 60) return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(0, "second");
+  return formatAge(seconds, locale);
+}
+
 function absoluteTime(iso: string): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "medium" });
@@ -125,7 +131,7 @@ function Entry({ entry, unread, now, onNavigate }: { entry: Notification; unread
           <span className={bold}>{severities[entry.severity]}</span>
           {unread && <span className="rounded-r2 bg-accent-soft px-1.5 font-bold text-ink">{t`New`}</span>}
           <time className="ml-auto shrink-0 text-ink-3" dateTime={entry.at} title={absoluteTime(entry.at)}>
-            {Number.isNaN(at) ? "" : formatAge(Math.max(0, (now - at) / 1000), i18n.locale)}
+            {Number.isNaN(at) ? "" : ageLabel(Math.max(0, (now - at) / 1000), i18n.locale)}
           </time>
         </span>
         <span title={sentence} className={`line-clamp-2 text-ink [overflow-wrap:anywhere] sm:line-clamp-1 ${bold}`}>
@@ -146,7 +152,7 @@ function PanelBody({ feed, livePaused, phone }: { feed: Feed; livePaused: boolea
     <Dialog className="flex max-h-[inherit] min-h-0 flex-1 flex-col outline-none">
       {({ close }) => (
         <>
-          <div className="flex flex-col gap-2 border-b border-line p-4">
+          <div className={`flex flex-col gap-2 border-b border-line p-4 ${phone ? "pt-[max(1rem,env(safe-area-inset-top))]" : ""}`}>
             <div className="flex items-center gap-2">
               <Heading slot="title" className="min-w-0 flex-1 text-section font-bold">
                 {t`Notifications`}
@@ -175,7 +181,7 @@ function PanelBody({ feed, livePaused, phone }: { feed: Feed; livePaused: boolea
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${phone ? "pb-[env(safe-area-inset-bottom)]" : ""}`}>
             {livePaused && (
               <p role="status" className="flex items-center gap-2 border-b border-line bg-sunken px-4 py-3 text-small">
                 <SeverityShape severity="warning" />

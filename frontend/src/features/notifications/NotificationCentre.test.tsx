@@ -214,6 +214,20 @@ describe("NotificationCentre: the panel", () => {
     expect(screen.getByRole("button", { name: /^Notifications, 2 unread, the most severe is a success/, hidden: true })).toBeInTheDocument();
   });
 
+  it("says now for what happened under a minute ago, and counts minutes after that", async () => {
+    mockApi(
+      routes([
+        job(J1, PRINTER_A.id, "done", { template_key: "fresh", updated_at: new Date(Date.now() - 5_000).toISOString() }),
+        job(J2, PRINTER_A.id, "done", { template_key: "older", updated_at: minutesAgo(3) }),
+      ]),
+    );
+    await renderApp({ path: "/printers" });
+    await userEvent.click(await bell());
+    const fresh = await screen.findByRole("link", { name: /fresh printed/ });
+    expect(within(fresh).getByText("now")).toBeVisible();
+    expect(within(screen.getByRole("link", { name: /older printed/ })).getByText("3 minutes ago")).toBeVisible();
+  });
+
   it("is a full-height sheet with a close button on a phone", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query.includes("max-width"), media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
     mockApi(routes([job(J1, PRINTER_A.id, "failed", { updated_at: minutesAgo(3) })]));

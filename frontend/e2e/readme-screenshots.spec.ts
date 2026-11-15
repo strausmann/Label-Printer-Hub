@@ -26,6 +26,7 @@ import { signInWith } from "./fixtures";
  *   cart-sheet      cart-sheet
  *   cart-check      cart-check
  *   grocy-labels    grocy-labels
+ *   notifications   notifications
  *
  * Desktop is 1440 x 900 in light and dark for every view; the phone (390 x 844) shows `overview`, `printer-detail`
  * and `sheets`. File names are `<view>-<light|dark>[-phone].png`. The README shows English only; the German website
@@ -62,6 +63,10 @@ const TEXT = {
     ontoSheetButton: "Print onto sheet",
     grocyLabels: "Grocy labels",
     wontPrint: /will not print\./,
+    bell: /^Notifications/,
+    panel: "Notifications",
+    failedEntry: /Failed cable label failed/,
+    isNew: "New",
   },
   de: {
     connected: /^Verbunden/,
@@ -75,6 +80,10 @@ const TEXT = {
     ontoSheetButton: "Auf den Bogen drucken",
     grocyLabels: "Grocy-Etiketten",
     wontPrint: /nicht gedruckt\./,
+    bell: /^Benachrichtigungen/,
+    panel: "Benachrichtigungen",
+    failedEntry: /Failed cable label ist fehlgeschlagen/,
+    isNew: "Neu",
   },
 } satisfies Record<Lang, unknown>;
 type Text = (typeof TEXT)["en"];
@@ -93,6 +102,19 @@ const id = async (page: Page, printer: string) => {
 async function settle(page: Page, text: Text) {
   await expect(page.getByText(text.connected)).toBeAttached(); // hidden on the phone layout
   await page.evaluate(() => document.fonts.ready);
+  // The bell counts entries that arrive from three queries (jobs, printers with their statuses, sheets): its name stops
+  // changing once they have all landed. Three equal readings in a row, so a view is never photographed half-counted.
+  const bell = page.locator("header").getByRole("button", { name: text.bell, includeHidden: true });
+  let previous: string[] = [];
+  await expect
+    .poll(
+      async () => {
+        previous = [...previous, (await bell.getAttribute("aria-label")) ?? ""].slice(-3);
+        return previous.length === 3 && previous.every((name) => name === previous[0]);
+      },
+      { timeout: 20_000, intervals: [400] },
+    )
+    .toBe(true);
   // Park the pointer on nothing: a hover state would depend on when the browser last updated it.
   await page.mouse.move(0, 0);
 }
@@ -236,6 +258,30 @@ const VIEWS: View[] = [
       await expect(panel).toBeVisible();
       // Bring the panel's top below the sticky top bar.
       await panel.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 88));
+    },
+  },
+  {
+    // The panel open on the seeded jobs and printers: the failed job leads, nothing read yet.
+    name: "notifications",
+    phone: true,
+    open: async (page, text) => {
+      // The entries come from the printers' statuses, and a cold hub reads them in its own time ("not monitored" until the
+      // first probe has landed). The two printers that are probed are served as ready from here, like `fillQlCart` does,
+      // so the list is the same in every run; the bench printer is never polled and stays "Not monitored" on its own.
+      for (const name of ["Office QL-820NWB", "Office page printer"]) {
+        const printer = await id(page, name);
+        await page.route(new RegExp(`/api/v1/printers/${printer}/status$`), async (route) => {
+          const response = await route.fetch();
+          const body = (await response.json()) as Record<string, unknown>;
+          Object.assign(body, { online: true, polled: true, stale: false, last_probe_age_s: 3, note: null, error_state: null, last_error: null });
+          await route.fulfill({ response, json: body });
+        });
+      }
+      await page.goto("/");
+      await page.getByRole("button", { name: text.bell }).click();
+      const panel = page.getByRole("dialog", { name: text.panel });
+      await expect(panel.getByRole("link", { name: text.failedEntry })).toBeVisible();
+      await expect(panel.getByText(text.isNew).first()).toBeVisible();
     },
   },
 ];

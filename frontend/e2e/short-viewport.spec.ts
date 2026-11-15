@@ -213,6 +213,25 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expectInSight(page, first, "the first result");
       });
 
+      test("Notifications: the actions and the first entry are in sight", async () => {
+        await prepare(mode);
+        await page.goto("/sheets");
+        // The search field has the focus and the keyboard is up (a covered mode shrinks the visual viewport only).
+        await page.getByRole("combobox", { name: "Search" }).click();
+        await keyboard(mode);
+        await page.getByRole("button", { name: /^Notifications/ }).click();
+        const panel = dialogOf(page);
+        await expect(panel).toBeVisible();
+        const first = panel.getByRole("link").first();
+        await expect(first).toBeVisible();
+        await expectInSight(page, buttonIn(panel, "Mark all as read"), "the Mark all as read button");
+        await expectInSight(page, buttonIn(panel, "Clear all"), "the Clear all button");
+        await expectInSight(page, first, "the first entry");
+        await expectInSight(page, panel, "the panel");
+        await page.keyboard.press("Escape");
+        await expect(panel).toBeHidden();
+      });
+
       test("Discard sheet (a confirmation): its buttons are in sight", async () => {
         await prepare(mode);
         await page.goto("/sheets");
