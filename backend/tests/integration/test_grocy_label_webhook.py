@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ import pytest
 from app.auth.verifier import _cache as verifier_cache
 from app.config import get_settings
 from app.models.api_key import ApiKey
+from app.observability.access_log import ACCESS_LOGGER_NAME
 from app.models.job import Job as DbJob
 from app.models.printer import Printer
 from app.printer_backends.exceptions import PrinterOfflineError
@@ -436,6 +438,36 @@ async def test_rate_limit_429(hub: Hub) -> None:
     assert second.status_code == 429
     assert second.headers["Retry-After"]
     assert await _row_count() == 1
+
+
+class _Lines(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(record.getMessage())
+
+
+async def test_access_log_shows_refusals_with_key_prefix_only(hub: Hub) -> None:
+    """#366: the real app writes one nginx combined line per call, status as answered."""
+    capture = _Lines()
+    logger = logging.getLogger(ACCESS_LOGGER_NAME)
+    logger.addHandler(capture)
+    try:
+        async with hub.running() as (client, _app):
+            await _post(client, token=UNKNOWN_KEY)
+            await _post(client, token=ADMIN_KEY)
+            await client.post(URL, json=PRODUCT, headers={"X-Label-Hub-Key": UNKNOWN_KEY})
+    finally:
+        logger.removeHandler(capture)
+    lines = [line for line in capture.lines if URL in line]
+    assert len(lines) == 3, capture.lines
+    assert f'"POST {URL}?token={UNKNOWN_KEY[:16]}*** HTTP/1.1" 401 ' in lines[0]
+    assert f'"POST {URL}?token={ADMIN_KEY[:16]}*** HTTP/1.1" 403 ' in lines[1]
+    assert f" - {UNKNOWN_KEY[:16]} [" in lines[2] and f'"POST {URL} HTTP/1.1" 401 ' in lines[2]
+    for line in lines:
+        assert UNKNOWN_KEY[:17] not in line and ADMIN_KEY[:17] not in line
 
 
 async def test_form_body_415_json_required(hub: Hub) -> None:

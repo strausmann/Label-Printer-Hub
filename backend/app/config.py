@@ -140,6 +140,13 @@ class Settings(BaseSettings):
     (Issue #46). Ungültige Werte (Tippfehler, lowercase) erzeugen einen
     ValidationError beim Startup statt lautlos defaulten."""
 
+    access_log: bool = True
+    """#366: one line per HTTP request on stdout in nginx combined format (for CrowdSec and
+    other log tools). Off: no access log at all, uvicorn's lines stay off too."""
+
+    access_log_probes: bool = False
+    """#366: also log ``/healthz`` and ``/readiness`` (left out by default)."""
+
     sign_in_limit_per_minute: int = Field(default=10, gt=0)
     """Browser sign-in attempts per minute and client address (default 10). Keep the default
     in production; the browser-test harness raises it because every test signs in from one

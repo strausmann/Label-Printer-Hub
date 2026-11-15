@@ -50,10 +50,15 @@ _KEY_SHAPE = re.compile(
 _LOGGERS = ("uvicorn.access", "uvicorn.error")
 
 
+def hide_key_shapes(text: str) -> str:
+    """Replace every value in the shape of a hub API key with ``lh_pat_***``."""
+    return _KEY_SHAPE.sub("lh_pat_***", text)
+
+
 def _redact(value: Any) -> Any:
     if isinstance(value, str):
         value = _TOKEN_VALUE.sub(lambda m: m.group(0).split("=", 1)[0] + "=***", value)
-        value = _KEY_SHAPE.sub("lh_pat_***", value)
+        value = hide_key_shapes(value)
     return value
 
 

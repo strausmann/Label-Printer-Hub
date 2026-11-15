@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import csrf
 from app.auth import sessions as ui_sessions
+from app.auth.key_generator import KEY_PREFIX_LENGTH, key_prefix
 from app.auth.verifier import verify_api_key_async
 from app.config import Settings, get_settings
 from app.db.session import get_session
@@ -260,7 +261,7 @@ async def _validate_api_key(
 ) -> AuthContext:
     """Validate the X-Label-Hub-Key header.
 
-    1. Extract prefix (first 16 chars) to look up the key row.
+    1. Extract the prefix (``key_prefix``, first 16 chars) to look up the key row.
     2. bcrypt-verify the full plaintext against the stored hash.
     3. Check the key is enabled and not expired.
     4. Check the key's scopes satisfy ``required_scope``.
@@ -275,7 +276,7 @@ async def _validate_api_key(
         HTTPException 403: key valid but insufficient scope
         ScopeRefusedError: key valid but its effective scope is in ``refuse_scopes``
     """
-    if len(key_header) < 16:
+    if len(key_header) < KEY_PREFIX_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key_format", "error_message": "Invalid key format"},
@@ -288,7 +289,7 @@ async def _validate_api_key(
             detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
         )
 
-    prefix = key_header[:16]
+    prefix = key_prefix(key_header)
     key_row = await api_keys_repo.get_by_prefix(session, prefix)
 
     if key_row is None:

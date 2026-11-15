@@ -138,6 +138,7 @@ from app.db.lifespan import (
 )
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
+from app.observability.access_log import install_access_log
 from app.observability.log_buffer import install_log_buffer
 from app.observability.redact_query import install_query_token_redaction
 from app.page_render.pdf import register_pdf_font
@@ -733,6 +734,8 @@ def create_app() -> _LifespanManager:
     add_version_header(app, HUB_VERSION)
     mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
+    # #366: last, so it is the outermost of the hub's middlewares and logs the final status.
+    install_access_log(app, get_settings())
 
     return _LifespanManager(app)
 
