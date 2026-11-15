@@ -287,6 +287,18 @@ describe("preview and print", () => {
     expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["jobs"]);
   });
 
+  it("a partial sheet print refreshes the printer status", async () => {
+    mockApi({
+      [`POST /api/v1/print/${PAGE_PRINTER.id}/sheet`]: () =>
+        respond(502, apiErrorBody("print_interrupted", "Interrupted.", { batch_id: "b1", job_ids: ["j1"] })),
+    });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePrintSheets(PAGE_PRINTER.id), { wrapper });
+    await act(() => result.current.mutateAsync(request).catch(() => undefined));
+    // The status names the tray the newest sheet page used (#344): pages that were queued count.
+    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["printers", PAGE_PRINTER.id, "status"]);
+  });
+
   it("the pages of a partly printed batch get a print status entry, a plain failure does not", async () => {
     resetPrintWatch();
     mockApi({

@@ -38,8 +38,12 @@ export const usePrinters = () =>
 export const usePrinter = (id: string) =>
   useQuery({ queryKey: printerKey(id), queryFn: () => apiFetch<Printer>(`/api/v1/printers/${id}`) });
 
-export const usePrinterStatus = (id: string, enabled = true) =>
-  useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`), enabled });
+/** `options` is for the one screen that must not decide on a cached status (the calibration page picks its tray from it). */
+export const usePrinterStatus = (
+  id: string,
+  enabled = true,
+  options: { staleTime?: number; refetchOnMount?: boolean | "always" } = {},
+) => useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`), enabled, ...options });
 
 /** The query of one printer's status; every reader of statuses shares this key, so they share one request. */
 export const printerStatusQuery = (id: string) => ({

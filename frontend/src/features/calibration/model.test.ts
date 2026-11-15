@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { GEOMETRY_L4736, SHEET_TYPE } from "../test-api";
 import {
+  CALIBRATION_PRINT_WINDOW_H,
   canFit,
   centreCrossing,
   completeReadings,
@@ -11,8 +12,10 @@ import {
   crossingsToRead,
   emptyReading,
   parseNumber,
+  preselectTray,
   readingsRequest,
   suggestedCrossings,
+  trayWarnings,
   usableTypes,
   type ReadingRow,
 } from "./model";
@@ -118,5 +121,53 @@ describe("crossingsToRead", () => {
       { col_gap: 1, row_gap: 1 },
       { col_gap: 2, row_gap: 1 },
     ]);
+  });
+});
+
+describe("preselectTray", () => {
+  const trays = [{ key: "manual" }, { key: "tray-1" }];
+  it("the address tray wins", () => {
+    expect(preselectTray({ address: "manual", lastSheet: "tray-1", defaultKey: "tray-1", trays })).toBe("manual");
+  });
+  it("then the last sheet tray", () => {
+    expect(preselectTray({ lastSheet: "tray-1", defaultKey: "manual", trays })).toBe("tray-1");
+  });
+  it("a last sheet tray that is not calibratable is skipped", () => {
+    expect(preselectTray({ lastSheet: "auto", defaultKey: "manual", trays })).toBe("manual");
+  });
+  it("an address tray that is not calibratable is skipped", () => {
+    expect(preselectTray({ address: "auto", lastSheet: "tray-1", trays })).toBe("tray-1");
+  });
+  it("then the default, then the first", () => {
+    expect(preselectTray({ lastSheet: null, defaultKey: "tray-1", trays })).toBe("tray-1");
+    expect(preselectTray({ lastSheet: null, defaultKey: "gone", trays })).toBe("manual");
+    expect(preselectTray({ lastSheet: null, trays: [] })).toBeUndefined();
+  });
+});
+
+describe("trayWarnings", () => {
+  const now = Date.parse("2026-11-15T12:00:00Z");
+  const ago = (hours: number) => new Date(now - hours * 3_600_000).toISOString();
+  const base = { saveTray: "tray-1", requested: null, storedAt: null, sheets: null, now };
+  it("same trays warn of nothing", () => {
+    expect(trayWarnings({ ...base, requested: { tray: "tray-1", at: ago(1) }, sheets: "tray-1" })).toEqual({ requested: null, sheets: null });
+  });
+  it("another requested tray is named", () => {
+    expect(trayWarnings({ ...base, requested: { tray: "manual", at: ago(1) } })).toEqual({ requested: "manual", sheets: null });
+  });
+  it("another sheet tray is named", () => {
+    expect(trayWarnings({ ...base, sheets: "manual" })).toEqual({ requested: null, sheets: "manual" });
+  });
+  it("a null requested tray is no warning", () => {
+    expect(trayWarnings({ ...base, requested: null }).requested).toBeNull();
+  });
+  it("a calibration print older than 24 hours is no warning", () => {
+    expect(trayWarnings({ ...base, requested: { tray: "manual", at: ago(CALIBRATION_PRINT_WINDOW_H + 1) } }).requested).toBeNull();
+    expect(trayWarnings({ ...base, requested: { tray: "manual", at: ago(CALIBRATION_PRINT_WINDOW_H - 1) } }).requested).toBe("manual");
+  });
+  it("a calibration print older than the stored values is no warning", () => {
+    const requested = { tray: "manual", at: ago(3) };
+    expect(trayWarnings({ ...base, requested, storedAt: ago(2) }).requested).toBeNull();
+    expect(trayWarnings({ ...base, requested, storedAt: ago(4) }).requested).toBe("manual");
   });
 });

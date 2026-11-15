@@ -44,12 +44,15 @@ export interface RenderOptions {
   session?: SessionData | null;
   /** UI language; the default is English, like a fresh install. */
   language?: "en" | "de";
+  /** Fills the query cache before the first render (a screen opened with data already cached). */
+  seed?: (client: QueryClient) => void;
 }
 
 /** Renders the whole app on an in-memory history with the info and session cache seeded. */
 export async function renderApp(options: RenderOptions = {}) {
   await initI18n(options.language ?? "en");
   const queryClient: QueryClient = createQueryClient();
+  options.seed?.(queryClient);
   queryClient.setQueryData(INFO_KEY, { ...INFO, ...options.info, features: { ...INFO.features, ...options.info?.features } });
   if (options.session !== null) queryClient.setQueryData(SESSION_KEY, options.session ?? SIGNED_IN);
   const router = createAppRouter({ history: createMemoryHistory({ initialEntries: [options.path ?? "/"] }) });

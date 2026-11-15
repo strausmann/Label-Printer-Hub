@@ -9,7 +9,7 @@ import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { useSheetTypes, type SheetTypeRead } from "../archive/api";
-import { usePrinters, usePrinterStatus, type Printer } from "../printers/api";
+import { usePrinters, usePrinterStatus, type Printer, type PrinterStatus } from "../printers/api";
 import { PrinterRow } from "../sheets/print/PrinterRow";
 import { HINT, ModalDialog, SelectField, TextInput } from "../settings/controls";
 import { SheetTypeCombobox } from "../sheets/SheetTypeCombobox";
@@ -27,7 +27,7 @@ import {
 } from "./api";
 import { CalibrationSchematic, GapCrossing } from "./CalibrationSchematic";
 import { useCalibrationErrorText, useValueNames } from "./errors";
-import { parseNumber, usableTypes } from "./model";
+import { parseNumber, preselectTray, trayWarnings, usableTypes } from "./model";
 import { PrintResult } from "./PrintResult";
 import { ReadingGuide } from "./guide/ReadingGuide";
 import { StillOff } from "./guide/StillOff";
@@ -70,16 +70,23 @@ export function CalibrationPage() {
     const labels = new Map((capabilities.data?.trays ?? []).map((x) => [x.key, x.label]));
     return (calibration.data ?? []).map((row) => ({ key: row.tray, label: labels.get(row.tray) ?? row.tray }));
   }, [calibration.data, capabilities.data]);
-  const defaultTray = capabilities.data?.trays?.find((x) => x.is_default && trays.some((y) => y.key === x.key))?.key ?? trays[0]?.key;
-  const tray = trays.find((x) => x.key === search.tray)?.key ?? defaultTray;
+  const defaultTray = capabilities.data?.trays?.find((x) => x.is_default && trays.some((y) => y.key === x.key))?.key;
+  // The tray sheets last printed from is the one to calibrate (#344), and only the printer's own answer says which it is:
+  // a status held in the cache may be minutes old, so it is asked again before a tray is chosen.
+  const status = usePrinterStatus(printer?.id ?? "", printer !== undefined, { staleTime: 0, refetchOnMount: "always" });
+  // Only while no tray is named in the address. Once the address names one, a refetch (after a print) changes nothing here.
+  const choosing = !trays.some((x) => x.key === search.tray) && trays.length > 0 && status.fetchStatus === "fetching";
+  const tray = choosing
+    ? undefined
+    : preselectTray({ address: search.tray, lastSheet: status.isError ? null : (status.data?.last_sheet_tray ?? null), defaultKey: defaultTray, trays });
 
   // The address always names what the page shows, so a copied link opens the same tray.
   useEffect(() => {
-    if (!printer || (calibration.isSuccess && !tray)) return;
+    if (!printer || choosing || (calibration.isSuccess && !tray)) return;
     if (search.printer !== printer.id || (tray && search.tray !== tray)) {
       void navigate({ to: "/calibration", search: { printer: printer.id, tray, type: search.type }, replace: true });
     }
-  }, [printer, tray, calibration.isSuccess, search.printer, search.tray, search.type, navigate]);
+  }, [printer, tray, choosing, calibration.isSuccess, search.printer, search.tray, search.type, navigate]);
 
   // The chosen sheet type belongs to the page, not to one tray: all three keep it in the address.
   const choosePrinter = (id: string) => void navigate({ to: "/calibration", search: { printer: id, tray: undefined, type: search.type }, replace: true });
@@ -114,13 +121,13 @@ export function CalibrationPage() {
               {trays.length > 1 && tray ? (
                 <SelectField label={t`Tray`} value={tray} options={trays.map((x) => ({ id: x.key, label: x.label }))} onChange={chooseTray} />
               ) : (
-                <p className={`${HINT} self-end`}>{calibration.isPending ? t`Loading…` : trays[0] ? trays[0].label : t`This printer has no tray to calibrate.`}</p>
+                <p className={`${HINT} self-end`}>{calibration.isPending || choosing ? t`Loading…` : trays[0] ? trays[0].label : t`This printer has no tray to calibrate.`}</p>
               )}
             </div>
-            <PrinterState printer={printer} />
+            <PrinterRow printer={printer} status={status.data} />
           </section>
 
-          {calibration.isPending ? (
+          {calibration.isPending || choosing ? (
             <p role="status" className="text-ink-2">{t`Loading…`}</p>
           ) : calibration.isError ? (
             <p role="alert" className="text-bad">
@@ -136,6 +143,9 @@ export function CalibrationPage() {
               typeChoice={search.type}
               onTypeChange={chooseType}
               trayLabel={trays.find((x) => x.key === tray)?.label ?? tray}
+              labelOf={(key) => trays.find((x) => x.key === key)?.label ?? key}
+              lastSheetTray={status.data?.last_sheet_tray ?? null}
+              lastCalibrationPrint={status.data?.last_calibration_print ?? null}
               stored={calibration.data.find((r) => r.tray === tray)}
             />
           ) : null}
@@ -145,15 +155,16 @@ export function CalibrationPage() {
   );
 }
 
-function PrinterState({ printer }: { printer: Printer }) {
-  const status = usePrinterStatus(printer.id);
-  return <PrinterRow printer={printer} status={status.data} />;
-}
-
 interface WorkbenchProps {
   printer: Printer;
   tray: string;
   trayLabel: string;
+  /** The label of any tray of this printer, for the warnings that name another one. */
+  labelOf: (key: string) => string;
+  /** The tray the newest sheet page used, from the printer status. */
+  lastSheetTray: string | null;
+  /** The tray and time of the newest calibration page. */
+  lastCalibrationPrint: PrinterStatus["last_calibration_print"];
   stored: CalibrationRead | undefined;
   /** The type key from the address; one that is unknown or archived means the default type. */
   typeChoice: string | undefined;
@@ -162,7 +173,7 @@ interface WorkbenchProps {
 }
 
 /** Everything for one printer and tray; it is rebuilt when either changes (the type lives in the address). */
-function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange }: WorkbenchProps) {
+function Workbench({ printer, tray, trayLabel, labelOf, lastSheetTray, lastCalibrationPrint, stored, typeChoice, onTypeChange }: WorkbenchProps) {
   const { t } = useLingui();
   const session = useSession();
   const canPrint = session.scope === "print" || session.scope === "admin";
@@ -194,6 +205,15 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
   const [asking, setAsking] = useState(false);
   // A press while the calibration page is still being queued says so, instead of asking a question that cannot be acted on.
   const [pressedWhileBusy, setPressedWhileBusy] = useState(false);
+  // The 24-hour window of the calibration print is counted from when the page was opened; a print made since is "now" or later.
+  const [openedAt] = useState(() => Date.now());
+  const warnings = trayWarnings({
+    saveTray: tray,
+    requested: lastCalibrationPrint ?? null,
+    storedAt: stored?.updated_at ?? null,
+    sheets: lastSheetTray,
+    now: openedAt,
+  });
   const send = (print: PrintMutation, corrected: boolean) => {
     // A press while the same print is still being queued is ignored (the button may stay enabled, see `lockWhilePending`).
     if (type && !print.isPending) setPressedWhileBusy(false);
@@ -204,6 +224,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
     <>
       <CurrentValues stored={stored}>
         <div className="flex flex-col gap-5">
+        <TrayLine kind="prints" label={trayLabel} />
         {type && (
           <PrintAction
             printerId={printer.id}
@@ -226,6 +247,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
 
       <section aria-labelledby="cal-step1-h" className={`${PANEL} flex flex-col gap-4`}>
         <h2 id="cal-step1-h" className={SECTION_HEADING}>{hasStored ? t`Measure again` : t`Step 1: Print the calibration page`}</h2>
+        <TrayLine kind="prints" label={trayLabel} />
         <p className={`${HINT} max-w-prose`}>
           {hasStored
             ? t`Only needed when the check is off by more than 0.5 mm. Print it onto a real sheet of labels (the sheet is used up); it is always printed without correction.`
@@ -274,6 +296,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
 
       <section aria-labelledby="cal-step2-h" className={`${PANEL} flex flex-col gap-5`}>
         <h2 id="cal-step2-h" className={SECTION_HEADING}>{t`Step 2: Enter the deviation`}</h2>
+        <TrayLine kind="saves" label={trayLabel} />
         <ReadingGuide type={type ? { geometry: type.geometry, label: typeLabelWithKey(type) } : undefined} scale={scale} />
         {type && (
           <div className="flex flex-col gap-3">
@@ -295,6 +318,7 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
           printer={printer}
           tray={tray}
           trayLabel={trayLabel}
+          warnings={{ requested: warnings.requested && labelOf(warnings.requested), sheets: warnings.sheets && labelOf(warnings.sheets) }}
           hasStored={hasValues(stored)}
           fields={draft.fields}
           onChange={(fields) => setDraft({ key, fields, fit: null })}
@@ -331,6 +355,12 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
       </ModalDialog>
     </>
   );
+}
+
+/** Which tray a step is about: the page prints from it, the values are saved for it (#344). */
+function TrayLine({ kind, label }: { kind: "prints" | "saves"; label: string }) {
+  const { t } = useLingui();
+  return <p className={`${HINT} m-0`}>{kind === "prints" ? t`Prints from: ${label}` : t`Saves for: ${label}`}</p>;
 }
 
 function CurrentValues({ stored, children }: { stored: CalibrationRead | undefined; children?: ReactNode }) {
@@ -450,6 +480,8 @@ interface ValuesFormProps {
   printer: Printer;
   tray: string;
   trayLabel: string;
+  /** The labels of the other trays to warn about (see `trayWarnings`), or `null`. */
+  warnings: { requested: string | null; sheets: string | null };
   hasStored: boolean;
   fields: Draft;
   onChange: (fields: Draft) => void;
@@ -457,7 +489,7 @@ interface ValuesFormProps {
   admin: boolean;
 }
 
-function ValuesForm({ printer, tray, trayLabel, hasStored, fields, onChange, measuredOn, admin }: ValuesFormProps) {
+function ValuesForm({ printer, tray, trayLabel, warnings, hasStored, fields, onChange, measuredOn, admin }: ValuesFormProps) {
   const { t } = useLingui();
   const names = useValueNames();
   const errorText = useCalibrationErrorText();
@@ -500,6 +532,7 @@ function ValuesForm({ printer, tray, trayLabel, hasStored, fields, onChange, mea
     <TextInput label={label} value={fields[f]} onChange={(v) => setField(f, v)} inputMode="decimal" mono description={description} />
   );
   const printerName = printer.name;
+  const { requested: requestedLabel, sheets: sheetsLabel } = warnings;
 
   return (
     <div className="flex flex-col gap-4">
@@ -519,6 +552,21 @@ function ValuesForm({ printer, tray, trayLabel, hasStored, fields, onChange, mea
       {reset.isError && <p role="alert" className="m-0 text-bad">{errorText(reset.error, t`The correction could not be reset.`)}</p>}
       {message === "saved" && save.isSuccess && <p role="status" className="m-0 text-ok">{t`Saved. New prints use this correction.`}</p>}
       {message === "reset" && reset.isSuccess && <p role="status" className="m-0 text-ok">{t`Reset. This tray prints without correction.`}</p>}
+
+      {(requestedLabel || sheetsLabel) && (
+        <div className="flex flex-col gap-2 rounded-r2 border border-warn bg-sunken p-3">
+          {requestedLabel && (
+            <p className="m-0 [overflow-wrap:anywhere]">
+              <strong>{t`Check the tray:`}</strong> {t`The calibration page was printed from ${requestedLabel}, but you are saving for ${trayLabel}.`}
+            </p>
+          )}
+          {sheetsLabel && (
+            <p className="m-0 [overflow-wrap:anywhere]">
+              <strong>{t`Check the tray:`}</strong> {t`Sheets last printed from ${sheetsLabel}; this correction applies to ${trayLabel} only.`}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <Button isDisabled={!admin || save.isPending} onPress={submit} className={PRIMARY_BUTTON}>

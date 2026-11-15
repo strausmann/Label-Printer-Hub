@@ -371,6 +371,28 @@ test.describe.serial("calibration", () => {
     await expect(page.getByRole("button", { name: / Tray$/ })).toContainText(trayLabel);
   });
 
+  test("a correction for another tray than the printed calibration page is warned about (#344)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/calibration?printer=${id}&tray=auto`);
+    await expect(page.getByRole("heading", { level: 1, name: "Calibration" })).toBeVisible();
+    await chooseType(page);
+    await page.getByRole("button", { name: "Print the calibration page (without correction)" }).click();
+    await expect(page.getByRole("link", { name: "Show the job" })).toBeVisible();
+
+    // The values are about to be saved for the main tray, but the page came from "Automatic".
+    const trayButton = page.getByRole("button", { name: / Tray$/ });
+    await trayButton.click();
+    await page.getByRole("option", { name: "Main tray" }).click();
+    await expect(page.getByText(/The calibration page was printed from Automatic, but you are saving for Main tray/)).toBeVisible();
+
+    // Back on the tray the page came from, nothing to warn about.
+    await trayButton.click();
+    await page.getByRole("option", { name: "Automatic" }).click();
+    await expect(page.getByText("Saves for: Automatic")).toBeVisible();
+    await expect(page.getByText(/The calibration page was printed from/)).toHaveCount(0);
+  });
+
   test("fits four readings, saves them, the capabilities show the values; reset puts the tray back", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });

@@ -7,6 +7,7 @@ import { queuedJobs } from "../../api/errorDetail";
 import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
 import { watchPrint } from "../jobs/printWatch";
+import { statusKey } from "../printers/api";
 import {
   marginCheckKey,
   nextCodeKey,
@@ -184,6 +185,8 @@ export function usePrintSheets(printerId: string) {
       void client.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });
       void client.invalidateQueries({ queryKey: ["jobs"] });
       void client.invalidateQueries({ queryKey: ["printers", printerId, "queue"] });
+      // The status names the tray the newest sheet page used (#344).
+      void client.invalidateQueries({ queryKey: statusKey(printerId) });
     },
   });
 }

@@ -216,6 +216,8 @@ export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStat
   markers: [{ name: "Black toner", color: "#000000", level_percent: 80, low: false, empty: false, some_remaining: true, type: "toner" }],
   trays: PAGE_TRAYS,
   jobs_ahead: 0,
+  last_sheet_tray: null,
+  last_calibration_print: null,
   error_state: null,
   last_error: null,
   last_probe_age_s: 3,

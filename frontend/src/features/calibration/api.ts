@@ -7,6 +7,7 @@ import type { components } from "../../api/schema.gen";
 import { queryString } from "../../api/queryString";
 import { useEffect, useRef } from "react";
 import { releaseClaimPending, watchPrint } from "../jobs/printWatch";
+import { statusKey } from "../printers/api";
 import { calibrationKey, capabilitiesKey } from "../sheets/keys";
 
 export { calibrationKey, capabilitiesKey } from "../sheets/keys";
@@ -91,7 +92,11 @@ export function usePrintCalibrationPage(printerId: string) {
       registered.current.push(accepted.job_id);
       void watchPrint({ kind: "calibration", printerId, jobIds: [accepted.job_id], claimPending: mounted.current });
     },
-    onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+      // The status names the tray of the newest calibration page (#344).
+      void client.invalidateQueries({ queryKey: statusKey(printerId) });
+    },
   });
 }
 

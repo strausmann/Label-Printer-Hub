@@ -1052,6 +1052,10 @@ msgstr "Check page"
 msgid "Check page status"
 msgstr "Check page status"
 
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Check the tray:"
+msgstr "Check the tray:"
+
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "check this reading"
 msgstr "check this reading"
@@ -3273,6 +3277,10 @@ msgstr "Printing needs a print or admin key."
 msgid "Printing now"
 msgstr "Printing now"
 
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Prints from: {label}"
+msgstr "Prints from: {label}"
+
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/model.ts
 #: src/shell/StatusBadge.tsx
@@ -3665,6 +3673,10 @@ msgstr "Saved values exist, but this integration cannot be used yet. A secret ma
 msgid "Saved. New prints use this correction."
 msgstr "Saved. New prints use this correction."
 
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Saves for: {label}"
+msgstr "Saves for: {label}"
+
 #: src/features/archive/errors.ts
 #: src/features/settings/feedback.tsx
 msgid "Saving failed."
@@ -3906,6 +3918,10 @@ msgstr "Sheets"
 #: src/features/archive/TypeForm.tsx
 msgid "Sheets already made keep printing with the old measurements."
 msgstr "Sheets already made keep printing with the old measurements."
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "Sheets last printed from {sheetsLabel}; this correction applies to {trayLabel} only."
+msgstr "Sheets last printed from {sheetsLabel}; this correction applies to {trayLabel} only."
 
 #. placeholder {0}: matches.length
 #: src/features/about/DependencyLicences.tsx
@@ -4385,6 +4401,10 @@ msgstr "The calibration of every tray of this printer is reset, and the device n
 #: src/features/calibration/CalibrationPage.tsx
 msgid "The calibration page printed. Now measure the crossings."
 msgstr "The calibration page printed. Now measure the crossings."
+
+#: src/features/calibration/CalibrationPage.tsx
+msgid "The calibration page was printed from {requestedLabel}, but you are saving for {trayLabel}."
+msgstr "The calibration page was printed from {requestedLabel}, but you are saving for {trayLabel}."
 
 #: src/features/scan/CameraScanner.tsx
 msgid "The camera did not start"
