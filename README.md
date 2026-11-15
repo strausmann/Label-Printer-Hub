@@ -195,12 +195,12 @@ What comes next, by release. Each release is a [GitHub milestone](https://github
 
 | Release | Main content |
 |---|---|
-| [1.6.0](https://github.com/strausmann/labelyard/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware |
-| [1.7.0](https://github.com/strausmann/labelyard/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery in the printer form |
-| [1.8.0](https://github.com/strausmann/labelyard/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration |
-| [1.9.0](https://github.com/strausmann/labelyard/milestone/9) | Integrations: free-text search, item details before printing, links into the apps, Snipe-IT locations, **Kept**, **Paperless-ngx** ASN labels on sheets |
-| [1.10.0](https://github.com/strausmann/labelyard/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB), detection by IP address, a printer test kit, job priorities |
-| [1.11.0](https://github.com/strausmann/labelyard/milestone/11) | E-mail notifications, a redesigned tape label layout, a print inbox other apps can fill |
+| [1.6.0](https://github.com/strausmann/labelyard/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware, clearer calibration steps |
+| [1.7.0](https://github.com/strausmann/labelyard/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery, a swatch-style **Spoolman** spool label, verified sheet types (6121, 3490, L4731REV, L4737REV), a calibration guide with a table of causes, a phone menu and search, a cart icon, a sheet code for sheets without a margin |
+| [1.8.0](https://github.com/strausmann/labelyard/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration with history, a sheet-type catalog, labels in the unprintable margin; **Kept**; a redesigned tape label layout; a print inbox other apps can fill; release and security notices; the Brother PT-E550W and PT-P710BT (marked untested, feedback welcome) |
+| [1.9.0](https://github.com/strausmann/labelyard/milestone/9) | **Calibration from photos or scans with a prompt for your own AI assistant**, including a printer test page for calibrating the printer on plain paper and a measurement log per sheet type; integrations: free-text search and search across all integrations, item details before printing, links into the apps, Snipe-IT locations, **Paperless-ngx** ASN labels on sheets, Spoolman authentication |
+| [1.10.0](https://github.com/strausmann/labelyard/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB, across-width layouts), detection by IP address, a printer test kit, printer status in the print panel, job priorities, chunked batches |
+| [1.11.0](https://github.com/strausmann/labelyard/milestone/11) | E-mail and browser notifications, monitoring through SNMP, a device diagnostics page, regular privacy checks, an in-browser demo on labelyard.app |
 
 ## Supported hardware
 
