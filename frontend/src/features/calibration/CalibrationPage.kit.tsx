@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
 import { GEOMETRY_L4736, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, pageStatus, PRINTER_A, SHEET_TYPE, status, type Call } from "../test-api";
@@ -39,6 +40,9 @@ export const typeB = { ...SHEET_TYPE, key: "OTHERTYPE", prefix: "OT", vendor: "O
 export const twoColumns = { ...SHEET_TYPE, key: "TWOCOL", prefix: "T2", vendor: "Two", product_codes: ["T2-1"], geometry: { ...GEOMETRY_L4736, cols: 2 } };
 export const disabledPrinter = { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-555555555555", name: "Switched off laser", enabled: false };
 
+/** The values of backend/app/calibration/scale.py; CalibrationSchematic.scale.test.tsx holds this copy to them. */
+export const SCALE = { half_mm: 2, step_mm: 0.5, line_mm: 0.1, tick_half_mm: 0.8, tick_whole_mm: 1.4, tick_centre_mm: 2 };
+
 export function routes(extra: Record<string, unknown> = {}) {
   return {
     "GET /api/v1/printers": [PAGE_PRINTER, secondPrinter, PRINTER_A, disabledPrinter],
@@ -49,6 +53,7 @@ export function routes(extra: Record<string, unknown> = {}) {
     [`GET /api/v1/printers/${secondPrinter.id}/capabilities`]: PAGE_CAPABILITIES,
     [`GET ${BASE}`]: [stored, none],
     [`GET /api/v1/printers/${secondPrinter.id}/calibration`]: [{ ...none, tray: "main" }],
+    "GET /api/v1/printers/calibration/scale": SCALE,
     "GET /api/v1/sheet-types": [SHEET_TYPE, oneColumn],
     ...extra,
   };
@@ -67,6 +72,12 @@ export const throws = () => {
   throw new TypeError("Failed to fetch");
 };
 export const button = (name: string | RegExp) => screen.findByRole("button", { name });
+
+/** Prints the calibration page on a tray that has a correction: the page asks first, and this answers "Measure again anyway". */
+export async function printCalibrationAnyway() {
+  await userEvent.click(await button("Print the calibration page (without correction)"));
+  await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Measure again anyway" }));
+}
 
 /**
  * Puts a number into a field, replacing what is there, as one change event.

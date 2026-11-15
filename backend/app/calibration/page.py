@@ -20,13 +20,16 @@ clipped at it.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+from app.calibration import scale
 from app.calibration.fit import crossing_point
+from app.calibration.scale import LINE_MM
 from app.page_render.pdf import VectorPen, text_width_mm, write_pdf
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
 from app.sheets.errors import CalibrationTypeUnsuitableError
@@ -37,7 +40,6 @@ if TYPE_CHECKING:
 
 #: Plan 2 decision: the page size the squares are measured on is the sheet's own.
 CORNER_SQUARE_MM = 15.0
-LINE_MM = 0.1
 DASHED = (1.0, 0.5)
 DOTTED = (0.2, 0.4)
 LABEL_PT = 2.5
@@ -51,10 +53,7 @@ _EPS = 1e-9
 #: Room kept between the footer and a corner square, so rounding in the PDF cannot touch it.
 _FOOTER_SLACK_MM = 0.01
 
-# Mini scale at a crossing: ±2 mm, a tick every 0.2 mm.
-_SCALE_HALF_MM = 2.0
-_SCALE_STEP_MM = 0.2
-_TICK_TENTH_MM, _TICK_WHOLE_MM, _TICK_CENTRE_MM = 0.6, 1.2, 1.8
+# Mini scale at a crossing (±2 mm, a tick every 0.5 mm): its numbers are in ``scale``.
 # Ruler on a grid edge at a gap line: ±3 mm, a tick every 0.5 mm, drawn outwards.
 _RULER_HALF_MM = 3.0
 _RULER_STEP_MM = 0.5
@@ -62,6 +61,7 @@ _RULER_TICK_MM = 1.0
 _CORNER_LEG_MM = 1.5
 
 _Box = tuple[float, float, float, float]
+_Seg = tuple[float, float, float, float]
 
 
 def today_iso() -> str:
@@ -234,23 +234,47 @@ class _Page:
         self._pen.text(x, y, s, size_pt=FOOTER_PT, anchor="middle")
 
 
-def _mini_scale(page: _Page, cx: float, cy: float, *, along_x: bool) -> None:
-    """The ±2 mm scale of a crossing.
-
-    Deliberately all or nothing: a scale with some ticks missing would be counted wrongly by
-    whoever reads it, so one tick touching a corner square omits the whole scale.
-    """
-    segs: list[tuple[float, float, float, float]] = []
-    for k in range(-10, 11):
-        off = k * _SCALE_STEP_MM
-        length = _TICK_CENTRE_MM if k == 0 else _TICK_WHOLE_MM if k % 5 == 0 else _TICK_TENTH_MM
+def _scale_segments(cx: float, cy: float, *, along_x: bool) -> list[_Seg]:
+    """The ticks of the mini scale at a crossing, as (x1, y1, x2, y2)."""
+    segs: list[_Seg] = []
+    ticks = round(scale.HALF_MM / scale.STEP_MM)
+    per_mm = round(1 / scale.STEP_MM)
+    for k in range(-ticks, ticks + 1):
+        off = k * scale.STEP_MM
+        length = (
+            scale.TICK_CENTRE_MM
+            if k == 0
+            else scale.TICK_WHOLE_MM
+            if k % per_mm == 0
+            else scale.TICK_HALF_MM
+        )
         h = length / 2
         segs.append(
             (cx + off, cy - h, cx + off, cy + h)
             if along_x
             else (cx - h, cy + off, cx + h, cy + off)
         )
-    page.segments(segs)
+    return segs
+
+
+def _mini_scale(page: _Page, cx: float, cy: float, *, along_x: bool) -> None:
+    """The ±2 mm scale of a crossing, a tick every 0.5 mm (``app.calibration.scale``).
+
+    Deliberately all or nothing: a scale with some ticks missing would be counted wrongly by
+    whoever reads it, so one tick touching a corner square omits the whole scale.
+    """
+    page.segments(_scale_segments(cx, cy, along_x=along_x))
+
+
+def _white_between(a: _Seg, b: _Seg) -> float:
+    """The white (mm) between two straight strokes of ``LINE_MM``, edge to edge."""
+
+    def box(s: _Seg) -> _Box:
+        h = LINE_MM / 2
+        return min(s[0], s[2]) - h, min(s[1], s[3]) - h, max(s[0], s[2]) + h, max(s[1], s[3]) + h
+
+    (ax0, ay0, ax1, ay1), (bx0, by0, bx1, by1) = box(a), box(b)
+    return math.hypot(max(ax0 - bx1, bx0 - ax1, 0.0), max(ay0 - by1, by0 - ay1, 0.0))
 
 
 def _ruler(page: _Page, pos: float, edge: float, *, horizontal: bool, outward: int) -> None:
@@ -261,10 +285,22 @@ def _ruler(page: _Page, pos: float, edge: float, *, horizontal: bool, outward: i
         page.segments([(t, a, t, b)] if horizontal else [(a, t, b, t)])
 
 
-def _corner_mark(page: _Page, x: float, y: float, dx: int, dy: int) -> None:
-    """An L at a label corner whose legs run along the label's two edges, inwards."""
+def _corner_mark(
+    page: _Page, x: float, y: float, dx: int, dy: int, *, ticks: Sequence[_Seg] = ()
+) -> None:
+    """An L at a label corner whose legs run along the label's two edges, inwards.
+
+    Left out as a whole when a leg would come nearer than ``scale.MIN_GAP_MM`` of white to a
+    tick of a mini scale: on a sheet whose gap is as narrow as the scale (2.5 mm, say) the legs
+    run between two ticks (0.15 mm of white) or continue the centre tick, and a colour laser
+    fills that in (#348). A leg cannot be shortened out of the way, it starts at the corner,
+    which lies inside the scale; the scale and the gap lines still show the cut there.
+    """
     leg = _CORNER_LEG_MM
-    page.segments([(x, y, x + dx * leg, y), (x, y, x, y + dy * leg)])
+    legs = [(x, y, x + dx * leg, y), (x, y, x, y + dy * leg)]
+    if any(_white_between(a, b) < scale.MIN_GAP_MM - _EPS for a in legs for b in ticks):
+        return
+    page.segments(legs)
 
 
 def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
@@ -284,10 +320,16 @@ def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
     for y in row_y:
         page.run(y, x0, x0 + gw, vertical=False, dash=DASHED if row_gap else DOTTED)
 
-    for x in col_x:
-        for y in row_y:
+    # The ticks of every crossing, by (column line, row line): a corner is checked only against
+    # the crossings next to it, not against every tick of the page.
+    scales: dict[tuple[int, int], list[_Seg]] = {}
+    for i, x in enumerate(col_x):
+        for j, y in enumerate(row_y):
             _mini_scale(page, x, y, along_x=True)
             _mini_scale(page, x, y, along_x=False)
+            scales[i, j] = _scale_segments(x, y, along_x=True) + _scale_segments(
+                x, y, along_x=False
+            )
 
     for x in col_x:
         _ruler(page, x, y0, horizontal=True, outward=-1)
@@ -302,10 +344,15 @@ def draw_calibration_page(pen: VectorPen, g: Geometry, *, footer: str) -> None:
             ly0 = (g.margin_top + r * g.pitch_y) / 100
             lx1 = (g.margin_left + c * g.pitch_x + g.label_w) / 100
             ly1 = (g.margin_top + r * g.pitch_y + g.label_h) / 100
-            _corner_mark(page, lx0, ly0, 1, 1)
-            _corner_mark(page, lx1, ly0, -1, 1)
-            _corner_mark(page, lx0, ly1, 1, -1)
-            _corner_mark(page, lx1, ly1, -1, -1)
+            # A label's left edge borders column line c - 1, its right edge line c; its top edge
+            # borders row line r - 1, its bottom edge line r (the outer edges border none).
+            left, top = c - 1, r - 1
+            tl, tr = scales.get((left, top), []), scales.get((c, top), [])
+            bl, br = scales.get((left, r), []), scales.get((c, r), [])
+            _corner_mark(page, lx0, ly0, 1, 1, ticks=tl)
+            _corner_mark(page, lx1, ly0, -1, 1, ticks=tr)
+            _corner_mark(page, lx0, ly1, 1, -1, ticks=bl)
+            _corner_mark(page, lx1, ly1, -1, -1, ticks=br)
 
     for i, x in enumerate(col_x, start=1):
         page.text(x, y0 - _RULER_TICK_MM - 0.6, f"S{i}", size_pt=LABEL_PT, anchor="middle")

@@ -4,7 +4,8 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { SHEET_TYPE, sheetRead, type Call } from "../../test-api";
+import { renderApp } from "../../../test-utils";
+import { SHEET_TYPE, mockApi, sheetRead, type Call } from "../../test-api";
 import { NEW_9, P, USED_17, body, expectType, previewFor, previewPage, routes, sheet } from "./testkit";
 import { LINE, cartView, itemView, previews, resetBetweenTests } from "./SheetSection.kit";
 import type * as Debounced from "./useDebounced";
@@ -64,6 +65,110 @@ describe("choosing cells and skipping one", () => {
   });
 });
 
+/** A first page whose new cells carry the given labels; `null` takes the item name (Flour). */
+function labelled(cells: Array<{ cell: number; purpose: string | null; truncated?: boolean }>) {
+  const page = previewPage("L4736-0001", cells.map((c) => c.cell), USED_17);
+  for (const [i, c] of cells.entries()) page.cells[c.cell - 1] = { ...page.cells[c.cell - 1]!, item_index: i, purpose: c.purpose, truncated: c.truncated ?? false };
+  return previewFor("L4736-0001", cells.map((c) => c.cell), USED_17, { pages: [page] });
+}
+const TEN = Array.from({ length: 10 }, (_, i) => ({ cell: 18 + i, purpose: "Eggs" }));
+
+describe("the cell list of the preview (#150)", () => {
+  it("ten consecutive cells with the same item show as one row with the count", async () => {
+    await itemView(routes({ preview: labelled(TEN) }), 10);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–27 → Eggs (10×)")).toBeVisible();
+    expect(within(preview).queryByText(/^Cell 18 →/)).toBeNull();
+  });
+
+  it("a gap in the cell numbers starts a new row", async () => {
+    await itemView(routes({ preview: labelled([18, 19, 21, 22].map((cell) => ({ cell, purpose: "Eggs" }))) }), 4);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–19 → Eggs (2×)")).toBeVisible();
+    expect(within(preview).getByText("Cells 21–22 → Eggs (2×)")).toBeVisible();
+  });
+
+  it("different items next to each other stay separate rows", async () => {
+    await itemView(routes({ preview: labelled([{ cell: 18, purpose: "Eggs" }, { cell: 19, purpose: "Flour" }, { cell: 20, purpose: "Flour" }]) }), 3);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cell 18 → Eggs")).toBeVisible();
+    expect(within(preview).getByText("Cells 19–20 → Flour (2×)")).toBeVisible();
+  });
+
+  it("the shortened-text line is gone", async () => {
+    await itemView(routes({ preview: labelled([{ cell: 18, purpose: "Eggs", truncated: true }, { cell: 19, purpose: "Eggs", truncated: true }]) }), 2);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    await within(preview).findByText(/Eggs/);
+    expect(within(preview).queryByText(/Text shortened to fit/)).toBeNull();
+  });
+
+  it("a truncated group carries the shortened mark", async () => {
+    const cells = [...TEN.map((c) => ({ ...c, truncated: true })), { cell: 28, purpose: "Milk", truncated: true }];
+    await itemView(routes({ preview: labelled(cells) }), 11);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–27 → Eggs (10×, shortened)")).toBeVisible();
+    expect(within(preview).getByText("Cell 28 → Milk (shortened)")).toBeVisible();
+  });
+
+  it("a row without truncation has no mark, and truncated cells do not join untruncated ones", async () => {
+    await itemView(routes({ preview: labelled([{ cell: 18, purpose: "Eggs" }, { cell: 19, purpose: "Eggs" }, { cell: 20, purpose: "Eggs", truncated: true }]) }), 3);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–19 → Eggs (2×)")).toBeVisible();
+    expect(within(preview).getByText("Cell 20 → Eggs (shortened)")).toBeVisible();
+    expect(within(preview).queryByText(/Cells 18–19.*shortened/)).toBeNull();
+  });
+
+  it("thirteen cells that are not next to each other fold into a details with the cell count (#150)", async () => {
+    const apart = Array.from({ length: 13 }, (_, i) => ({ cell: 2 + i * 2, purpose: "Eggs" }));
+    await itemView(routes({ preview: labelled(apart) }), 13);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    const summary = await within(preview).findByText("Show the 13 cells");
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(within(details).getAllByText(/^Cell \d+ → Eggs$/)).toHaveLength(13);
+  });
+
+  it("one run of thirteen consecutive cells stays unfolded as a single row (#150)", async () => {
+    const run = Array.from({ length: 13 }, (_, i) => ({ cell: 18 + i, purpose: "Eggs" }));
+    await itemView(routes({ preview: labelled(run) }), 13);
+    const preview = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(preview).findByText("Cells 18–30 → Eggs (13×)")).toBeVisible();
+    expect(within(preview).queryByText(/^Show the/)).toBeNull();
+  });
+
+  it("a cell left out splits a run into two rows (#150)", async () => {
+    const answer = (init: RequestInit) => {
+      const skip = (JSON.parse(String(init.body)) as { placements: Array<{ skip?: number[] }> }).placements[0]?.skip ?? [];
+      return labelled([18, 19, 20, 21].filter((c) => !skip.includes(c)).map((cell) => ({ cell, purpose: "Eggs" })));
+    };
+    await itemView(routes({ preview: answer }), 4);
+    expect(await screen.findByText("Cells 18–21 → Eggs (4×)")).toBeVisible();
+    await userEvent.click(await screen.findByRole("gridcell", { name: /^Cell 19, new/ }));
+    expect(await screen.findByText("Cell 18 → Eggs")).toBeVisible();
+    expect(screen.getByText("Cells 20–21 → Eggs (2×)")).toBeVisible();
+  });
+
+  it("rows never reach across pages (#150)", async () => {
+    const first = labelled([46, 47, 48].map((cell) => ({ cell, purpose: "Eggs" })));
+    const second = labelled([1, 2].map((cell) => ({ cell, purpose: "Eggs" })));
+    const preview = { ...first, pages: [first.pages[0]!, { ...second.pages[0]!, sheet_code: "L4736-0002" }], free_after: [45, 46] };
+    await itemView(routes({ preview }), 5);
+    const region = await screen.findByRole("region", { name: "Preview" });
+    expect(await within(region).findByText("Cells 46–48 → Eggs (3×)")).toBeVisible();
+    expect(within(region).getByText("Cells 1–2 → Eggs (2×)")).toBeVisible();
+  });
+
+  it("reads in German with the range, the count and the mark", async () => {
+    mockApi(routes({ preview: labelled([...TEN, { cell: 28, purpose: "Milch", truncated: true }, { cell: 30, purpose: "Mehl" }]) }));
+    await renderApp({ path: "/lookup/grocy/7", language: "de" });
+    fireEvent.change(await screen.findByRole("spinbutton", { name: "Kopien" }), { target: { value: "12" } });
+    const preview = await screen.findByRole("region", { name: "Vorschau" });
+    expect(await within(preview).findByText("Zellen 18–27 → Eggs (10×)")).toBeVisible();
+    expect(within(preview).getByText("Zelle 28 → Milch (gekürzt)")).toBeVisible();
+    expect(within(preview).getByText("Zelle 30 → Mehl")).toBeVisible();
+  });
+});
+
 describe("the preview", () => {
   it("shows counts, the cells it fills and the zoom", async () => {
     await itemView(routes());
@@ -84,8 +189,8 @@ describe("the preview", () => {
     page.cells[19] = { ...page.cells[19]!, hw_margin: true };
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, { pages: [page] }) }));
     expect(await screen.findByText("Code only on this sheet type")).toBeVisible();
-    expect(screen.getByText(/shortened/)).toBeVisible();
     expect(screen.getByText(/unprintable margin/)).toBeVisible();
+    expect(screen.queryByText(/Text shortened to fit/)).toBeNull();
   });
 
   it("lists what was printed before", async () => {

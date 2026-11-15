@@ -15,7 +15,7 @@ import { cellRanges, groupReprints, type ReprintGroup } from "./reprints";
 type Page = PreviewData["pages"][number];
 type Total = PreviewData["reprint_totals"][number];
 
-/** More planned cells than this and the list of them starts folded. */
+/** More rows in the list of planned cells than this and it starts folded. */
 const LONG_LIST = 12;
 
 export interface SheetPreviewProps {
@@ -29,6 +29,25 @@ export interface SheetPreviewProps {
 }
 
 const numbers = (cells: number[]) => cells.join(", ");
+
+interface CellRow {
+  from: number;
+  to: number;
+  label: string;
+  truncated: boolean;
+}
+
+/** Consecutive cells (numbers one apart) with the same label and the same truncation share one row; a gap starts a new row. */
+function groupCells(cells: Page["cells"], name: (c: Page["cells"][number]) => string): CellRow[] {
+  const rows: CellRow[] = [];
+  for (const c of cells) {
+    const label = name(c);
+    const last = rows.at(-1);
+    if (last && last.to + 1 === c.cell && last.label === label && last.truncated === c.truncated) last.to = c.cell;
+    else rows.push({ from: c.cell, to: c.cell, label, truncated: c.truncated });
+  }
+  return rows;
+}
 
 function toGridCells(page: Page, skipped: readonly number[]): GridCell[] {
   return page.cells.map((c) => ({
@@ -150,15 +169,23 @@ function PageView({
   const hints = data.reprint_hints.filter((h) => fresh.some((c) => c.item_index === h.item_index));
   const reprints = groupReprints(hints, localDay);
   const mapped = numbers(fresh.filter((c) => c.mapped).map((c) => c.cell));
-  const shortened = numbers(fresh.filter((c) => c.truncated).map((c) => c.cell));
   const cutOff = numbers(fresh.filter((c) => c.hw_margin).map((c) => c.cell));
   const { used, reserved, unconfirmed, now } = counts;
+  const rows = groupCells(fresh, name);
   const list = (
     <ul className="flex flex-col gap-0.5 text-small">
-      {fresh.map((c) => {
-        const cell = c.cell;
-        const label = name(c);
-        return <li key={cell} className="[overflow-wrap:anywhere]">{t`Cell ${cell} → ${label}`}</li>;
+      {rows.map((r) => {
+        const { from, to, label } = r;
+        const count = to - from + 1;
+        const text =
+          count === 1
+            ? r.truncated
+              ? t`Cell ${from} → ${label} (shortened)`
+              : t`Cell ${from} → ${label}`
+            : r.truncated
+              ? t`Cells ${from}–${to} → ${label} (${count}×, shortened)`
+              : t`Cells ${from}–${to} → ${label} (${count}×)`;
+        return <li key={`${from}-${to}`} className="[overflow-wrap:anywhere]">{text}</li>;
       })}
     </ul>
   );
@@ -192,7 +219,7 @@ function PageView({
       </ul>
       {page.id_not_printed && <p className="font-bold text-warn">{t`Sheet ID not printed, add it by hand`}</p>}
 
-      {fresh.length > LONG_LIST ? (
+      {rows.length > LONG_LIST ? (
         <details>
           <summary className="min-h-11 cursor-pointer py-2 font-bold">{plural(fresh.length, { one: "Show the # cell", other: "Show the # cells" })}</summary>
           {list}
@@ -207,7 +234,6 @@ function PageView({
             <strong>{t`Code only on this sheet type`}</strong> <span className="text-ink-2">{t`cells ${mapped}`}</span>
           </li>
         )}
-        {shortened !== "" && <li>{t`Text shortened to fit: cells ${shortened}`}</li>}
         {cutOff !== "" && <li>{t`May be cut off by the printer's unprintable margin: cells ${cutOff}`}</li>}
         {reprints.map((group) => (
           <li key={group.itemIndex}>

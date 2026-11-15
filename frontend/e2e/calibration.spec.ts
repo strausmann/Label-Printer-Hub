@@ -36,6 +36,22 @@ async function trayCalibration(page: Page, id: string) {
 }
 const hasCorrection = (c: { offset_x_mm: number | null; offset_y_mm: number | null } | null) => !!c && (c.offset_x_mm != null || c.offset_y_mm != null);
 
+/** Sends or removes a correction for the tray through the API, with the session's CSRF token. */
+async function setCorrection(page: Page, id: string, values: object | null) {
+  return page.evaluate(
+    async ([path, body]) => {
+      const session = await (await fetch("/api/v1/auth/session")).json();
+      const response = await fetch(path as string, {
+        method: body ? "PUT" : "DELETE",
+        headers: { "X-CSRF-Token": session.csrf_token, ...(body ? { "Content-Type": "application/json" } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return response.status;
+    },
+    [`/api/v1/printers/${id}/calibration/${TRAY}`, values] as const,
+  );
+}
+
 async function jobsOf(page: Page, id: string): Promise<string[]> {
   const jobs = (await (await page.request.get("/api/v1/jobs")).json()) as Array<{ id: string; printer_id: string }>;
   return jobs.filter((j) => j.printer_id === id).map((j) => j.id);
@@ -88,7 +104,7 @@ test.describe.serial("calibration", () => {
     const before = await jobsOf(page, id);
     await openCalibration(page, id);
     await chooseType(page);
-    await page.getByRole("button", { name: "Print calibration page" }).click();
+    await page.getByRole("button", { name: "Print the calibration page (without correction)" }).click();
     const link = page.getByRole("link", { name: "Show the job" });
     await expect(link).toBeVisible();
     const jobId = (await link.getAttribute("href"))!.split("/").pop()!;
@@ -139,7 +155,7 @@ test.describe.serial("calibration", () => {
     await setPagePrinter(page, { job_script: [3, 5, 9] });
     await openCalibration(page, id);
     await chooseType(page);
-    const print = page.getByRole("button", { name: "Print calibration page" });
+    const print = page.getByRole("button", { name: "Print the calibration page (without correction)" });
     const pdf = page.getByRole("link", { name: "Download PDF" });
     await expect(pdf).toBeVisible();
     const before = { print: await pageBox(print), pdf: await pageBox(pdf) };
@@ -233,7 +249,7 @@ test.describe.serial("calibration", () => {
     await chooseType(page);
     const pdf = page.getByRole("link", { name: "Download PDF" });
     const before = await pageBox(pdf);
-    await page.getByRole("button", { name: "Print calibration page" }).click();
+    await page.getByRole("button", { name: "Print the calibration page (without correction)" }).click();
     const line = page.getByRole("status", { name: "Calibration page status" });
     await expect(line.getByText("Failed", { exact: true })).toBeVisible({ timeout: 45_000 });
     await expect(line.getByText("The printer aborted the job before printing.")).toBeVisible();
@@ -260,7 +276,7 @@ test.describe.serial("calibration", () => {
           await setPagePrinter(page, { job_script: outcome === "done" ? [3, 5, 9] : [3, 8] });
           await openCalibration(page, id);
           await chooseType(page);
-          await page.getByRole("button", { name: "Print calibration page" }).click();
+          await page.getByRole("button", { name: "Print the calibration page (without correction)" }).click();
           const line = page.getByRole("status", { name: "Calibration page status" });
           await expect(line.getByText(outcome === "done" ? "Done" : "Failed", { exact: true })).toBeVisible({ timeout: 45_000 });
           // Centred, so the notification stack at the bottom of a phone does not cover the line.
@@ -379,11 +395,11 @@ test.describe.serial("calibration", () => {
       expect((await trayCalibration(page, id))?.offset_y_mm).toBeCloseTo(0.3, 2);
       // The stored values are shown, with the date of the change.
       const current = page.getByRole("region", { name: "Current values" });
-      await expect(current.getByText("0.5 mm")).toBeVisible();
+      await expect(current.getByText("0.5 mm", { exact: true })).toBeVisible();
       await expect(current.getByText(/Last changed/)).toBeVisible();
 
       // The check print is offered now, and goes to the queue.
-      await page.getByRole("button", { name: "Check print with correction" }).click();
+      await page.getByRole("button", { name: "Print the check page (with correction)" }).click();
       await expect(around(page.getByRole("status", { name: "Check page status" })).getByRole("link", { name: "Show the job" })).toBeVisible();
 
       // Back to no correction, through the page.
@@ -404,6 +420,68 @@ test.describe.serial("calibration", () => {
       void status;
     }
     expect(hasCorrection(await trayCalibration(page, id))).toBe(false);
+  });
+
+  test("with a stored correction the first print action on the page is the check page (#349)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const check = page.getByRole("button", { name: "Print the check page (with correction)" });
+    const again = page.getByRole("button", { name: "Print the calibration page (without correction)" });
+    try {
+      // Without a correction the calibration page is the main action and the check waits, disabled.
+      expect(await setCorrection(page, id, null)).toBeLessThan(500);
+      await openCalibration(page, id);
+      await expect(check).toBeDisabled();
+      await expect(page.getByText("Measure and save values first, then check.")).toBeVisible();
+      await expect(again).toBeEnabled();
+
+      expect(await setCorrection(page, id, { offset_x_mm: 0.4, offset_y_mm: -0.2, scale_x: 1, scale_y: 1, rotation_deg: 0 })).toBe(200);
+      await openCalibration(page, id);
+      await chooseType(page);
+      await expect(check).toBeEnabled();
+      // Read in order, the first print action is the check page, and it is on the first screen.
+      const printActions = page.getByRole("button", { name: /^Print the (check|calibration) page/ });
+      await expect(printActions.first()).toHaveAccessibleName("Print the check page (with correction)");
+      const box = (await check.boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(800);
+
+      // Measuring again asks first; nothing is queued until the dialog is answered.
+      const before = await jobsOf(page, id);
+      await again.click();
+      const dialog = page.getByRole("alertdialog", { name: "Print without correction?" });
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      expect(await jobsOf(page, id)).toEqual(before);
+    } finally {
+      await setCorrection(page, id, null);
+    }
+    expect(hasCorrection(await trayCalibration(page, id))).toBe(false);
+  });
+
+  test("the dialog fits a phone: every button on screen, no sideways scroll (#349)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 390, height: 640 });
+    try {
+      expect(await setCorrection(page, id, { offset_x_mm: 0.4, offset_y_mm: -0.2, scale_x: 1, scale_y: 1, rotation_deg: 0 })).toBe(200);
+      await openCalibration(page, id);
+      await page.getByRole("button", { name: "Print the calibration page (without correction)" }).click();
+      const dialog = page.getByRole("alertdialog", { name: "Print without correction?" });
+      await expect(dialog).toBeVisible();
+      for (const name of ["Cancel", "Print the check page", "Measure again anyway"]) {
+        const b = await dialog.getByRole("button", { name }).boundingBox();
+        expect(b, name).not.toBeNull();
+        expect(b!.x).toBeGreaterThanOrEqual(0);
+        expect(b!.x + b!.width).toBeLessThanOrEqual(390);
+        // ... and in the height: a button below the 640 px edge would need a scroll inside the dialog to be pressed.
+        expect(b!.y).toBeGreaterThanOrEqual(0);
+        expect(b!.y + b!.height).toBeLessThanOrEqual(640);
+      }
+      expect(await noSideScroll(page)).toBe(true);
+      await page.keyboard.press("Escape");
+    } finally {
+      await setCorrection(page, id, null);
+    }
   });
 
   for (const [lang, size] of [

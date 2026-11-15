@@ -179,6 +179,25 @@ async def test_delete_errors(api_client_with_seed):
     assert kind.status_code == 409 and _err(kind)["error_code"] == "media_kind_mismatch"
 
 
+async def test_the_scale_route_returns_the_constants_with_read_scope_and_needs_a_key(
+    api_client_with_seed,
+):
+    from app.calibration import scale
+
+    c = api_client_with_seed
+    assert (await c.get("/api/v1/printers/calibration/scale")).status_code == 401
+    resp = await c.get("/api/v1/printers/calibration/scale", headers=await _key(["read"]))
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "half_mm": scale.HALF_MM,
+        "step_mm": scale.STEP_MM,
+        "line_mm": scale.LINE_MM,
+        "tick_half_mm": scale.TICK_HALF_MM,
+        "tick_whole_mm": scale.TICK_WHOLE_MM,
+        "tick_centre_mm": scale.TICK_CENTRE_MM,
+    }
+
+
 async def test_scope_matrix(api_client_with_seed):
     c = api_client_with_seed
     reader, printer_key = await _key(["read"]), await _key(["print"])

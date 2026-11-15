@@ -5,6 +5,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useId, type ReactNode } from "react";
 import { Button, Disclosure, DisclosurePanel, Heading } from "react-aria-components";
 import { docsUrl } from "../../../shell/docsUrl";
+import type { CalibrationScale } from "../api";
 import { centreCrossing, crossingName, crossingsToRead, suggestedCrossings } from "../model";
 import { CrossingFigure } from "./CrossingFigure";
 import { SheetCrossingsFigure } from "./SheetCrossingsFigure";
@@ -28,9 +29,19 @@ const FIGURE = "w-full text-ink [&>svg]:block [&>svg]:h-auto [&>svg]:w-full";
  * crossing, the steps (with the drawing of the chosen sheet type) and a link to the same page on
  * labelyard.app. The drawings carry digits only; the words are the lists beside them.
  */
-export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows: number }; label: string } }) {
+export function ReadingGuide({
+  type,
+  scale,
+}: {
+  type?: { geometry: { cols: number; rows: number }; label: string };
+  /** The mini scale of the printed page (`GET /api/v1/printers/calibration/scale`); the drawing and the legend follow it. */
+  scale?: CalibrationScale;
+}) {
   const { t, i18n } = useLingui();
   const locale = i18n.locale;
+  const num = (v: number) => new Intl.NumberFormat(locale).format(v);
+  const step = scale ? num(scale.step_mm) : "";
+  const half = scale ? num(scale.half_mm) : "";
   const stepsId = useId();
   const geometry = type?.geometry;
   const typeName = type?.label ?? "";
@@ -60,7 +71,7 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
       <DisclosurePanel className="h-(--disclosure-panel-height) overflow-clip transition-[height] duration-200 ease-out motion-reduce:transition-none">
         <div className="flex flex-col gap-5 px-3 pt-1 pb-4 text-small">
           <Block
-            figure={<CrossingFigure title={t`How to read one crossing`} />}
+            figure={<CrossingFigure title={t`How to read one crossing`} scale={scale} />}
             legend={
               <>
                 <ol aria-label={t`Parts of the crossing`} className={LEGEND}>
@@ -71,7 +82,11 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
                 <ul aria-label={t`Lines and scale`} className="m-0 flex list-disc flex-col gap-1.5 pl-5">
                   <li>{t`Heavy solid line: the printed S line. Heavy dashed line: the printed Z line (dotted on a sheet without a gap between the rows, as in the drawing).`}</li>
                   <li>{t`The numbers on the scale are the value to enter when the middle of the gap (across) or the cut (down) falls there.`}</li>
-                  <li>{t`The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every 0.2 mm, up to ±2 mm.`}</li>
+                  <li>
+                    {scale
+                      ? t`The scale lies on both lines: 0 on the printed line, a long tick every 1 mm, a short tick every ${step} mm, up to ±${half} mm.`
+                      : t`The scale lies on both lines: 0 on the printed line, a long tick every 1 mm.`}
+                  </li>
                   <li>{t`Example: the middle of the gap lies 0.6 mm left of the printed line and the cut 0.4 mm above it. The scale reads +0.6 and +0.4 there, so across is +0.6 and down is +0.4.`}</li>
                 </ul>
               </>
@@ -112,8 +127,8 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
                 ? t`Enter the readings below, choose the crossing for each, and press Fit. Check the filled-in values, then save them.`
                 : t`On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them.`}
             </li>
-            <li>{t`Print the check page in step 3. If every crossing is within ±0.5 mm, you are done; if not, measure again.`}</li>
-            <li>{t`Still off after the check print? The card at the end of step 3 says whether to calibrate again or to correct the sheet type.`}</li>
+            <li>{t`Print the check page under Current values. If every crossing is within ±0.5 mm, you are done; if not, measure again.`}</li>
+            <li>{t`Still off after the check print? The card under Current values says whether to calibrate again or to correct the sheet type.`}</li>
           </ol>
 
           <a

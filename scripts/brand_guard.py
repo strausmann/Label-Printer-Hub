@@ -193,11 +193,51 @@ def _never(_path: str, _line: str, _m: re.Match[str]) -> bool:
     return False
 
 
+# The verify commands users copy (#311) name the old repository next to the new one in a regexp
+# group, because releases signed before the rename carry the old name in their certificate. The
+# group is allowed in these files only, and only in this exact shape. The old name is assembled
+# here so this file does not contain it.
+VERIFY_COMMAND_FILES: tuple[str, ...] = (
+    "docs/supply-chain.md",
+    "website/src/content/docs/admin/security.md",
+    "website/src/content/docs/de/admin/security.md",
+    "backend/tests/unit/test_licence_metadata.py",
+)
+_VERIFY_GROUP_START = "(Label-Printer-Hu" + "b"
+_VERIFY_GROUP_END = "|labelyard)"
+
+
+def _is_verify_group(path: str, line: str, m: re.Match[str]) -> bool:
+    return (
+        path in VERIFY_COMMAND_FILES
+        and line.startswith(_VERIFY_GROUP_START, m.start() - 1)
+        and line.startswith(_VERIFY_GROUP_END, m.end())
+        # the whole group, not the start of a longer name such as `(...|labelyard)-backend`
+        and line[m.end() + len(_VERIFY_GROUP_END) :][:1] in ("", "/", "'", '"', " ", "\\")
+    )
+
+
+# The Prometheus metric names of the SSE module keep their old prefix (ADR 0026): dashboards and
+# alerts of existing installs read them. They are named in the module that registers them and in
+# the ADR row; nowhere else. The rule matches the prefix with its trailing underscore only: a bare
+# `printer_hub` (a logger name, say) is out of its scope.
+KEPT_METRIC_FILES: tuple[str, ...] = (
+    "backend/app/observability/sse_metrics.py",
+    "docs/decisions/*-rename-to-labelyard.md",
+)
+
+
+def _kept_metric(path: str, line: str, m: re.Match[str]) -> bool:
+    return _matches_any(path, KEPT_METRIC_FILES) and line.startswith("sse_", m.end())
+
+
 def _slug_allowed(path: str, line: str, m: re.Match[str]) -> bool:
     # `<slug>.sheet-type` is the file format's registered name; it is stored in
     # users' exported files and stays. The migration guide and the rename ADR may
     # name the old image and repository.
     if line.startswith(".sheet-type", m.end()) or _matches_any(path, LEGACY_SLUG_FILES):
+        return True
+    if _is_verify_group(path, line, m):
         return True
     if path == LEGACY_IPP_USER_FILE and line.startswith(LEGACY_IPP_USER_LINE_START):
         return True
@@ -277,6 +317,8 @@ RULES: tuple[Rule, ...] = (
     Rule("env-prefix", re.compile(r"PRINTER_HU[B]_"), _in_legacy_env_file),
     # Other historic environment prefixes.
     Rule("env-other", re.compile(r"PRINTHU[B]_|PRINTERHU[B]_|LABEL_HU[B]_"), _in_legacy_env_file),
+    # Old metric prefix; only the SSE metrics keep it.
+    Rule("metric", re.compile(r"printer_hu[b]_"), _kept_metric),
     # Old command name, kept as an alias. The lookbehind leaves the slug (and so
     # the `.sheet-type` format) to the slug rule; the lookahead keeps the
     # database file name `<cli>.db`, which stays so existing installs find it.

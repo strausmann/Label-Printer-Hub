@@ -140,8 +140,8 @@ describe("the crossing figure's scale labels are the value to enter", () => {
     // The example of the legend: across +0.6, down +0.4.
     expect((120 - gapMiddleX) / 40).toBeCloseTo(0.6);
     expect((100 - cutY) / 40).toBeCloseTo(0.4);
-    // The across scale labels sit under the Z line (y 128); the label nearest the gap middle is +1, on the left.
-    const across = labels(container).filter((l) => l.y === 128);
+    // The across scale labels sit under the Z line (y 158); the label nearest the gap middle is +1, on the left.
+    const across = labels(container).filter((l) => l.y === 158);
     const nearest = across.reduce((a, b) => (Math.abs(a.x - gapMiddleX) < Math.abs(b.x - gapMiddleX) ? a : b));
     expect(nearest.text).toBe("+1");
     expect(nearest.x).toBeLessThan(120);
@@ -150,8 +150,8 @@ describe("the crossing figure's scale labels are the value to enter", () => {
   it("a label left of 0 is positive and one right of 0 negative; above 0 positive, below negative", () => {
     const { container } = render(<CrossingFigure />);
     const all = labels(container);
-    const across = all.filter((l) => l.y === 128);
-    const down = all.filter((l) => l.x === 142 && /^[+−][12]$/.test(l.text));
+    const across = all.filter((l) => l.y === 158);
+    const down = all.filter((l) => l.x === 156 && /^[+−][12]$/.test(l.text));
     expect(across).toHaveLength(4);
     expect(down).toHaveLength(4);
     // value to enter = - position on the scale (the position is the offset of the gap middle from the printed line).
@@ -163,7 +163,7 @@ describe("the crossing figure's scale labels are the value to enter", () => {
     const { container } = render(<CrossingFigure />);
     const signed = labels(container).filter((l) => /[+−]/.test(l.text));
     expect(signed).toHaveLength(8);
-    for (const l of signed) expect(l.y === 128 || l.x === 142).toBe(true);
+    for (const l of signed) expect(l.y === 158 || l.x === 156).toBe(true);
     expect(container.querySelector("marker")).toBeNull();
   });
 

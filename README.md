@@ -210,7 +210,7 @@ The printer protocols follow the [Brother PT-E550W/P750W/P710BT Raster Command R
 |---|---|---|
 | Brother PT-P750W | Tape printer (TZe) | Printing and status on the device |
 | Brother QL-820NWB | Label printer (DK rolls) | Driver included; test on the device pending |
-| HP LaserJet CP1525N | Page printer (IPP) | Status over IPP on the device; sheet printing on the device pending |
+| HP LaserJet CP1525N | Page printer (IPP) | Status over IPP, sheet printing onto a started L4736REV sheet and the calibration check print on the device |
 
 Other Brother PT and QL models that share the command reference will likely work; other IPP printers should, since the hub uses only standard IPP operations. Tested another device, or one of these further? Please tell us with a [printer compatibility report](https://github.com/strausmann/labelyard/issues/new?template=printer-compatibility.yml) — works, partly works or not at all.
 

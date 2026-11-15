@@ -75,6 +75,8 @@ async def test_info_shape(api_client_with_seed) -> None:
     assert body["default_language"] == "en"
     assert body["display_name"] == "Labelyard"
     assert body["auth"] == {"sso_configured": False, "bootstrap_open": False}
+    # The drawing numbers of the calibration page are behind sign-in (the calibration routes).
+    assert "calibration_scale" not in body
 
 
 async def test_info_sso_configured_follows_trust_token(

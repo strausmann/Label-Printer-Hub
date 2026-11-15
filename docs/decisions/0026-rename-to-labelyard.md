@@ -34,6 +34,7 @@ We change everything we own and keep everything that users' data or clients depe
 | Database file name | `printer-hub.db` | — | Unchanged, so existing installs find their data |
 | Sheet-type file format name | `<slug>.sheet-type` | — | Unchanged: stored in users' exported files |
 | API paths | `/api/v1/...` | — | Unchanged |
+| Prometheus metric names | `printer_hub_sse_*` | — | Unchanged: existing dashboards and alerts read them. Only these four SSE metrics carry the prefix; the brand guard allows it in their module and here, nowhere else. Renaming them is a breaking change for scrapers and belongs in a major release |
 | IPP user name of print jobs | `labelyard` | `label-printer-hub` | Jobs sent under the old name are still recognised as the hub's own. Print servers with user allow lists or per-user accounting need the new name. A server that lets only a job's owner cancel it may refuse to cancel a job 1.5.x left running: page-printer queues should drain before the upgrade |
 
 A brand guard (`scripts/brand_guard.py`) lists every remaining old name outside an allow-list that mirrors this table, so the rename stays finished.

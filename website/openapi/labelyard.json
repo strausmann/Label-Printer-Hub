@@ -678,6 +678,45 @@
         "title": "CalibrationRead",
         "type": "object"
       },
+      "CalibrationScale": {
+        "description": "The mini scale at a crossing of the calibration page (mm); the app draws from it.",
+        "properties": {
+          "half_mm": {
+            "title": "Half Mm",
+            "type": "number"
+          },
+          "line_mm": {
+            "title": "Line Mm",
+            "type": "number"
+          },
+          "step_mm": {
+            "title": "Step Mm",
+            "type": "number"
+          },
+          "tick_centre_mm": {
+            "title": "Tick Centre Mm",
+            "type": "number"
+          },
+          "tick_half_mm": {
+            "title": "Tick Half Mm",
+            "type": "number"
+          },
+          "tick_whole_mm": {
+            "title": "Tick Whole Mm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "half_mm",
+          "step_mm",
+          "line_mm",
+          "tick_half_mm",
+          "tick_whole_mm",
+          "tick_centre_mm"
+        ],
+        "title": "CalibrationScale",
+        "type": "object"
+      },
       "Capabilities": {
         "description": "Served from the status cache; the printer is never contacted.",
         "properties": {
@@ -9126,6 +9165,32 @@
         "summary": "List all printers",
         "tags": [
           "printers"
+        ]
+      }
+    },
+    "/api/v1/printers/calibration/scale": {
+      "get": {
+        "operationId": "get_calibration_scale_api_v1_printers_calibration_scale_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationScale"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "The mini scale drawn at every crossing of the calibration page",
+        "tags": [
+          "calibration"
         ]
       }
     },

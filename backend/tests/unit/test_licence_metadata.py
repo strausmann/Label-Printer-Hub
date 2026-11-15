@@ -20,10 +20,10 @@ AGPL_TEXT_SHA256 = "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079a
 SUPPLY_CHAIN_DOC = "docs/supply-chain.md"
 # The certificate identity users verify against (#311): the image workflow of this repository,
 # under the old and the new repository name, on the refs the workflow signs from (the same list
-# as SIGNED_REFS in test_release_workflows.py). `[b]` matches the letter b; it keeps the old name
-# out of the text for scripts/brand_guard.py.
+# as SIGNED_REFS in test_release_workflows.py). The old name stays plain, so users can copy the
+# command; scripts/brand_guard.py allows exactly this `(old|labelyard)` group in these commands.
 COSIGN_IDENTITY_REGEXP = (
-    r"^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)"
+    r"^https://github\.com/strausmann/(Label-Printer-Hub|labelyard)"
     r"/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$"
 )
 # The exact identity for releases after the rename (they are signed from main).

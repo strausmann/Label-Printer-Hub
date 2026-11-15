@@ -5,13 +5,19 @@
 
 from __future__ import annotations
 
+import math
+import os
+import shutil
 from collections import Counter
 from dataclasses import asdict
+from itertools import pairwise
 
 import pytest
+from app.calibration import scale
 from app.calibration.fit import crossing_point
 from app.calibration.page import (
     CHECKERBOARD_SENTENCE,
+    _scale_segments,
     draw_calibration_page,
     footer_text,
     render_calibration_page,
@@ -136,14 +142,160 @@ def test_page_line_counts_l4736() -> None:
     assert xs == [round(crossing_point(L4736, i, 1)[0], 2) for i in (1, 2, 3)]
     ys = sorted(round(s["pts"][0][1], 2) for s in dotted)
     assert ys == [round(crossing_point(L4736, 1, j)[1], 2) for j in range(1, 12)]
-    # 33 crossings, each with a scale in both directions: one 1.8 mm centre tick each.
-    centre = Counter((_vertical(s)) for s in _strokes(pdf) if _len(s) == 1.8)
+    # 33 crossings, each with a scale in both directions: one centre tick each, the longest.
+    centre = Counter((_vertical(s)) for s in _strokes(pdf) if _len(s) == scale.TICK_CENTRE_MM)
     assert centre == {True: 33, False: 33}
-    # 21 ticks per scale: 1 centre, 4 whole millimetres, 16 tenths-of-a-millimetre pairs.
-    lengths = Counter((_vertical(s), _len(s)) for s in _strokes(pdf) if _len(s) in (0.6, 1.2))
-    assert lengths[(True, 0.6)] == lengths[(False, 0.6)] == 33 * 16
-    assert lengths[(True, 1.2)] == lengths[(False, 1.2)] == 33 * 4
+    # 9 ticks per scale: 1 centre, 4 whole millimetres, 4 half millimetres.
+    lengths = Counter(
+        (_vertical(s), _len(s))
+        for s in _strokes(pdf)
+        if _len(s) in (scale.TICK_HALF_MM, scale.TICK_WHOLE_MM)
+    )
+    assert lengths[(True, scale.TICK_HALF_MM)] == lengths[(False, scale.TICK_HALF_MM)] == 33 * 4
+    assert lengths[(True, scale.TICK_WHOLE_MM)] == lengths[(False, scale.TICK_WHOLE_MM)] == 33 * 4
     assert CHECKERBOARD_SENTENCE in pi.texts(pdf)
+
+
+def test_the_mini_scale_ticks_are_half_a_millimetre_apart_with_white_between() -> None:
+    """A colour laser fills in a hairline gap (#348): the 0.5 mm pitch and the ticks are held."""
+    pdf = _pdf(L4736)
+    cx, cy = crossing_point(L4736, 1, 1)
+    # The ticks of the scale along x at the first crossing: vertical, centred on the crossing's row.
+    ticks = sorted(
+        s["pts"][0][0] - cx
+        for s in _strokes(pdf)
+        if _vertical(s)
+        and _len(s) in (scale.TICK_HALF_MM, scale.TICK_WHOLE_MM, scale.TICK_CENTRE_MM)
+        and abs((s["pts"][0][1] + s["pts"][1][1]) / 2 - cy) < 0.01
+        and abs(s["pts"][0][0] - cx) < scale.HALF_MM + 0.01
+    )
+    assert [round(t, 2) for t in ticks] == [-2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0]
+    pitch = min(b - a for a, b in pairwise(ticks))
+    assert round(pitch, 2) == scale.STEP_MM == 0.5
+    # Whole millimetres are clearly longer than half millimetres, the centre is the longest.
+    assert scale.TICK_HALF_MM < scale.TICK_WHOLE_MM < scale.TICK_CENTRE_MM
+    assert scale.TICK_WHOLE_MM - scale.TICK_HALF_MM >= 0.4
+    # The ruler on the grid edge keeps its 0.5 mm pitch.
+    assert scale.STEP_MM == 0.5
+
+
+def test_the_white_between_two_mini_scale_ticks_survives_a_colour_laser() -> None:
+    """From the drawing constants alone: pitch minus stroke width is the white between two ticks."""
+    assert scale.STEP_MM - scale.LINE_MM >= scale.MIN_GAP_MM - 1e-9
+
+
+def _render_crop(pdf: bytes, cx: float, cy: float, half_mm: float, dpi: int = 600):
+    """The square of ``2 * half_mm`` around (cx, cy) as a grey image, and its pixels per mm."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    ppm = dpi / 25.4
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d, "page.pdf")
+        src.write_bytes(pdf)
+        out = Path(d, "crop")
+        side = round(2 * half_mm * ppm)
+        subprocess.run(
+            [
+                "pdftoppm", "-r", str(dpi), "-gray", "-png", "-singlefile",
+                "-x", str(round((cx - half_mm) * ppm)), "-y", str(round((cy - half_mm) * ppm)),
+                "-W", str(side), "-H", str(side), str(src), str(out),
+            ],
+            check=True,
+        )  # fmt: skip
+        with Image.open(out.with_suffix(".png")) as im:
+            return im.convert("L").copy(), ppm
+
+
+def _need_pdftoppm() -> None:
+    """Skip locally without poppler; in CI (``CI`` set) a missing pdftoppm is a failure."""
+    if shutil.which("pdftoppm") is not None:
+        return
+    if os.environ.get("CI"):
+        pytest.fail("pdftoppm is missing in CI: install poppler-utils (the image test must run)")
+    pytest.skip("needs poppler's pdftoppm")
+
+
+def test_a_corner_mark_never_comes_within_the_white_of_a_tick() -> None:
+    """Measured on the 600 dpi image of a 2.5 mm gap sheet (#348), not from the constants.
+
+    The label-corner legs of such a sheet sit at +-1.25 mm of the crossing, between the ticks at
+    1.0 and 1.5 mm. Every ink pixel that is neither tick nor on the gap lines through the crossing
+    must keep ``MIN_GAP_MM`` from the ticks.
+    """
+    _need_pdftoppm()
+    half = 4.0
+    cx, cy = crossing_point(L4736, 2, 5)
+    im, ppm = _render_crop(_pdf(L4736), cx, cy, half)
+    w, h = im.size
+    ink = {(x, y) for y in range(h) for x in range(w) if im.getpixel((x, y)) < 128}
+    # Where the ticks are (this only classifies pixels; the clearance is measured below).
+    pad = 0.075 * ppm
+
+    def px(mm_x: float, mm_y: float) -> tuple[float, float]:
+        return (mm_x - cx + half) * ppm, (mm_y - cy + half) * ppm
+
+    rects = []
+    for along_x in (True, False):
+        for x1, y1, x2, y2 in _scale_segments(cx, cy, along_x=along_x):
+            (a, b), (c, d) = px(x1, y1), px(x2, y2)
+            rects.append((min(a, c) - pad, min(b, d) - pad, max(a, c) + pad, max(b, d) + pad))
+
+    def is_tick(p: tuple[int, int]) -> bool:
+        return any(r[0] <= p[0] + 0.5 <= r[2] and r[1] <= p[1] + 0.5 <= r[3] for r in rects)
+
+    centre = half * ppm  # the gap lines run through the middle of the crop
+    ticks = {p for p in ink if is_tick(p)}
+    other = [
+        p
+        for p in ink - ticks
+        if abs(p[0] + 0.5 - centre) > 0.1 * ppm and abs(p[1] + 0.5 - centre) > 0.1 * ppm
+    ]
+    assert len(ticks) > 100  # the scales are really in the image
+    clearance = min(
+        (math.hypot(p[0] - t[0], p[1] - t[1]) / ppm for p in other for t in ticks),
+        default=math.inf,
+    )
+    assert clearance >= scale.MIN_GAP_MM, f"other ink {clearance:.2f} mm from a tick"
+
+
+# The worst case for the corner check: 20 x 20 labels a hundredth of a millimetre apart, so every
+# crossing is near every label. Geometry is admin-written, but the PDF route renders on request.
+TINY = Geometry("A4", 21000, 29700, 1, 1, 20, 20, 1, 1, 5000, 5000, None, "rectangle")
+
+
+def test_a_corner_is_checked_against_the_ticks_of_its_own_crossing_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Counts what each corner is checked against instead of timing it: one crossing's ticks."""
+    from app.calibration import page
+
+    sizes: list[int] = []
+    real = page._corner_mark
+
+    def recording(*args: object, ticks: list[tuple[float, float, float, float]] = (), **kw: object):  # type: ignore[no-untyped-def]
+        sizes.append(len(ticks))
+        return real(*args, ticks=ticks, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(page, "_corner_mark", recording)
+    _pdf(TINY)
+    one_crossing = 2 * len(page._scale_segments(0.0, 0.0, along_x=True))
+    assert len(sizes) == 20 * 20 * 4
+    # Never the ticks of the page (361 crossings x 18 x 2), and not of a neighbourhood either.
+    assert max(sizes) == one_crossing
+    assert sum(sizes) <= len(sizes) * one_crossing
+
+
+def test_the_worst_case_page_renders_in_reasonable_time() -> None:
+    """A rough bound only (10 s where it takes well under 2 s), so a slow runner cannot flake it."""
+    import time
+
+    start = time.perf_counter()
+    _pdf(TINY)
+    assert time.perf_counter() - start < 10
 
 
 def test_page_line_counts_gapped_type() -> None:
@@ -191,7 +343,11 @@ def test_page_has_rulers_with_half_millimetre_ticks_on_all_edges() -> None:
 def test_page_has_a_corner_mark_at_every_label_corner() -> None:
     pdf = _pdf(L4736)
     marks = [s for s in _strokes(pdf) if _len(s) == 1.5]
-    assert len(marks) == 4 * 48 * 2  # two legs per corner, four corners per label
+    # Two legs per corner. A corner inside the scale of a crossing has no mark (see
+    # test_a_corner_mark_never_comes_within_the_white_of_a_tick): of the 4 x 12 labels that
+    # leaves the outer corners (2 sides x 2 corners x 12 rows) and the corners on the top and
+    # bottom edge of the grid next to the 3 column gaps (3 x 2 x 2).
+    assert len(marks) == 2 * (2 * 2 * 12 + 3 * 2 * 2)
     # The first label's top left corner: legs run right and down, hugging the label.
     x, y = L4736.margin_left / 100, L4736.margin_top / 100
     near = [
@@ -222,9 +378,9 @@ def test_page_is_gray_only_and_corners_empty(g: Geometry) -> None:
 def test_l4731_leaves_out_the_corner_marks_inside_the_squares() -> None:
     pdf = _pdf(L4731)
     marks = [s for s in _strokes(pdf) if _len(s) == 1.5]
-    # 189 labels x 4 corners x 2 legs, less the corners that lie inside a square:
-    # top left (8.6 / 13.5), top right (201.4 / 13.5) and both bottom corners.
-    assert len(marks) == (4 * 189 - 4) * 2
+    # The corners that lie inside a square have no mark, nor have those inside the scale of a
+    # crossing (pinned: 128 corners keep their mark on this 7 x 27 sheet).
+    assert len(marks) == 128 * 2
     assert not any(
         abs(p[0] - 8.6) < 0.01 and abs(p[1] - 13.5) < 0.01 for s in marks for p in s["pts"]
     )
@@ -462,11 +618,11 @@ def test_a_gap_line_on_the_edge_is_not_clipped_and_one_0_01_mm_inside_is() -> No
 def test_a_mark_whose_legs_point_away_from_the_square_is_kept() -> None:
     # The label's bottom right corner is at (16, 16): legs run to -x and -y, both outside the
     # square. Only the bounding box of the L overlaps it, which is not "a point inside".
-    g = Geometry("A4", 21000, 29700, 1000, 1000, 3, 3, 1000, 1000, 600, 600, None, "rectangle")
+    # A 6 mm gap keeps the corner far from the scale of the crossing (3 mm away, the scale
+    # reaches 2 mm), so the mark is not left out for that reason.
+    g = Geometry("A4", 21000, 29700, 1000, 1000, 3, 3, 1600, 1600, 600, 600, None, "rectangle")
     pdf = _pdf(g)
 
-    # Neighbouring labels share this corner, so each leg is drawn twice: once by the corner
-    # of the label whose box overlaps the square, once by the neighbour whose box does not.
     def legs(to: tuple[float, float]) -> int:
         return sum(
             1
@@ -475,6 +631,6 @@ def test_a_mark_whose_legs_point_away_from_the_square_is_kept() -> None:
             and any(abs(p[0] - to[0]) < 0.005 and abs(p[1] - to[1]) < 0.005 for p in s["pts"])
         )
 
-    assert legs((14.5, 16.0)) == 2
-    assert legs((16.0, 14.5)) == 2
+    assert legs((14.5, 16.0)) == 1
+    assert legs((16.0, 14.5)) == 1
     assert _marks_at(pdf, 6.0, 6.0) == []  # the top left corner of that label is inside

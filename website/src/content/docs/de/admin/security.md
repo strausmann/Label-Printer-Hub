@@ -29,7 +29,7 @@ Ab 1.6.0 ist jedes Release-, Vorschau- und `dev`-Image mit [cosign](https://docs
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
 
 cosign verify \
-  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hub|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/strausmann/labelyard@<digest>
 ```
