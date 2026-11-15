@@ -211,7 +211,6 @@ async def test_header_value_not_in_key_format_gives_a_dash_user() -> None:
         "sig=abc12345secret",
         "passphrase=abc12345secret",
         "sessionId=abc12345secret",
-        "new_key=abc12345secret",
     ],
 )
 async def test_secret_looking_params_are_masked(query: str) -> None:
@@ -337,9 +336,38 @@ async def test_probe_refusals_are_logged() -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ["keyword", "author", "monkey", "keyboard", "sessions_page_size"],
+    [
+        "access_key",
+        "apiKey2",
+        "x-auth",
+        "session_id",
+        "sig",
+        "credential",
+        "pwd",
+        "client_secret_v2",
+        "private_key_pem",
+        "auth_code",
+        "signature",
+        "jwt",
+        "Bearer",
+        "cookie",
+        "otp",
+        "pass",
+        "keyword",  # not a route parameter: masked, fail closed
+        "author",
+        "monkey",
+    ],
 )
-async def test_harmless_names_are_not_masked(name: str) -> None:
+async def test_sensitive_stems_are_masked(name: str) -> None:
+    lines: list[str] = []
+    async with _client(lines) as client:
+        await client.get(f"/whoami?{name}=abc12345secret")
+    assert "abc12345secret" not in lines[0]
+    assert f"{name}=***" in lines[0]
+
+
+@pytest.mark.parametrize("name", ["new_key", "q", "limit", "printer_id", "state"])
+async def test_harmless_route_params_stay_visible(name: str) -> None:
     lines: list[str] = []
     async with _client(lines) as client:
         await client.get(f"/whoami?{name}=visible")

@@ -69,29 +69,28 @@ CLIENT_CLOSED = 499  # nginx's status for a client that closed the connection be
 
 _HANDLER_NAME = "labelyard-access-stdout"
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-# A parameter is masked whatever its value when a word of its decoded name is one of these
-# (``api_key``, ``apiKey``, ``X-Api-Key``, ``sessionId``), or the name ends in a word that never
-# names anything harmless (``accesstoken``). ``keyword``, ``author`` or ``monkey`` stay visible.
-_SENSITIVE_WORDS = frozenset(
-    {
-        "apikey",
-        "auth",
-        "credential",
-        "credentials",
-        "key",
-        "passphrase",
-        "passwd",
-        "password",
-        "pwd",
-        "secret",
-        "session",
-        "sig",
-        "signature",
-        "token",
-    }
+# Fail closed: a parameter is masked whatever its value when its name, lowercased and with
+# every separator removed, contains one of these stems.
+_SENSITIVE_STEMS = (
+    "auth",
+    "bearer",
+    "cookie",
+    "cred",
+    "jwt",
+    "key",
+    "otp",
+    "pass",
+    "pwd",
+    "secret",
+    "session",
+    "sig",
+    "token",
 )
-_SENSITIVE_ENDINGS = ("token", "secret", "password", "passwd", "passphrase", "apikey")
-_WORD = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+# The only exemptions: query parameters of the hub's own API whose name contains a stem but
+# never carries a secret. ``new_key`` is the new sheet type key of an import
+# (``POST /api/v1/sheet-types/import``, pattern-checked identifier).
+_HARMLESS_NAMES = frozenset({"newkey"})
+_NON_ALNUM = re.compile(r"[^a-z0-9]")
 _KEY_CHARS = re.compile(r"[A-Za-z0-9_-]+")
 _NGINX_VERSIONS = {"2": "2.0", "3": "3.0"}  # ASGI writes "2", nginx "HTTP/2.0"
 _QUERY_SPLIT = re.compile(r"([&;])")
@@ -140,9 +139,8 @@ def _escape(text: str) -> str:
 
 
 def _is_sensitive_name(name: str) -> bool:
-    words = [w.lower() for w in _WORD.findall(name)]
-    joined = "".join(words)
-    return any(w in _SENSITIVE_WORDS for w in words) or joined.endswith(_SENSITIVE_ENDINGS)
+    flat = _NON_ALNUM.sub("", name.lower())
+    return flat not in _HARMLESS_NAMES and any(stem in flat for stem in _SENSITIVE_STEMS)
 
 
 def _mask_param(part: str) -> str:
