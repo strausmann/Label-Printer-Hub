@@ -350,6 +350,37 @@ class BrandGuardTest(unittest.TestCase):
         self.add("logo.png", b"\x89PNG\x00\x00" + SLUG.encode())
         self.assertEqual(brand_guard.find_hits(self.root), [])
 
+    # --- verify commands and metric names ----------------------------------
+
+    GROUP = "(" + NICK_HYPHEN[:-3] + "Printer-" + "Hub|labelyard)"
+
+    def test_verify_group_allowed_in_the_verify_command_files(self) -> None:
+        line = f"  --certificate-identity-regexp '^https://github.com/x/{self.GROUP}/y'\n"
+        self.add("docs/supply-chain.md", line)
+        self.add("website/src/content/docs/de/admin/security.md", line)
+        self.assertEqual(brand_guard.find_hits(self.root), [])
+
+    def test_verify_group_elsewhere_still_hit(self) -> None:
+        self.add("README.md", f"x/{self.GROUP}/y\n")
+        self.assertEqual(self.rules(), ["slug"])
+
+    def test_other_shapes_in_the_verify_command_files_still_hit(self) -> None:
+        # counter-test: the allowance is the exact (old|new) group, not the whole file
+        self.add("docs/supply-chain.md", f"image: ghcr.io/x/{SLUG}-backend\n{SLUG}\n")
+        self.assertEqual(self.rules(), ["slug", "slug"])
+
+    METRIC = "printer_" + "hub_sse_active_subscribers"
+
+    def test_kept_sse_metric_allowed_in_its_module_and_the_adr(self) -> None:
+        self.add("backend/app/observability/sse_metrics.py", f'"{self.METRIC}",\n')
+        self.add("docs/decisions/0026-rename-to-labelyard.md", f"| `{self.METRIC[:-18]}*` |\n")
+        self.assertEqual(brand_guard.find_hits(self.root), [])
+
+    def test_metric_prefix_elsewhere_is_a_hit(self) -> None:
+        self.add("backend/app/other.py", f'"{self.METRIC}"\n')
+        self.add("backend/app/observability/sse_metrics.py", f'"{"printer_" + "hub_queue_depth"}"\n')
+        self.assertEqual(self.rules(), ["metric", "metric"])
+
     # --- hit format and exit code -----------------------------------------
 
     def test_hit_carries_position_and_text(self) -> None:

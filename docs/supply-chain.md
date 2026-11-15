@@ -90,12 +90,12 @@ Resolve the tag to its digest first, then verify the digest:
 docker buildx imagetools inspect ghcr.io/strausmann/labelyard:<version> --format '{{ .Manifest.Digest }}'
 
 cosign verify \
-  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hub|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/strausmann/labelyard@<digest>
 
 cosign verify \
-  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hu[b]|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
+  --certificate-identity-regexp '^https://github\.com/strausmann/(Label-Printer-Hub|labelyard)/\.github/workflows/docker-publish\.yml@refs/(heads/main|heads/milestone/[0-9]+\.[0-9]+\.(0|x))$' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   docker.io/bstrausmann/labelyard@<digest>
 ```
