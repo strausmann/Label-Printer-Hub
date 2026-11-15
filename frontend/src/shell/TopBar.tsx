@@ -5,6 +5,7 @@ import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { Button } from "react-aria-components";
 import { useSession } from "../app/session";
+import { NotificationCentre } from "../features/notifications/NotificationCentre";
 import { GlobalSearch } from "../features/search";
 import { InfoIcon, ScanIcon, SignOutIcon } from "./icons";
 import { ThemeSwitch } from "./ThemeSwitch";
@@ -12,8 +13,8 @@ import { ThemeSwitch } from "./ThemeSwitch";
 const ICON_BUTTON =
   "press flex size-11 items-center justify-center rounded-r2 text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-1 data-[focus-visible]:outline-link";
 
-/** Global search and the Scan button (spec 5.3). On a phone Scan lives in the tab bar. */
-export function TopBar() {
+/** Global search, the Scan button (spec 5.3) and the notification centre. On a phone Scan lives in the tab bar. */
+export function TopBar({ livePaused = false }: { livePaused?: boolean }) {
   const { t } = useLingui();
   const session = useSession();
 
@@ -30,6 +31,7 @@ export function TopBar() {
       </Link>
 
       <div className="ml-auto flex items-center gap-1">
+        <NotificationCentre livePaused={livePaused} />
         <Link
           to="/about"
           aria-label={t({ message: "About and licences", context: "link to the about page" })}

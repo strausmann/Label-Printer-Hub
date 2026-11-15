@@ -41,14 +41,15 @@ export const usePrinter = (id: string) =>
 export const usePrinterStatus = (id: string, enabled = true) =>
   useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`), enabled });
 
+/** The query of one printer's status; every reader of statuses shares this key, so they share one request. */
+export const printerStatusQuery = (id: string) => ({
+  queryKey: statusKey(id),
+  queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`),
+});
+
 /** One status per printer, keyed by printer id (a failed probe simply has no entry). */
 export function usePrinterStatuses(printers: Printer[] | undefined): Map<string, PrinterStatus> {
-  const results = useQueries({
-    queries: (printers ?? []).map((p) => ({
-      queryKey: statusKey(p.id),
-      queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${p.id}/status`),
-    })),
-  });
+  const results = useQueries({ queries: (printers ?? []).map((p) => printerStatusQuery(p.id)) });
   const map = new Map<string, PrinterStatus>();
   (printers ?? []).forEach((p, i) => {
     const data = results[i]?.data;

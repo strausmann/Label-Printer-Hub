@@ -1,0 +1,69 @@
+// SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { plural } from "@lingui/core/macro";
+import { useLingui } from "@lingui/react/macro";
+import { useKindLabel, type PrinterKind } from "../printers/model";
+import { useReasonWord } from "../printers/reasons";
+import type { Notification } from "./derive";
+
+/**
+ * The one sentence of an entry, in the active language. `derive.ts` keeps the words out (it only names the sentence and
+ * its parts); this is where `textKey` and `values` become text. A part the data did not carry gets a plain word.
+ */
+export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">) => string {
+  const { t } = useLingui();
+  const kinds = useKindLabel();
+  const reasonWord = useReasonWord();
+
+  return ({ textKey, values }) => {
+    const title = values.title || t`Label`;
+    const printer = values.printer || t`Unknown printer`;
+    switch (textKey) {
+      case "job.queued":
+        return t`${title} is waiting on ${printer}`;
+      case "job.printing":
+        return t`${title} is printing on ${printer}`;
+      case "job.done":
+        return t`${title} printed`;
+      case "job.cancelled":
+        return t`${title} was cancelled`;
+      case "job.retried":
+        return t`${title} failed, printed on retry`;
+      case "job.failed": {
+        const error = (values.error ?? "").trim();
+        return error ? t`${title} failed: ${error}` : t`${title} failed`;
+      }
+      case "printer.different_device":
+        return t`Different device at the address of ${printer}`;
+      case "printer.material": {
+        const parts: string[] = [];
+        if (values.empty) {
+          const names = values.empty;
+          parts.push(t`${names} empty`);
+        }
+        if (values.low) {
+          const names = values.low;
+          parts.push(t`${names} low`);
+        }
+        const what = parts.join(" · ");
+        return t`${printer}: ${what}`;
+      }
+      case "sheet.unconfirmed": {
+        const cells = plural(Number(values.count) || 0, { one: "# unconfirmed cell", other: "# unconfirmed cells" });
+        const code = values.code ?? "";
+        return t`${cells} on sheet ${code}`;
+      }
+      default: {
+        if (textKey.startsWith("printer.")) {
+          const kind = kinds[textKey.slice("printer.".length) as PrinterKind];
+          if (kind) {
+            const more = [values.detail, ...(values.reasons ? values.reasons.split(",").map(reasonWord) : [])].filter(Boolean).join(" · ");
+            return more ? t`${printer}: ${kind} (${more})` : t`${printer}: ${kind}`;
+          }
+        }
+        return textKey;
+      }
+    }
+  };
+}

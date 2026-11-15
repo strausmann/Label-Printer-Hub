@@ -169,6 +169,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   }
 }
 
+/* The notification panel drops in from its button (liftin) or rises as a sheet (sheetin): opacity and a short move, never a scale. */
+@keyframes liftin {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes sheetin {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
 /* A print notification rises in from below; transform and opacity only (reduced motion shortens it to nothing above). */
 @keyframes toastin {
   from {

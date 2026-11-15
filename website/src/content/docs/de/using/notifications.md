@@ -1,0 +1,47 @@
+---
+title: Benachrichtigungen
+description: Was die Glocke in der oberen Leiste auflistet, was Punkt und Zahl bedeuten und wie gelesene, gelöschte und ausgeblendete Einträge gemerkt werden.
+sidebar:
+  label: Benachrichtigungen
+---
+
+Die **Glocke** in der oberen Leiste listet, was passiert ist und was einen Blick braucht: deine Druckaufträge mit ihrem Live-Zustand, Druckerprobleme, solange sie bestehen, und Bögen mit unbestätigten Feldern. Öffne sie, um die Einträge zu sehen, die neuesten zuerst. Ein Eintrag ist ein Link: Er öffnet den Auftrag, den Drucker oder den Bogen, um den es geht, und schließt das Fenster.
+
+## Punkt und Zahl
+
+Der Punkt neben der Glocke zeigt die **höchste Schwere unter den ungelesenen Einträgen**; die Zahl sagt, wie viele ungelesen sind (`99+` ab 100). Ist alles gelesen, gibt es keinen Punkt.
+
+| Form | Schwere | Beispiele |
+|---|---|---|
+| Roter Punkt | Fehler | Ein fehlgeschlagener Auftrag, ein Drucker ohne Verbindung, ein Drucker, der sich als anderes Gerät meldet |
+| Gelbe Raute | Warnung | Ein pausierter Drucker, ein veralteter oder nicht überwachter Status, ein Verbrauchsmaterial fast leer, ein Bogen mit unbestätigten Feldern |
+| Grüner Punkt | Erfolg oder Information | Ein fertiger, wartender, druckender oder abgebrochener Auftrag; ein fehlgeschlagener Auftrag, der beim Wiederholen gedruckt wurde |
+
+Eine Schwere ist immer eine Form und ein Wort, nie nur eine Farbe. Der Name der Glocke für einen Screenreader sagt dasselbe: „Benachrichtigungen, 3 ungelesen, die schwerste ist ein Fehler“.
+
+## Was zu einem Eintrag wird
+
+- **Aufträge** der letzten 24 Stunden, ein Eintrag je Auftrag in seinem aktuellen Zustand. Ein neuer Zustand ist ein neuer Eintrag: Ein Auftrag, der gedruckt wurde und jetzt fertig ist, ist wieder ungelesen.
+- **Ein fehlgeschlagener Auftrag, den du erfolgreich wiederholt hast**, bleibt als Information in der Liste („fehlgeschlagen, beim Wiederholen gedruckt“) und ist kein Fehler mehr. Das gilt auch für eine Kette von Wiederholungen, die in einem fertigen Auftrag endet.
+- **Drucker**, solange der Zustand besteht: ohne Verbindung, ein Problem, angehalten, pausiert, anderes Gerät an der Adresse, ein veralteter oder nicht überwachter Status, ein Verbrauchsmaterial fast leer oder leer. Die angezeigte Zeit ist der Moment, in dem dieser Browser es zuerst gesehen hat.
+- **Bögen** mit unbestätigten Feldern, solange es welche gibt.
+
+## Als gelesen markieren, löschen, ausblenden
+
+| Aktion | Wo | Was sie tut |
+|---|---|---|
+| Alle als gelesen markieren | Fenster | Alle Einträge bleiben; Punkt und Zahl verschwinden |
+| Alle löschen | Fenster | Blendet alle Einträge bis zum neuesten vorhandenen aus; ein neuerer Eintrag erscheint wieder |
+| Ausblenden | Übersicht, „Braucht Aufmerksamkeit“ | Blendet einen Eintrag in der Karte und im Fenster aus |
+
+Die Karte **Braucht Aufmerksamkeit** der Übersicht listet die ungelösten Fehler und Warnungen, die du weder gelöscht noch ausgeblendet hast.
+
+Gelesene, gelöschte und ausgeblendete Einträge werden **je Browser** in dessen lokalem Speicher gemerkt; ein anderer Browser oder eine andere Person beginnt also mit allem ungelesen. Sperrt der Browser seinen Speicher, gilt der Zustand nur für den Tab.
+
+## Live-Aktualisierung
+
+Die Liste folgt dem Live-Strom des Hubs. Ist der Strom unterbrochen, steht im Fenster „Live-Aktualisierung pausiert; die Liste ist möglicherweise veraltet.“, und nach der Rückkehr des Stroms wird alles neu gelesen.
+
+## Auf dem Handy
+
+Auf Bildschirmen unter 640 px Breite ist das Fenster ein Blatt in voller Höhe mit Schließen-Knopf. Es folgt dem sichtbaren Bereich, damit die Bildschirmtastatur seine Knöpfe nicht aus dem Blick drückt.

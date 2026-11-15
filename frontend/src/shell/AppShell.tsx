@@ -4,7 +4,7 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ReactNode } from "react";
 import { useHubEvents } from "../api/events";
-import { LiveStatus } from "./LiveStatus";
+import { LiveStatus, useLiveDown } from "./LiveStatus";
 import { PrintToasts } from "./PrintToasts";
 import { SessionStatus } from "./SessionStatus";
 import { Sidebar } from "./Sidebar";
@@ -16,6 +16,7 @@ import { UpdatePrompt } from "./UpdatePrompt";
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useLingui();
   const { connected, connecting, reconnect } = useHubEvents();
+  const livePaused = useLiveDown(connected);
   return (
     <div className="flex min-h-dvh">
       <a
@@ -31,7 +32,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar />
       {/* The sidebar is a fixed box (#341): the column beside it leaves its width free. */}
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
-        <TopBar />
+        <TopBar livePaused={livePaused} />
         <main id="content" tabIndex={-1} className="flex-1 p-4 pb-32 outline-none lg:p-8 lg:pb-8">
           <UpdatePrompt />
           <SessionStatus />

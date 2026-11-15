@@ -224,7 +224,9 @@ export function useHubEvents(): { connected: boolean; connecting: boolean; recon
           invalidateAndRefetchFirstLoads(queryClient, { queryKey: sheetsListKey.slice(0, 1) }, startedByThisResync);
           invalidateAndRefetchFirstLoads(queryClient, { queryKey: typesListKey.slice(0, 1) }, startedByThisResync);
           invalidateAndRefetchFirstLoads(queryClient, { queryKey: [SHEET_PREVIEW_KEY] }, startedByThisResync);
-          // A job that ended while the stream was down sent a frame nobody saw.
+          // Jobs that changed while the stream was down sent frames nobody saw: the lists (the notification centre reads
+          // them too) are fetched again, and so are the watched ones below.
+          invalidateAndRefetchFirstLoads(queryClient, { queryKey: ["jobs"] }, startedByThisResync);
           void resyncWatchedJobs((jobId) => apiFetch<{ state: string; error: string | null }>(`/api/v1/jobs/${encodeURIComponent(jobId)}`));
         }
         openedBefore = true;

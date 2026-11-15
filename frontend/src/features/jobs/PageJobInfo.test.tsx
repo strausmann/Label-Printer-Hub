@@ -69,7 +69,9 @@ describe("page job at the printer", () => {
   });
 
   it("does not ask for the printer status unless the job is stopped without a cause", async () => {
-    const { calls } = mockApi(routes("printing"));
+    // No printers listed: the notification bell in the shell reads the status of every listed printer, which would hide
+    // whether the job page asks for it.
+    const { calls } = mockApi(routes("printing", {}, { "GET /api/v1/printers": [] }));
     const { queryClient } = await renderApp({ path: `/jobs/${ID}` });
     await screen.findByText("At the printer");
     act(() => void queryClient.setQueryData(pageJobStateKey(ID), event("stopped", ["toner-empty"])));

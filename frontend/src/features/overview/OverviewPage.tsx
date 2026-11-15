@@ -5,21 +5,22 @@ import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { Button } from "react-aria-components";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { IntegrationTiles } from "../integrations/IntegrationTiles";
-import { PANEL, SECTION_HEADING } from "../ui";
+import type { Notification } from "../notifications/derive";
+import { useEntryText } from "../notifications/useEntryText";
+import { useAttention } from "../notifications/useNotifications";
+import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { SheetTiles } from "./SheetTiles";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { formatAge } from "../printers/age";
-import { describePrinter, unknownKind, isFailed, isPagePrinter, tapeWidthOf, useJobStateBadge, useKindLabel } from "../printers/model";
+import { describePrinter, unknownKind, isPagePrinter, tapeWidthOf, useJobStateBadge, useKindLabel } from "../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
 import { PrinterGrid } from "../printers/PrinterGrid";
 import { TapeSwatch } from "../printers/TapeSwatch";
-
-/** Measured against when the jobs were fetched (pure render). A failure counts as "needs attention" for a day; older ones live on the Jobs page. */
-const ATTENTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
@@ -36,11 +37,10 @@ const jobLabel = (job: Job, fallback: string) => job.template_key ?? fallback;
 
 /** The three questions of the spec (5.3): what is printing, what is stuck and why, is material running out. */
 export function OverviewPage() {
-  const { t, i18n } = useLingui();
+  const { t } = useLingui();
   const printers = usePrinters();
   const statuses = usePrinterStatuses(printers.data);
   const jobs = useRecentJobs();
-  const kinds = useKindLabel();
   const stateOf = useJobStateBadge();
 
   const list = printers.data ?? [];
@@ -48,10 +48,8 @@ export function OverviewPage() {
   const all = jobs.data ?? [];
   const running = all.filter((j) => j.state === "printing");
   const busy = new Set(running.map((j) => j.printer_id));
-  const failed = all.filter((j) => isFailed(j) && jobs.dataUpdatedAt - Date.parse(j.updated_at) < ATTENTION_WINDOW_MS);
-  const stuck = list
-    .map((p) => ({ printer: p, view: describePrinter(p, statuses.get(p.id), busy.has(p.id)) }))
-    .filter(({ view }) => ["paused", "different_device", "stale", "offline", "error", "stopped"].includes(view.kind));
+  // The same entries as the notification centre: unresolved errors and warnings that were neither cleared nor dismissed.
+  const attention = useAttention();
   const lowCount = list.filter((p) => runningOut(statuses.get(p.id))).length;
   const recent = [...all].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 8);
 
@@ -79,42 +77,20 @@ export function OverviewPage() {
         </Block>
 
         <Block id="attention-h" title={t`Needs attention`}>
-          {stuck.length === 0 && failed.length === 0 ? (
+          {attention.entries.length === 0 ? (
             <p className="text-ink-2">{t`Nothing needs attention.`}</p>
           ) : (
             <ul className="flex flex-col gap-4">
-              {stuck.map(({ printer, view }) => {
-                const lastAge = statuses.get(printer.id)?.last_probe_age_s;
-                const ageWord = typeof lastAge === "number" ? formatAge(lastAge, i18n.locale) : "";
-                return (
-                <li key={printer.id} className="flex flex-col items-start gap-2">
-                  <span className="font-bold">{printer.name}</span>
-                  <StatusBadge state={view.badge} label={kinds[view.kind]} />
-                  {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
-                  {view.kind === "paused" && <PauseReason pause={printer.pause} />}
-                  <ReasonLine reasons={view.reasons} />
-                  {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
-                  {view.kind === "stale" && typeof lastAge === "number" && (
-                    <span className="text-small text-ink-2 [overflow-wrap:anywhere]">
-                      {t`Last status ${ageWord}`}
-                    </span>
-                  )}
-                </li>
-                );
-              })}
-              {failed.map((job) => {
-                const state = stateOf(job.state);
-                return (
-                  <li key={job.id} className="flex flex-col items-start gap-1">
-                    <Link to="/jobs/$jobId" params={{ jobId: job.id }} className="font-bold text-link underline underline-offset-2">
-                      {jobLabel(job, t`Label`)}
-                    </Link>
-                    <StatusBadge state={state.badge} label={state.label} />
-                    <span className="text-small text-ink-2">{name(job.printer_id)}</span>
-                    {job.error && <span className="text-small">{job.error}</span>}
-                  </li>
-                );
-              })}
+              {attention.entries.map((entry) => (
+                <AttentionItem
+                  key={entry.id}
+                  entry={entry}
+                  printer={list.find((p) => p.id === entry.target.params.printerId)}
+                  status={statuses.get(entry.target.params.printerId ?? "")}
+                  busy={busy}
+                  onDismiss={() => attention.dismiss(entry.id)}
+                />
+              ))}
             </ul>
           )}
         </Block>
@@ -175,6 +151,84 @@ export function OverviewPage() {
         )}
       </section>
     </div>
+  );
+}
+
+/** One entry of "Needs attention": a printer, a job or a sheet, with what the page can say about it, and Dismiss. */
+function AttentionItem({
+  entry,
+  printer,
+  status,
+  busy,
+  onDismiss,
+}: {
+  entry: Notification;
+  printer: Printer | undefined;
+  status: PrinterStatus | undefined;
+  busy: Set<string>;
+  onDismiss: () => void;
+}) {
+  const { t, i18n } = useLingui();
+  const kinds = useKindLabel();
+  const stateOf = useJobStateBadge();
+  const text = useEntryText();
+  const dismiss = (
+    <Button onPress={onDismiss} className={`${SECONDARY_BUTTON} self-start`}>
+      {t`Dismiss`}
+    </Button>
+  );
+
+  if (entry.kind === "printer" && printer && !entry.id.endsWith(":material")) {
+    const view = describePrinter(printer, status, busy.has(printer.id));
+    const lastAge = status?.last_probe_age_s;
+    const ageWord = typeof lastAge === "number" ? formatAge(lastAge, i18n.locale) : "";
+    return (
+      <li className="flex flex-col items-start gap-2">
+        <span className="font-bold">{printer.name}</span>
+        <StatusBadge state={view.badge} label={kinds[view.kind]} />
+        {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
+        {view.kind === "paused" && <PauseReason pause={printer.pause} />}
+        <ReasonLine reasons={view.reasons} />
+        {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
+        {view.kind === "stale" && typeof lastAge === "number" && (
+          <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`Last status ${ageWord}`}</span>
+        )}
+        {dismiss}
+      </li>
+    );
+  }
+
+  if (entry.kind === "job") {
+    // The entry id ends in the job's state (`job:<id>:failed`): no second list of jobs is needed to say it.
+    const state = stateOf(entry.id.split(":")[2] ?? "");
+    return (
+      <li className="flex flex-col items-start gap-1">
+        <Link to="/jobs/$jobId" params={{ jobId: entry.target.params.jobId ?? "" }} className="font-bold text-link underline underline-offset-2">
+          {entry.values.title || t`Label`}
+        </Link>
+        <StatusBadge state={state.badge} label={state.label} />
+        <span className="text-small text-ink-2">{entry.values.printer || t`Unknown printer`}</span>
+        {entry.values.error && <span className="text-small">{entry.values.error}</span>}
+        {dismiss}
+      </li>
+    );
+  }
+
+  // A sheet, or a printer's supplies: the sentence of the entry, as a link to its page.
+  return (
+    <li className="flex flex-col items-start gap-2">
+      <StatusBadge state={entry.severity === "error" ? "bad" : "warn"} label={entry.severity === "error" ? t`Problem` : t`Warning`} />
+      {entry.target.to === "/sheets/$code" ? (
+        <Link to="/sheets/$code" params={{ code: entry.target.params.code ?? "" }} className="font-bold text-link underline underline-offset-2 [overflow-wrap:anywhere]">
+          {text(entry)}
+        </Link>
+      ) : (
+        <Link to="/printers/$printerId" params={{ printerId: entry.target.params.printerId ?? "" }} className="font-bold text-link underline underline-offset-2 [overflow-wrap:anywhere]">
+          {text(entry)}
+        </Link>
+      )}
+      {dismiss}
+    </li>
   );
 }
 

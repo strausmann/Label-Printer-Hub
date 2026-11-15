@@ -67,6 +67,7 @@ export default defineConfig({
           { slug: "using/printers" },
           { slug: "using/sheets" },
           { slug: "using/queue" },
+          { slug: "using/notifications" },
           { slug: "using/scanning" },
           { slug: "using/cart" },
           { slug: "using/glossary" },

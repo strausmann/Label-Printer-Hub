@@ -50,6 +50,11 @@ msgstr "{0, plural, one {# product code} other {# product codes}}"
 msgid "{0, plural, one {# row} other {# rows}}"
 msgstr "{0, plural, one {# row} other {# rows}}"
 
+#. placeholder {0}: Number(values.count) || 0
+#: src/features/notifications/useEntryText.ts
+msgid "{0, plural, one {# unconfirmed cell} other {# unconfirmed cells}}"
+msgstr "{0, plural, one {# unconfirmed cell} other {# unconfirmed cells}}"
+
 #. placeholder {0}: chosen.length
 #: src/features/sheets/SheetDetail.tsx
 msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
@@ -106,6 +111,10 @@ msgstr "{ahead, plural, one {# job from another computer ahead} other {# jobs fr
 #: src/features/integrations/IntegrationPage.tsx
 msgid "{appName} is not set up yet, so there is nothing to look up."
 msgstr "{appName} is not set up yet, so there is nothing to look up."
+
+#: src/features/notifications/useEntryText.ts
+msgid "{cells} on sheet {code}"
+msgstr "{cells} on sheet {code}"
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "{code} could not be checked. Try again."
@@ -276,6 +285,14 @@ msgstr "{name} must stay between {min} and {max}. More than that is a fault of t
 msgid "{name}: the app behind this item did not answer ({code}). Check Settings › Integrations."
 msgstr "{name}: the app behind this item did not answer ({code}). Check Settings › Integrations."
 
+#: src/features/notifications/useEntryText.ts
+msgid "{names} empty"
+msgstr "{names} empty"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{names} low"
+msgstr "{names} low"
+
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "{now} printed now"
 msgstr "{now} printed now"
@@ -291,6 +308,18 @@ msgstr "{preselectedSheet} has no free cell left."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "{preselectedSheet} is discarded and cannot take labels any more."
 msgstr "{preselectedSheet} is discarded and cannot take labels any more."
+
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: {kind}"
+msgstr "{printer}: {kind}"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: {kind} ({more})"
+msgstr "{printer}: {kind} ({more})"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: {what}"
+msgstr "{printer}: {what}"
 
 #: src/features/sheets/print/PrintResult.tsx
 msgid "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
@@ -324,6 +353,34 @@ msgstr "{slug} (not available)"
 #: src/features/jobs/JobDetail.tsx
 msgid "{tapeMm} mm"
 msgstr "{tapeMm} mm"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} failed"
+msgstr "{title} failed"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} failed, printed on retry"
+msgstr "{title} failed, printed on retry"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} failed: {error}"
+msgstr "{title} failed: {error}"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} is printing on {printer}"
+msgstr "{title} is printing on {printer}"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} is waiting on {printer}"
+msgstr "{title} is waiting on {printer}"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} printed"
+msgstr "{title} printed"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{title} was cancelled"
+msgstr "{title} was cancelled"
 
 #: src/features/about/DependencyLicences.tsx
 msgid "{token}: licence text at SPDX"
@@ -978,6 +1035,10 @@ msgctxt "tape colour"
 msgid "Clear"
 msgstr "Clear"
 
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Clear all"
+msgstr "Clear all"
+
 #: src/features/about/DependencyLicences.tsx
 msgctxt "action"
 msgid "Clear filter"
@@ -1005,6 +1066,7 @@ msgid "Clients"
 msgstr "Clients"
 
 #: src/features/archive/ImportDialog.tsx
+#: src/features/notifications/NotificationCentre.tsx
 #: src/features/scan/CameraScanner.tsx
 #: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
@@ -1299,6 +1361,10 @@ msgstr "Diameter (mm)"
 msgid "Different device"
 msgstr "Different device"
 
+#: src/features/notifications/useEntryText.ts
+msgid "Different device at the address of {printer}"
+msgstr "Different device at the address of {printer}"
+
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Different device detected at this address. Sheet printing and the calibration page are held until an admin confirms."
 msgstr "Different device detected at this address. Sheet printing and the calibration page are held until an admin confirms."
@@ -1355,6 +1421,10 @@ msgstr "discarded"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Discarded on {discardedOn}, this ID is not used again."
 msgstr "Discarded on {discardedOn}, this ID is not used again."
+
+#: src/features/overview/OverviewPage.tsx
+msgid "Dismiss"
+msgstr "Dismiss"
 
 #: src/shell/PrintToasts.tsx
 msgid "Dismiss notification"
@@ -1496,6 +1566,10 @@ msgstr "Enter the SNMP community. A stored community is not reused for another h
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Enter what the printer did wrong; the hub applies the opposite itself."
 msgstr "Enter what the printer did wrong; the hub applies the opposite itself."
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Error"
+msgstr "Error"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Every sheet is used up."
@@ -1799,6 +1873,10 @@ msgstr "in the printer's unprintable margin"
 msgid "In use by a running job"
 msgstr "In use by a running job"
 
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Information"
+msgstr "Information"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/Integrations.tsx
@@ -1875,6 +1953,7 @@ msgstr "Key, description or product code"
 
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/JobsPage.tsx
+#: src/features/notifications/useEntryText.ts
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/IppPrinterFields.tsx
@@ -2031,9 +2110,17 @@ msgstr "Lines for Grocy's config.php"
 msgid "Live updates paused"
 msgstr "Live updates paused"
 
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Live updates paused; the list may be out of date."
+msgstr "Live updates paused; the list may be out of date."
+
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Load hint"
 msgstr "Load hint"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Loading notifications…"
+msgstr "Loading notifications…"
 
 #: src/app/router.tsx
 #: src/features/about/DependencyLicences.tsx
@@ -2087,6 +2174,10 @@ msgstr "Make and model"
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "margin"
 msgstr "margin"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Mark all as read"
+msgstr "Mark all as read"
 
 #: src/features/archive/FeedbackLinks.tsx
 msgid "Mark as verified"
@@ -2194,6 +2285,10 @@ msgstr "Never used"
 msgctxt "sheet cell state"
 msgid "new"
 msgstr "new"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "New"
+msgstr "New"
 
 #: src/features/sheets/print/SheetPicker.tsx
 msgid "New {typeLabel} sheet"
@@ -2510,9 +2605,41 @@ msgstr "Nothing marked yet"
 msgid "Nothing needs attention."
 msgstr "Nothing needs attention."
 
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Nothing new."
+msgstr "Nothing new."
+
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Nothing opened yet."
 msgstr "Nothing opened yet."
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications"
+msgstr "Notifications"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications could not be loaded."
+msgstr "Notifications could not be loaded."
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications, {unread} unread, the most severe is a success"
+msgstr "Notifications, {unread} unread, the most severe is a success"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications, {unread} unread, the most severe is a warning"
+msgstr "Notifications, {unread} unread, the most severe is a warning"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications, {unread} unread, the most severe is an error"
+msgstr "Notifications, {unread} unread, the most severe is an error"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications, {unread} unread, the most severe is information"
+msgstr "Notifications, {unread} unread, the most severe is information"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Notifications, nothing unread"
+msgstr "Notifications, nothing unread"
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Now at this address"
@@ -2880,6 +3007,7 @@ msgstr "Printed, cell {n}"
 #: src/features/jobs/JobDetail.tsx
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/lookup/PrinterPicker.tsx
+#: src/features/notifications/NotificationCentre.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Printer"
@@ -2962,6 +3090,7 @@ msgstr "Printing needs a print or admin key."
 msgid "Printing now"
 msgstr "Printing now"
 
+#: src/features/overview/OverviewPage.tsx
 #: src/features/printers/model.ts
 #: src/shell/StatusBadge.tsx
 msgid "Problem"
@@ -3211,6 +3340,7 @@ msgstr "Resume"
 
 #: src/features/calibration/PrintResult.tsx
 #: src/features/jobs/JobDetail.tsx
+#: src/features/notifications/NotificationCentre.tsx
 #: src/features/printers/RollColourPrompt.tsx
 #: src/shell/PrintToasts.tsx
 msgid "Retry"
@@ -3483,6 +3613,7 @@ msgid "Settle the cells on the sheet"
 msgstr "Settle the cells on the sheet"
 
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/notifications/NotificationCentre.tsx
 #: src/features/sheets/print/SheetPicker.tsx
 #: src/features/sheets/print/SheetPreview.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -3806,6 +3937,10 @@ msgstr "Stopped at the printer"
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Stored"
 msgstr "Stored"
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Success"
+msgstr "Success"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Supplies"
@@ -5148,6 +5283,7 @@ msgstr "Unknown code"
 
 #: src/features/jobs/HeldRuns.tsx
 #: src/features/jobs/JobsPage.tsx
+#: src/features/notifications/useEntryText.ts
 #: src/features/overview/OverviewPage.tsx
 msgid "Unknown printer"
 msgstr "Unknown printer"
@@ -5264,6 +5400,8 @@ msgstr "Waiting for the printer's status check"
 msgid "Waiting for you"
 msgstr "Waiting for you"
 
+#: src/features/notifications/NotificationCentre.tsx
+#: src/features/overview/OverviewPage.tsx
 #: src/shell/StatusBadge.tsx
 msgid "Warning"
 msgstr "Warning"
