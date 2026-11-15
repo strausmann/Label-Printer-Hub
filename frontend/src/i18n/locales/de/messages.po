@@ -388,6 +388,10 @@ msgid "a new sheet"
 msgstr "ein neuer Bogen"
 
 #: src/features/calibration/CalibrationPage.tsx
+msgid "A print is already on its way."
+msgstr "Ein Druck ist schon unterwegs."
+
+#: src/features/calibration/CalibrationPage.tsx
 msgid "A printer rarely prints exactly where the page says. Measure how far it is off on a real sheet, and the hub moves every print by the opposite."
 msgstr "Ein Drucker druckt selten genau dorthin, wo die Seite es vorgibt. Miss auf einem echten Bogen, wie weit er daneben liegt, und der Hub verschiebt jeden Druck um das Gegenteil."
 

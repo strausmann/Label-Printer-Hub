@@ -188,8 +188,11 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
   const calibrationPrint = usePrintCalibrationPage(printer.id);
   const checkPrint = usePrintCalibrationPage(printer.id);
   const [asking, setAsking] = useState(false);
+  // A press while the calibration page is still being queued says so, instead of asking a question that cannot be acted on.
+  const [pressedWhileBusy, setPressedWhileBusy] = useState(false);
   const send = (print: PrintMutation, corrected: boolean) => {
     // A press while the same print is still being queued is ignored (the button may stay enabled, see `lockWhilePending`).
+    if (type && !print.isPending) setPressedWhileBusy(false);
     if (type && !print.isPending) print.mutate({ tray, request: { type: type.key, version: type.current_version, corrected } });
   };
 
@@ -234,7 +237,12 @@ function Workbench({ printer, tray, trayLabel, stored, typeChoice, onTypeChange 
               printerId={printer.id}
               type={type}
               print={calibrationPrint}
-              onPress={() => (hasStored ? setAsking(true) : send(calibrationPrint, false))}
+              onPress={() => {
+                if (calibrationPrint.isPending) setPressedWhileBusy(true);
+                else if (hasStored) setAsking(true);
+                else send(calibrationPrint, false);
+              }}
+              hint={pressedWhileBusy && calibrationPrint.isPending ? t`A print is already on its way.` : undefined}
               disabled={!canPrint}
               label={t`Print the calibration page (without correction)`}
               subject={t`Calibration page`}

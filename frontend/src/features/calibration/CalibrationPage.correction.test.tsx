@@ -106,13 +106,15 @@ describe("the buttons depend on whether a correction is stored (#349)", () => {
     const again = screen.getByRole("button", { name: CALIBRATION });
     expect(again).toBeEnabled();
     await waitFor(() => expect(again).toHaveFocus());
-    // A second press while it is queued asks again, and a second confirmation does not print twice.
+    // A second press while it is queued says so, asks nothing and sends nothing.
     await userEvent.click(again);
-    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Measure again anyway" }));
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(await screen.findByText("A print is already on its way.")).toBeVisible();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(only(calls, "POST", "/page")).toHaveLength(1);
     release();
     await waitFor(() => expect(screen.getByRole("status", { name: "Calibration page status" })).toHaveTextContent("Queued"));
+    // Once it is out of the queue the note is gone.
+    expect(screen.queryByText("A print is already on its way.")).toBeNull();
   });
 
   it("escape closes the dialog without printing", async () => {
