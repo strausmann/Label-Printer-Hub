@@ -866,12 +866,12 @@ to swap them (R-346-3, R-346-5).
 
 **Reference medium (maintainer, 2026-11-15):** the **L4737REV sheet cell, 63.5 × 29.6 mm**. On it the label shows
 vendor, bar, colour line, QR and both value columns; the footer drops (tier `no_footer`). L4736REV and Avery Zweckform
-6121 (38 × 21.2 mm) print the short tier `core` (vendor, bar, colour, QR; the values are behind the QR). The 62 × 36 mm
+6121 (38.1 × 21.2 mm) print the short tier `core` (vendor, bar, colour, QR; the values are behind the QR). The 62 × 36 mm
 QL tape stays a supported form at full content, footer included. Neither L4737REV nor 6121 is in
 `backend/app/seed/sheet_types.json`; their content boxes follow the engine's rule for a rectangle with unknown corner
 radius (`content_box`, inset 160 hmm per side, `cell_render.py:78,143-151`): **L4737REV 6030 × 2640 hmm**, **6121
-3480 × 1800 hmm**; L4736REV (seed, radius unknown) 4250 × 1800 hmm. 6121's size is the retailers' 38 × 21.2 mm (65 per
-A4 sheet), not repo data (QU15).
+3490 × 1800 hmm**; L4736REV (seed, radius unknown) 4250 × 1800 hmm. 6121's label size is **38.1 × 21.2 mm** (the
+official Avery template shows 38.1 × 21.18 mm cells with no horizontal gap, 65 per A4 sheet), not repo data (QU15).
 
 Findings: the Spoolman lookup builds `title = "{vendor} {name}"`, `primary_id = "#{id}"`, `qr_payload =
 "{base}/spool/show/{id}"` and the English `"{g}g remaining"` as `secondary` (`integrations/spoolman/plugin.py:66-93`);
@@ -908,28 +908,37 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   sheet type without QR, `spool_swatch` maps to `text_two_lines` (title `"{vendor} {name}"`, primary id `#{id}`),
   flagged as mapped like every QR type (spec 12.5). Other integrations never fill `swatch`; a lookup of another app
   with `spool_swatch` is refused by the required-field check (422 `content_type_data_mismatch`, missing `swatch`).
-- **R-346-2 (layout, mockup v4):** inside the content box.
-  - **Tiers `full`, `no_footer`, `first_column`:** at the top, full width, the **vendor line** (vendor name as bold
-    text, left; the colour hex codes right-aligned in the same block, upper case `#RRGGBB`, at most two lines — two
-    colours stacked, three or more show the first and `+N`) and the **bar** (black, full width, the title — the
-    material by default, R-346-3 — in white bold, inset 0.6 mm inside the bar). Below the bar the **lower region**,
-    down to the box bottom (`no_footer`, `first_column`) or to the footer rule (`full`): on the right the **QR column**
-    — the QR code to the spool, square, **top-aligned 0.2 mm under the bar**, with the caption `#{id}` centred
-    directly under it; on the left of it the **colour line** at the top and the **value columns** (column 1 print
-    settings, column 2 spool) bottom-aligned to the region's bottom. On `full` the **footer** follows: a 0.2 mm rule
-    across the full width and one line.
-  - **Tier `core` (short):** the **QR column** spans the box height from the top on the right (QR top-aligned at the
-    box top, caption under it); on the left of it, top to bottom: vendor, bar (only as wide as the left part), colour
+- **R-346-2 (layout, mockup v4):** inside the content box. **Every element has an absolute position in hmm** relative
+  to the content box (`SwatchLayout`, R-346-8), converted to device pixels once per element with `round(hmm × dpi /
+  2540)` — never a sum of rounded heights. Text lines are drawn baseline-anchored (`anchor="ls"`), with the baseline at
+  a fixed distance above the line's bottom (R-346-7), so descenders stay inside their line at every resolution.
+  - **Tiers `full`, `no_footer`, `first_column`:** at the top, full width, the **vendor line** and the **bar**. The
+    vendor line holds the vendor name (bold, left) and the colour hex codes (right-aligned, upper case `#RRGGBB`, at
+    most two lines — two colours stacked, three or more show the first and `+N`); the hex block takes its width first,
+    the vendor name gets the rest minus 1.0 mm and ends with `…` when it does not fit. The bar is black, full width,
+    with the title (the material by default, R-346-3) in white bold, inset 0.6 mm inside the bar. Below the bar the
+    **lower region**, down to the box bottom (`no_footer`, `first_column`) or to the footer rule (`full`): on the right
+    the **QR column** — the QR **box** (square, quiet zone inside) starts **directly at the bar's bottom edge**; the
+    symbol's ink starts **2 modules** under the bar (the white under the black bar is part of the quiet zone); the
+    caption `#{id}` is centred under the box. On the left of it the **colour line** (0.2 mm under the bar) and the
+    **value columns** (column 1 print settings, column 2 spool), stacked upward from the region's bottom. On `full` the
+    **footer** follows: a 0.2 mm rule across the full width and one line.
+  - **Tier `core` (short):** the **QR column** spans the box height from the top on the right (the QR box at the box
+    top, caption under it); on the left of it, top to bottom: vendor, bar (only as wide as the left part), colour
     line, and one small line with the **hex codes** (row font, joined with ` · `, ending with `…` when they do not fit).
     The top-right hex block of the other tiers is not drawn.
+  - **QR quiet zone: 2 modules** on every side, inside the QR box (maintainer ruling 2026-11-15, replacing the 4
+    modules of `build_qr`); the symbol is drawn with whole-pixel modules of `module = floor(box_px / (modules + 4))`,
+    its ink top-aligned at `box top + 2 modules` and centred horizontally in the box. The maintainer's real print on
+    L4737REV is the scan check (acceptance item).
   - Each column row is a bold field label and a regular value. **Each column has one tab stop** = the widest label
-    among that column's shown rows + 0.8 mm; every value of the column starts at that tab stop (left-aligned) and ends
-    with `…` at the column's right edge when it does not fit (real-data mockup, maintainer 2026-11-15). A row without a
-    value is left out (rows move up; nothing prints "—"); a column without any row takes no slot. Bed is one value
-    (`settings_bed_temp` is a single integer in Spoolman), not the range mockup v3 drew. Fonts: Atkinson Hyperlegible
-    Next (weight 700 for labels, vendor, bar, colour; 400 for values, hex codes, caption, footer) from the bundled
-    variable font, for tape **and** sheets, independent of `LABELYARD_PDF_FONT`; black on white, thresholded like the
-    tape layouts. No logo, no image.
+    **line** among that column's shown rows + 0.8 mm; every value of the column starts at that tab stop (left-aligned)
+    and ends with `…` at the column's right edge when it does not fit (real-data mockup, maintainer 2026-11-15). A row
+    without a value is left out (rows move up; nothing prints "—"). The columns keep their slots whatever rows have
+    data (R-346-8: the QR box is fixed per tier). Bed is one value (`settings_bed_temp` is a single integer in
+    Spoolman), not the range mockup v3 drew. Fonts: Atkinson Hyperlegible Next (weight 700 for labels, vendor, bar,
+    colour; 400 for values, hex codes, caption, footer) from the bundled variable font, for tape **and** sheets,
+    independent of `LABELYARD_PDF_FONT`; black on white, thresholded like the tape layouts. No logo, no image.
 - **R-346-3 (data mapping):** the Spoolman plugin builds `SpoolSwatch` from `GET /api/v1/spool/{id}`:
 
   | Field | Source | Fallback / rule |
@@ -1015,97 +1024,125 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
 
   | | Tape (QL 62) | Sheet cell |
   |---|---|---|
-  | Row cap height / pitch (rows, caption, hex codes, footer) | 1.25 / 1.9 | 1.6 / 2.4 (OC-27) |
-  | Vendor block (cap 3.0) V | 4.8 | 4.8 |
-  | Bar (text cap 2.2) B, gap under it | 3.4, 0.2 | 3.4, 0.2 |
-  | Colour line (cap 2.0) C | 3.0 | 3.0 |
-  | Column 1 / column 2 width | 15.8 / 18.6 | 20.0 / 23.6 |
-  | Column gap, gap to the QR | 1.0, 0.8 | 1.0, 0.8 |
+  | Row cap height / pitch / baseline above the row bottom (rows, caption, hex codes, footer) | 1.25 / 1.9 / 0.55 | 1.6 / 2.4 / 0.75 (OC-27) |
+  | Vendor block (cap 3.0, baseline 1.4 above its bottom) V | 4.8 | 4.8 |
+  | Bar (text cap 2.2, baseline 1.0 above the bar bottom) B | 3.4 | 3.4 |
+  | Colour line (cap 2.0, baseline 1.0 above its bottom), starting 0.2 under the bar C | 3.0 | 3.0 |
+  | Column 1 / column 2 width | 17.2 / 20.2 | 22.2 / 26.0 |
+  | Column gap, gap to the QR box | 1.0, 0.8 | 1.0, 0.8 |
   | Footer (rule 0.2 + gap 0.4 + one row) F | 2.5 | 3.0 |
-  | QR edge minimum (quiet zone inside) `Q_MIN` | 8.0 | 7.0 |
-  | QR edge needed beside the footer `Q_FULL` | 13.0 | 13.0 |
-  | QR edge maximum `Q_MAX` | 15.5 | 15.5 |
+  | QR box minimum (2-module quiet zone inside) `Q_MIN` | 8.0 | 7.0 |
+  | QR box needed beside the footer `Q_FULL` | 13.0 | 13.0 |
+  | QR box maximum `Q_MAX` | 15.5 | 15.5 |
   | Colour line / left part minimum width `C_MIN` | 12.0 | 12.0 |
 
-  **Column widths, derived with the tab-stop rule** (Atkinson 700 for labels, 400 for values, 300 dpi, row font 21 px
-  tape / 27 px sheet): width = widest label **line** of the column over en and de + 0.8 + widest reference value of
-  the column, rounded up to the next 0.2 mm with at least 0.1 mm slack. Column 1: „Nozzle“ 5.61 / 7.21 + 0.8 +
-  `210–230 °C` 9.19 / 11.81 → **15.8 / 20.0**. Column 2: „Location“ 7.12 / 9.15 + 0.8 + `60 °C · 6–8 h` 10.44 / 13.42
-  → **18.6 / 23.6**. A longer value ends with `…` and flags the label `truncated`; so do the bar, vendor, colour, hex
-  and footer lines. `Q_FULL`: the footer goes first as space shrinks, so it is printed only where the QR still gets
-  13 mm beside it.
+  **Font size per resolution, from the font's design cap height:** `font_px(cap_mm, dpi) = ceil(cap_mm × dpi / 25.4 /
+  0.668)`, where 0.668 is Atkinson's `OS/2.sCapHeight` (668) over `unitsPerEm` (1000). A rendered `H` bbox is **not**
+  used: its top moves by a pixel between FreeType versions (measured: Pillow 11.3/FreeType 2.13 → 19 px cap at 27 px,
+  Pillow 13/FreeType 2.14 → 18 px), which would move the size and every width. Row sizes: sheet **15 px at 150 dpi,
+  29 px at 300 dpi, 57 px at 600 dpi** (design cap 1.697 / 1.640 / 1.612 mm, all ≥ 1.6); tape **23 px at 300 dpi**
+  (1.301 mm). Text widths (`getlength`) are the same in both Pillow versions.
+
+  **Column widths hold at every resolution the label is drawn at:** sheet cells are drawn at 150 dpi (preview), 300 and
+  600 dpi (jobs: `render_dpi = min(max(printer dpi), 600)`, `sheets/printer_facts.py:37-38,76`); the tape at 300 dpi.
+  Width = max over those resolutions of (widest label **line** of the column over en and de + 0.8 + widest reference
+  value of the column), rounded up to the next 0.2 mm with at least 0.1 mm slack:
+
+  | | 150 dpi (15 px) | 300 dpi (29 px) | 600 dpi (57 px) | width |
+  |---|---|---|---|---|
+  | Sheet column 1 („Nozzle“ + `210–230 °C`) | 8.02 + 0.8 + 13.12 = **21.94** | 7.75 + 0.8 + 12.68 = 21.23 | 7.62 + 0.8 + 12.47 = 20.88 | **22.2** |
+  | Sheet column 2 („Location“ + `60 °C · 6–8 h`) | 10.17 + 0.8 + 14.91 = **25.88** | 9.83 + 0.8 + 14.41 = 25.04 | 9.66 + 0.8 + 14.16 = 24.62 | **26.0** |
+  | Tape column 1 / 2 (23 px, 300 dpi) | — | 6.15 + 0.8 + 10.06 = 17.01 / 7.80 + 0.8 + 11.43 = 20.02 | — | **17.2 / 20.2** |
+
+  The 150 dpi preview is the widest (a 15 px font is relatively wider than 29 or 57 px). A longer value ends with `…`
+  and flags the label `truncated`; so do the bar, vendor, colour, hex and footer lines. `Q_FULL`: the footer goes
+  first as space shrinks, so it is printed only where the QR box still gets 13 mm beside it.
+
+  **Baselines:** the distance from a line's baseline to its bottom covers the descender at every resolution
+  (measured descender ink of `gpy`: sheet rows 0.68 mm at 150 dpi, 0.51 at 300, 0.51 at 600 → 0.75; tape 0.42 → 0.55).
 
   **The L4737REV case, worked in the ruled order (QU16: labels fully written out, no abbreviations):**
-  1. *Smaller row font:* nothing to gain on sheets — the rows already sit at the OC-27 floor (27 px is the smallest
-     size whose cap height reaches 1.6 mm: 1.609 mm; 26 px gives 1.524 mm). On tape the rows use 21 px (cap 1.27 mm),
-     one pixel above the tape minimum `MIN_FONT_PX = 20` (`ql_layout.py:70`); the QL tape fits at `full` anyway, so
-     the tape keeps 21 px.
-  2. *Wrap long labels:* a column's **label slot** = column width − 0.8 − the column's widest reference value (sheet
-     7.39 / 9.38 mm, tape 5.81 / 7.36 mm). A label wider than its slot breaks onto a second line at its space or soft
-     hyphen; the value stays on the first line, the second line adds one row pitch. Wrapped with the bundled fonts
-     (sheet and tape alike): „Flow ratio“ → „Flow / ratio“, „Flussrate“ → „Fluss- / rate“, „Empty spool“ → „Empty /
-     spool“, „Trocknung“ → „Trock- / nung“, „Leerspule“ → „Leer- / spule“; every line fits its slot (widest „Nozzle“
-     7.21 / „Location“ 9.15 mm on sheets). „Location“, „Nozzle“ and all other labels stay on one line. Worst case
-     (all rows present): column 1 has **5** lines (en and de), column 2 **5** lines in en and **6** in de; the
-     thresholds count 6 lines for the two-column tiers and 5 for `first_column`. A label line that still would not
-     fit its slot is drawn with `…` and flags `truncated` (a test keeps that from happening with `SWATCH_TEXTS`).
-  3. *The rest decides the QR:* the columns have fixed widths per metric set, so the QR edge on L4737REV is
-     min(1800 − 240 = 1560, 6030 − 2000 − 100 − 2360 − 80 = **1490**, 1550) = **14.9 mm**, in the worst case and with
-     typical data (no flow and drying rows) alike — the QR is width-limited, and fewer rows only leave white space
-     above the columns. It stays ≥ 10 mm, so no further layout move is needed.
-- **R-346-8 (drop tiers, exact thresholds):** the tier is the **first** of the list whose width **and** height the
-  content box meets (both ≥, compared in hundredths of a millimetre); thresholds are fixed per metric set, not per
+  1. *Smaller row font:* nothing to gain on sheets — the rows sit at the OC-27 floor at every resolution (above). The
+     tape keeps 23 px; the QL tape fits at `full`.
+  2. *Wrap long labels:* a column's **label slot** = column width − 0.8 − the column's widest reference value at that
+     resolution (sheet column 1: 8.28 / 8.72 / 8.93 mm at 150 / 300 / 600 dpi, column 2: 10.29 / 10.79 / 11.04; tape
+     6.34 / 7.97). A label wider than its slot breaks onto a second line at its space or soft hyphen; the value stays on
+     the first line, the second line adds one row pitch. At every resolution exactly these wrap: „Flow ratio“ →
+     „Flow / ratio“, „Flussrate“ → „Fluss- / rate“, „Empty spool“ → „Empty / spool“, „Trocknung“ → „Trock- / nung“,
+     „Leerspule“ → „Leer- / spule“; every line fits its slot; „Nozzle“, „PA (K)“, „Location“ and all other labels stay
+     on one line. Worst case (all rows present): column 1 has **5** lines, column 2 **5** in en and **6** in de; the
+     thresholds count 6 lines for the two-column tiers and 5 for `first_column`.
+  3. *The rest decides the QR:* the QR box on L4737REV is min(2640 − 820 − 240 = 1580, 6030 − 2220 − 100 − 2600 − 80 =
+     **1030**, 1550) = **10.3 mm**, worst case and typical data alike (the box is fixed per tier, R-346-8). It stays
+     ≥ 10 mm, so no further layout move is needed.
+- **R-346-8 (drop tiers, exact thresholds, QR box):** the tier is the **first** of the list whose width **and** height
+  the content box meets (both ≥, compared in hundredths of a millimetre); thresholds are fixed per metric set, not per
   spool, so all cells of a sheet print the same tier. The tier is decided **once** from the content box in hmm
-  (`swatch_tier(box_w_hmm, box_h_hmm, metrics)`) and handed to the renderer, never re-derived from rounded pixels, so
-  the job at its dpi and the preview at 150 dpi draw the same tier:
+  (`swatch_tier(box_w_hmm, box_h_hmm, metrics)`) and handed to the renderer, never re-derived from rounded pixels.
+  Below `core`, `check_item_fits` refuses the item (`ItemContentMismatchError(index, ("label_size",))`, before any
+  reservation) and the engine and cell-renderer dispatch refuse the render
+  (`ContentTypeDataMismatchError(content_type="spool_swatch", missing_fields=("label_size",))`):
 
   | Tier | Shows | Sheet cell w × h ≥ | Tape metrics w × h ≥ |
   |---|---|---|---|
-  | `full` | everything | 58.4 × 28.8 | 49.2 × 25.8 |
-  | `no_footer` | without the footer | 52.4 × 25.8 | 44.2 × 22.8 |
-  | `first_column` | without footer and column 2 | 27.8 × 23.4 | 24.6 × 20.9 |
+  | `full` | everything | 63.0 × 28.8 | 52.2 × 25.6 |
+  | `no_footer` | without the footer | 57.0 × 25.8 | 47.2 × 22.8 |
+  | `first_column` | without footer and column 2 | 30.0 × 23.4 | 26.0 × 20.9 |
   | `core` | vendor, bar, colour, hex line, QR + caption | 19.8 × 13.8 | 20.8 × 13.3 |
-  | — | refused: 422 `content_type_data_mismatch`, missing `label_size` | below `core` | below `core` |
+  | — | refused | below `core` | below `core` |
 
-  Heights (H = V + B + 0.2 = 8.4; rows counted with wrapped label lines, R-346-7): `full` = H + max(C + 6 lines,
-  Q_FULL + caption) + F; `no_footer` = H + max(C + 6 lines, Q_MIN + caption); `first_column` = H + max(C + 5 lines,
-  Q_MIN + caption); `core` = max(H + C + one row, Q_MIN + caption). Widths: `full` = col 1 + 1.0 + col 2 + 0.8 +
-  Q_FULL; `no_footer` = col 1 + 1.0 + col 2 + 0.8 + Q_MIN; `first_column` = col 1 + 0.8 + Q_MIN; `core` = C_MIN + 0.8
-  + Q_MIN. **QR edge per tier:** `full`, `no_footer`, `first_column`: min(lower region − caption, box width
-  − shown columns and their gaps − 0.8, Q_MAX); `core`: min(box height − caption, box width − C_MIN − 0.8, Q_MAX).
-  Against the reference media:
+  Heights (rows counted with wrapped label lines, R-346-7): left part = V + B + 0.2 + C + lines (6 for the two-column
+  tiers, 5 for `first_column`); QR column = V + B + QR box + caption pitch; `full` = max(left, QR column with
+  Q_FULL) + F; `no_footer`, `first_column` = max(left, QR column with Q_MIN); `core` = max(V + B + 0.2 + C + one row,
+  Q_MIN + caption pitch). Widths: `full` = col 1 + 1.0 + col 2 + 0.8 + Q_FULL; `no_footer` = col 1 + 1.0 + col 2 +
+  0.8 + Q_MIN; `first_column` = col 1 + 0.8 + Q_MIN; `core` = C_MIN + 0.8 + Q_MIN.
 
-  | Medium | Content box (hmm) | Tier | QR edge |
-  |---|---|---|---|
-  | L4737REV | 6030 × 2640 | `no_footer` (`full` fails on height, 2640 < 2880; 0.6 mm over the `no_footer` height) | min(1800 − 240 = 1560, 6030 − 2000 − 100 − 2360 − 80 = 1490, 1550) = **14.9 mm** |
-  | QL 62 × 36 | 5690 × 3395 | `full` | min(3395 − 840 − 250 − 190 = 2115, 5690 − 1580 − 100 − 1860 − 80 = 2070, 1550) = **15.5 mm** |
-  | L4736REV | 4250 × 1800 | `core` | min(1560, 2970, 1550) = **15.5 mm** |
-  | 6121 | 3480 × 1800 | `core` | min(1560, 2200, 1550) = **15.5 mm** |
+  **QR box per tier, independent of the spool's data:** `full`, `no_footer`: min(lower region − caption pitch, box
+  width − col 1 − 1.0 − col 2 − 0.8, Q_MAX); `first_column`: min(lower region − caption pitch, box width − col 1 − 0.8,
+  Q_MAX); `core`: min(box height − caption pitch, box width − C_MIN − 0.8, Q_MAX). Empty rows or an empty column never
+  change it, so `check_item_fits`, the preview and the print use one box. Ink = modules × floor(box px / (modules + 4))
+  (2-module quiet zone); for the sample URL `https://labels.example.org/spool/show/12` (version 3, 29 modules):
 
-  L4737REV's margins: width 7.9 mm over the `no_footer` threshold (6030 − 5240; the QR takes the rest, 14.9 mm),
-  height 0.6 mm (2640 − 2580). The strict order means a narrow but tall box drops the footer
-  before it drops column 2, as the ruling orders. The symbol follows the `build_qr` rule for both media (whole-pixel
-  modules of at least one device pixel, four quiet modules, error correction M); a payload whose symbol does not fit
-  the edge is refused with `QrDoesNotFitError` on sheets (422 `content_type_data_mismatch`, `qr_payload`) and
-  `QrPayloadTooLongError` on tape (422 `qr_payload_too_long`, with the byte capacity of the largest version that fits).
+  | Medium | Content box (hmm) | Tier | QR box | Ink at the job resolution |
+  |---|---|---|---|---|
+  | L4737REV | 6030 × 2640 | `no_footer` | min(1580, 1030, 1550) = **10.3 mm** | 600 dpi: 243 px box, 7 px modules → **8.6 mm** (300 dpi: 7.4 mm) |
+  | QL 62 × 36 | 5690 × 3395 | `full` | min(3395 − 820 − 250 − 190 = 2135, 5690 − 1720 − 100 − 2020 − 80 = 1770, 1550) = **15.5 mm** | 300 dpi: 183 px, 5 px → **12.3 mm** |
+  | L4736REV | 4250 × 1800 | `core` | min(1560, 2970, 1550) = **15.5 mm** | 600 dpi: 366 px, 11 px → **13.5 mm** |
+  | 6121 | 3490 × 1800 | `core` | min(1560, 2210, 1550) = **15.5 mm** | 600 dpi: 366 px, 11 px → **13.5 mm** |
+
+  L4737REV's margins: width **3.3 mm** over the `no_footer` threshold (6030 − 5700), height **0.6 mm** (2640 − 2580);
+  `full` fails on both (6030 < 6300, 2640 < 2880). The 0.6 mm hold at 150, 300 and 600 dpi because positions are
+  absolute and baselines fixed (R-346-2, R-346-7): the last row's descender ends 0.07 mm above the box bottom at 150 dpi
+  (0.75 − 0.68), 0.24 mm at 300 and 600 dpi. On `core` the QR box and caption take 17.9 of 18.0 mm (L4736REV, 6121); the
+  caption has no descender. The strict order means a narrow but tall box drops the footer before it drops column 2, as
+  the ruling orders. A payload whose symbol does not fit the box with modules of at least one device pixel is refused
+  with `QrDoesNotFitError` on sheets (422 `content_type_data_mismatch`, `qr_payload`) and `QrPayloadTooLongError` on
+  tape (422 `qr_payload_too_long`, with the byte capacity of the largest version that fits). On tape this is defence in
+  depth: `QR_PAYLOAD_MAX = 512` (`schemas/print_request.py:51`) keeps such payloads off the API.
 - **R-346-9 (tape and orientation):** `spool_swatch` prints only on 62 mm endless as a fixed across image of 696 ×
   425 px (62 × 36.0 mm at 300 dpi). Margin `round(1.0 × 300 / 25.4) = 12` px per side, content box 672 × 401 px =
   **5690 × 3395 hmm** (`round(px × 2540 / 300)`) → tier `full`, footer included (maintainer, 2026-11-15). **The swatch
-  ignores every orientation and preset:** the stored layout default, an `orientation` or a `layout_preset` sent with
-  the item change nothing and are never refused. In a batch the swatch takes no part in choosing the batch's flag
-  (the other items decide it as today, R-258); when that flag is `along`, the swatch's across image is handed to the
-  backend turned with `Transpose.ROTATE_90`, so the backend's `ROTATE_270` restores it and the printed bitmap equals
-  the across image. A mixed cart is therefore never refused because of a swatch. Another tape width answers 409
-  `unsupported_tape` (preview and print) and, in the render check, the item verdict `unsupported_tape` ("This layout is
-  not available for this tape.") without an exception log.
+  ignores every orientation and preset, on every path:**
+  - a single job (`submit_print_job`) stores and queues the swatch with `orientation: "across"`, whatever the request
+    or the stored default name; an explicit `along` is ignored, never refused;
+  - in a batch the swatch takes no part in choosing the batch's flag (the other items decide it, R-258); when that flag
+    is `along`, the swatch's across image is handed to the backend turned with `Transpose.ROTATE_90`
+    (`swatch_for_batch`), so the backend's `ROTATE_270` restores it and the printed bitmap equals the across image;
+  - re-renders read the stored job: `_rerender_from_db_payload` (`services/print_queue.py:1076-1106`, used by recovery,
+    the queue's re-send and retry) renders the swatch across and applies `swatch_for_batch` with the stored
+    `options.orientation`, so a recovered or retried swatch of an `along` batch prints like the first try. The stored
+    payload carries what the renderer needs: `content_type`, `label_data` (with the swatch), `rendered_tape_mm` and the
+    batch's `options.orientation`.
+  A mixed cart is never refused because of a swatch. Another tape width answers 409 `unsupported_tape` (preview and
+  print) and, in the render check, the item verdict `unsupported_tape` ("This layout is not available for this
+  tape.") without an exception log.
 - **R-346-10 (sheets):** `RasterCellRenderer` draws `spool_swatch` with the sheet metrics into the content box.
-  Examples from the seed types: L4736REV, Herma 4097, 4606, Avery 8651, L4732, 8195, 5160, 5161, Herma 4607, Avery
-  Zweckform 6021 → `core`; Avery Zweckform 4780 → `first_column`; Herma 4098, Avery 5195 → `no_footer`; Avery 7160,
-  7164, 7165, Herma 4103, 4614, Avery Zweckform 3474 → `full`; Avery 5167, Avery Zweckform L4731REV, Herma 10001 →
-  refused.
-  `check_item_fits` refuses before anything
-  is reserved with the same rule (tier from the hmm box, QR edge from the layout at the job dpi), so a refused item
-  names its index (`label_size` or `qr_payload`) and the sheet print reserves no cell.
+  Examples from the seed types (thresholds above): L4736REV, Herma 4097, 4606, Avery 8651, L4732, 8195, 5160, 5161,
+  Herma 4607, Avery Zweckform 6021 → `core`; Avery Zweckform 4780 → `first_column`; Avery 7160, 7164, Herma 4098, 4103,
+  Avery 5195 → `no_footer`; Avery 7162, 7165, Herma 4614, Avery Zweckform 3474 → `full`; Avery 5167, Avery Zweckform
+  L4731REV, Herma 10001 → refused. `check_item_fits` refuses before anything is reserved with the same rule (tier from
+  the hmm box, QR box of the tier at the job dpi), so a refused item names its index (`label_size` or `qr_payload`)
+  and the sheet print reserves no cell.
 - **R-346-11 (preview equals print):** one function draws the swatch (`render_swatch`) for the tape job, the tape
   preview, the raw print, the sheet job and the sheet preview. The lookup route returns `extra.swatch` (the
   `SpoolSwatch` as JSON) next to `secondary`; the item view and the cart send it back as `data.swatch` with
@@ -1113,7 +1150,8 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   PNG and the job's image are pixel-identical (the job looks the spool up again, so a spool changed in between prints
   its new values — the same rule as every lookup label). The browser's preview cache key includes the swatch. The
   sheet preview sizes **and** places its 150 dpi symbol or placeholder from the swatch's QR box (edge and position from
-  `swatch_layout` at the job dpi, scaled to 150 dpi), not from the box's short side at the origin.
+  the tier's `SwatchLayout` in hmm, the same layout the text is drawn from, converted at 150 dpi; the symbol keeps the
+  job's module count and is scaled to that box), not from the box's short side at the origin.
   `POST /api/v1/render/check` (#285) checks `spool_swatch` through the same engine call.
 - **R-346-12 (UI):** the item view, the cart and the integration page's "add to cart" offer **Spool label** /
   „Spulenetikett“ only for Spoolman items, as the first choice and the default for them (QU7, accepted); other items
@@ -1129,6 +1167,8 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
   `docs/screenshots/spoolman-swatch-samples.png` (layout v4, QR codes match the captions #12 and #27; covered by the
   REUSE block for `docs/screenshots/*.png`); the
   website uses a byte copy at `website/src/assets/spoolman/spoolman-swatch-samples.png`. No generator script or test.
+  It is a mockup and differs from the print in details (it writes „Empty spool“ on one line, „Grey“ for the colour,
+  „lot“ in lower case, and a larger QR); that is accepted (coordinator, 2026-11-15).
 
 ## Additions to "11. Rulings index"
 
@@ -1142,7 +1182,7 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
 | R-337-1…6 | Collapsible guide in step 2; two black-only inline SVG figures with text legends; the #337 steps; website page en + de; website SVGs rendered from the app's components without accessible names; the real installation's screenshot as cleared by the maintainer, metadata stripped |
 | R-338-1…4 | Add to cart in the item view's sheet section; type via `lastType`, sheet and tray via `/cart?sheet=&tray=`; status line with Open cart; no cells, no server cart |
 | R-344-1…6 | `last_sheet_tray` and `last_calibration_print` on every page-printer status branch, from stored jobs (queued/printing/done); preselect address > last sheet tray > default > first, only after a status fetched after mount; the tray named in every step; warnings before saving, the requested-tray one only for a calibration print of the last 24 h newer than the stored values; status refreshed in `onSettled`; one statement on a new index |
-| R-346-1…14 | `spool_swatch` content type with `LabelData.swatch`, one `has_qr`, `check_required` accepts the model; layout of mockup v4 (QR under the bar beside colour and columns, hex line on the short tier) with one tab stop per column, Atkinson fonts on tape and sheets; data mapping with spool-over-filament overrides, every field validated on its own, `build_swatch` never fails the lookup, no remaining weight or price; bounded `SpoolSwatch` on preview and raw print; five extra-field keys and a title source (material or name); labels written out (PA (K), Location/Ort; long labels wrap at a space or soft hyphen onto a second line), number format in the hub language; tape and sheet metrics with column widths from the tab-stop rule and wrapped label lines counted in the heights (OC-27 kept); four tiers decided once from the hmm box, `Q_FULL` for the footer and `Q_MAX` 15.5 mm, L4737REV → `no_footer` with a 14.9 mm QR, L4736REV and 6121 → `core`, QL 62 × 36 → `full` with a 15.5 mm QR; `build_qr` rule on both media, `QrPayloadTooLongError` on tape; the swatch ignores every orientation and is turned for an `along` batch; `unsupported_tape` render-check verdict; preview QR sized and placed from the swatch box; picker hidden for the swatch; static sample image of four media |
+| R-346-1…14 | `spool_swatch` content type with `LabelData.swatch`, one `has_qr`, `check_required` accepts the model; layout of mockup v4 (QR under the bar beside colour and columns, hex line on the short tier) with one tab stop per column, Atkinson fonts on tape and sheets; data mapping with spool-over-filament overrides, every field validated on its own, `build_swatch` never fails the lookup, no remaining weight or price; bounded `SpoolSwatch` on preview and raw print; five extra-field keys and a title source (material or name); labels written out (PA (K), Location/Ort; long labels wrap at a space or soft hyphen onto a second line), number format in the hub language; tape and sheet metrics with column widths from the tab-stop rule and wrapped label lines counted in the heights (OC-27 kept); four tiers decided once from the hmm box, `Q_FULL` for the footer and `Q_MAX` 15.5 mm, L4737REV → `no_footer` with a 10.3 mm QR box, L4736REV and 6121 → `core`, QL 62 × 36 → `full` with a 15.5 mm QR box; column widths that hold at 150, 300 and 600 dpi, font size from the design cap height, absolute hmm positions with fixed baselines; QR box fixed per tier, 2-module quiet zone, ink 2 modules under the bar; `QrPayloadTooLongError` on tape; the swatch ignores every orientation: a single job is `across`, an `along` batch turns it, and recovery and retry do the same from the stored job; `unsupported_tape` render-check verdict; preview QR sized and placed from the swatch box; picker hidden for the swatch; static sample image of four media |
 
 ## Additions to "Questions for the maintainer"
 
@@ -1160,10 +1200,10 @@ from the box's short side at the cell origin (`_render_cell`, `_qr_fits_at`, `bu
 | QU10 | #346: sheets keep the 1.6 mm cap floor (OC-27)? | **Settled 2026-11-15 (maintainer):** yes. |
 | QU11 | #346: Net and Empty spool read the spool's own `initial_weight`/`spool_weight` first, then the filament's. | **Accepted 2026-11-15** as recommended: yes, the same "the spool wins" rule as for `flowdynamics`/`flowrate` (R-346-3). |
 | QU12 | #346: "62 × 36 mm" as the image length (36.0 mm) or as the cut label? The QL keeps about 3 mm feed at each end (`ql_layout.py` docstring). | **Accepted 2026-11-15** as recommended: the image is 36.0 mm; the real print (acceptance) decides whether to shorten it to 30 mm. |
-| QU13 | #346: the smallest QR is 7.0 mm (sheets) / 8.0 mm (tape) incl. quiet zone, about 0.17 mm modules for a version-4 URL. | **Accepted 2026-11-15** as recommended: keep; the maintainer's real print on an L4736REV cell checks that a phone scans it. |
+| QU13 | #346: the smallest QR box is 7.0 mm (sheets) / 8.0 mm (tape) with a 2-module quiet zone inside (maintainer ruling 2026-11-15). | **Accepted 2026-11-15**; the maintainer's real print on L4737REV (10.3 mm box, about 8.6 mm ink) is the scan check. |
 | QU14 | #346: the reference medium. | **Settled 2026-11-15 (maintainer):** the L4737REV cell (63.5 × 29.6 mm, both columns, no footer); L4736REV and 6121 short tier; QL 62 × 36 stays at full content. |
 | QU15 | #346: L4737REV and 6121 are not in `seed/sheet_types.json`. Add them as seed sheet types? | Recommendation: yes, in a separate task once their pitch, margins and corner radius are measured; Task 15h's tests build their cells from the label size with an unknown radius. |
-| QU16 | #346: abbreviate labels to fit the v4 QR on L4737REV? | **Settled 2026-11-15 (maintainer):** no abbreviations. Worked instead: font floor (no gain), long labels wrap onto a second line, the rest is the QR: 14.9 mm on L4737REV, worst case and typical (R-346-7). |
+| QU16 | #346: abbreviate labels to fit the v4 QR on L4737REV? | **Settled 2026-11-15 (maintainer):** no abbreviations. Worked instead: font floor (no gain), long labels wrap onto a second line, the rest is the QR box: 10.3 mm on L4737REV with columns sized for 150, 300 and 600 dpi, worst case and typical data (R-346-7/8). |
 
 ---
 
