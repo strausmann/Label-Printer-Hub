@@ -1101,13 +1101,20 @@ class PrintQueue:
         options = payload.get("options") or {}
         orientation = options.get("orientation")
         preset = options.get("layout_preset")
-        return self._engine.render(
+        image = self._engine.render(
             tape_mm=tape_mm,
             content_type=content_type,
             data=label_data,
             orientation=LabelOrientation(orientation) if orientation else None,
             preset=QlLayoutPreset(preset) if preset else None,
         )
+        if content_type is ContentType.SPOOL_SWATCH:
+            # #346: rendered across; an along batch's backend turns it, so it is turned back
+            # here exactly as the first try did (recovery, re-send and retry alike).
+            from app.services.spool_swatch import swatch_for_batch
+
+            image = swatch_for_batch(image, LabelOrientation(orientation) if orientation else None)
+        return image
 
     async def stop(self, timeout_s: float = 30.0) -> None:
         """Stop all workers.

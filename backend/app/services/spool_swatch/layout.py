@@ -83,7 +83,8 @@ class SwatchLayout(NamedTuple):
     vendor_baselines: tuple[int, ...]
     """Baselines of the vendor lines at the vendor cap (tape: two, the second reserved)."""
     vendor_row_baselines: tuple[int, int]
-    """Baselines of the two rows at the row cap inside the vendor block (bottom-aligned)."""
+    """Baselines of two rows at the row cap, bottom-aligned to the first vendor line: a sheet's
+    two-row vendor and the hex block beside the vendor sit on them."""
     bar: tuple[int, int, int, int]
     """(x, y, w, h) of the black bar."""
     bar_baseline: int
@@ -144,7 +145,10 @@ def swatch_layout(
         vendor_baselines=tuple(
             (i + 1) * m.vendor_line - m.vendor_baseline for i in range(m.vendor_lines)
         ),
-        vendor_row_baselines=(v - m.row_pitch - m.row_baseline, v - m.row_baseline),
+        vendor_row_baselines=(
+            m.vendor_line - m.row_pitch - m.row_baseline,
+            m.vendor_line - m.row_baseline,
+        ),
         bar=(0, v, bar_w, b),
         bar_baseline=v + b - m.bar_baseline,
         colour_baselines=(first_colour, first_colour + m.colour_h),

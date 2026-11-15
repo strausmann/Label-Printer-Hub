@@ -202,3 +202,32 @@ async def test_unexpected_render_error_is_that_items_verdict(monkeypatch):
     assert [r.error_code for r in out.results[:-1]] == [None] * 9
     assert out.results[-1].error_code == "render_failed"
     assert "exploded" not in out.results[-1].model_dump_json()
+
+
+def _swatch_lookups() -> _FakeLookups:
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row
+
+    return _FakeLookups(
+        data=LabelData(source_app="spoolman", qr_payload=SAMPLE_URL, swatch=every_row())
+    )
+
+
+@pytest.mark.asyncio
+async def test_render_check_accepts_a_swatch_on_62mm():
+    item = _item(content_type=ContentType.SPOOL_SWATCH, app="spoolman")
+    out = await check_items(_req(item, tape_mm=62), _swatch_lookups())
+    assert [(r.ok, r.error_code) for r in out.results] == [(True, None)]
+
+
+@pytest.mark.asyncio
+async def test_render_check_names_unsupported_tape_for_a_swatch_on_12mm(caplog):
+    import logging
+
+    item = _item(content_type=ContentType.SPOOL_SWATCH, app="spoolman")
+    with caplog.at_level(logging.ERROR, logger="app.services.render_check"):
+        out = await check_items(_req(item, tape_mm=12), _swatch_lookups())
+    r = out.results[0]
+    assert (r.ok, r.error_code) == (False, "unsupported_tape")
+    assert r.error_message == "This layout is not available for this tape."
+    assert r.error_detail == {"tape_mm": 12}
+    assert not [rec for rec in caplog.records if rec.levelno >= logging.ERROR]

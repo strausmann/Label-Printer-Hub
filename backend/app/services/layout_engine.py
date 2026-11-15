@@ -31,6 +31,7 @@ from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.tape_geometry import TAPE_GEOMETRY, TapeGeometry
 from app.services.ql_layout import render_across, render_along_62, resolve_layout
+from app.services.spool_swatch import render_tape_swatch
 
 QL62_PRINTABLE_MM: Final = 62
 """The tape whose along layout uses the full-width QR of ``ql_layout`` (#258)."""
@@ -77,12 +78,20 @@ class LayoutEngine:
 
         Raises:
             UnsupportedTapeError (409): tape_mm not in TAPE_GEOMETRY, or ``across`` on a
-                tape without an across-width layout.
+                tape without an across-width layout, or ``spool_swatch`` on another tape than
+                62 mm.
             ContentTypeDataMismatchError (422): data missing required fields.
             QrPayloadTooLongError (422): the payload does not fit the fixed QR (62 mm).
         """
         geometry = self._lookup_geometry(tape_mm)
         self._validate_data(content_type, data)
+        if content_type is ContentType.SPOOL_SWATCH:
+            # #346: one fixed across image on 62 mm endless, whatever orientation or preset
+            # say; dispatched before ``resolve_layout``, so the QL layouts never see it.
+            if tape_mm != QL62_PRINTABLE_MM:
+                raise UnsupportedTapeError(tape_mm=tape_mm)
+            assert data.swatch is not None and data.qr_payload  # _validate_data checked both
+            return render_tape_swatch(data.swatch, data.qr_payload)
         chosen, chosen_preset = resolve_layout(tape_mm, orientation, preset, None)
         if chosen is LabelOrientation.ACROSS:
             assert chosen_preset is not None  # resolve_layout always sets it for across

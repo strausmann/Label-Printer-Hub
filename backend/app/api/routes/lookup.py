@@ -108,6 +108,9 @@ def _label_data_to_result(app: AppLiteral, entity_id: str, data: LabelData) -> L
     extra: dict[str, object] = {}
     if data.secondary:
         extra["secondary"] = list(data.secondary)
+    if data.swatch is not None:
+        # #346: the swatch label's data; the client sends it back as ``data.swatch``.
+        extra["swatch"] = data.swatch.model_dump(mode="json")
     return LookupResult(
         app=app,
         id=entity_id,

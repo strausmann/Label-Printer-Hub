@@ -121,6 +121,13 @@ async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderC
                 "The QR payload does not fit the fixed QR code of this tape.",
                 {"length": exc.length, "max_bytes": exc.max_bytes},
             )
+        except UnsupportedTapeError as exc:
+            # #346: a layout of one tape width (the swatch on 62 mm) checked on another.
+            return (
+                "unsupported_tape",
+                "This layout is not available for this tape.",
+                {"tape_mm": exc.tape_mm},
+            )
         return None
 
     async def _verdict(key: _Key) -> _Verdict:

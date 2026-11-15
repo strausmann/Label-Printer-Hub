@@ -214,6 +214,7 @@ async def render_preview(
         source_app="preview",
         secondary=body.data.secondary,
         items=body.data.items,
+        swatch=body.data.swatch,
     )
 
     def _render() -> bytes:

@@ -1445,3 +1445,28 @@ async def test_stored_row_cancelled_before_the_swap_releases_the_cell(
         await run_stored(factory, printer, req([raw(1)], [on(code)]), queue, job_id)
 
     assert [r for r in await cell_rows(factory) if r.state == "reserved"] == []
+
+
+async def test_too_small_swatch_cell_reserves_nothing(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """#346: below the ``core`` tier (Avery 5167) the swatch is refused before any reservation."""
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row, seed_geometry
+
+    await ts.create_type(
+        session,
+        ts.TypeFields("acme-5167", "A5167", "Acme", ["5167"], None, True),
+        seed_geometry("avery-5167"),
+        actor="t",
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-5167")
+    queue = FakeQueue()
+    item = raw(0, ContentType.SPOOL_SWATCH, qr_payload=SAMPLE_URL, swatch=every_row())
+
+    with pytest.raises(ItemContentMismatchError) as err:
+        await run_print(factory, printer, req([item], [on(code)]), queue=queue)
+
+    assert err.value.detail == {"item_index": 0, "missing_fields": ["label_size"]}
+    assert await cell_rows(factory) == []
+    assert queue.submitted == []

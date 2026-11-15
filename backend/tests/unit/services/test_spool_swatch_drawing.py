@@ -601,3 +601,20 @@ def test_tape_payload_too_long_is_qr_payload_too_long() -> None:
         _render(swatch(), QL_BOX, TAPE_METRICS, 300, payload)
     assert exc.value.length == len(payload.encode())
     assert 0 < exc.value.max_bytes < 2400
+
+
+def test_value_wraps_after_its_separator() -> None:
+    """Acceptance finding: „AMS 1 · slot 2“ broke as „AMS 1 · slot“ / „2“; the separator is the
+    natural break of a value made of parts."""
+    placement = _place(swatch(location="AMS 1 · slot 2"), seed_box(L4737REV), SHEET_METRICS)
+    assert placement.columns[1].rows[-1].value == ("AMS 1 ·", "slot 2")
+
+
+def test_tape_hex_block_sits_beside_the_first_vendor_line() -> None:
+    """Acceptance finding: on tape the hex code sat at the bottom of the two-line vendor block,
+    far from a one-line vendor; it is bottom-aligned to the first vendor line instead."""
+    placement = _place(swatch(color_hexes=("FF5F00",)), QL_BOX, TAPE_METRICS)
+    hex_run = next(r for r in placement.runs if r.text == "#FF5F00")
+    vendor_run = next(r for r in placement.runs if r.text == "TecBears")
+    assert hex_run.baseline == 480 - 55
+    assert abs(hex_run.baseline - vendor_run.baseline) < 100

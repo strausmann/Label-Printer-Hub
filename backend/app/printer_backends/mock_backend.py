@@ -24,6 +24,7 @@ from app.printer_backends.exceptions import (
     refused_before_sending,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
+from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import (
     MediaType,
     NotificationCode,
@@ -101,6 +102,8 @@ class MockPrinterBackend:
         # preflight says the tape is empty (the SNMP ``noPaper`` bit).
         self.tape_runs_out_after = tape_runs_out_after
         self.printed_images: list[Image.Image] = []
+        self.printed_orientations: list[LabelOrientation | None] = []
+        """The ``orientation`` the queue passed for each printed image (#346)."""
         self.status_query_count: int = 0
 
     @classmethod
@@ -147,6 +150,7 @@ class MockPrinterBackend:
         high_resolution: bool = False,  # noqa: ARG002
         half_cut: bool = False,  # noqa: ARG002
         last_page: bool = True,  # noqa: ARG002
+        orientation: LabelOrientation | None = None,
     ) -> None:
         # Like the PT backend's preflight: a refusal here means nothing was sent (#277).
         status = await self.query_status()
@@ -162,6 +166,7 @@ class MockPrinterBackend:
                 )
             )
         self.printed_images.append(image.copy())
+        self.printed_orientations.append(orientation)
         if (
             self.tape_runs_out_after is not None
             and len(self.printed_images) >= self.tape_runs_out_after
@@ -176,6 +181,7 @@ class MockPrinterBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
         half_cut: bool = True,
+        orientation: LabelOrientation | None = None,
     ) -> None:
         """Test-friendly Mock-Implementation via default_print_images_loop.
 
@@ -190,4 +196,5 @@ class MockPrinterBackend:
             auto_cut=auto_cut,
             high_resolution=high_resolution,
             half_cut=half_cut,
+            orientation=orientation,
         )

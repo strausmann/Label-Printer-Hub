@@ -218,6 +218,16 @@ def _one_line(text: str, weight: Weight, start: float, minimum: float, slot: flo
     return FittedText((cut(text, weight, minimum, slot),), minimum, True)
 
 
+def _value_split(text: str, weight: Weight, cap: float, slot: float) -> tuple[str, str] | None:
+    """A value's break: after the last ``·`` that lets the first line fit (it separates the
+    value's parts, „AMS 1 · slot 2“), else at the last fitting space."""
+    fitting = [s for s in _breaks(text) if _fits(s[0], weight, cap, slot)]
+    at_separator = [s for s in fitting if s[0].endswith("·")]
+    if at_separator:
+        return at_separator[-1]
+    return fitting[-1] if fitting else None
+
+
 def _wrap_words(
     text: str, weight: Weight, cap: float, slot: float, max_lines: int
 ) -> tuple[tuple[str, ...], bool]:
@@ -227,7 +237,7 @@ def _wrap_words(
     while rest and len(lines) < max_lines - 1:
         if _fits(rest, weight, cap, slot):
             break
-        split = _last_fit(rest.replace(SOFT_HYPHEN, ""), weight, cap, slot)
+        split = _value_split(rest.replace(SOFT_HYPHEN, ""), weight, cap, slot)
         if split is None:
             break
         lines.append(split[0])

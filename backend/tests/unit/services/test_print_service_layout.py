@@ -158,3 +158,131 @@ async def test_recovery_rerenders_with_the_stored_orientation_and_preset() -> No
     assert queue._rerender_from_db_payload(payload).size == (696, 307)
     payload["options"] = {"orientation": "along"}
     assert queue._rerender_from_db_payload(payload).height == 696
+
+
+# ---------------------------------------------------------------------------
+# #346: the swatch label ignores every orientation; a batch turns it for the backend
+# ---------------------------------------------------------------------------
+
+
+class _QueuePrinter:
+    """Queue printer over ``MockPrinterBackend``, forwarding ``orientation`` as the QL model."""
+
+    def __init__(self, backend: object) -> None:
+        self.id = _PRINTER_ID
+        self.backend = backend
+
+    async def print_image(self, image: object, *, tape_mm: int, **options: object) -> None:
+        from types import SimpleNamespace
+
+        raw = options.get("orientation")
+        await self.backend.print_image(  # type: ignore[attr-defined]
+            image,
+            SimpleNamespace(width_mm=tape_mm),
+            orientation=LabelOrientation(str(raw)) if raw else None,
+        )
+
+    async def print_images(self, images: list[object], *, tape_mm: int, **options: object) -> None:
+        for image in images:
+            await self.print_image(image, tape_mm=tape_mm, **options)
+
+
+async def _live(
+    defaults: dict[int, LayoutDefault] | None = None,
+) -> tuple[PrintService, object, object, PrintQueue]:
+    from app.printer_backends.mock_backend import MockPrinterBackend
+    from app.services.job_store import MemoryJobStore
+
+    backend = MockPrinterBackend(loaded_tape_mm=62)
+    store = MemoryJobStore()
+    queue = PrintQueue([_QueuePrinter(backend)], store=store, engine=LayoutEngine())  # type: ignore[list-item]
+    await queue.start()
+    svc = PrintService(
+        printer_id=_PRINTER_ID,
+        backend=backend,
+        queue=queue,
+        store=store,
+        engine=LayoutEngine(),
+        layout_defaults=defaults,
+    )
+    return svc, backend, store, queue
+
+
+async def _printed(backend: object, count: int) -> None:
+    import asyncio
+
+    for _ in range(500):
+        if len(backend.printed_images) >= count:  # type: ignore[attr-defined]
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("the queue did not print")
+
+
+def _swatch_request(**options: object) -> PrintRequest:
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row
+
+    return PrintRequest(
+        content_type=ContentType.SPOOL_SWATCH,
+        data=RawLabelData(qr_payload=SAMPLE_URL, swatch=every_row()),
+        options=PrintOptions(**options),  # type: ignore[arg-type]
+    )
+
+
+def _across() -> object:
+    from app.services.spool_swatch import render_tape_swatch
+
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row
+
+    return render_tape_swatch(every_row(), SAMPLE_URL)
+
+
+async def test_single_swatch_job_is_across() -> None:
+    from PIL import Image
+
+    svc, backend, store, queue = await _live(
+        {62: LayoutDefault(orientation=LabelOrientation.ALONG)}
+    )
+    try:
+        job_id = await svc.submit_print_job(_swatch_request(orientation=LabelOrientation.ALONG))
+        await _printed(backend, 1)
+        row = await store.get(job_id)  # type: ignore[attr-defined]
+        assert row.payload["options"]["orientation"] == "across"
+        assert backend.printed_orientations[-1] is LabelOrientation.ACROSS  # type: ignore[attr-defined]
+        printed: Image.Image = backend.printed_images[-1]  # type: ignore[attr-defined]
+        assert printed.tobytes() == _across().tobytes()  # type: ignore[attr-defined]
+    finally:
+        await queue.stop()
+
+
+async def test_mixed_batch_with_along_prints_the_swatch_across() -> None:
+    from PIL import Image
+
+    svc, backend, _, queue = await _live()
+    try:
+        await svc.submit_batch_job(
+            [_request(orientation=LabelOrientation.ALONG), _swatch_request()], half_cut=False
+        )
+        await _printed(backend, 2)
+        assert backend.printed_orientations == [LabelOrientation.ALONG, LabelOrientation.ALONG]  # type: ignore[attr-defined]
+        swatch: Image.Image = backend.printed_images[1]  # type: ignore[attr-defined]
+        across = _across()
+        assert swatch.tobytes() == across.transpose(Image.Transpose.ROTATE_90).tobytes()  # type: ignore[attr-defined]
+        # What the QL backend does for ``along`` restores the across image.
+        assert swatch.transpose(Image.Transpose.ROTATE_270).tobytes() == across.tobytes()  # type: ignore[attr-defined]
+    finally:
+        await queue.stop()
+
+
+async def test_all_swatch_batch_is_across() -> None:
+    svc, backend, store, queue = await _live(
+        {62: LayoutDefault(orientation=LabelOrientation.ALONG)}
+    )
+    try:
+        ids = await svc.submit_batch_job([_swatch_request(), _swatch_request()], half_cut=False)
+        await _printed(backend, 2)
+        assert backend.printed_orientations == [LabelOrientation.ACROSS] * 2  # type: ignore[attr-defined]
+        assert backend.printed_images[0].tobytes() == _across().tobytes()  # type: ignore[attr-defined]
+        row = await store.get(ids[0])  # type: ignore[attr-defined]
+        assert row.payload["options"]["orientation"] == "across"
+    finally:
+        await queue.stop()

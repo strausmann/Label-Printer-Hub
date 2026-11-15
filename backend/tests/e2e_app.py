@@ -164,6 +164,40 @@ class _FakeGrocy(_FakeIntegration):
         )
 
 
+class _FakeSpoolman(_FakeIntegration):
+    """Spoolman with one fictitious spool per id, carrying the swatch label's data (#346)."""
+
+    async def lookup(self, identifier: str) -> Any:
+        from app.schemas.label_data import LabelData
+        from app.schemas.spool_swatch import SpoolSwatch
+
+        url = f"https://spoolman.example.invalid/spool/show/{identifier}"
+        swatch = SpoolSwatch(
+            spool_id=int(identifier) if identifier.isdigit() and int(identifier) > 0 else 12,
+            vendor="TecBears",
+            title="PETG",
+            color_name="Orange",
+            color_hexes=("FF5F00",),
+            nozzle_c=(230, 230),
+            bed_c=80,
+            pressure_advance=0.029,
+            spool_weight_g=124,
+            net_weight_g=1000,
+            location="AMS 1 · slot 2",
+            diameter_mm=1.75,
+            density_g_cm3=1.27,
+            lot="2511-07",
+        )
+        return LabelData(
+            source_app=self.name,
+            title=f"{self.display_name} item",
+            primary_id=f"#{identifier}",
+            qr_payload=url,
+            secondary=("640g remaining",),
+            swatch=swatch,
+        )
+
+
 def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
     """Fill the settings ``app.main`` reads at import time. Returns (bootstrap, key_file)."""
     bootstrap = os.environ.get("E2E_BOOTSTRAP") == "1"
@@ -636,8 +670,10 @@ def build_e2e_app() -> ASGIApp:
 
     # No printer is reachable: every configured printer gets the in-memory backend. They are
     # kept, so ``/__e2e/tape-printer/state`` can let their tape run out (#277).
-    def _mock_backend(_cfg: Any) -> MockPrinterBackend:
-        backend = MockPrinterBackend()
+    def _mock_backend(cfg: Any) -> MockPrinterBackend:
+        # The QL fixture printer holds 62 mm endless (the swatch label, #346); the PT ones 24 mm.
+        tape = 62 if getattr(cfg, "backend", None) == "brother_ql" else 24
+        backend = MockPrinterBackend(loaded_tape_mm=tape)
         _TAPE_BACKENDS.append(backend)
         return backend
 
@@ -651,7 +687,13 @@ def build_e2e_app() -> ASGIApp:
     status_probe_producer.query_identity = _fake_identity  # type: ignore[assignment]
     IntegrationRegistry.clear()  # importing app.main discovered the real plugins
     for name, display in (("snipeit", "Snipe-IT"), ("grocy", "Grocy"), ("spoolman", "Spoolman")):
-        fake = _FakeGrocy(name, display) if name == "grocy" else _FakeIntegration(name, display)
+        fake: Any
+        if name == "grocy":
+            fake = _FakeGrocy(name, display)
+        elif name == "spoolman":
+            fake = _FakeSpoolman(name, display)
+        else:
+            fake = _FakeIntegration(name, display)
         IntegrationRegistry.register(fake)  # type: ignore[arg-type]
 
     if key_file is not None:

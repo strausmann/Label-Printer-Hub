@@ -44,6 +44,7 @@ from app.services.print_error_codes import print_error_code
 from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_JOB
 from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.services.ql_layout import resolve_layout
+from app.services.spool_swatch import swatch_for_batch
 
 _log = logging.getLogger(__name__)
 
@@ -122,6 +123,15 @@ class PrintService:
             options.layout_preset,
             self._layout_defaults.get(tape_mm),
         )
+
+    def _resolve_layout_for(
+        self, tape_mm: int, content_type: ContentType, options: PrintOptions
+    ) -> tuple[LabelOrientation, QlLayoutPreset | None]:
+        """As ``_resolve_layout``; the swatch label is always ``across`` without a preset (#346):
+        an orientation it is asked for, sent or stored, is ignored, never refused."""
+        if content_type is ContentType.SPOOL_SWATCH:
+            return LabelOrientation.ACROSS, None
+        return self._resolve_layout(tape_mm, options)
 
     async def submit_print_job(
         self,
@@ -213,7 +223,7 @@ class PrintService:
         if preflight.loaded_tape_mm is None:
             raise NoTapeLoadedError()
         tape_mm = preflight.loaded_tape_mm
-        orientation, preset = self._resolve_layout(tape_mm, options)
+        orientation, preset = self._resolve_layout_for(tape_mm, content_type, options)
         # The job stores what was actually rendered, so a restart re-renders the same label.
         options = options.model_copy(update={"orientation": orientation, "layout_preset": preset})
 
@@ -505,6 +515,7 @@ class PrintService:
                 qr_payload=raw.qr_payload,
                 secondary=raw.secondary,
                 items=raw.items,
+                swatch=raw.swatch,
             )
         assert request.lookup is not None
         if self._lookup_service is None:
@@ -555,11 +566,18 @@ class PrintService:
         # #258: one orientation for the whole batch; the backend rotates every image on that
         # one flag. Items without an orientation follow the one an item names explicitly;
         # different explicit orientations are refused instead of silently overridden.
-        explicit = sorted({str(r.options.orientation) for r in requests if r.options.orientation})
+        # #346: a swatch item takes no part in choosing the flag; an all-swatch batch is across.
+        deciding = [r for r in requests if r.content_type is not ContentType.SPOOL_SWATCH]
+        explicit = sorted({str(r.options.orientation) for r in deciding if r.options.orientation})
         if len(explicit) > 1:
             raise ConflictingOrientationError(tuple(explicit))
-        named = next((r.options for r in requests if r.options.orientation), requests[0].options)
-        orientation, _ = self._resolve_layout(tape_mm, named)
+        if deciding:
+            named = next(
+                (r.options for r in deciding if r.options.orientation), deciding[0].options
+            )
+            orientation, _ = self._resolve_layout(tape_mm, named)
+        else:
+            orientation = LabelOrientation.ACROSS
         resolved_options = [
             req.options.model_copy(
                 update={
@@ -567,8 +585,9 @@ class PrintService:
                     # The batch-level cut mode goes into every stored row, so a recovery after a
                     # restart prints the run with the same cut as the live batch.
                     "half_cut": half_cut,
-                    "layout_preset": self._resolve_layout(
+                    "layout_preset": self._resolve_layout_for(
                         tape_mm,
+                        req.content_type,
                         req.options.model_copy(update={"orientation": orientation}),
                     )[1],
                 }
@@ -594,6 +613,9 @@ class PrintService:
                     preset=opts.layout_preset,
                 )
             )
+            if req.content_type is ContentType.SPOOL_SWATCH:
+                # The backend turns every image of an along batch; turned back first (#346).
+                image = swatch_for_batch(image, opts.orientation)
             return image, label_data.model_dump()
 
         prepared = await asyncio.gather(

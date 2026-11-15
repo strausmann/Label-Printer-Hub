@@ -24,8 +24,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import json
 import logging
+import threading
 import traceback
+from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -68,10 +72,19 @@ from app.schemas.sheet_print import (
     SheetPrintRequest,
     SheetPrintResponse,
 )
+from app.schemas.spool_swatch import SpoolSwatch
 from app.services import render_slots
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 from app.services.lookup_service import AppLookupService, LookupFailedError, UnknownAppError
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
+from app.services.ql_layout import INK_THRESHOLD
+from app.services.spool_swatch import (
+    SHEET_METRICS,
+    SwatchTier,
+    swatch_layout,
+    swatch_tier,
+    to_px,
+)
 from app.settings_store import SettingsStore
 from app.sheets import sheet_service as ss
 from app.sheets.cell_render import (
@@ -155,12 +168,14 @@ __all__ = [
     "LOOKUP_CONCURRENCY",
     "MAX_PREVIEW_PAGES",
     "NO_MARGIN_BAND_REASON",
+    "SWATCH_PREVIEW_CACHE",
     "MarginCheck",
     "RenderTimeoutApiError",
     "RenderUnavailableApiError",
     "ResolvedItem",
     "TooManyPreviewsError",
     "create_sheet_with_id_label",
+    "downscale_to_preview",
     "id_cell_label",
     "id_cell_title",
     "margin_check",
@@ -174,6 +189,7 @@ __all__ = [
     "retry_sheet_page",
     "scan_payload_builder",
     "sheet_type_label",
+    "swatch_cell_key",
 ]
 
 logger = logging.getLogger(__name__)
@@ -386,6 +402,7 @@ async def resolve_items(
             qr_payload=raw.qr_payload,
             secondary=raw.secondary,
             items=raw.items,
+            swatch=raw.swatch,
         )
 
     results: list[LabelData | BaseException] = [
@@ -637,6 +654,8 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
     item is drawn normally, which refuses it as a content mismatch (spec 12.5).
     """
     w_mm, h_mm = box.w / 100, box.h / 100
+    if job.content_type is ContentType.SPOOL_SWATCH:
+        return _swatch_preview_cell(renderer, box, job, render_dpi)
 
     def draw(data: LabelData) -> CellImage:
         return renderer.render(
@@ -670,6 +689,110 @@ def _render_cell(renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi:
     else:
         _qr_placeholder(cell.image, qr_edge_px(w_mm, h_mm, PREVIEW_DPI))
     return cell
+
+
+SWATCH_LAYOUT_VERSION: Final = 1
+"""Part of every swatch preview cache key; raise it when the swatch drawing changes."""
+
+
+def downscale_to_preview(
+    image: Image.Image, box: BoxHmm, preview_dpi: int = PREVIEW_DPI
+) -> Image.Image:
+    """A cell drawn at the job's resolution, reduced to the preview's (#346, R-346-11).
+
+    ``1`` -> ``L``, a box filter to exactly the box at ``preview_dpi``, then the ink threshold:
+    the preview shows what the job prints, never a layout of its own at 150 dpi.
+    """
+    size = (to_px(box.w, preview_dpi), to_px(box.h, preview_dpi))
+    reduced = image.convert("L").resize(size, Image.Resampling.BOX)
+    return reduced.point(lambda v: 0 if v < INK_THRESHOLD else 255, "1")
+
+
+def swatch_cell_key(
+    swatch: SpoolSwatch, payload: str, tier: SwatchTier, box: BoxHmm, render_dpi: int
+) -> str:
+    """SHA-256 over everything a swatch preview cell depends on (canonical JSON)."""
+    canonical = json.dumps(
+        {
+            "swatch": swatch.model_dump(mode="json"),
+            "payload": payload,
+            "tier": str(tier),
+            "box": [box.w, box.h],
+            "render_dpi": render_dpi,
+            "version": SWATCH_LAYOUT_VERSION,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+class _SwatchPreviewCache:
+    """In-process LRU of downscaled swatch cells: ``key -> (image, truncated)``.
+
+    Used from the render threads, so every access holds the lock. A cached cell keeps its
+    "shortened" mark. 512 cells of at most a few kB each.
+    """
+
+    def __init__(self, size: int = 512) -> None:
+        self._size = size
+        self._cells: OrderedDict[str, tuple[Image.Image, bool]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> tuple[Image.Image, bool] | None:
+        with self._lock:
+            found = self._cells.get(key)
+            if found is not None:
+                self._cells.move_to_end(key)
+            return found
+
+    def put(self, key: str, value: tuple[Image.Image, bool]) -> None:
+        with self._lock:
+            self._cells[key] = value
+            self._cells.move_to_end(key)
+            while len(self._cells) > self._size:
+                self._cells.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cells.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._cells)
+
+
+SWATCH_PREVIEW_CACHE: Final = _SwatchPreviewCache()
+
+
+def _swatch_preview_cell(
+    renderer: CellRenderer, box: BoxHmm, job: _CellJob, render_dpi: int
+) -> CellImage:
+    """The swatch cell exactly as the job draws it (same call, same mask search), downscaled.
+
+    Cached by content hash, so a second copy of a spool or a re-opened preview is not drawn
+    again. Refusals (``label_size``, ``qr_payload``) come from the same renderer call.
+    """
+    swatch = job.data.swatch
+    tier = None if swatch is None else swatch_tier(box.w, box.h, SHEET_METRICS)
+    key = None
+    if swatch is not None and tier is not None:
+        key = swatch_cell_key(swatch, job.data.qr_payload or "", tier, box, render_dpi)
+        cached = SWATCH_PREVIEW_CACHE.get(key)
+        if cached is not None:
+            return CellImage(cached[0].copy(), cached[1])
+    cell = renderer.render(
+        box_w_mm=box.w / 100,
+        box_h_mm=box.h / 100,
+        dpi=render_dpi,
+        content_type=job.content_type,
+        data=job.data,
+    )
+    small = downscale_to_preview(cell.image, box)
+    if key is not None:
+        SWATCH_PREVIEW_CACHE.put(key, (small.copy(), cell.truncated))
+    return CellImage(small, cell.truncated)
 
 
 def _draw_page(
@@ -1127,6 +1250,16 @@ def check_item_fits(
     box = content_box(geometry, cell)
     if not box_fits_a_line(box):  # a label too small to hold a line (or a negative box)
         raise ItemContentMismatchError(index, ("label_size",))
+    if content_type is ContentType.SPOOL_SWATCH:
+        # #346: the tier from the hmm box, then the tier's QR box at the job's resolution.
+        tier = swatch_tier(box.w, box.h, SHEET_METRICS)
+        if tier is None:
+            raise ItemContentMismatchError(index, ("label_size",))
+        edge = swatch_layout(tier, box.w, box.h, SHEET_METRICS).qr_box[2]
+        modules = _qr_modules(item.label.qr_payload or "")
+        if modules is None or to_px(edge, render_dpi) // (modules + 4) < 1:
+            raise ItemContentMismatchError(index, ("qr_payload",))
+        return
     qr_does_not_fit = has_qr(content_type) and not _qr_fits_at(
         item.label.qr_payload or "", box.w / 100, box.h / 100, render_dpi
     )
