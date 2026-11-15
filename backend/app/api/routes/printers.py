@@ -56,6 +56,7 @@ from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
 from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer import (
+    CalibrationPrintRead,
     MarkerRead,
     PrinterRead,
     PrinterStatus,
@@ -390,10 +391,19 @@ async def get_printer_status(
     runtime: RuntimeDep = None,
 ) -> PrinterStatus:
     """Return the latest cached status for a printer; the cache only, no probe."""
-    await _get_printer_or_404(session, printer_id)
+    printer = await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     status_ = await _cached_status(session, printer_id, runtime)
+    if printer.backend == "ipp":
+        # #344: the trays the newest sheet and calibration pages used, on every branch of the
+        # status (also never probed, not polled, stale): they come from the hub's own jobs.
+        trays = await jobs_repo.last_page_trays(session, printer_id)
+        status_.last_sheet_tray = trays.sheet_tray
+        if trays.calibration_tray is not None and trays.calibration_at is not None:
+            status_.last_calibration_print = CalibrationPrintRead(
+                tray=trays.calibration_tray, at=trays.calibration_at
+            )
     # #231: the flag is on every branch of the status (probed, stale, not polled, never probed);
     # the identity values are not part of this response.
     identity = await identity_repo.get(session, printer_id)

@@ -183,6 +183,17 @@ class RollColourUpdate(BaseModel):
     )
 
 
+class CalibrationPrintRead(BaseModel):
+    """The newest calibration page the hub printed: the tray it came from and when."""
+
+    tray: str
+    at: datetime
+
+    @field_serializer("at")
+    def _serialise_at(self, dt: datetime, _info: object) -> str:
+        return serialize_datetime_utc(dt, _info)
+
+
 class PrinterStatus(BaseModel):
     """Printer status sourced from the printer_status_cache table.
 
@@ -292,6 +303,21 @@ class PrinterStatus(BaseModel):
     trays: list[TrayStatusRead] | None = None
     jobs_ahead: int | None = Field(
         default=None, description="Jobs on the printer ahead of the hub's own"
+    )
+    last_sheet_tray: str | None = Field(
+        default=None,
+        description=(
+            "Tray key of the newest queued, printing or finished sheet page job of this printer "
+            "(any API key); None for tape printers and when none exists. Filled on every branch "
+            "of the status, also for an unpolled or stale printer."
+        ),
+    )
+    last_calibration_print: CalibrationPrintRead | None = Field(
+        default=None,
+        description=(
+            "Tray and time of the newest queued, printing or finished calibration page job of "
+            "this printer; None for tape printers and when none exists."
+        ),
     )
 
     @field_serializer("captured_at")

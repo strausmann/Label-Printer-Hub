@@ -6,14 +6,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import delete, exists, func, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.job import Job, JobState, is_page_payload, json_at
+from app.models.job import PAGE_KIND_EXPR, Job, JobState, is_page_payload, json_at
 from app.models.sheet import SheetCell
 
 
@@ -460,3 +460,57 @@ async def evict_terminal_older_than(
     result = await session.execute(stmt)
     await session.commit()
     return int(result.rowcount)  # type: ignore[attr-defined]
+
+
+class LastPageTrays(NamedTuple):
+    """The trays the newest sheet and calibration page jobs of one printer used."""
+
+    sheet_tray: str | None
+    calibration_tray: str | None
+    calibration_at: datetime | None
+
+
+# Jobs that count as "the tray just used": a failed or cancelled job may never have reached
+# the tray.
+_TRAY_STATES = (JobState.QUEUED.value, JobState.PRINTING.value, JobState.DONE.value)
+
+
+async def last_page_trays(session: AsyncSession, printer_id: UUID) -> LastPageTrays:
+    """The tray of the newest sheet page job and the tray and time of the newest calibration page.
+
+    One statement, scalar subqueries that each seek ``ix_jobs_printer_kind_created`` (printer,
+    kind, created_at) and read the newest row without a sort. The kind is compared through
+    ``PAGE_KIND_EXPR`` (the index text, or SQLite scans). No ``id`` tiebreak: two jobs of one
+    printer and kind with the same ``created_at`` are a harmless tie, either tray is one just
+    used, and a tiebreak outside the index would add a partial sort. The jobs of every API key
+    count: the tray describes the printer's recent use, not the caller's.
+    """
+
+    def newest(kind: str, value: Any) -> Any:
+        return (
+            select(value)
+            .where(
+                col(Job.printer_id) == printer_id,
+                literal_column(PAGE_KIND_EXPR) == kind,
+                col(Job.state).in_(_TRAY_STATES),
+            )
+            .order_by(col(Job.created_at).desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+
+    tray: Any = literal_column(json_at("$.tray"))
+    row = (
+        await session.execute(
+            select(
+                newest("sheet_page", tray),
+                newest("calibration_page", tray),
+                newest("calibration_page", col(Job.created_at)),
+            )
+        )
+    ).one()
+    return LastPageTrays(
+        sheet_tray=row[0] if isinstance(row[0], str) else None,
+        calibration_tray=row[1] if isinstance(row[1], str) else None,
+        calibration_at=row[2],
+    )

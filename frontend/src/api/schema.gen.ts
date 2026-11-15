@@ -1736,6 +1736,16 @@ export interface components {
              */
             scale_y: number;
         };
+        /**
+         * CalibrationPrintRead
+         * @description The newest calibration page the hub printed: the tray it came from and when.
+         */
+        CalibrationPrintRead: {
+            /** At */
+            at: string;
+            /** Tray */
+            tray: string;
+        };
         /** CalibrationPut */
         CalibrationPut: {
             /** @description The sheet type version the page was measured on (optional). */
@@ -2971,6 +2981,8 @@ export interface components {
              * @description 'page' for IPP page printers; None for tape printers
              */
             kind?: ("tape" | "page") | null;
+            /** @description Tray and time of the newest queued, printing or finished calibration page job of this printer; None for tape printers and when none exists. */
+            last_calibration_print?: components["schemas"]["CalibrationPrintRead"] | null;
             /**
              * Last Error
              * @description Exception message from the most recent failed probe
@@ -2981,6 +2993,11 @@ export interface components {
              * @description Age of the cached reading in seconds; for an offline page printer, since its last successful reading
              */
             last_probe_age_s?: number | null;
+            /**
+             * Last Sheet Tray
+             * @description Tray key of the newest queued, printing or finished sheet page job of this printer (any API key); None for tape printers and when none exists. Filled on every branch of the status, also for an unpolled or stale printer.
+             */
+            last_sheet_tray?: string | null;
             /** Markers */
             markers?: components["schemas"]["MarkerRead"][] | null;
             /**

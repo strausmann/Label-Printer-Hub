@@ -503,6 +503,25 @@
         "title": "CalibrationIn",
         "type": "object"
       },
+      "CalibrationPrintRead": {
+        "description": "The newest calibration page the hub printed: the tray it came from and when.",
+        "properties": {
+          "at": {
+            "title": "At",
+            "type": "string"
+          },
+          "tray": {
+            "title": "Tray",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tray",
+          "at"
+        ],
+        "title": "CalibrationPrintRead",
+        "type": "object"
+      },
       "CalibrationPut": {
         "properties": {
           "measured_on": {
@@ -3250,6 +3269,17 @@
             "description": "'page' for IPP page printers; None for tape printers",
             "title": "Kind"
           },
+          "last_calibration_print": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CalibrationPrintRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tray and time of the newest queued, printing or finished calibration page job of this printer; None for tape printers and when none exists."
+          },
           "last_error": {
             "anyOf": [
               {
@@ -3273,6 +3303,18 @@
             ],
             "description": "Age of the cached reading in seconds; for an offline page printer, since its last successful reading",
             "title": "Last Probe Age S"
+          },
+          "last_sheet_tray": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tray key of the newest queued, printing or finished sheet page job of this printer (any API key); None for tape printers and when none exists. Filled on every branch of the status, also for an unpolled or stale printer.",
+            "title": "Last Sheet Tray"
           },
           "markers": {
             "anyOf": [
