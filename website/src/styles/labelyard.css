@@ -369,3 +369,54 @@ main:has(.ly-home) .content-panel {
 .sl-markdown-content .ly-guide-figure.ly-guide-sheet {
   max-width: 22rem;
 }
+
+/* The table of causes on the calibration page: below 40rem each row is a block of its own with the
+   column heads as labels, so nothing scrolls sideways. The labels come from the language of the page. */
+@media (max-width: 40rem) {
+  .sl-markdown-content .ly-causes table {
+    display: block;
+    overflow: visible;
+  }
+
+  .sl-markdown-content .ly-causes thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .sl-markdown-content .ly-causes tbody,
+  .sl-markdown-content .ly-causes tr,
+  .sl-markdown-content .ly-causes td {
+    display: block;
+  }
+
+  .sl-markdown-content .ly-causes tr {
+    margin-block: 0.75rem 0;
+    padding: 0.75rem 1rem;
+    background: var(--sunken);
+    border-radius: var(--r-2);
+  }
+
+  .sl-markdown-content .ly-causes td {
+    padding: 0.25rem 0;
+    border: 0;
+  }
+
+  .sl-markdown-content .ly-causes td::before {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--ink-2);
+  }
+
+  .sl-markdown-content .ly-causes td:nth-child(1)::before { content: "What you see"; }
+  .sl-markdown-content .ly-causes td:nth-child(2)::before { content: "Cause"; }
+  .sl-markdown-content .ly-causes td:nth-child(3)::before { content: "What to do"; }
+  .sl-markdown-content .ly-causes td:nth-child(1) { font-weight: 700; }
+  .sl-markdown-content .ly-causes td:nth-child(1)::before { font-weight: 700; }
+  :lang(de) .sl-markdown-content .ly-causes td:nth-child(1)::before { content: "Was du siehst"; }
+  :lang(de) .sl-markdown-content .ly-causes td:nth-child(2)::before { content: "Ursache"; }
+  :lang(de) .sl-markdown-content .ly-causes td:nth-child(3)::before { content: "Was tun"; }
+}

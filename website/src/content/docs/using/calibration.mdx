@@ -81,15 +81,19 @@ Print the check page. It is the same page, now with the correction. If every cro
 
 When the page is still off, the deviation tells you where to look. Compare what you see with this table:
 
+<div class="ly-causes">
+
 | What you see | Cause | What to do |
 |---|---|---|
 | The same shift in one direction everywhere, on every sheet type | Offset of the printer or tray | Calibrate; the correction removes it |
-| The deviation grows with the distance, in both directions and on every sheet type | Scale of the printer (it prints too large or too small) | Calibrate |
-| The deviation grows differently downwards than sideways, and differs left and right | Rotation (the printer prints skewed) | Calibrate |
+| The deviation grows with the distance, on every sheet type, possibly by different amounts across and down | Scale of the printer (it prints too large or too small) | Calibrate |
+| A vertical line drifts sideways towards the bottom, or the rows tilt (one side higher than the other) | Rotation (the printer prints skewed) | Calibrate |
 | The same shift or a drift on one sheet type only, while other sheets sit with the same correction | Measurements of the sheet type (margin, pitch, label height) | Correct the sheet type (add a new version), not the printer |
 | A jump between two neighbouring gaps | Sheet type (gap, number of columns or rows) | Correct the sheet type |
 | A sideways shift that differs from sheet to sheet | Paper feed | Push the sheet against the guide and print a second one; change the correction only if it repeats |
 | An even remainder below about 0.2 mm | Reading accuracy | Do nothing |
+
+</div>
 
 A wrong pitch does not show as a jump but as a steady drift, much like a printer scale error. That is why the sheet types matter: if one type drifts while the others sit with the same correction, look at that type. One real case was a sheet type whose row pitch was 9.98 instead of 10.0 mm.
 

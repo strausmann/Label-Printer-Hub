@@ -113,7 +113,7 @@ export function ReadingGuide({ type }: { type?: { geometry: { cols: number; rows
                 : t`On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them.`}
             </li>
             <li>{t`Print the check page in step 3. If every crossing is within ±0.5 mm, you are done; if not, measure again.`}</li>
-            <li>{t`Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate.`}</li>
+            <li>{t`Still off after the check print? The card at the end of step 3 says whether to calibrate again or to correct the sheet type.`}</li>
           </ol>
 
           <a

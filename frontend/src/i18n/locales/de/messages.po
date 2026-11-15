@@ -3157,10 +3157,6 @@ msgstr "Drucker ist angehalten"
 msgid "Printer is stopped: {reasons}"
 msgstr "Drucker ist angehalten: {reasons}"
 
-#: src/features/calibration/guide/ReadingGuide.tsx
-msgid "Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate."
-msgstr "Drucker oder Bogentyp? Abweichungen, die gleichmäßig über die Seite wachsen (Versatz, Maßstab, Drehung), kommen vom Drucker; die Berechnung gleicht sie aus. Ein Sprung zwischen benachbarten Lücken kommt von der Geometrie des Bogentyps: Korrigiere zuerst den Bogentyp und kalibriere dann."
-
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
 msgstr "Der Druckerstatus ist unbekannt"
@@ -4050,6 +4046,10 @@ msgstr "Schritte"
 msgid "Still off after the check print?"
 msgstr "Noch daneben nach dem Kontrolldruck?"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Still off after the check print? The card at the end of step 3 says whether to calibrate again or to correct the sheet type."
+msgstr "Noch daneben nach dem Kontrolldruck? Die Karte am Ende von Schritt 3 sagt, ob du noch einmal kalibrierst oder den Bogentyp korrigierst."
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Stock entry"
 msgstr "Bestandseintrag"
@@ -4427,8 +4427,8 @@ msgid "The details could not be loaded."
 msgstr "Die Details konnten nicht geladen werden."
 
 #: src/features/calibration/guide/StillOff.tsx
-msgid "The deviation grows with the distance, on every sheet type"
-msgstr "Die Abweichung wächst mit dem Abstand, auf jedem Bogentyp"
+msgid "The deviation grows with the distance, or a line leans or the rows tilt, on every sheet type"
+msgstr "Die Abweichung wächst mit dem Abstand, oder eine Linie steht schief oder die Zeilen kippen, auf jedem Bogentyp"
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The device at this address changed while you were looking. Check the values shown now before you decide."

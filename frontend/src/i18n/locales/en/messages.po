@@ -3157,10 +3157,6 @@ msgstr "Printer is stopped"
 msgid "Printer is stopped: {reasons}"
 msgstr "Printer is stopped: {reasons}"
 
-#: src/features/calibration/guide/ReadingGuide.tsx
-msgid "Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate."
-msgstr "Printer or sheet type? Deviations that grow evenly across the page (offset, scale, rotation) come from the printer; the fit corrects them. A jump between neighbouring gaps comes from the geometry of the sheet type: correct the sheet type first, then calibrate."
-
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
 msgstr "Printer status unknown"
@@ -4050,6 +4046,10 @@ msgstr "Steps"
 msgid "Still off after the check print?"
 msgstr "Still off after the check print?"
 
+#: src/features/calibration/guide/ReadingGuide.tsx
+msgid "Still off after the check print? The card at the end of step 3 says whether to calibrate again or to correct the sheet type."
+msgstr "Still off after the check print? The card at the end of step 3 says whether to calibrate again or to correct the sheet type."
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Stock entry"
 msgstr "Stock entry"
@@ -4427,8 +4427,8 @@ msgid "The details could not be loaded."
 msgstr "The details could not be loaded."
 
 #: src/features/calibration/guide/StillOff.tsx
-msgid "The deviation grows with the distance, on every sheet type"
-msgstr "The deviation grows with the distance, on every sheet type"
+msgid "The deviation grows with the distance, or a line leans or the rows tilt, on every sheet type"
+msgstr "The deviation grows with the distance, or a line leans or the rows tilt, on every sheet type"
 
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "The device at this address changed while you were looking. Check the values shown now before you decide."
