@@ -841,6 +841,181 @@ state (`SheetSection.tsx:109,187-188`). Sheet and calibration jobs store the tra
 - **R-344-5 (fresh values):** a calibration print and a sheet print invalidate the printer's status query in
   `onSettled` (a partial sheet print, `print_interrupted`, has queued jobs too), so the fields follow without a reload.
 
+## 10h. #346 — Swatch-style Spoolman label
+
+The issue's layout, data mapping and scaling were approved by the maintainer on 2026-11-15 with mockup v3:
+
+![Mockup v3 of the swatch-style Spoolman label, 62 × 36 mm, two example spools](assets/346-spoolman-swatch-mockup-v3.png)
+
+Controller rulings (binding, 2026-11-15): location prints when set; footer fields print only with a value; field
+labels in the hub language; reference 62 × 36 mm on QL 62 mm endless; drop order footer → column 2 → column 1, vendor,
+bar, colour name and QR always stay; it fits sheet cells such as the L4736REV cell; remaining weight and price are never
+printed; no third-party logos; the spool's `flowdynamics`/`flowrate` override the filament's; the extra-field keys are
+configurable, with the maintainer's Spoolman keys as defaults.
+
+Findings: the Spoolman lookup builds `title = "{vendor} {name}"`, `primary_id = "#{id}"`, `qr_payload =
+"{base}/spool/show/{id}"` and the English `"{g}g remaining"` as `secondary` (`integrations/spoolman/plugin.py:69-93`);
+nothing else of the spool reaches `LabelData` (`schemas/label_data.py`). A label is chosen by `ContentType`
+(`schemas/content_type.py`), one required-field table for tape and sheets (`REQUIRED_FIELDS`,
+`services/layout_engine.py:37-45`); tape renders through `LayoutEngine.render` (62 mm across/along in
+`services/ql_layout.py`, orientation from `resolve_layout`), sheet cells through `CellRenderer`
+(`sheets/cell_render.py`), which maps QR types to text types on a type without QR (`_MAPPED_WITHOUT_QR`) and decides
+"has a QR" by the prefix `qr_` in five places (`cell_render.py:419`, `sheets/print_service.py:654,1130,1151,1835`).
+The tape preview is drawn from the browser's copy of the lookup (`POST /api/v1/render/preview` with raw data built from
+`LookupResult`, `frontend/src/features/lookup/api.ts:41-56`; `LookupResult.extra` carries `secondary` today,
+`api/routes/lookup.py:106-117`); a print job looks the item up again on the server and stores
+`label.model_dump()` in its payload (`services/print_service.py:241`), a sheet cell stores the same
+(`sheets/print_service.py:1253`). The sheet preview resolves lookups on the server and pastes the QR of a QR type at
+the cell's origin with edge `qr_edge_px` (`_render_cell`, `sheets/print_service.py:630-672`). The L4736REV cell is
+45.7 × 21.2 mm with unknown corner radius (`seed/sheet_types.json`), so its content box is 42.5 × 18.0 mm
+(`content_box`, inset 1.6 mm). Text in a sheet cell never goes below a cap height of 1.6 mm (`MIN_CAP_HEIGHT_MM`,
+OC-27). Language and time zone are `general.language` and `general.time_zone` (`settings_store/registry.py:87-89`).
+
+- **R-346-1 (a content type of its own):** a new `ContentType.SPOOL_SWATCH = "spool_swatch"` with
+  `REQUIRED_FIELDS = ("qr_payload", "swatch")`. `LabelData` gains `swatch: SpoolSwatch | None = None`
+  (`app/schemas/spool_swatch.py`). One helper `has_qr(ct)` (`qr_` prefix **or** `spool_swatch`) replaces the five
+  prefix checks. On a sheet type without QR, `spool_swatch` maps to `text_two_lines` (title `"{vendor} {name}"`,
+  primary id `#{id}`), flagged as mapped like every QR type (spec 12.5). Other integrations never fill `swatch`;
+  a lookup of another app with `spool_swatch` is refused by the required-field check (422
+  `content_type_data_mismatch`, missing `swatch`).
+- **R-346-2 (layout, from the mockup):** inside the content box, top to bottom: the **vendor line** (vendor name as
+  bold text, left; the colour hex codes right-aligned in the same block, upper case `#RRGGBB`, at most two lines —
+  two colours stacked, three or more show the first and `+N`); the **bar**, full width, black with the filament
+  name in white bold; the **colour name** line; below it on the left the **columns** (column 1 print settings, column
+  2 spool), bottom-aligned; on the right the **QR column**: the QR code to the spool, square, bottom-aligned, with the
+  spool caption `#{id}` centred under it; at the bottom the **footer**, a 0.2 mm rule across the full width and one line.
+  Each column row is a bold field label and a regular value. A row without a value is left out (rows move up; nothing
+  prints "—"); a column without any row takes no slot. Fonts: the hub's label fonts (Atkinson Hyperlegible Next bold
+  and regular), black on white, thresholded like the tape layouts. No logo, no image.
+- **R-346-3 (data mapping):** the Spoolman plugin builds `SpoolSwatch` from `GET /api/v1/spool/{id}`:
+
+  | Field | Source | Fallback / rule |
+  |---|---|---|
+  | vendor | `filament.vendor.name` | `filament.material`; neither: the line stays empty (its height is kept) |
+  | name (bar) | `filament.name` | `filament.material`; neither: `#{id}` |
+  | colour name | filament extra field `color_name` (key configurable, R-346-5) | none: the line stays empty (height kept) |
+  | colour hexes | `filament.multi_color_hexes` (comma-separated) | `filament.color_hex`; 6 or 8 hex digits, alpha dropped |
+  | Nozzle | filament extra `nozzle_temperature` (integer_range) | `filament.settings_extruder_temp` |
+  | Bed | `filament.settings_bed_temp` | — |
+  | Pressure Adv. (K) | spool extra `flowdynamics`, else filament extra `flowdynamics` (float) | — |
+  | Flow ratio | spool extra `flowrate`, else filament extra `flowrate` (float) | — |
+  | Drying | filament extra `drying_condiftions_temp` (integer) and `drying_condiftions_time` (float_range, hours) | either alone prints alone |
+  | Empty spool | `spool.spool_weight` | `filament.spool_weight` |
+  | Net | `spool.initial_weight` | `filament.weight` |
+  | Location | `spool.location` | — |
+  | Footer | `filament.diameter`, `filament.density`, `spool.lot_nr`, `spool.first_used` | each part only with a value |
+  | Caption, QR | `spool.id`; `{base}/spool/show/{id}` as today | — |
+
+  Spoolman returns extra-field values as JSON text. A value is parsed with `json.loads` and accepted only in the shape
+  of its field type (integer, float, two-element list for a range; a range with one `null` end prints the other end);
+  anything else leaves the row out and is logged at DEBUG with the key, never the value. Remaining weight, used
+  weight and price are never read into `SpoolSwatch` (anti-goal: they change; the QR leads to the live values). The
+  lookup's `title`, `primary_id`, `qr_payload` and `secondary` stay as they are, so every other content type prints
+  exactly as before.
+- **R-346-4 (bounds):** `SpoolSwatch` is frozen, `extra="forbid"`, every text ≤ 64 characters after
+  `sanitise_text` (longer is cut at the lookup, refused with 422 on raw input), at most 16 hex codes, temperatures
+  0–600 °C, weights 0–100 000 g, K 0–10, flow ratio 0–10, drying time 0–1000 h, diameter 0–10 mm, density 0–30 g/cm³,
+  all floats finite, the opened date as ISO text `YYYY-MM-DD` (the job payload stores `label.model_dump()` in a JSON
+  column, so the model holds no `date` object); a value outside its range is left out at the lookup. The same model is accepted as
+  `RawLabelData.swatch` (preview and raw print), so the renderer never sees unbounded input.
+- **R-346-5 (configurable keys):** six settings, kind `str`, no environment lock, read at every lookup:
+
+  | Setting | Default |
+  |---|---|
+  | `integrations.spoolman.label.nozzle_field` | `nozzle_temperature` |
+  | `integrations.spoolman.label.pressure_advance_field` | `flowdynamics` |
+  | `integrations.spoolman.label.flow_ratio_field` | `flowrate` |
+  | `integrations.spoolman.label.drying_temp_field` | `drying_condiftions_temp` (Spoolman's spelling) |
+  | `integrations.spoolman.label.drying_time_field` | `drying_condiftions_time` |
+  | `integrations.spoolman.label.color_name_field` | `color_name` (QU6) |
+
+  The pressure-advance and flow-ratio keys are read on the spool first, then on the filament. An empty key reads
+  nothing. A key is only ever a dictionary lookup in the response, never part of a URL. The settings page shows the
+  six fields under **Settings > Integrations > Spoolman**, in a collapsed group **Label fields** / „Etikettenfelder“.
+- **R-346-6 (texts and numbers, hub language):** `SpoolSwatch.language` is `general.language` at lookup time, stored
+  with the label, so a re-render after a restart prints the same words (as R-284). Field labels live in
+  `SWATCH_TEXTS: Final[dict[str, dict[str, str]]]` with an `en` fallback:
+
+  | key | en | de |
+  |---|---|---|
+  | nozzle | Nozzle | Düse |
+  | bed | Bed | Bett |
+  | pressure_advance | Pressure Adv. | Pressure Adv. |
+  | flow_ratio | Flow ratio | Flussrate |
+  | drying | Drying | Trocknung |
+  | empty_spool | Empty spool | Leerspule |
+  | net | Net | Netto |
+  | location | Location | Lagerort |
+  | lot | Lot {v} | Charge {v} |
+  | opened | opened {v} | geöffnet {v} |
+
+  Numbers: decimal point in en, decimal comma in de, no thousands separator. Temperatures `210–230 °C` (en dash; equal
+  ends print one value), K and flow ratio at most three decimals with trailing zeros removed (`0.025`, `0,96`),
+  drying `60 °C · 6–8 h` (time at most one decimal), weights whole grams rounded half up (`140 g`), diameter
+  `Ø 1.75 mm` (two decimals, trailing zeros removed), density `1.24 g/cm³`, opened date from `spool.first_used`
+  converted to `general.time_zone` at lookup: en `2026-11-03`, de `03.11.2026`. Footer parts joined with ` · `.
+- **R-346-7 (metrics):** all sizes in mm, two metric sets that differ only in the row size:
+
+  | | Tape (QL 62) | Sheet cell |
+  |---|---|---|
+  | Row cap height / pitch (rows, caption, hex codes, footer) | 1.25 / 1.9 | 1.6 / 2.4 (OC-27) |
+  | Vendor block (cap 3.0) V | 4.8 | 4.8 |
+  | Bar (text cap 2.2) B, gap under it | 3.4, 0.2 | 3.4, 0.2 |
+  | Colour line (cap 2.0) C | 3.0 | 3.0 |
+  | Column 1 label / value slot | 11.5 / 9.4 | 14.8 / 12.0 |
+  | Column 2 label / value slot | 10.6 / 10.6 | 13.5 / 13.6 |
+  | Label–value gap, column gap, gap to QR | 0.8, 1.2, 1.0 | 0.8, 1.2, 1.0 |
+  | Footer (rule 0.2 + gap 0.4 + one row) F | 2.5 | 3.0 |
+  | QR edge, minimum / maximum (quiet zone inside) | 8.0 / 14.0 | 7.0 / 14.0 |
+  | Colour line minimum width | 12.0 | 12.0 |
+
+  The slots come from the widest en/de field label and the reference values (`210–230 °C`, `60 °C · 6–8 h`) measured
+  with the bundled fonts at 300 dpi; a test keeps every label of `SWATCH_TEXTS` inside its slot (Task 15h). A value
+  longer than its slot ends with `…` and flags the label `truncated`; so do the bar, vendor, colour and footer lines.
+- **R-346-8 (drop tiers, exact thresholds):** the tier is the **first** of the list whose width **and** height the
+  content box meets (both ≥, compared in hundredths of a millimetre); thresholds are fixed per metric set, not per
+  spool, so all cells of a sheet print the same tier:
+
+  | Tier | Shows | Sheet cell w × h ≥ | Tape metrics w × h ≥ |
+  |---|---|---|---|
+  | `full` | everything | 64.7 × 24.0 | 53.9 × 21.5 |
+  | `no_footer` | without the footer | 64.7 × 21.0 | 53.9 × 19.0 |
+  | `first_column` | without footer and column 2 | 35.6 × 21.0 | 30.7 × 19.0 |
+  | `core` | vendor, bar, colour, QR + caption | 20.0 × 17.8 | 21.0 × 18.3 |
+  | — | refused: 422 `content_type_data_mismatch`, missing `label_size` | below `core` | below `core` |
+
+  Heights: `full` = V + B + 0.2 + max(C + 4 rows, QR min + caption) + F; `no_footer`/`first_column` drop F; `core` =
+  V + B + 0.2 + max(C, QR min + caption). Widths: `full`/`no_footer` = col 1 + 1.2 + col 2 + 1.0 + QR min;
+  `first_column` = col 1 + 1.0 + QR min; `core` = 12.0 + 1.0 + QR min. The strict order means a narrow but tall box
+  drops the footer too before it drops column 2, as the ruling orders. The QR edge is the largest square that fits
+  the QR column's height (to the footer rule or the box bottom, minus the caption) and the width left after the shown
+  columns, capped at 14.0 mm; the symbol follows `build_qr` (whole-pixel modules, four quiet modules). A payload whose
+  symbol does not fit that edge is refused like any QR (`QrDoesNotFitError` on sheets, `QrPayloadTooLongError` on
+  tape).
+- **R-346-9 (tape):** `spool_swatch` prints only on 62 mm endless, across, as a fixed image of 696 × 425 px (62 ×
+  36.0 mm at 300 dpi) with a margin of 1.0 mm on every side, content box 56.9 × 34.0 mm → tier `full`. The printer's
+  stored layout default does not apply to it (a stored `along` would refuse every swatch); `layout_preset` is
+  ignored; an explicit `orientation: "along"` or another tape width answers 409 `unsupported_tape`, as `across` on a
+  tape without an across layout does today.
+- **R-346-10 (sheets):** `RasterCellRenderer` draws `spool_swatch` with the sheet metrics into the content box.
+  Examples from the seed types: L4736REV and Herma 4097 → `core`; Avery 7160, Herma 4614, Avery 5160 →
+  `first_column`; Avery 5161 → `no_footer`; Avery 7165, 3474 → `full`; Avery L4732, 5167, Herma 4607 → refused.
+  `check_item_fits` refuses before anything is reserved with the same rule (tier and QR edge), so a refused item
+  names its index (`label_size` or `qr_payload`) and no cell is reserved.
+- **R-346-11 (preview equals print):** one function draws the swatch (`render_swatch`) for the tape job, the tape
+  preview, the sheet job and the sheet preview. The lookup route returns `extra.swatch` (the `SpoolSwatch` as JSON)
+  next to `secondary`; the item view and the cart send it back as `data.swatch` with `qr_payload = url` to
+  `/render/preview`, so for unchanged Spoolman data the preview PNG and the job's image are pixel-identical (the job
+  looks the spool up again, so a spool changed in between prints its new values — the same rule as every lookup
+  label). The sheet preview pastes its 150 dpi symbol or placeholder into the swatch's QR box (`SwatchLayout.qr`),
+  not at the cell origin. `POST /api/v1/render/check` (#285) checks `spool_swatch` through the same engine call.
+- **R-346-12 (UI):** the item view and cart offer **Spool label** / „Spulenetikett“ only for Spoolman items, as the
+  first choice and the default for them (QU7); other items keep the existing list and default. A preview on a tape
+  printer without 62 mm shows the existing "not available for this tape" message. No new dialog; the settings group
+  of R-346-5 is a react-aria `Disclosure` with six `SettingField`s.
+- **R-346-13 (scope):** the Spoolman webhook keeps `qr_two_lines`/`qr_three_lines` with the remaining-weight line of
+  R-284 (QU8); other DK widths than 62 mm follow with #258; the vendor stays text.
+
 ## Additions to "11. Rulings index"
 
 | ID | Ruling |
@@ -853,6 +1028,7 @@ state (`SheetSection.tsx:109,187-188`). Sheet and calibration jobs store the tra
 | R-337-1…6 | Collapsible guide in step 2; two black-only inline SVG figures with text legends; the #337 steps; website page en + de; website SVGs rendered from the app's components without accessible names; the real installation's screenshot as cleared by the maintainer, metadata stripped |
 | R-338-1…4 | Add to cart in the item view's sheet section; type via `lastType`, sheet and tray via `/cart?sheet=&tray=`; status line with Open cart; no cells, no server cart |
 | R-344-1…6 | `last_sheet_tray` and `last_calibration_print` on every page-printer status branch, from stored jobs (queued/printing/done); preselect address > last sheet tray > default > first, only after a status fetched after mount; the tray named in every step; warnings before saving, the requested-tray one only for a calibration print of the last 24 h newer than the stored values; status refreshed in `onSettled`; one statement on a new index |
+| R-346-1…13 | `spool_swatch` content type with `LabelData.swatch` and one `has_qr`; layout of mockup v3; data mapping with spool-over-filament overrides and JSON-parsed extra fields, no remaining weight or price; bounded `SpoolSwatch`, also as raw input; six configurable extra-field keys; field labels and number format in the hub language, stored with the label; tape and sheet metrics; four drop tiers with fixed thresholds, strict order; tape only 62 mm across, 62 × 36 mm; sheet fit checked before reservation; one renderer for job and preview, `extra.swatch` round trip, preview QR in the swatch box; Spoolman-only choice in the UI; webhook unchanged |
 
 ## Additions to "Questions for the maintainer"
 
@@ -863,6 +1039,14 @@ state (`SheetSection.tsx:109,187-188`). Sheet and calibration jobs store the tra
 | QU3 | Device check of #331 on Android phone and tablet, browser tab and installed app. | Before the fix: done on 1.6.0-rc.4, fails in both modes (comment on #331, 22:49Z) — confirms the issue. **Still open: the same check on a build with 15c**; #331 stays open until he reports it, Task 16 does not start the release without it. |
 | QU4 | #337's optional annotated photo of a real crossing. | **Answered 2026-11-14: ok** — left out of 1.7.0, stays in #240. |
 | QU5 | The real-installation screenshot file (R-337-6). | **Answered 2026-11-14: his real, unmarked screenshot may be used.** The controller puts the file into the 15e clone at task start; 15e Step 4 crops and strips it. The fixture fallback stays only for the case the file is not in hand. |
+| QU6 | #346: Spoolman has no colour-name field. Where does the colour name ("Dark Gray") come from? | Recommendation: a filament extra field, key setting `integrations.spoolman.label.color_name_field`, default `color_name`; without a value the line stays empty (R-346-3). |
+| QU7 | #346: is the swatch the default layout for Spoolman items in the item view and cart? | Recommendation: yes, first and default for Spoolman only (R-346-12). |
+| QU8 | #346: the Spoolman webhook prints the remaining weight (R-284), the swatch must never. Keep the webhook on `qr_two_lines`/`qr_three_lines`? | Recommendation: yes, unchanged in 1.7.0 (R-346-13); a webhook layout setting is a follow-up. |
+| QU9 | #346: the mockup shows the caption `SP-0042`; the hub's spool id is `#42` everywhere else. | Recommendation: `#{id}` (R-346-2). |
+| QU10 | #346: on sheets the rows keep the 1.6 mm cap floor (OC-27), so cells under 64.7 mm content width (e.g. Avery 7160, 63.5 mm cells) drop column 2. Use the tape row size (1.25 mm) on sheets instead? | Recommendation: keep OC-27 (R-346-7, R-346-10). |
+| QU11 | #346: Net and Empty spool read the spool's own `initial_weight`/`spool_weight` first, then the filament's. | Recommendation: yes, the same "the spool wins" rule as for `flowdynamics`/`flowrate` (R-346-3). |
+| QU12 | #346: "62 × 36 mm" as the image length (36.0 mm) or as the cut label? The QL keeps about 3 mm feed at each end (`ql_layout.py` docstring). | Recommendation: the image is 36.0 mm; the real print (acceptance) decides whether to shorten it to 30 mm. |
+| QU13 | #346: the smallest QR is 7.0 mm (sheets) / 8.0 mm (tape) incl. quiet zone, about 0.17 mm modules for a version-4 URL. | Recommendation: keep; the maintainer's real print on an L4736REV cell checks that a phone scans it. |
 
 ---
 

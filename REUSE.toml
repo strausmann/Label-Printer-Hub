@@ -83,10 +83,12 @@ path = [
 SPDX-FileCopyrightText = "2026 Björn Strausmann and Labelyard contributors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
-# Data format: binary images (screenshots of the web app, layout test fixtures).
+# Data format: binary images (screenshots of the web app, layout test fixtures, approved
+# design mockups referenced by the specs).
 [[annotations]]
 path = [
   "docs/screenshots/*.png",
+  "docs/superpowers/specs/assets/*.png",
   "website/src/assets/screens/*.webp",
   "backend/tests/fixtures/ql_layout/*.png",
 ]
