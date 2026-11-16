@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.6.2](https://github.com/strausmann/labelyard/compare/v1.6.1...v1.6.2) (2026-11-16)
+
+### Bug Fixes
+
+* **deps:** update form-data to 4.0.6 in the docs site (GHSA-hmw2-7cc7-3qxx) ([#369](https://github.com/strausmann/labelyard/issues/369)) ([a5bac01](https://github.com/strausmann/labelyard/commit/a5bac010b77b37bc1b3a41ce49c04791db06d4e7))
+
 ## [1.6.1](https://github.com/strausmann/labelyard/compare/v1.6.0...v1.6.1) (2026-11-15)
 
 ### Bug Fixes
