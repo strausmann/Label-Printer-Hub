@@ -49,6 +49,28 @@ function control(tag: string, attributes: Record<string, string> = {}): HTMLElem
   return node;
 }
 
+/** A stand-in `visualViewport` (and window height) that a test resizes like a keyboard or a pinch would. */
+function stubViewport(height: number) {
+  const listeners = new Set<() => void>();
+  const vv = {
+    height,
+    offsetTop: 0,
+    scale: 1,
+    addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+  };
+  vi.stubGlobal("innerHeight", height);
+  vi.stubGlobal("visualViewport", vv);
+  return {
+    resize(next: number, options: { window?: boolean; scale?: number } = {}) {
+      vv.height = next;
+      vv.scale = options.scale ?? 1;
+      if (options.window) vi.stubGlobal("innerHeight", next);
+      listeners.forEach((l) => l());
+    },
+  };
+}
+
 async function showUpdate() {
   // The bell lists entries once its sources answer.
   mockApi({ "GET /api/v1/printers": [], "GET /api/v1/jobs": [] });
@@ -167,6 +189,41 @@ describe("the update notice", () => {
     expect(toast()).toBeNull();
     vv.height = 800;
     await act(async () => listeners.forEach((l) => l()));
+    expect(toast()).not.toBeNull();
+  });
+
+  it("Escape closes the toast like Later", async () => {
+    await showUpdate();
+    within(toast()!).getByRole("button", { name: "Later" }).focus();
+    await userEvent.keyboard("{Escape}");
+    expect(toast()).toBeNull();
+    expect(sidebarReload()).not.toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("the toast comes back when Android's Back closes the keyboard and the field keeps focus", async () => {
+    stubPointer(true);
+    // Chromium shrinks the layout viewport with the keyboard: window and visual viewport stay equal.
+    const viewport = stubViewport(800);
+    await showUpdate();
+    const field = control("input", { type: "search", "aria-label": "Find" });
+    await act(async () => field.focus());
+    expect(toast()).toBeNull();
+    await act(async () => viewport.resize(400, { window: true }));
+    expect(toast()).toBeNull();
+    // Back: the keyboard goes, the field keeps the focus.
+    await act(async () => viewport.resize(800, { window: true }));
+    expect(document.activeElement).toBe(field);
+    expect(toast()).not.toBeNull();
+    // A tap on the focused field opens the keyboard again: the toast steps aside again.
+    await act(async () => viewport.resize(400, { window: true }));
+    expect(toast()).toBeNull();
+  });
+
+  it("pinch-zoom does not hide the toast", async () => {
+    const viewport = stubViewport(800);
+    await showUpdate();
+    await act(async () => viewport.resize(300, { scale: 2.5 }));
     expect(toast()).not.toBeNull();
   });
 

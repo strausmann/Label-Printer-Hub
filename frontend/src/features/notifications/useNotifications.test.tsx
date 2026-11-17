@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { noteServerVersion, resetUpdatesForTest, setVersionCheckForTest } from "../../app/updates";
+import { noteServerVersion, resetUpdatesForTest, setVersionCheckForTest, startUpdates } from "../../app/updates";
 import { job, mockApi, PRINTER_A, status } from "../test-api";
 import { useAttention, useNotifications } from "./useNotifications";
 
@@ -49,4 +49,20 @@ describe("useNotifications: a new version (#354)", () => {
     await waitFor(() => expect(result.current.entries.some((e) => e.textKey === "job.failed")).toBe(true));
     expect(result.current.entries.some((e) => e.kind === "update")).toBe(false);
   });
+
+  it("the entry keeps its id when the versions match while a worker waits", async () => {
+    setup();
+    let needRefresh!: () => void;
+    startUpdates((options) => {
+      needRefresh = options.onNeedRefresh;
+      return async () => {};
+    });
+    const { result } = renderHook(() => useNotifications(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    act(() => noteServerVersion("1.6.0"));
+    act(() => needRefresh());
+    act(() => noteServerVersion("1.5.0"));
+    expect(result.current.entries.filter((e) => e.kind === "update").map((e) => e.id)).toEqual(["update:1.6.0"]);
+  });
 });
+

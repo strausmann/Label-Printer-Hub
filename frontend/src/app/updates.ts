@@ -43,7 +43,8 @@ let stopUpdateChecks: (() => void) | null = null;
 let checkedFor: string | null = null;
 // Called when a worker starts waiting; the Reload button waits for it with a time limit.
 const workerWaiters = new Set<() => void>();
-// The newest version the hub reported that differs from this bundle; null while they match.
+// The newest version the hub reported that differs from this bundle; null while nothing waits. It outlives the
+// mismatch while a worker fetched for it still waits.
 let serverVersion: string | null = null;
 // When this page first saw a new version waiting (ISO); null while none waits.
 let detectedAt: string | null = null;
@@ -55,7 +56,10 @@ const listeners = new Set<() => void>();
 export interface UpdateNotice {
   /** A new version waits: a waiting service worker, or the hub runs another version than this bundle. */
   waiting: boolean;
-  /** The newest version the hub reported that differs from this bundle; null for a waiting worker without a mismatch. */
+  /**
+   * The newest version the hub reported that differs from this bundle; null for a waiting worker that no mismatch named.
+   * Kept while such a worker waits after the versions match again, so the notice and its entry id stay the same.
+   */
   version: string | null;
   /** ISO time this page first saw a version waiting; null while none waits. */
   detectedAt: string | null;
@@ -272,7 +276,8 @@ export function noteServerVersion(reported: string | null | undefined): void {
     checkedFor = null;
     if (versionMismatch) {
       versionMismatch = false;
-      serverVersion = null;
+      // A worker that still waits was fetched for that version: the notice keeps naming it (and its entry its id).
+      if (!waitingWorker) serverVersion = null;
       emit();
     }
     return;

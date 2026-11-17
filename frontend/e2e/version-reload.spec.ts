@@ -57,7 +57,7 @@ test.describe("new server version", () => {
         for (const view of views) {
           await page.setViewportSize({ width: view.width, height: view.height });
           await expect(banner).toBeVisible();
-          await page.screenshot({ path: resolve(SHOTS, `task-15m-${view.name}-${scheme}.png`) });
+          await page.screenshot({ path: resolve(SHOTS, `task-18b-${view.name}-${scheme}.png`) });
         }
       }
       await page.emulateMedia({ colorScheme: "light" });

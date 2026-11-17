@@ -168,7 +168,8 @@ describe("the update notice", () => {
     const since = result.current.detectedAt;
     act(() => noteServerVersion("1.0.0"));
     expect(result.current.waiting).toBe(true);
-    expect(result.current.version).toBeNull();
+    // The worker that waits is the one fetched for 1.1.0: the notice keeps naming it, so its entry keeps its id.
+    expect(result.current.version).toBe("1.1.0");
     expect(result.current.detectedAt).toBe(since);
   });
 

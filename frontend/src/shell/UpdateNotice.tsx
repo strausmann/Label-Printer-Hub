@@ -27,20 +27,50 @@ function isTextField(node: EventTarget | null): boolean {
 
 const coarsePointer = () => window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
 
+/** The visible height, or null while the page is pinch-zoomed (a zoomed visual viewport says nothing about a keyboard). */
+function unzoomedHeight(): number | null {
+  const scale = window.visualViewport?.scale ?? 1;
+  return scale === 1 ? readViewport().height : null;
+}
+
 /**
  * Is the on-screen keyboard (probably) open? Chromium shrinks the layout viewport with it, so the heights compare equal
- * there: a focused text field on a touch device counts. Safari shrinks only the visual viewport, which is measured.
+ * there: a focused text field on a touch device counts, until the visible area is back at the height it had when the
+ * field got the focus after having shrunk (Android's Back closes the keyboard and leaves the field focused). Safari
+ * shrinks only the visual viewport, which is measured against the window. A pinch-zoomed viewport changes nothing.
  */
 function useKeyboardUp(): boolean {
   const [typing, setTyping] = useState(() => isTextField(document.activeElement) && coarsePointer());
+  const [closedAgain, setClosedAgain] = useState(false);
   const [shrunk, setShrunk] = useState(false);
   useEffect(() => {
-    const onFocusIn = (event: FocusEvent) => setTyping(isTextField(event.target) && coarsePointer());
+    // The visible height when typing began, and whether the keyboard has shrunk it since.
+    let typingNow = isTextField(document.activeElement) && coarsePointer();
+    let base = unzoomedHeight() ?? window.innerHeight;
+    let sawKeyboard = false;
+    const measure = () => {
+      const height = unzoomedHeight();
+      if (height === null) return;
+      setShrunk(height < window.innerHeight - KEYBOARD_GAP_PX);
+      if (!typingNow) return;
+      if (height < base - KEYBOARD_GAP_PX) sawKeyboard = true;
+      setClosedAgain(sawKeyboard && height >= base - KEYBOARD_GAP_PX);
+    };
+    const begin = (next: boolean) => {
+      // A move from one field to the next keeps the measure of the first: the keyboard may already be up.
+      if (next && !typingNow) {
+        base = unzoomedHeight() ?? base;
+        sawKeyboard = false;
+      }
+      typingNow = next;
+      setTyping(next);
+      setClosedAgain(false);
+    };
+    const onFocusIn = (event: FocusEvent) => begin(isTextField(event.target) && coarsePointer());
     // Focus that leaves the page (or goes to nothing) has no related target: no field is focused then.
-    const onFocusOut = (event: FocusEvent) => setTyping(isTextField(event.relatedTarget) && coarsePointer());
+    const onFocusOut = (event: FocusEvent) => begin(isTextField(event.relatedTarget) && coarsePointer());
     document.addEventListener("focusin", onFocusIn);
     document.addEventListener("focusout", onFocusOut);
-    const measure = () => setShrunk(readViewport().height < window.innerHeight - KEYBOARD_GAP_PX);
     measure();
     const stop = subscribeViewport(measure);
     return () => {
@@ -49,7 +79,7 @@ function useKeyboardUp(): boolean {
       stop();
     };
   }, []);
-  return typing || shrunk;
+  return (typing && !closedAgain) || shrunk;
 }
 
 /**
@@ -99,9 +129,14 @@ export function UpdateToast() {
   if (!shown) return null;
   const version = notice.version;
   return (
+    // Escape on the toast is Later, as on the print cards; the keyboard path is the Later button itself.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <section
       ref={setNode}
       aria-label={t`New version`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") dismissUpdateToast();
+      }}
       className="update-toast fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 rounded-r3 px-4 py-3 shadow-lg lg:inset-x-auto lg:right-6 lg:bottom-6 lg:w-[28rem]"
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
