@@ -154,8 +154,11 @@ async def check_items(request: RenderCheckRequest, lookups: _Lookups) -> RenderC
         # escaped would leave the sibling lookups running and holding the shared bound.
         try:
             return await _checked(key)
-        except Exception:
-            _log.exception("render check failed unexpectedly")
+        except Exception as exc:
+            # The type at ERROR, the traceback at DEBUG only: an unexpected exception's text and
+            # its chained causes may quote label data (review M-2, like grocy_sheet._fail).
+            _log.error("render check failed unexpectedly (%s)", type(exc).__name__)
+            _log.debug("render check failure", exc_info=exc)
             return ("render_failed", "The label could not be drawn.", None)
 
     distinct = list(dict.fromkeys(_key(item) for item in request.items))

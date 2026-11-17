@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -182,6 +183,23 @@ async def test_unexpected_lookup_error_is_that_items_verdict_and_leaves_nothing_
     assert out.results[-1].error_code == "render_failed"
     assert out.results[-1].error_message == "The label could not be drawn."
     assert all(r.ok for r in out.results[:-1])
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_logs_one_error_line_without_traceback_or_message(caplog):
+    """Review M-2: the type at ERROR, the traceback only at DEBUG; never the exception's text."""
+    caplog.set_level(logging.DEBUG, logger="app.services.render_check")
+    lookups = _FakeLookups(raises={"BOOM": RuntimeError("token=hunter2")})
+    await check_items(_req(_item("BOOM")), lookups)
+    records = [r for r in caplog.records if r.name == "app.services.render_check"]
+    errors = [r for r in records if r.levelno >= logging.ERROR]
+    assert len(errors) == 1
+    (error,) = errors
+    assert "RuntimeError" in error.getMessage()
+    assert error.exc_info is None
+    assert "hunter2" not in error.getMessage()
+    debug = [r for r in records if r.levelno == logging.DEBUG and r.exc_info is not None]
+    assert len(debug) == 1
 
 
 @pytest.mark.asyncio
