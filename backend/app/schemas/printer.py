@@ -255,6 +255,14 @@ class PrinterStatus(BaseModel):
         default=None,
         description="Active error flags as a string; None when printer is ready",
     )
+    error_flags: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Active RFC 3805 error flags of a fresh tape reading (e.g. ``doorOpen``, ``noPaper``) "
+            "in bit order, for a client to put into words. Empty when the printer is ready, "
+            "offline, not polled or stale, and for page printers."
+        ),
+    )
     captured_at: datetime | None = Field(
         default=None,
         description=(

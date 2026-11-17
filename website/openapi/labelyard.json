@@ -3224,6 +3224,14 @@
             "description": "UTC timestamp of the probe that produced this reading; None if no probe yet. A page printer that went offline keeps the time of its last successful reading.",
             "title": "Captured At"
           },
+          "error_flags": {
+            "description": "Active RFC 3805 error flags of a fresh tape reading (e.g. ``doorOpen``, ``noPaper``) in bit order, for a client to put into words. Empty when the printer is ready, offline, not polled or stale, and for page printers.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Error Flags",
+            "type": "array"
+          },
           "error_state": {
             "anyOf": [
               {

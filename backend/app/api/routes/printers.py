@@ -468,6 +468,10 @@ async def _cached_status(
 
     error_flags = tape.get("error_flags") or []
     error_state = ", ".join(error_flags) if error_flags else None
+    # #376: the raw flags for the web UI, which puts them into words; the producer decodes them
+    # in bit order (``decode_error_flags``). A printer that does not answer reports no condition
+    # of its own.
+    flags = [] if tape.get("online") is False else list(error_flags)
     roll = await roll_repo.get(session, printer_id)
 
     return PrinterStatus(
@@ -483,6 +487,7 @@ async def _cached_status(
             and roll.width_mm == loaded_tape_mm
         ),
         error_state=error_state,
+        error_flags=flags,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
         last_error=tape.get("last_error"),
