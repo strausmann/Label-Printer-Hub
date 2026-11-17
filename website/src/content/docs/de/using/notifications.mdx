@@ -18,7 +18,7 @@ Der Punkt neben der Glocke zeigt die **höchste Schwere unter den ungelesenen Ei
 | Form | Schwere | Beispiele |
 |---|---|---|
 | Roter Punkt | Fehler | Ein fehlgeschlagener Auftrag, ein Drucker ohne Verbindung, ein Drucker, der sich als anderes Gerät meldet |
-| Gelbe Raute | Warnung | Ein pausierter Drucker, ein veralteter oder nicht überwachter Status, ein Verbrauchsmaterial fast leer, ein Bogen mit unbestätigten Feldern |
+| Gelbe Raute | Warnung | Ein offener Deckel, ein pausierter Drucker, ein veralteter oder nicht überwachter Status, ein Verbrauchsmaterial fast leer, ein Bogen mit unbestätigten Feldern |
 | Grüner Punkt | Erfolg oder Information | Ein fertiger, wartender, druckender oder abgebrochener Auftrag; ein fehlgeschlagener Auftrag, der beim Wiederholen gedruckt wurde |
 
 Eine Schwere ist immer eine Form und ein Wort, nie nur eine Farbe. Der Name der Glocke für einen Screenreader sagt dasselbe: „Benachrichtigungen, 3 ungelesen, die schwerste ist ein Fehler“.
@@ -29,6 +29,8 @@ Eine Schwere ist immer eine Form und ein Wort, nie nur eine Farbe. Der Name der 
 - **Ein fehlgeschlagener Auftrag, den du erfolgreich wiederholt hast**, bleibt als Information in der Liste („fehlgeschlagen, beim Wiederholen gedruckt“) und ist kein Fehler mehr. Das gilt auch für eine Kette von Wiederholungen, die in einem fertigen Auftrag endet.
 - **Drucker**, solange der Zustand besteht: ohne Verbindung, ein Problem, angehalten, pausiert, anderes Gerät an der Adresse, ein veralteter oder nicht überwachter Status, ein Verbrauchsmaterial fast leer oder leer. Die angezeigte Zeit ist der Moment, in dem dieser Browser es zuerst gesehen hat.
 - **Bögen** mit unbestätigten Feldern, solange es welche gibt.
+
+Der Zustand eines Banddruckers ist ein Eintrag je Meldung, in Worten („Deckel offen – zum Drucken schließen“, „Kein Band oder Papier – zum Drucken einlegen“). Ein offener Deckel ist eine Warnung, solange nichts auf den Druck wartet, und ein Problem, sobald ein Auftrag wartet oder ein Druck deshalb abgelehnt wurde. Einträge zum Zustand eines Druckers verschwinden von selbst, wenn der Zustand endet.
 
 ## Als gelesen markieren, löschen, ausblenden
 

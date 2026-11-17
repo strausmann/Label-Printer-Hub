@@ -18,7 +18,7 @@ The dot next to the bell shows the **highest severity among the unread entries**
 | Shape | Severity | Examples |
 |---|---|---|
 | Red dot | Error | A failed job, an offline printer, a printer that answered as a different device |
-| Yellow diamond | Warning | A paused printer, a status that is out of date or not monitored, a low supply, a sheet with unconfirmed cells |
+| Yellow diamond | Warning | An open cover, a paused printer, a status that is out of date or not monitored, a low supply, a sheet with unconfirmed cells |
 | Green dot | Success or information | A finished, queued, printing or cancelled job; a failed job that printed on retry |
 
 A severity is always a shape and a word, never only a colour. The bell's name for a screen reader says the same: "Notifications, 3 unread, the most severe is an error".
@@ -29,6 +29,8 @@ A severity is always a shape and a word, never only a colour. The bell's name fo
 - **A failed job that you retried successfully** stays in the list as information ("failed, printed on retry") and is no longer an error. This also holds for a chain of retries that ends in a finished job.
 - **Printers** while the condition lasts: offline, a problem, stopped, paused, another device at the address, a status that is stale or not monitored, a supply that is low or empty. The time shown is the moment this browser first saw it.
 - **Sheets** with unconfirmed cells, while there are any.
+
+A tape printer's condition is one entry per thing it reports, in words ("Cover open — close it to print", "No tape or paper — load it to print"). An open cover is a warning while nothing waits to print, and a problem once a job waits or a print was refused because of it. Entries for a printer's condition go by themselves when the condition ends.
 
 ## Mark as read, clear, dismiss
 
