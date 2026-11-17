@@ -49,9 +49,10 @@ describe("placementFor", () => {
     expect(placementFor(SHEET, "k", { mode: "choose", chosen: [7, 5], skipped: [1] })).toEqual({ sheet: "L4736-0001", cells: [5, 7] });
   });
 
-  it("a new sheet names its type and puts the ID in the margin, which takes no cell", () => {
+  it("a new sheet leaves id_placement to the type", () => {
     const placement = placementFor({ kind: "new" }, "avery-l4736rev", { mode: "choose", chosen: [4], skipped: [2] });
-    expect(placement).toEqual({ new_sheet: { type: "avery-l4736rev", id_placement: "margin" }, cells: "first_free" });
+    expect(placement).toEqual({ new_sheet: { type: "avery-l4736rev" }, cells: "first_free" });
+    expect(placement.new_sheet).not.toHaveProperty("id_placement");
     expect(placement).not.toHaveProperty("skip");
   });
 });

@@ -355,3 +355,52 @@ describe("the add-a-sheet dialog", () => {
     expect(screen.queryByRole("grid")).toBeNull();
   });
 });
+
+describe("where the sheet code goes (#350)", () => {
+  const BACK_TYPE = { ...SHEET_TYPE, id_placement_resolved: "back_side" as const };
+  const CELL_TYPE = { ...SHEET_TYPE, id_placement: "cell" as const, id_placement_resolved: "cell" as const, id_cell: 3 };
+  const radio = (name: RegExp) => screen.getByRole("radio", { name });
+
+  it("the placement defaults to the margin check's default_placement", async () => {
+    setup({ "GET /api/v1/sheets/margin-check": { ...MARGIN_OK, printable: false, band: null, default_placement: "back_side" } });
+    await openDialog();
+    await chooseType();
+    expect(radio(/In the margin/)).toBeChecked();
+    await choosePrinter();
+    await waitFor(() => expect(radio(/On the back of the liner/)).toBeChecked());
+  });
+
+  it("without a printer the default is the type's resolved placement", async () => {
+    setup({ "GET /api/v1/sheet-types": [BACK_TYPE] });
+    await openDialog();
+    await chooseType();
+    expect(radio(/On the back of the liner/)).toBeChecked();
+  });
+
+  it("back side hands over to the activation steps", async () => {
+    const { calls } = setup({
+      "GET /api/v1/sheet-types": [BACK_TYPE],
+      "GET /api/v1/sheets/margin-check": { ...MARGIN_OK, printable: false, band: null, default_placement: "back_side" },
+    });
+    await openDialog();
+    await chooseType();
+    await choosePrinter();
+    await waitFor(() => expect(radio(/On the back of the liner/)).toBeChecked());
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByTestId("activate-back-side");
+    expect(screen.getByRole("dialog", { name: "Activate new sheet" })).toBeVisible();
+    expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("Turn over");
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("reserved cell sends the type's id_cell", async () => {
+    const { calls } = setup({ "GET /api/v1/sheet-types": [CELL_TYPE], "GET /api/v1/sheets/margin-check": { ...MARGIN_OK, default_placement: "cell" } });
+    await openDialog();
+    await chooseType();
+    await choosePrinter();
+    await waitFor(() => expect(radio(/In a reserved cell/)).toBeChecked());
+    await userEvent.click(screen.getByRole("button", { name: "Add and print ID label" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(body(posts(calls)[0]!)).toMatchObject({ id_placement: "cell", id_cell: 3, printer: PAGE_PRINTER.id });
+  });
+});

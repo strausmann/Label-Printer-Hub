@@ -496,7 +496,7 @@ export function SheetSection({ items, printer, preselectedSheet, preselectedTray
       {changeNote && <p role="alert" className="font-bold [overflow-wrap:anywhere]">{changeNote}</p>}
       {partial && <PartialResult jobIds={partial.jobIds} queued={partial.queued} left={partial.left} inCart={onAccepted !== undefined} words={partial.words} />}
       {showPrintError && <p role="alert" className="[overflow-wrap:anywhere]">{errorText(printError)}</p>}
-      {result && <PrintResult pages={result} />}
+      {result && <PrintResult pages={result} printerId={printer.id} />}
       {result && restNote && <p role="status" className="font-bold">{restNote}</p>}
 
       {needed > 0 && (

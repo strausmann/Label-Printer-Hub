@@ -8,7 +8,9 @@ type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Json) : {});
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : typeof v === "number" ? String(v) : null);
 
-export type PageKind = "sheet_page" | "calibration_page" | "test_page";
+export type PageKind = "sheet_page" | "calibration_page" | "test_page" | "sheet_back_page" | "tray_loading_page";
+
+const PAGE_KINDS: readonly PageKind[] = ["sheet_page", "calibration_page", "test_page", "sheet_back_page", "tray_loading_page"];
 
 /** What a page job (a sheet page or a calibration page) stores in `payload.detail` and `job_summary`. */
 export interface PageInfo {
@@ -69,13 +71,13 @@ function cellNumbers(list: unknown): number[] {
 /** The page-job part of a payload, or null for a tape job. Values of the wrong shape count as missing. */
 export function pageInfoOf(job: Job): PageInfo | null {
   const p = obj(job.payload);
-  if (p.kind !== "sheet_page" && p.kind !== "calibration_page" && p.kind !== "test_page") return null;
+  if (!PAGE_KINDS.includes(p.kind as PageKind)) return null;
   const detail = obj(p.detail);
   const summary = obj(detail.job_summary);
   const cells = cellNumbers(detail.cells);
   const idCell = num(obj(detail.id_cell).cell);
   return {
-    kind: p.kind,
+    kind: p.kind as PageKind,
     sheetCode: str(detail.sheet_code) ?? str(summary.sheet_code),
     cells,
     idCell,
@@ -133,6 +135,14 @@ function pageTitle(page: PageInfo, label: string | null): string {
     // The payload stores the tray's key; the label is known once the printer's status has been read.
     const tray = label ?? page.tray;
     return tray === null ? t`Test page` : t`Test page · ${tray}`;
+  }
+  if (page.kind === "tray_loading_page") {
+    const tray = label ?? page.tray;
+    return tray === null ? t`Tray loading test` : t`Tray loading test · ${tray}`;
+  }
+  if (page.kind === "sheet_back_page") {
+    const code = page.sheetCode;
+    return code === null ? t`Sheet code on the back` : t`Sheet code on the back · ${code}`;
   }
   if (page.sheetCode === null) return t`Sheet page`;
   const code = page.sheetCode;

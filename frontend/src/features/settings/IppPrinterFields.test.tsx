@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { ADMIN_PRINTER, apiErrorBody, mockApi, PAGE_PRINTER, respond } from "../test-api";
+import { ADMIN_PRINTER, apiErrorBody, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, respond } from "../test-api";
 import { trayProblem, uriProblem, type TrayDraft } from "./IppPrinterFields";
 
 // Typing an address key by key through the form is slow under coverage instrumentation.
@@ -526,5 +526,28 @@ describe("review fixes", () => {
     const form = screen.getByRole("form", { name: "Edit Office laser" });
     await userEvent.click(within(form).getByRole("button", { name: "Save printer" }));
     expect(await within(form).findByRole("alert")).toHaveTextContent("The server cannot be reached.");
+  });
+});
+
+describe("how each tray takes paper (#350)", () => {
+  it('each tray shows its loading or "Not set" and a button to set it up', async () => {
+    const caps = {
+      ...PAGE_CAPABILITIES,
+      trays: [
+        { key: "main-tray", label: "Main tray", enabled: true, is_default: true, load_hint: null, media: null, calibration: null, loading: { print_side: "down", leading_edge: "top" } },
+        { key: "auto", label: "Automatic", enabled: true, is_default: false, load_hint: null, media: null, calibration: null, loading: null },
+      ],
+    };
+    mockApi({ "GET /api/v1/admin/printers": [IPP_ADMIN], [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: caps });
+    await renderApp({ path: "/settings/printers" });
+    await userEvent.click(await screen.findByRole("button", { name: "Edit Office laser" }));
+    const form = screen.getByRole("form", { name: "Edit Office laser" });
+    const main = within(form).getByRole("group", { name: "main-tray" });
+    expect(await within(main).findByText("prints on the side facing down, top of the print first")).toBeVisible();
+    expect(within(main).getByRole("button", { name: "Test again" })).toBeVisible();
+    const auto = within(form).getByRole("group", { name: "auto" });
+    expect(within(auto).getByText("Not set")).toBeVisible();
+    await userEvent.click(within(auto).getByRole("button", { name: "Loading test" }));
+    expect(within(auto).getByRole("heading", { name: "How does this tray take paper?" })).toBeVisible();
   });
 });

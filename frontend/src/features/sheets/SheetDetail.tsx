@@ -20,6 +20,7 @@ import { useSheetErrorText } from "./errors";
 import { sheetKey } from "./keys";
 import { SheetGrid, SheetLegend } from "./SheetGrid";
 import { DiscardDialog, Usage } from "./SheetsPage";
+import { BackSideDialog } from "./backSide/BackSideDialog";
 
 /** The server's limit for the purpose of one cell (`MarkedCellIn.purpose`). */
 const MAX_PURPOSE = 120;
@@ -98,6 +99,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const [purpose, setPurpose] = useState("");
   const [inspected, setInspected] = useState<number | null>(null);
   const [discarding, setDiscarding] = useState(false);
+  const [printingBack, setPrintingBack] = useState(false);
   const unconfirmedHeading = useRef<HTMLHeadingElement>(null);
   const sheetHeading = useRef<HTMLHeadingElement>(null);
 
@@ -210,12 +212,24 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
         {discarded && sheet.discarded_at ? (
           <p className="font-bold">{t`Discarded on ${discardedOn}, this ID is not used again.`}</p>
         ) : null}
-        {idNotPrinted ? (
+        {idNotPrinted && sheet.id_placement === "back_side" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="font-bold">{t`Sheet code on the back not confirmed`}</p>
+            {canEdit ? (
+              <Button onPress={() => setPrintingBack(true)} className={SECONDARY_BUTTON}>
+                {t`Print back side`}
+              </Button>
+            ) : null}
+          </div>
+        ) : idNotPrinted ? (
           <div className="flex flex-col gap-0.5">
             <p className="font-bold">{t`Sheet ID not printed yet`}</p>
             {sheet.unconfirmed > 0 ? <p className="text-ink-2">{t`Resolve the unconfirmed cells first; the sheet ID waits for them`}</p> : null}
           </div>
+        ) : sheet.id_placement === "back_side" && !discarded ? (
+          <p className="text-ink-2">{t`The sheet code is on the back of the liner.`}</p>
         ) : null}
+        {printingBack ? <BackSideDialog code={code} isOpen onClose={() => setPrintingBack(false)} /> : null}
       </div>
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">

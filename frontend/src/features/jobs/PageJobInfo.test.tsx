@@ -366,3 +366,27 @@ describe("test page job", () => {
     expect(within(section).queryByText("Sheet")).toBeNull();
   });
 });
+
+describe("the code on the back and the tray loading test (#350)", () => {
+  const back = { kind: "sheet_back_page", media: "A4", tray: "main", detail: { sheet_code: "A3490-0001", sheet_id: "x" } };
+  const loading = { kind: "tray_loading_page", media: "A4", tray: "bypass", detail: { tray: "bypass" } };
+
+  it("the back page shows its sheet code and links the sheet", async () => {
+    mockApi(routes("done", { payload: back }));
+    await renderApp({ path: `/jobs/${ID}` });
+    await screen.findByRole("heading", { level: 1, name: "Sheet code on the back · A3490-0001" });
+    const section = screen.getByRole("region", { name: "Sheet code on the back" });
+    expect(within(section).getByRole("link", { name: "A3490-0001" })).toHaveAttribute("href", "/sheets/A3490-0001");
+    expect(within(section).queryByText("Cells")).toBeNull();
+  });
+
+  it("de: both titles are German", async () => {
+    mockApi(routes("done", { payload: back }));
+    const view = await renderApp({ path: `/jobs/${ID}`, language: "de" });
+    await screen.findByRole("heading", { level: 1, name: "Bogencode auf der Rückseite · A3490-0001" });
+    view.unmount();
+    mockApi(routes("done", { payload: loading }));
+    await renderApp({ path: `/jobs/${ID}`, language: "de" });
+    await screen.findByRole("heading", { level: 1, name: "Einlegetest Fach · bypass" });
+  });
+});

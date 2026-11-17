@@ -404,6 +404,52 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await page.keyboard.press("Escape");
       });
 
+      /** #350: the add dialog with the 3490 type (its code goes on the back), handed over to the activation steps. */
+      async function openActivation() {
+        const dialog = await openAddSheet();
+        const box = dialog.locator('input[role="combobox"]').first();
+        await box.click();
+        await page.keyboard.type("3490");
+        await page.locator('[role="option"]').filter({ hasText: "3490" }).first().click();
+        await dialog.getByRole("button", { name: /Printer/ }).click();
+        await page.getByRole("option", { name: /Office page printer/ }).click();
+        await expect(dialog.getByRole("radio", { name: /On the back of the liner/ })).toBeChecked();
+        await buttonIn(dialog, "Continue").click();
+        await expect(dialog.getByTestId("activate-back-side")).toBeVisible();
+        return dialog;
+      }
+
+      test("Activate new sheet: the main button and the step text are in sight", async () => {
+        await prepare(mode);
+        const dialog = await openActivation();
+        await keyboard(mode);
+        await expectInSight(page, buttonIn(dialog, "Print sheet code"), "the Print sheet code button");
+        const step = dialog.getByRole("heading", { name: "Put the sheet in the other way round" });
+        await step.scrollIntoViewIfNeeded();
+        await expectInSight(page, step, "the step text");
+        await expectInSight(page, frameOf(dialog), "the dialog");
+        await page.keyboard.press("Escape");
+      });
+
+      test("Tray loading question: both answers and Save are reachable", async () => {
+        await prepare(mode);
+        await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+        const dialog = await openActivation();
+        await keyboard(mode);
+        const print = buttonIn(dialog, "Print test page");
+        await print.scrollIntoViewIfNeeded();
+        await print.click();
+        for (const name of ["Is the print on the side with the cross?", "Is “TOP” next to the cross?"]) {
+          const group = dialog.getByRole("radiogroup", { name });
+          await group.scrollIntoViewIfNeeded();
+          await expectInSight(page, group, name);
+        }
+        const save = buttonIn(dialog, "Save for this tray");
+        await save.scrollIntoViewIfNeeded();
+        await expectInSight(page, save, "the Save button");
+        await page.keyboard.press("Escape");
+      });
+
       test("Resolve all (a confirmation): its buttons are in sight", async () => {
         await prepare(mode);
         await page.goto("/sheets/L4736-0005");

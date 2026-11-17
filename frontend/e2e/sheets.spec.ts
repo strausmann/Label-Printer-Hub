@@ -13,6 +13,8 @@ const DISCARDED = "L4736-0003";
 const WAITING = "L4736-0004"; // full, its last two cells wait for confirmation
 const EDGE = "L4731-0001"; // the 189-cell sheet, 120 cells used with purposes of 120 characters
 
+/** API writes of the cleanup go with the admin key: the browser session's cookie needs the page's CSRF header. */
+const KEY = () => ({ "X-Label-Hub-Key": mainKey() });
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
@@ -73,6 +75,72 @@ test.describe.serial("sheets", () => {
     const gone = page.getByRole("row").filter({ has: page.getByRole("link", { name: DISCARDED }) });
     await expect(gone).toContainText("discarded");
     await expect(gone.getByRole("button", { name: /Discard/ })).toHaveCount(0);
+  });
+
+  // #350: 3490 has no usable margin, so its code goes on the back of the liner.
+  test("a 3490 sheet gets its code on the back", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    await page.goto("/sheets");
+    await page.getByRole("button", { name: "New sheet" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add a sheet" });
+    await chooseType(dialog, /Sheet type/, /avery-zweckform-3490/);
+    await choose(dialog, /Printer/, /Office page printer/);
+    await expect(dialog.getByRole("radio", { name: /On the back of the liner/ })).toBeChecked();
+    await dialog.getByRole("button", { name: "Continue" }).click();
+
+    const steps = page.getByRole("dialog", { name: "Activate new sheet" });
+    await expect(steps.getByRole("listitem").and(steps.locator('[aria-current="step"]'))).toContainText("Turn over");
+    // The tray is not set up yet: the guided test comes first.
+    await expect(steps.getByRole("button", { name: "Print sheet code" })).toBeDisabled();
+    await steps.getByRole("button", { name: "Print test page" }).click();
+    // React Aria's radio input is visually hidden: a person taps the label.
+    await steps.getByRole("radiogroup", { name: "Is the print on the side with the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("radiogroup", { name: "Is “TOP” next to the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("button", { name: "Save for this tray" }).click();
+    await expect(steps.getByText(/liner side up$/)).toBeVisible();
+    await steps.getByRole("button", { name: "Print sheet code" }).click();
+
+    await expect(steps.getByRole("heading", { name: "Did it print?" })).toBeVisible({ timeout: 20_000 });
+    const code = /A3490-\d{4}/.exec((await steps.getByText(/sheet code A3490-\d{4}/).textContent())!)![0];
+    const jobs = (await (await page.request.get("/api/v1/jobs?limit=20", { headers: KEY() })).json()) as { payload: { kind?: string; detail?: { sheet_code?: string } } }[];
+    expect(jobs.some((j) => j.payload.kind === "sheet_back_page" && j.payload.detail?.sheet_code === code)).toBe(true);
+    await steps.getByRole("button", { name: "Yes, it is printed" }).click();
+    await expect(steps).toHaveCount(0);
+
+    await page.goto(`/sheets/${code}`);
+    await expect(page.getByText("The sheet code is on the back of the liner.")).toBeVisible();
+    // Leave the hub as it was found: the tray unset, the sheet retired.
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    expect((await page.request.post(`/api/v1/sheets/${code}/discard`, { headers: KEY() })).ok()).toBe(true);
+  });
+
+  test("a reserved cell is left out of a print", async () => {
+    const type = "avery-zweckform-3490";
+    const patch = (data: object) => page.request.patch(`/api/v1/sheet-types/${type}`, { data, headers: KEY() });
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/sheets/archive?type=${type}`);
+    await page.getByRole("tab", { name: "Where the code goes" }).click();
+    await page.getByText("Reserved cell", { exact: true }).click();
+    await choose(page.getByRole("tabpanel"), / Cell$/, /^2$/);
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Saved.")).toBeVisible();
+
+    const items = [1, 2, 3].map((i) => ({ content_type: "text_two_lines", data: { title: `E2E ${i}`, primary_id: `R-${i}` } }));
+    const printed = await page.request.post("/api/v1/print/office-page/sheet", { data: { items, placements: [{ new_sheet: { type } }] }, headers: KEY() });
+    expect(printed.ok()).toBe(true);
+    const [result] = ((await printed.json()) as { pages: { sheet_code: string; cells: number[]; id_cell: number | null }[] }).pages;
+    expect(result!.id_cell).toBe(2);
+    expect(result!.cells).toEqual([1, 3, 4]);
+    await page.goto(`/sheets/${result!.sheet_code}`);
+    await expect(page.getByRole("gridcell", { name: /^Cell 2,.*sheet code/ })).toBeVisible();
+
+    expect((await patch({ id_placement: "auto", id_cell: null })).ok()).toBe(true);
+    await expect
+      .poll(async () => (await page.request.post(`/api/v1/sheets/${result!.sheet_code}/discard`, { headers: KEY() })).status(), { timeout: 20_000 })
+      .toBe(200);
   });
 
   test("adds a sheet with three used cells, lists it with 45 free, and discards it again", async () => {

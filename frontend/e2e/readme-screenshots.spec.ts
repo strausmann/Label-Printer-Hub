@@ -31,6 +31,7 @@ import { signInWith } from "./fixtures";
  *   grocy-labels    grocy-labels
  *   notifications   notifications
  *   spool-label     (desktop only, no website shot) the spool label of a Spoolman item on the QL with 62 mm tape
+ *   activate-back-side  (desktop only, no website shot) a 3490 sheet's code on the back: the first step
  *
  * Desktop is 1440 x 900 in light and dark for every view; the phone (390 x 844) shows `overview`, `printer-detail`
  * and `sheets`. File names are `<view>-<light|dark>[-phone].png`. The README shows English only; the German website
@@ -351,6 +352,28 @@ const VIEWS: View[] = [
       const panel = page.getByRole("dialog", { name: text.panel });
       await expect(panel.getByRole("link", { name: text.failedEntry })).toBeVisible();
       await expect(panel.getByText(text.isNew).first()).toBeVisible();
+    },
+  },
+  {
+    // #350: activating a 3490 sheet, whose code goes on the back of the liner: the first step, with the tray's
+    // loading question (the screenshot hub has no tray set up).
+    name: "activate-back-side",
+    phone: false,
+    only: "desktop",
+    site: false,
+    open: async (page) => {
+      await page.goto("/sheets");
+      await page.getByRole("button", { name: "New sheet" }).click();
+      const dialog = page.getByRole("dialog", { name: "Add a sheet" });
+      const box = dialog.getByRole("combobox", { name: /Sheet type/ });
+      await box.click();
+      await page.keyboard.type("3490");
+      await page.getByRole("option", { name: /3490/ }).first().click();
+      await dialog.getByRole("button", { name: /Printer/ }).click();
+      await page.getByRole("option", { name: /Office page printer/ }).click();
+      await expect(dialog.getByRole("radio", { name: /On the back of the liner/ })).toBeChecked();
+      await dialog.getByRole("button", { name: "Continue" }).click();
+      await expect(page.getByRole("dialog", { name: "Activate new sheet" }).getByTestId("loading-picture")).toBeVisible();
     },
   },
   {

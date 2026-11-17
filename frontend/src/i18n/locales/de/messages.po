@@ -505,6 +505,18 @@ msgstr "+ quer = die Farbe liegt rechts von der Mitte der Lücke, − quer = lin
 msgid "+ down = the ink lies below the cut, − down = above it."
 msgstr "+ abwärts = die Farbe liegt unterhalb des Schnitts, − abwärts = darüber."
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "1 (top left)"
+msgstr "1 (oben links)"
+
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "1 Turn"
+msgstr "1 Umdrehen"
+
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "2 Load"
+msgstr "2 Einlegen"
+
 #: src/features/settings/PrinterForm.tsx
 msgid "A community is stored. Leave the field empty to keep it."
 msgstr "Eine Community ist gespeichert. Lass das Feld leer, um sie zu behalten."
@@ -628,6 +640,11 @@ msgstr "Aktion"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Actions"
 msgstr "Aktionen"
+
+#: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/backSide/BackSideDialog.tsx
+msgid "Activate new sheet"
+msgstr "Neuen Bogen aktivieren"
 
 #: src/features/settings/PrinterForm.tsx
 msgid "Add a printer"
@@ -839,6 +856,26 @@ msgstr "Beim Drucker"
 msgid "Back"
 msgstr "Zurück"
 
+#: src/features/sheets/backSide/LinerPreview.tsx
+msgid "Back of the liner with the sheet code strip"
+msgstr "Rückseite des Trägerpapiers mit dem Streifen für den Bogencode"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Back of the liner, as printed"
+msgstr "Rückseite des Trägerpapiers, wie gedruckt"
+
+#: src/features/sheets/backSide/LinerPreview.tsx
+msgid "Back of the liner: no free strip takes the sheet code"
+msgstr "Rückseite des Trägerpapiers: kein freier Streifen nimmt den Bogencode auf"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Back of the liner. The code goes in the marked strip."
+msgstr "Rückseite des Trägerpapiers. Der Code kommt in den markierten Streifen."
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Back side"
+msgstr "Rückseite"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Back to the jobs"
 msgstr "Zurück zu den Aufträgen"
@@ -886,6 +923,10 @@ msgstr "unteren Rand"
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Bottom margin"
 msgstr "Unterer Rand"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "bottom of the print first"
+msgstr "Unterkante des Drucks zuerst"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "By hand"
@@ -963,6 +1004,7 @@ msgid "Can't be read with the current secret key — enter it again"
 msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte erneut eingeben"
 
 #: src/features/archive/FeedbackLinks.tsx
+#: src/features/archive/IdPlacementSection.tsx
 #: src/features/archive/ImportDialog.tsx
 #: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx
@@ -973,6 +1015,7 @@ msgstr "Lässt sich mit dem aktuellen Geheimschlüssel nicht lesen — bitte ern
 #: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/PrinterForm.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Cancel"
@@ -1005,6 +1048,10 @@ msgstr "Warenkorb ({inCart})"
 #: src/shell/CartButton.tsx
 msgid "Cart, empty"
 msgstr "Warenkorb, leer"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Cell"
+msgstr "Zelle"
 
 #. placeholder {0}: cell.cell
 #: src/features/sheets/cellState.ts
@@ -1085,6 +1132,10 @@ msgstr "Kontrollseite"
 msgid "Check page status"
 msgstr "Status der Kontrollseite"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Check that the toner is dry and the QR code is not smeared. If it is, print again on the same sheet."
+msgstr "Prüfe, ob der Toner trocken und der QR-Code nicht verschmiert ist. Falls doch, drucke noch einmal auf denselben Bogen."
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Check the tray:"
 msgstr "Prüfe das Fach:"
@@ -1113,6 +1164,10 @@ msgstr "Foto eines Codes wählen"
 msgid "Choose a printer and a tray to print the ID label."
 msgstr "Wähle einen Drucker und ein Fach, um das ID-Etikett zu drucken."
 
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "Choose a printer and a tray to print the sheet code."
+msgstr "Wähle einen Drucker und ein Fach, um den Bogencode zu drucken."
+
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Choose a sheet type"
@@ -1126,6 +1181,10 @@ msgstr "Wähle einen Bogentyp für diesen Seitendrucker."
 msgid "Choose a sheet type to see its measurements and versions."
 msgstr "Wähle einen Bogentyp, um seine Maße und Versionen zu sehen."
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Choose any cell. It is left out of planning."
+msgstr "Wähle eine beliebige Zelle. Die Planung lässt sie aus."
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Choose cells"
 msgstr "Zellen wählen"
@@ -1137,6 +1196,10 @@ msgstr "Wähle ein Fach als Standard."
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Chore"
 msgstr "Hausarbeit"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Chosen automatically from the usable margin. You can change it."
+msgstr "Automatisch nach dem nutzbaren Rand gewählt. Du kannst es ändern."
 
 #: src/features/printers/model.ts
 msgctxt "tape colour"
@@ -1178,7 +1241,9 @@ msgstr "Clients"
 #: src/features/scan/CameraScanner.tsx
 #: src/features/search/SearchDialog.tsx
 #: src/features/settings/controls.tsx
+#: src/features/settings/IppPrinterFields.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 #: src/shell/PhoneMenu.tsx
 #: src/shell/RollToast.tsx
 msgid "Close"
@@ -1228,6 +1293,10 @@ msgstr "Kompakt"
 msgid "Configured"
 msgstr "Eingerichtet"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Confirm"
+msgstr "Bestätigen"
+
 #: src/features/archive/FeedbackLinks.tsx
 msgid "Confirm the dimensions"
 msgstr "Die Maße bestätigen"
@@ -1261,6 +1330,7 @@ msgstr "Verbindung"
 msgid "Connection failed"
 msgstr "Verbindung fehlgeschlagen"
 
+#: src/features/sheets/AddSheetDialog.tsx
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Continue"
 msgstr "Weiter"
@@ -1436,6 +1506,10 @@ msgstr "Standard"
 msgid "Default"
 msgstr "Standard"
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Default for this sheet"
+msgstr "Standard für diesen Bogen"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Default printer"
 msgstr "Standarddrucker"
@@ -1473,6 +1547,7 @@ msgstr "Beschreibe, was sich geändert hat."
 msgid "Description"
 msgstr "Beschreibung"
 
+#: src/features/archive/TypeDetail.tsx
 #: src/features/archive/TypeForm.tsx
 msgid "Details"
 msgstr "Details"
@@ -1488,6 +1563,10 @@ msgstr "Gerätewechsel"
 #: src/features/archive/TypeForm.tsx
 msgid "Diameter (mm)"
 msgstr "Durchmesser (mm)"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Did it print?"
+msgstr "Ist es gedruckt?"
 
 #: src/features/jobs/JobDetail.tsx
 msgid "die-cut"
@@ -1980,6 +2059,14 @@ msgstr "Horizontaler Abstand (mm)"
 msgid "Host"
 msgstr "Host"
 
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "How does this tray take paper?"
+msgstr "Wie nimmt dieses Fach das Papier?"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "How it takes paper"
+msgstr "Wie es das Papier nimmt"
+
 #: src/features/settings/sections.tsx
 msgid "How long finished jobs stay in the history."
 msgstr "Wie lange abgeschlossene Aufträge im Verlauf bleiben."
@@ -2036,6 +2123,10 @@ msgstr "importiert"
 #: src/features/sheets/SheetDetail.tsx
 msgid "in a cell"
 msgstr "in einer Zelle"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "In a reserved cell"
+msgstr "In einer reservierten Zelle"
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "In Grocy's config.php"
@@ -2100,6 +2191,14 @@ msgstr "IPP-Adresse"
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "IPP UUID"
 msgstr "IPP-UUID"
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Is “TOP” next to the cross?"
+msgstr "Steht „OBEN“ neben dem Kreuz?"
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Is the print on the side with the cross?"
+msgstr "Ist der Druck auf der Seite mit dem Kreuz?"
 
 #: src/features/calibration/guide/StillOff.tsx
 msgid "It is the paper feed: push the sheet against the guide and print a second one. Change the correction only if it repeats."
@@ -2326,6 +2425,18 @@ msgstr "Hell"
 msgid "Light theme"
 msgstr "Helles Design"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Like turning a page: the top edge stays on top. You now see the liner."
+msgstr "Wie beim Umblättern: Die obere Kante bleibt oben. Du siehst jetzt das Trägerpapier."
+
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "Liner side down"
+msgstr "Trägerseite nach unten"
+
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "Liner side up"
+msgstr "Trägerseite nach oben"
+
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "Lines and scale"
 msgstr "Linien und Skala"
@@ -2346,6 +2457,18 @@ msgstr "Live-Aktualisierung pausiert; die Liste ist möglicherweise veraltet."
 msgid "Load hint"
 msgstr "Einlegehinweis"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Load it into {trayLabel}"
+msgstr "In {trayLabel} einlegen"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Load it into {trayLabel}, liner side down"
+msgstr "In {trayLabel} einlegen, Trägerseite nach unten"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Load it into {trayLabel}, liner side up"
+msgstr "In {trayLabel} einlegen, Trägerseite nach oben"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Loaded roll"
 msgstr "Eingelegte Rolle"
@@ -2353,6 +2476,10 @@ msgstr "Eingelegte Rolle"
 #: src/features/notifications/NotificationCentre.tsx
 msgid "Loading notifications…"
 msgstr "Benachrichtigungen werden geladen…"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Loading test"
+msgstr "Einlegetest"
 
 #: src/app/router.tsx
 #: src/features/about/DependencyLicences.tsx
@@ -2372,6 +2499,7 @@ msgstr "Benachrichtigungen werden geladen…"
 #: src/features/settings/Printers.tsx
 #: src/features/settings/sections.tsx
 #: src/features/settings/System.tsx
+#: src/features/sheets/backSide/BackSideDialog.tsx
 #: src/features/sheets/print/SheetSection.tsx
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -2391,6 +2519,10 @@ msgstr "{query} in {name} nachschlagen"
 msgid "Look up in an integration"
 msgstr "In einer Integration nachschlagen"
 
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Look where the print and the word “TOP” landed."
+msgstr "Sieh nach, wo der Druck und das Wort „OBEN“ gelandet sind."
+
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "MAC address"
 msgstr "MAC-Adresse"
@@ -2409,6 +2541,10 @@ msgstr "Hersteller und Modell"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "margin"
+msgstr "Rand"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Margin"
 msgstr "Rand"
 
 #: src/features/notifications/NotificationCentre.tsx
@@ -2610,6 +2746,7 @@ msgid "no"
 msgstr "nein"
 
 #: src/features/settings/IppPrinterFields.tsx
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
 msgid "No"
 msgstr "Nein"
 
@@ -2656,6 +2793,10 @@ msgstr "Für dieses Fach ist keine Korrektur gespeichert."
 msgid "No drawing slot became free in time; the page was not drawn. Try again later."
 msgstr "Es wurde nicht rechtzeitig ein Platz zum Rendern frei, die Seite wurde nicht gerendert. Versuch es später noch einmal."
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "No free strip of this print takes the code."
+msgstr "Kein freier Streifen dieses Aufdrucks nimmt den Code auf."
+
 #: src/features/printers/PrinterDetail.tsx
 msgid "No hardware identity — device swaps are not detected"
 msgstr "Keine Hardware-Kennung – ein Gerätewechsel wird nicht erkannt"
@@ -2679,6 +2820,10 @@ msgstr "Kein anderer Bogen dieses Typs hat eine freie Zelle."
 #: src/features/about/DependencyLicences.tsx
 msgid "No package matches the filter."
 msgstr "Kein Paket passt zum Filter."
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "No page printer is set up."
+msgstr "Es ist kein Seitendrucker eingerichtet."
 
 #: src/features/lookup/CartPage.tsx
 msgid "No preview available."
@@ -2709,6 +2854,10 @@ msgstr "Für diesen Hub ist keine öffentliche URL gesetzt, deshalb beginnt die 
 #: src/features/sheets/SheetDetail.tsx
 msgid "no purpose"
 msgstr "kein Zweck"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "No second pass. One cell holds the code and cannot take a label."
+msgstr "Kein zweiter Durchgang. Eine Zelle trägt den Code und kann kein Etikett aufnehmen."
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "No sheet matches."
@@ -2758,6 +2907,10 @@ msgstr "Keine gemeldet, nur die automatische Wahl"
 #: src/features/printers/reasons.ts
 msgid "not accepting jobs"
 msgstr "nimmt keine Aufträge an"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Not available for this sheet: no margin is wide enough for the code (the widest is {widest})."
+msgstr "Für diesen Bogen nicht verfügbar: Kein Rand ist breit genug für den Code (der breiteste hat {widest})."
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "Not calibrated"
@@ -2816,6 +2969,7 @@ msgstr "Nicht gemeldet"
 msgid "Not scheduled"
 msgstr "Nicht geplant"
 
+#: src/features/settings/IppPrinterFields.tsx
 #: src/features/settings/SettingField.tsx
 msgid "Not set"
 msgstr "Nicht gesetzt"
@@ -2987,6 +3141,14 @@ msgstr "An"
 msgid "on {printerName}"
 msgstr "auf {printerName}"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "on the back of the liner"
+msgstr "auf der Rückseite des Trägerpapiers"
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "On the back of the liner"
+msgstr "Auf der Rückseite des Trägerpapiers"
+
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly in the form below, then save them."
 msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, deshalb lassen sich die Messwerte nicht berechnen. Gib die Werte unten direkt ein und speichere sie."
@@ -2994,6 +3156,10 @@ msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, deshalb lassen 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "On this sheet all crossings lie on one line, so the readings cannot be fitted. Enter the values directly."
 msgstr "Auf diesem Bogen liegen alle Kreuzungen auf einer Linie, die Messwerte lassen sich daher nicht berechnen. Gib die Werte direkt ein."
+
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "One extra pass: turn the sheet over and the hub prints the code on the back. No label is used."
+msgstr "Ein zusätzlicher Durchgang: Du drehst den Bogen um, und der Hub druckt den Code auf die Rückseite. Kein Etikett wird verbraucht."
 
 #: src/features/sheets/errors.ts
 msgid "One of those cells is already in use. The sheet shows the current state."
@@ -3234,6 +3400,10 @@ msgstr "Je Etikettenart"
 msgid "Pitch"
 msgstr "Rastermaß"
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Plain liner"
+msgstr "Unbedrucktes Trägerpapier"
+
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
 msgid "Port"
@@ -3243,6 +3413,7 @@ msgstr "Port"
 msgid "Pressure advance field"
 msgstr "Feld Pressure Advance"
 
+#: src/features/archive/IdPlacementSection.tsx
 #: src/features/lookup/CartPage.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/sheets/print/SheetSection.tsx
@@ -3256,6 +3427,7 @@ msgstr "Vorschau von {name}"
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/CartPage.tsx
 #: src/features/lookup/ItemView.tsx
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 msgid "Print"
 msgstr "Drucken"
 
@@ -3263,6 +3435,15 @@ msgstr "Drucken"
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Print {0}"
 msgstr "{0} drucken"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Print again"
+msgstr "Noch einmal drucken"
+
+#: src/features/sheets/print/PrintResult.tsx
+#: src/features/sheets/SheetDetail.tsx
+msgid "Print back side"
+msgstr "Rückseite drucken"
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Print Grocy's labels"
@@ -3280,6 +3461,10 @@ msgstr "Etiketten {from} bis {total} noch einmal drucken"
 msgid "Print now"
 msgstr "Jetzt drucken"
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Print on the back of the liner"
+msgstr "Aufdruck auf der Rückseite des Trägerpapiers"
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Print onto a sheet"
 msgstr "Auf einen Bogen drucken"
@@ -3292,11 +3477,16 @@ msgstr "Auf den Bogen drucken"
 msgid "Print onto this sheet"
 msgstr "Auf diesen Bogen drucken"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Print sheet code"
+msgstr "Bogencode drucken"
+
 #: src/shell/PrintToasts.tsx
 msgid "Print status"
 msgstr "Druckstatus"
 
 #: src/features/printers/TestPrintButton.tsx
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
 msgid "Print test page"
 msgstr "Testseite drucken"
 
@@ -3319,6 +3509,10 @@ msgstr "Drucke unter „Aktuelle Werte“ die Kontrollseite. Liegt jede Kreuzung
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "Print the page on a real sheet of this type. Writing a number on each cell, row by row, is optional; it helps when you take photos."
 msgstr "Drucke die Seite auf einen echten Bogen dieses Typs. Du kannst auf jedes Feld eine Nummer schreiben, Zeile für Zeile; das hilft bei Fotos, ist aber freiwillig."
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Print the test page again"
+msgstr "Testseite noch einmal drucken"
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Print with the new plan"
@@ -3352,6 +3546,7 @@ msgstr "Gedruckt, Zelle {n}"
 #: src/features/notifications/NotificationCentre.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 msgid "Printer"
 msgstr "Drucker"
 
@@ -3435,9 +3630,25 @@ msgstr "Druckt gerade"
 msgid "Printing on die-cut labels comes in a later version"
 msgstr "Drucken auf Stanzetiketten kommt in einer späteren Version"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Printing the sheet code…"
+msgstr "Der Bogencode wird gedruckt …"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Prints from: {label}"
 msgstr "Druckt aus: {label}"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "prints on the side facing down"
+msgstr "druckt auf die Seite, die nach unten zeigt"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "prints on the side facing up"
+msgstr "druckt auf die Seite, die nach oben zeigt"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Prints the code in the free band around the labels. No extra pass through the printer."
+msgstr "Druckt den Code in den freien Rand um die Etiketten. Kein zusätzlicher Durchgang durch den Drucker."
 
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/model.ts
@@ -3470,6 +3681,14 @@ msgstr "Zum Neuladen nach unten ziehen"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Purpose (optional)"
 msgstr "Zweck (optional)"
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Put it into {trayLabel} and print the test page."
+msgstr "Lege es in {trayLabel} ein und drucke die Testseite."
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Put the sheet in the other way round"
+msgstr "Den Bogen andersherum einlegen"
 
 #: src/features/lookup/apps.ts
 msgid "QR code and code"
@@ -3678,6 +3897,10 @@ msgctxt "sheet cell state"
 msgid "reserved"
 msgstr "reserviert"
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Reserved cell"
+msgstr "Reservierte Zelle"
+
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Reset calibration and accept"
 msgstr "Kalibrierung zurücksetzen und übernehmen"
@@ -3819,6 +4042,7 @@ msgstr "Wie Standard"
 msgid "Same device"
 msgstr "Gleiches Gerät"
 
+#: src/features/archive/IdPlacementSection.tsx
 #: src/features/printers/RollColourPrompt.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/settings/Integrations.tsx
@@ -3833,6 +4057,10 @@ msgstr "Details speichern"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Save for this printer and tray"
 msgstr "Für diesen Drucker und dieses Fach speichern"
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Save for this tray"
+msgstr "Für dieses Fach speichern"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Save new version"
@@ -3857,6 +4085,10 @@ msgstr "Gespeichert — neuen Wert eingeben, um ihn zu ersetzen"
 #: src/features/settings/Integrations.tsx
 msgid "Saved values exist, but this integration cannot be used yet. A secret may belong to another URL or may not be readable with the current secret key, or the URL is missing. Enter the secret again."
 msgstr "Es sind gespeicherte Werte vorhanden, aber die Integration lässt sich noch nicht nutzen. Ein Geheimnis gehört möglicherweise zu einer anderen URL oder ist mit dem aktuellen Geheimnisschlüssel nicht lesbar, oder die URL fehlt. Gib das Geheimnis erneut ein."
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Saved."
+msgstr "Gespeichert."
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Saved. New prints use this correction."
@@ -3943,6 +4175,10 @@ msgstr "mitgeliefert"
 msgid "Selected cell"
 msgstr "Gewählte Zelle"
 
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Sending…"
+msgstr "Wird gesendet …"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Sent to {printerName}."
 msgstr "An {printerName} gesendet."
@@ -3979,6 +4215,10 @@ msgstr "Vom Container gesetzt"
 #: src/features/printers/RollColourPrompt.tsx
 msgid "Set colour"
 msgstr "Farbe festlegen"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Set for this tray in the printer settings."
+msgstr "Für dieses Fach in den Druckereinstellungen festgelegt."
 
 #: src/features/settings/feedback.tsx
 msgid "Set the URL first; a secret belongs to its URL."
@@ -4028,9 +4268,23 @@ msgstr "Bogen {code} wurde hinzugefügt."
 msgid "Sheet archive"
 msgstr "Bogenarchiv"
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 #: src/features/sheets/cellState.ts
-msgid "sheet ID"
-msgstr "Bogen-ID"
+msgid "sheet code"
+msgstr "Bogencode"
+
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Sheet code on the back"
+msgstr "Bogencode auf der Rückseite"
+
+#: src/features/jobs/model.ts
+msgid "Sheet code on the back · {code}"
+msgstr "Bogencode auf der Rückseite · {code}"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet code on the back not confirmed"
+msgstr "Bogencode auf der Rückseite nicht bestätigt"
 
 #: src/features/sheets/SheetDetail.tsx
 msgid "Sheet ID"
@@ -4083,6 +4337,7 @@ msgstr "Bogenseite"
 msgid "Sheet print"
 msgstr "Bogendruck"
 
+#: src/features/archive/TypeDetail.tsx
 #: src/features/calibration/CalibrationPage.tsx
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/notifications/NotificationCentre.tsx
@@ -4227,6 +4482,10 @@ msgstr "SNMP-Community"
 msgid "some remaining"
 msgstr "Rest vorhanden"
 
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Someone already set this tray; the stored answer is used."
+msgstr "Jemand hat dieses Fach schon eingerichtet; die gespeicherte Antwort gilt."
+
 #: src/features/printers/IdentityMismatchBanner.tsx
 msgid "Someone has settled this already. The page shows the current state."
 msgstr "Das hat schon jemand entschieden. Die Seite zeigt den aktuellen Stand."
@@ -4315,6 +4574,7 @@ msgid "Step 2: Enter the deviation"
 msgstr "Schritt 2: Abweichung eingeben"
 
 #: src/features/calibration/guide/ReadingGuide.tsx
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 msgid "Steps"
 msgstr "Schritte"
 
@@ -4390,6 +4650,10 @@ msgstr "Systemdesign"
 msgid "Tabs"
 msgstr "Tabs"
 
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "Take a plain sheet and mark a cross on the side facing up, next to the edge that goes in first."
+msgstr "Nimm ein leeres Blatt und mach auf der Seite, die nach oben zeigt, ein Kreuz neben die Kante, die zuerst hineingeht."
+
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "Tap a planned cell to leave it out, for example a damaged label."
 msgstr "Tippe auf eine geplante Zelle, um sie auszulassen, zum Beispiel ein beschädigtes Etikett."
@@ -4445,6 +4709,10 @@ msgstr "Banddrucker"
 #: src/features/jobs/HeldRuns.tsx
 msgid "Tape prints that wait for you"
 msgstr "Banddrucke, die auf dich warten"
+
+#: src/features/settings/IppPrinterFields.tsx
+msgid "Test again"
+msgstr "Erneut testen"
 
 #: src/features/settings/Integrations.tsx
 msgid "Test connection"
@@ -4574,6 +4842,10 @@ msgstr "Die Adresse wird weitergeleitet, meist auf eine Anmeldeseite vor der App
 #: src/features/settings/feedback.tsx
 msgid "The address saved for this printer is not valid. Enter the address again and save."
 msgstr "Die für diesen Drucker gespeicherte Adresse ist nicht gültig. Gib die Adresse erneut ein und speichere."
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "The answer could not be saved."
+msgstr "Die Antwort konnte nicht gespeichert werden."
 
 #: src/features/sheets/print/errors.ts
 msgid "The app behind an item did not answer ({code}). Check Settings › Integrations."
@@ -4733,6 +5005,10 @@ msgstr "Die Datei ist größer als 64 KB."
 msgid "The fit failed."
 msgstr "Die Berechnung ist fehlgeschlagen."
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "The free strips of the print decide where the code goes on the back."
+msgstr "Die freien Streifen des Aufdrucks bestimmen, wo der Code auf der Rückseite hinkommt."
+
 #: src/features/archive/errors.ts
 msgid "The grid does not fit on the page: it is taller than the page."
 msgstr "Das Raster passt nicht auf die Seite: Es ist höher als die Seite."
@@ -4800,6 +5076,11 @@ msgstr "Das ID-Etikett liegt in der Druckwarteschlange."
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The ID label was queued only in part. Look at the print jobs."
 msgstr "Das ID-Etikett wurde nur teilweise eingereiht. Sieh dir die Druckaufträge an."
+
+#. placeholder {0}: type.id_cell
+#: src/features/sheets/AddSheetDialog.tsx
+msgid "The ID takes cell {0} (or the first free one) and is printed right away."
+msgstr "Die ID nimmt Zelle {0} (oder die erste freie) und wird sofort gedruckt."
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The ID takes the first free label and is printed right away."
@@ -5331,6 +5612,26 @@ msgstr "Der Server hat die Datei abgelehnt: Sie ist größer als 64 KB."
 msgid "The settings could not be loaded."
 msgstr "Die Einstellungen konnten nicht geladen werden."
 
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "The sheet code could not be printed."
+msgstr "Der Bogencode konnte nicht gedruckt werden."
+
+#: src/features/sheets/print/PrintResult.tsx
+msgid "The sheet code goes on the back of this sheet."
+msgstr "Der Bogencode kommt auf die Rückseite dieses Bogens."
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "The sheet code identifies a sheet when you scan it. Choose where the hub prints it."
+msgstr "Der Bogencode erkennt einen Bogen, wenn du ihn scannst. Wähle, wo der Hub ihn druckt."
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "The sheet code is in the print queue."
+msgstr "Der Bogencode ist in der Druckwarteschlange."
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "The sheet code is on the back of the liner."
+msgstr "Der Bogencode steht auf der Rückseite des Trägerpapiers."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The sheet could not be added."
 msgstr "Der Bogen konnte nicht hinzugefügt werden."
@@ -5407,6 +5708,14 @@ msgstr "Das Band ist leer. Lege ein neues ein und versuche es erneut."
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "Der Test konnte nicht ausgeführt werden."
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "The test page could not be printed."
+msgstr "Die Testseite konnte nicht gedruckt werden."
+
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
+msgid "The test page is in the print queue."
+msgstr "Die Testseite ist in der Druckwarteschlange."
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "The test print could not be started."
@@ -5734,6 +6043,14 @@ msgstr "zu klein"
 msgid "Top {top} mm, right {right} mm, bottom {bottom} mm, left {left} mm"
 msgstr "Oben {top} mm, rechts {right} mm, unten {bottom} mm, links {left} mm"
 
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "Top edge first"
+msgstr "Obere Kante zuerst"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Top edge goes in first. A wrongly loaded sheet still works, the QR code reads in any orientation."
+msgstr "Die obere Kante geht zuerst hinein. Ein falsch eingelegter Bogen funktioniert trotzdem, der QR-Code lässt sich in jeder Ausrichtung lesen."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "top margin"
 msgstr "oberen Rand"
@@ -5746,6 +6063,10 @@ msgstr "Oberer Rand"
 msgid "Top margin (mm)"
 msgstr "Oberer Rand (mm)"
 
+#: src/features/settings/IppPrinterFields.tsx
+msgid "top of the print first"
+msgstr "Oberkante des Drucks zuerst"
+
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "Top-edge mark"
 msgstr "Markierung an der Oberkante"
@@ -5754,9 +6075,19 @@ msgstr "Markierung an der Oberkante"
 #: src/features/jobs/PageJobInfo.tsx
 #: src/features/printers/TestPrintButton.tsx
 #: src/features/sheets/AddSheetDialog.tsx
+#: src/features/sheets/backSide/ActivateBackSide.tsx
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Tray"
 msgstr "Fach"
+
+#: src/features/jobs/model.ts
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Tray loading test"
+msgstr "Einlegetest Fach"
+
+#: src/features/jobs/model.ts
+msgid "Tray loading test · {tray}"
+msgstr "Einlegetest Fach · {tray}"
 
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Tray: {trayLabel}"
@@ -5788,6 +6119,22 @@ msgstr "Erneut versuchen"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Turn off the trays you do not use, and mark the one that should be used when none is chosen."
 msgstr "Schalte die Fächer aus, die du nicht nutzt, und markiere das Fach, das gilt, wenn keines gewählt wird."
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Turn over"
+msgstr "Umdrehen"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Turn the sheet over along the long edge"
+msgstr "Bogen an der langen Kante umdrehen"
+
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "Turn the sheet over along the long edge, then load it top edge first"
+msgstr "Bogen an der langen Kante umdrehen, dann mit der oberen Kante zuerst einlegen"
+
+#: src/features/sheets/backSide/LoadingPicture.tsx
+msgid "Turn the sheet over along the long edge, then load it top edge first, {sideWord}"
+msgstr "Bogen an der langen Kante umdrehen, dann mit der oberen Kante zuerst einlegen, {sideWord}"
 
 #: src/features/sheets/SheetsPage.tsx
 msgid "Type"
@@ -5859,6 +6206,10 @@ msgstr "Stattdessen {roomyCode} verwenden ({room} frei)"
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Use a key with the print scope, restricted to the label printer. Grocy writes the address with the key to its own log, and shows it to the Grocy user when the hub refuses a label or does not answer within 2 seconds."
 msgstr "Nimm einen Schlüssel mit dem Bereich print, beschränkt auf den Drucker für diese Etiketten. Grocy schreibt die Adresse mit dem Schlüssel in sein eigenes Protokoll und zeigt sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet."
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Use a reserved cell instead"
+msgstr "Stattdessen reservierte Zelle nutzen"
 
 #. placeholder {0}: type.key
 #: src/features/archive/FeedbackLinks.tsx
@@ -6005,6 +6356,10 @@ msgstr "Was gedruckt wurde"
 msgid "What went wrong"
 msgstr "Was schiefgelaufen ist"
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "When you activate a new sheet, the hub asks you to turn it over and prints the code on the back of the liner. One extra pass through the printer."
+msgstr "Wenn du einen neuen Bogen aktivierst, bittet dich der Hub, ihn umzudrehen, und druckt den Code auf die Rückseite des Trägerpapiers. Ein zusätzlicher Durchgang durch den Drucker."
+
 #: src/features/calibration/CalibrationSchematic.tsx
 msgid "Where a label corner would touch the scale, its corner mark is left out; the gap lines and the scale show the cut."
 msgstr "Wo eine Etikettenecke die Skala berühren würde, entfällt ihre Eckmarke; die Lückenlinien und die Skala zeigen den Schnitt."
@@ -6014,8 +6369,16 @@ msgid "Where gap line {s} and gap line {z} cross, read the small scales against 
 msgstr "Wo sich die Lückenlinien {s} und {z} kreuzen, lies die kleinen Skalen gegen die Mitte der echten Lücke ab, in Millimetern."
 
 #: src/features/archive/TypeDetail.tsx
+msgid "Where the code goes"
+msgstr "Wo der Code hinkommt"
+
+#: src/features/archive/TypeDetail.tsx
 msgid "Where the numbers come from"
 msgstr "Woher die Zahlen stammen"
+
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Where the sheet code goes"
+msgstr "Wo der Bogencode hinkommt"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Where the sheet ID goes"
@@ -6054,8 +6417,13 @@ msgid "yes"
 msgstr "ja"
 
 #: src/features/settings/IppPrinterFields.tsx
+#: src/features/sheets/backSide/TrayLoadingTest.tsx
 msgid "Yes"
 msgstr "Ja"
+
+#: src/features/sheets/backSide/ActivateBackSide.tsx
+msgid "Yes, it is printed"
+msgstr "Ja, ist gedruckt"
 
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Yes, reset"

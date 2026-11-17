@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
+import { initI18n } from "../../i18n";
 import { job, PAGE_PRINTER, pageStatus, PRINTER_A, PRINTER_B, status } from "../test-api";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { SheetSummary } from "../sheets/api";
@@ -118,6 +119,18 @@ describe("deriveNotifications: jobs", () => {
 
   it("leaves out a job last changed more than a day ago", () => {
     expect(run({ jobs: [mkJob(J1, "failed", { updated_at: minutesAgo(24 * 60 + 1) })], printers: [A] })).toEqual([]);
+  });
+
+  it("a failed back page names the sheet code", async () => {
+    await initI18n("en");
+    const back = mkJob(J1, "failed", {
+      template_key: null,
+      payload: { kind: "sheet_back_page", tray: "manual", detail: { sheet_code: "A3490-0001" } },
+      error: "ipp_aborted: The printer aborted the job",
+    });
+    const [entry] = run({ jobs: [back], printers: [A] });
+    expect(entry).toMatchObject({ severity: "error", textKey: "job.failed" });
+    expect(entry?.values.title).toBe("Sheet code on the back · A3490-0001");
   });
 
   it("names a page job by its page, and an unknown printer by an empty name", () => {

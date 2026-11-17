@@ -26,6 +26,6 @@ export function useTrayLabel(printerId: string, key: string | null): string | nu
 export function useJobTitle(job: Job): string | null {
   const page = pageInfoOf(job);
   const typeLabel = useTypeLabel(page?.kind === "calibration_page" ? page.typeKey : null);
-  const trayLabel = useTrayLabel(job.printer_id, page?.kind === "test_page" ? page.tray : null);
+  const trayLabel = useTrayLabel(job.printer_id, page?.kind === "test_page" || page?.kind === "tray_loading_page" ? page.tray : null);
   return jobTitle(job, typeLabel ?? trayLabel);
 }

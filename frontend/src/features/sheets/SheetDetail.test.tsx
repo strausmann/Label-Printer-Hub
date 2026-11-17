@@ -5,7 +5,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { apiErrorBody, mockApi, respond, sheetRead, type Call } from "../test-api";
+import { apiErrorBody, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, respond, SHEET_TYPE, sheetRead, type Call } from "../test-api";
 import { sheetKey } from "./keys";
 import type { SheetRead } from "./api";
 
@@ -42,14 +42,14 @@ describe("the sheet detail page", () => {
     const base = sheetRead(CODE, { used: [1, 2] }, { id_placement: "cell", id_printed: true });
     // Both cells are written by the hub; only the flagged one holds the ID label.
     await open({ ...base, cells: base.cells.map((c) => ({ ...c, source: "hub", is_id_cell: c.cell === 1 })) });
-    expect(cell(1)).toHaveAccessibleName(/sheet ID/);
-    expect(cell(2)).not.toHaveAccessibleName(/sheet ID/);
+    expect(cell(1)).toHaveAccessibleName(/sheet code/);
+    expect(cell(2)).not.toHaveAccessibleName(/sheet code/);
   });
 
   it("no cell is called the ID cell when the flag is off, whatever the placement says", async () => {
     const base = sheetRead(CODE, { used: [1] }, { id_placement: "cell", id_printed: false });
     await open({ ...base, cells: base.cells.map((c) => ({ ...c, source: "hub", is_id_cell: false })) });
-    expect(cell(1)).not.toHaveAccessibleName(/sheet ID/);
+    expect(cell(1)).not.toHaveAccessibleName(/sheet code/);
   });
 
   it("is reachable under both paths (the QR code prints /sheet/<code>)", async () => {
@@ -549,5 +549,28 @@ describe("a long list of cells", () => {
     unmount();
     await open(sheetRead(CODE, { used: [1, 2, 3] }));
     expect(screen.getByRole("list", { name: "Cells in use" })).toBeVisible();
+  });
+});
+
+describe("the code on the back (#350)", () => {
+  const back = (printed: boolean) => sheetRead(CODE, { used: [] }, { id_placement: "back_side", id_printed: printed });
+
+  it("an unconfirmed back side offers Print back side", async () => {
+    const { calls } = await open(back(false), {
+      [`GET /api/v1/sheet-types/${back(false).type_key}`]: { ...SHEET_TYPE, versions: [] },
+      "GET /api/v1/printers": [PAGE_PRINTER],
+      [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: PAGE_CAPABILITIES,
+    });
+    expect(screen.getByText("Sheet code on the back not confirmed")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Print back side" }));
+    const dialog = await screen.findByRole("dialog", { name: "Activate new sheet" });
+    expect(await within(dialog).findByRole("listitem", { current: "step" })).toHaveTextContent("Turn over");
+    expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sheets")).toHaveLength(0);
+  });
+
+  it("a confirmed back side says where the code is", async () => {
+    await open(back(true));
+    expect(screen.getByText("The sheet code is on the back of the liner.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull();
   });
 });

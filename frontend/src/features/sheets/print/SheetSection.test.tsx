@@ -160,7 +160,7 @@ describe("tray, sheet type and the sheet", () => {
   it("a new sheet is requested without cells of its own and with the ID in the margin", async () => {
     const { calls } = await itemView(routes({ sheets: [] , preview: previewFor(null, NEW_9, [])}));
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
-    expect(body(previews(calls)[0]!).placements).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]);
+    expect(body(previews(calls)[0]!).placements).toEqual([{ new_sheet: { type: "L4736REV" }, cells: "first_free" }]);
     expect(await screen.findByText(/become.*L4736-0005|L4736-0005/)).toBeVisible();
   });
 });

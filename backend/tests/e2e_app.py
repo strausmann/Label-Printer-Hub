@@ -521,6 +521,16 @@ class E2EApp:
         elif path == "/__e2e/page-printer/reset" and method == "POST":
             _reset_fake(self.fake)
             response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        elif path == "/__e2e/tray-loading/reset" and method == "POST":
+            # #350: how the trays take paper, back to unset (a spec that answered the guided test).
+            from app.db.engine import async_session
+            from app.models.printer_tray_loading import PrinterTrayLoading
+            from sqlalchemy import delete
+
+            async with async_session() as session:
+                result = await session.execute(delete(PrinterTrayLoading))
+                await session.commit()
+            response = JSONResponse({"removed": getattr(result, "rowcount", 0)})
         elif path == "/__e2e/tape-printer/state" and method == "POST":
             try:
                 tape = _TapeState.model_validate(await request.json())

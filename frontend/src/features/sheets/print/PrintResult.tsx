@@ -4,7 +4,10 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { Button } from "react-aria-components";
 import type { SheetPrintResponse } from "../api";
+import { BackSideDialog } from "../backSide/BackSideDialog";
 import { useSheetIdBand } from "./bandWord";
 
 type Page = SheetPrintResponse["pages"][number];
@@ -27,9 +30,10 @@ function cellsWords(cells: number[]): string {
 }
 
 /** What was queued: one line per page with its job, and the notes about the sheet ID that belong to that page. */
-export function PrintResult({ pages }: { pages: Page[] }) {
+export function PrintResult({ pages, printerId }: { pages: Page[]; printerId?: string }) {
   const { t } = useLingui();
   const sheetIdBand = useSheetIdBand();
+  const [backOf, setBackOf] = useState<string | null>(null);
   return (
     <section role="status" aria-labelledby="sheet-sent-h" className="flex flex-col gap-3 rounded-r2 border border-ok bg-sunken p-4">
       <h3 id="sheet-sent-h" className="font-bold">{t`Sent to the print queue`}</h3>
@@ -46,6 +50,14 @@ export function PrintResult({ pages }: { pages: Page[] }) {
               ) : page.margin_id ? (
                 <span className="text-small text-ink-2">{sheetIdBand(page.margin_band)}</span>
               ) : null}
+              {page.back_side_pending ? (
+                <span className="flex flex-wrap items-center gap-x-3">
+                  <span className="text-small text-ink-2">{t`The sheet code goes on the back of this sheet.`}</span>
+                  <Button onPress={() => setBackOf(code)} className={`${LINK} font-bold`}>
+                    {t`Print back side`}
+                  </Button>
+                </span>
+              ) : null}
               <Link to="/jobs/$jobId" params={{ jobId: page.job_id }} className={LINK} aria-label={t`View job for page ${number}`}>
                 {t`View job`}
               </Link>
@@ -53,6 +65,7 @@ export function PrintResult({ pages }: { pages: Page[] }) {
           );
         })}
       </ol>
+      {backOf ? <BackSideDialog code={backOf} isOpen onClose={() => setBackOf(null)} printerId={printerId} /> : null}
     </section>
   );
 }

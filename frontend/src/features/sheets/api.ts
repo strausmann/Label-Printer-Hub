@@ -9,6 +9,7 @@ import type { components } from "../../api/schema.gen";
 import { watchPrint } from "../jobs/printWatch";
 import { statusKey } from "../printers/api";
 import {
+  capabilitiesKey,
   marginCheckKey,
   nextCodeKey,
   SHEET_PREVIEW_KEY,
@@ -188,5 +189,56 @@ export function usePrintSheets(printerId: string) {
       // The status names the tray the newest sheet page used (#344).
       void client.invalidateQueries({ queryKey: statusKey(printerId) });
     },
+  });
+}
+
+// ---------------------------------------------------------------- the code on the back (#350)
+
+export type SheetBackPrint = Schemas["SheetBackPrint"];
+export type PageJobQueued = Schemas["PageJobQueued"];
+export type TrayLoadingRead = Schemas["TrayLoadingRead"];
+
+/** "Print sheet code" / "Print again": queues the code strip on the back of an existing sheet. */
+export function usePrintBackSide() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, body }: { code: string; body: SheetBackPrint }) => post<PageJobQueued>(`/api/v1/sheets/${encode(code)}/back-side`, body),
+    onSuccess: (queued, { body }) => void watchPrint({ kind: "sheet", printerId: body.printer, jobIds: [queued.job_id] }),
+    onSettled: (_d, _e, { code }) => {
+      refreshAfterWrite(client);
+      void client.invalidateQueries({ queryKey: sheetKey(code) });
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+}
+
+/** "Yes, it is printed": only this marks the code on the back as printed. */
+export function useConfirmBackSide() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => post<SheetRead>(`/api/v1/sheets/${encode(code)}/back-side/confirm`),
+    onSuccess: (sheet, code) => client.setQueryData(sheetKey(code), sheet),
+    onSettled: () => refreshAfterWrite(client),
+  });
+}
+
+const loadingPath = (printerId: string, tray: string) => `/api/v1/printers/${encode(printerId)}/trays/${encode(tray)}/loading`;
+
+/** Stores how a tray takes paper; the capabilities carry it from then on. */
+export function useSetTrayLoading() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ printerId, tray, loading }: { printerId: string; tray: string; loading: TrayLoadingRead }) =>
+      apiFetch<TrayLoadingRead>(loadingPath(printerId, tray), { method: "PUT", json: loading }),
+    onSettled: (_d, _e, { printerId }) => void client.invalidateQueries({ queryKey: capabilitiesKey(printerId) }),
+  });
+}
+
+/** Prints the loading test page of a tray. */
+export function usePrintLoadingTest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ printerId, tray }: { printerId: string; tray: string }) => post<PageJobQueued>(`${loadingPath(printerId, tray)}/test-page`),
+    onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }

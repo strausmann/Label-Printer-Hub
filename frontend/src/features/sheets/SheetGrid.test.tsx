@@ -125,7 +125,7 @@ describe("shapes and markers", () => {
     );
     expect(container.querySelector('[data-marker="id"]')).not.toBeNull();
     expect(container.querySelector('[data-marker="hw-margin"]')).not.toBeNull();
-    expect(cell(1)).toHaveAccessibleName(/sheet ID.*unprintable margin/);
+    expect(cell(1)).toHaveAccessibleName(/sheet code.*unprintable margin/);
   });
 
   it("draws the overlay PNG across the whole page", () => {
@@ -288,5 +288,17 @@ describe("inspecting a cell", () => {
     expect(width("view", true)).toBe(360);
     expect(width("view", false)).toBe(360);
     expect(width("select", true)).toBeGreaterThan(360);
+  });
+});
+
+describe("the reserved cell (#350)", () => {
+  it('the reserved cell is hatched and named "Sheet code"', () => {
+    const cells: GridCell[] = [{ cell: 2, state: "new", isId: true }, { cell: 1, state: "new" }];
+    render(<SheetGrid geometry={L4736} cells={cells} mode="view" label="g" containerWidth={360} />);
+    const reserved = screen.getByRole("gridcell", { name: /^Cell 2,/ });
+    expect(reserved).toHaveAccessibleName(/sheet code/);
+    expect(reserved.querySelector('[data-marker="hatch"]')).not.toBeNull();
+    const plain = screen.getByRole("gridcell", { name: /^Cell 1,/ });
+    expect(plain.querySelector('[data-marker="hatch"]')).toBeNull();
   });
 });

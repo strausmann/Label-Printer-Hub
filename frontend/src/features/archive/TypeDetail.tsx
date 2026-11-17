@@ -5,7 +5,7 @@ import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Button } from "react-aria-components";
+import { Button, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { GeometryDiagram } from "../sheets/GeometryDiagram";
@@ -16,8 +16,12 @@ import { exportTypeUrl, useArchiveType, useDeleteType, useSheetType, type SheetT
 import { useArchiveErrorText } from "./errors";
 import { Badge } from "./fields";
 import { FeedbackLinks } from "./FeedbackLinks";
+import { IdPlacementSection } from "./IdPlacementSection";
 import { TypeForm } from "./TypeForm";
 import { httpUrl } from "./search";
+
+const TAB =
+  "-mb-px inline-flex min-h-11 cursor-pointer items-center whitespace-nowrap border-b-2 border-transparent px-3 font-bold text-ink-2 outline-none transition-colors duration-150 data-[selected]:border-accent data-[selected]:text-ink data-[focus-visible]:outline-3 data-[focus-visible]:outline-link [@media(hover:hover)]:hover:text-ink";
 
 /** The words that mark a type: where it came from, whether anyone measured it, whether it is retired. */
 export function TypeBadges({ type }: { type: { origin: "seed" | "custom" | "imported"; verified: boolean; archived_at: string | null } }) {
@@ -150,7 +154,15 @@ export function TypeDetail({ typeKey, admin, onLeave }: { typeKey: string; admin
       {editing ? (
         <TypeForm mode={{ kind: editing, type }} onDone={() => setEditing(null)} />
       ) : (
-        <>
+        <Tabs className="flex min-w-0 flex-col gap-6">
+          <TabList aria-label={t`Sheet type`} className="-mx-1 flex gap-1 overflow-x-auto border-b border-line px-1">
+            <Tab id="details" className={TAB}>{t`Details`}</Tab>
+            <Tab id="placement" className={TAB}>{t`Where the code goes`}</Tab>
+          </TabList>
+          <TabPanel id="placement" className="outline-none">
+            <IdPlacementSection key={type.key} type={type} admin={admin} />
+          </TabPanel>
+          <TabPanel id="details" className="flex min-w-0 flex-col gap-6 outline-none">
           <div className="flex flex-wrap gap-3">
             {admin ? (
               <>
@@ -196,7 +208,8 @@ export function TypeDetail({ typeKey, admin, onLeave }: { typeKey: string; admin
           ) : null}
 
           <FeedbackLinks type={type} admin={admin} />
-        </>
+          </TabPanel>
+        </Tabs>
       )}
 
       <ModalDialog title={t`Delete this type?`} isOpen={confirmDelete} onClose={() => setConfirmDelete(false)} alert>

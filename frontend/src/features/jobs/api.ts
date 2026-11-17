@@ -23,8 +23,8 @@ export function useJobs(state: string | null) {
   return useQuery({ queryKey: jobsListKey(state), queryFn: () => apiFetch<Job[]>(`/api/v1/jobs?${query}`) });
 }
 
-export const useJob = (id: string) =>
-  useQuery({ queryKey: jobKey(id), queryFn: () => apiFetch<Job>(`/api/v1/jobs/${id}`) });
+export const useJob = (id: string, enabled = true) =>
+  useQuery({ queryKey: jobKey(id), queryFn: () => apiFetch<Job>(`/api/v1/jobs/${id}`), enabled: enabled && id !== "" });
 
 /** Refreshes every job view and the printer queues they feed. */
 function useRefreshJobs() {

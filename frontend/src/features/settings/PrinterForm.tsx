@@ -177,7 +177,7 @@ export function PrinterForm({
         </div>
       )}
       {isIpp ? (
-        <IppPrinterFields draft={ipp} />
+        <IppPrinterFields draft={ipp} printerId={printer?.id} />
       ) : (
         <div className="grid gap-5 sm:grid-cols-[1fr_8rem]">
           <TextInput

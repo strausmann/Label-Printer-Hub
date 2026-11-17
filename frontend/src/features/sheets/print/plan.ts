@@ -58,10 +58,10 @@ export function expandItems(lines: readonly CartItem[]): SheetItem[] {
 export const freeOf = (s: Pick<SheetSummary, "total" | "used" | "reserved" | "unconfirmed">): number =>
   Math.max(0, s.total - s.used - s.reserved - s.unconfirmed);
 
-/** The placement for one target. `choose` cells and `skip` never go together; a new sheet prints its ID in the margin (the server's default, which takes no cell). */
+/** The placement for one target. `choose` cells and `skip` never go together; a new sheet leaves its ID to the sheet type (#350, R-350-9). */
 export function placementFor(target: Target, typeKey: string, fill: Fill, count?: number): PlacementIn {
   const withCount = count === undefined ? {} : { count };
-  if (target.kind === "new") return { new_sheet: { type: typeKey, id_placement: "margin" }, cells: "first_free", ...withCount };
+  if (target.kind === "new") return { new_sheet: { type: typeKey }, cells: "first_free", ...withCount };
   if (fill.mode === "choose") return { sheet: target.code, cells: [...fill.chosen].sort((a, b) => a - b), ...withCount };
   return {
     sheet: target.code,

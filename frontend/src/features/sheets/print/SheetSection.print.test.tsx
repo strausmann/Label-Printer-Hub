@@ -39,6 +39,18 @@ describe("after printing", () => {
     expect(within(done).getByText("Sheet ID in the bottom margin")).toBeVisible();
   });
 
+  it("a new back-side sheet offers Print back side", async () => {
+    const pages = [
+      { job_id: JOB, sheet_code: "A3490-0001", cells: [1], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: true, back_side_pending: true },
+    ];
+    await itemView(routes({ print: { batch_id: BATCH, pages } }));
+    await pressPrint();
+    const done = await screen.findByRole("status", { name: "Sent to the print queue" });
+    expect(within(done).getByText("The sheet code goes on the back of this sheet.")).toBeVisible();
+    expect(within(done).getByRole("button", { name: "Print back side" })).toBeVisible();
+    expect(within(done).queryByText("Sheet ID not printed, add it by hand")).toBeNull();
+  });
+
   /** Two pages: items 0-4 on L4736-0001, items 5-8 on a new sheet. A request for fewer items gets one page. */
   const twoPages = (init: RequestInit) => {
     const count = (JSON.parse(String(init.body)) as { items: unknown[] }).items.length;
