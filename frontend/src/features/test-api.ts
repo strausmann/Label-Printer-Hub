@@ -336,6 +336,7 @@ export function sheetRead(
     last_used_at: "2026-11-04T09:00:00Z",
     note: null,
     cells: rows,
+    back_side_missing: false,
     ...over,
   };
 }
@@ -356,6 +357,7 @@ export function sheetSummary(code = "L4736-0001", over: Partial<Schemas["SheetSu
     label_w: sheet.label_w,
     label_h: sheet.label_h,
     last_used_at: sheet.last_used_at,
+    back_side_missing: sheet.back_side_missing,
     ...over,
   };
 }

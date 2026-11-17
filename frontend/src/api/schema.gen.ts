@@ -3844,6 +3844,11 @@ export interface components {
          */
         SheetCreated: {
             /**
+             * Back Side Missing
+             * @description An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).
+             */
+            back_side_missing: boolean;
+            /**
              * Cells
              * @description Every cell that is not free, by cell number.
              */
@@ -4021,6 +4026,11 @@ export interface components {
         /** SheetRead */
         SheetRead: {
             /**
+             * Back Side Missing
+             * @description An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).
+             */
+            back_side_missing: boolean;
+            /**
              * Cells
              * @description Every cell that is not free, by cell number.
              */
@@ -4075,6 +4085,11 @@ export interface components {
         };
         /** SheetSummary */
         SheetSummary: {
+            /**
+             * Back Side Missing
+             * @description An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).
+             */
+            back_side_missing: boolean;
             /** Code */
             code: string;
             /** Free */

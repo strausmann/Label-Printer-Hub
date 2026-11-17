@@ -125,6 +125,11 @@ def _summary(row: ss.SheetListRow | ss.SheetDetail) -> SheetSummary:
         free=row.free,
         state=_SHEET_STATES[row.sheet.state],
         last_used_at=row.sheet.last_used_at,
+        back_side_missing=(
+            row.sheet.state == "active"
+            and row.sheet.id_placement == "back_side"
+            and not row.sheet.id_printed
+        ),
     )
 
 

@@ -162,7 +162,7 @@ async def test_list_sheets_filters_and_order(ready, printer, reader, admin):
     assert [r["code"] for r in rows] == [second["code"], first["code"], third["code"]]
     assert set(rows[0]) == {
         "code", "type_key", "type_label", "version", "label_w", "label_h", "total", "used",
-        "reserved", "unconfirmed", "free", "state", "last_used_at",
+        "reserved", "unconfirmed", "free", "state", "last_used_at", "back_side_missing",
     }  # fmt: skip
     assert "cells" not in rows[0]
 

@@ -14,6 +14,8 @@ export interface SheetsSearch {
   full?: true | undefined;
   /** Show the discarded sheets (hidden by default). */
   discarded?: true | undefined;
+  /** Only the sheets whose code goes on the back and is not confirmed printed (#350). */
+  back_missing?: true | undefined;
 }
 
 // The router parses `?q=123` as the number 123, so text arrives as a string or a number.
@@ -25,5 +27,5 @@ const flag = (value: unknown): true | undefined => (value === true || value === 
 
 /** Every key stays in the result even when rejected: the router merges it over the raw query string. */
 export function parseSheetsSearch(search: Record<string, unknown>): SheetsSearch {
-  return { type: text(search.type), q: text(search.q)?.slice(0, MAX_CODE_SEARCH).trim() || undefined, full: flag(search.full), discarded: flag(search.discarded) };
+  return { type: text(search.type), q: text(search.q)?.slice(0, MAX_CODE_SEARCH).trim() || undefined, full: flag(search.full), discarded: flag(search.discarded), back_missing: flag(search.back_missing) };
 }

@@ -876,6 +876,10 @@ msgstr "Rückseite des Trägerpapiers. Der Code kommt in den markierten Streifen
 msgid "Back side"
 msgstr "Rückseite"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Back side missing"
+msgstr "Rückseite fehlt"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Back to the jobs"
 msgstr "Zurück zu den Aufträgen"

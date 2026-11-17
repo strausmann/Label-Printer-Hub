@@ -168,6 +168,42 @@ describe("the sheet list", () => {
   });
 });
 
+describe("a missing back side (#350)", () => {
+  const BACK = sheetSummary("A3490-0001", { type_key: "avery-zweckform-3490", type_label: "3490", used: 0, free: 24, total: 24, back_side_missing: true });
+  const ROWS = [FRESH, BACK, FULL, GONE];
+
+  it("marks the sheet whose code on the back is not confirmed", async () => {
+    setup(ROWS);
+    await renderApp({ path: "/sheets", session: PRINT_SESSION });
+    await screen.findByRole("link", { name: "A3490-0001" });
+    expect(within(rowOf("A3490-0001")).getByText("Back side missing")).toBeVisible();
+    expect(within(rowOf("L4736-0001")).queryByText("Back side missing")).toBeNull();
+  });
+
+  it("the filter shows only those sheets, and stays in the address", async () => {
+    setup(ROWS);
+    const { router } = await renderApp({ path: "/sheets", session: PRINT_SESSION });
+    await screen.findByRole("link", { name: "L4736-0001" });
+    await userEvent.click(screen.getByRole("switch", { name: "Back side missing" }));
+    await waitFor(() => expect(screen.queryByRole("link", { name: "L4736-0001" })).toBeNull());
+    expect(screen.getByRole("link", { name: "A3490-0001" })).toBeVisible();
+    expect(router.state.location.search.back_missing).toBe(true);
+  });
+
+  it("with the filter and no such sheet the list says so", async () => {
+    setup();
+    await renderApp({ path: "/sheets?back_missing=true", session: PRINT_SESSION });
+    expect(await screen.findByText("No sheet matches.")).toBeVisible();
+  });
+
+  it("de: the badge is German", async () => {
+    setup(ROWS);
+    await renderApp({ path: "/sheets", session: PRINT_SESSION, language: "de" });
+    await screen.findByRole("link", { name: "A3490-0001" });
+    expect(within(rowOf("A3490-0001")).getByText("Rückseite fehlt")).toBeVisible();
+  });
+});
+
 describe("the code search", () => {
   it("takes at most as many characters as the server accepts and never asks for more", async () => {
     const { calls } = setup();

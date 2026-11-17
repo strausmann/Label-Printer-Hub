@@ -464,3 +464,24 @@ async def test_cell_sheet_takes_the_type_id_cell() -> None:
         resp = await _create(rig, body)
         assert resp.status_code == 201, resp.text
         assert [c["cell"] for c in resp.json()["cells"] if c["is_id_cell"]] == [7]
+
+
+# ------------------------------------------------------------- the list marks a missing back side
+
+
+async def test_list_marks_a_sheet_whose_back_side_is_missing() -> None:
+    """``back_side_missing``: placement back_side and the code not confirmed (follow-up of #350)."""
+    async with running() as rig:
+        pending = await _new_sheet("back_side")
+        confirmed = await _new_sheet("back_side")
+        margin = await _new_sheet("margin")
+        assert (await _confirm(rig, confirmed)).status_code == 200
+        resp = await rig.client.get("/api/v1/sheets", params={"type": KEY_3490}, headers=rig.reader)
+        assert resp.status_code == 200, resp.text
+        flags = {s["code"]: s["back_side_missing"] for s in resp.json()}
+        assert flags[pending] is True
+        assert flags[confirmed] is False
+        assert flags[margin] is False
+        # The detail carries the same flag.
+        assert (await rig.sheet(pending))["back_side_missing"] is True
+        assert (await rig.sheet(confirmed))["back_side_missing"] is False

@@ -5082,6 +5082,11 @@
       "SheetCreated": {
         "description": "The response of ``POST /api/v1/sheets``: the sheet and the ID-only job of a cell sheet.",
         "properties": {
+          "back_side_missing": {
+            "description": "An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).",
+            "title": "Back Side Missing",
+            "type": "boolean"
+          },
           "cells": {
             "description": "Every cell that is not free, by cell number.",
             "items": {
@@ -5226,6 +5231,7 @@
           "free",
           "state",
           "last_used_at",
+          "back_side_missing",
           "id_placement",
           "id_printed",
           "feed_mark_printed",
@@ -5539,6 +5545,11 @@
       },
       "SheetRead": {
         "properties": {
+          "back_side_missing": {
+            "description": "An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).",
+            "title": "Back Side Missing",
+            "type": "boolean"
+          },
           "cells": {
             "description": "Every cell that is not free, by cell number.",
             "items": {
@@ -5670,6 +5681,7 @@
           "free",
           "state",
           "last_used_at",
+          "back_side_missing",
           "id_placement",
           "id_printed",
           "feed_mark_printed",
@@ -5683,6 +5695,11 @@
       },
       "SheetSummary": {
         "properties": {
+          "back_side_missing": {
+            "description": "An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).",
+            "title": "Back Side Missing",
+            "type": "boolean"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -5760,7 +5777,8 @@
           "unconfirmed",
           "free",
           "state",
-          "last_used_at"
+          "last_used_at",
+          "back_side_missing"
         ],
         "title": "SheetSummary",
         "type": "object"

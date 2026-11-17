@@ -876,6 +876,10 @@ msgstr "Back of the liner. The code goes in the marked strip."
 msgid "Back side"
 msgstr "Back side"
 
+#: src/features/sheets/SheetsPage.tsx
+msgid "Back side missing"
+msgstr "Back side missing"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Back to the jobs"
 msgstr "Back to the jobs"

@@ -343,6 +343,12 @@ class SheetSummary(BaseModel):
     free: int
     state: Literal["active", "discarded"]
     last_used_at: datetime | None
+    back_side_missing: bool = Field(
+        description=(
+            "An active sheet whose code goes on the back of the liner and is not confirmed "
+            "printed yet (`id_placement` `back_side`, `id_printed` false)."
+        ),
+    )
 
     @field_serializer("last_used_at")
     def _ser_last_used(self, dt: datetime | None, info: Any) -> str | None:

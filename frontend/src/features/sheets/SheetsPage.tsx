@@ -102,8 +102,10 @@ function LastUsed({ iso }: { iso: string | null }) {
 function StateWord({ sheet }: { sheet: SheetSummary }) {
   const { t } = useLingui();
   if (sheet.state === "discarded") return <Badge tone="warn">{t({ message: "discarded", context: "sheet state" })}</Badge>;
-  if (isUsedUp(sheet)) return <Badge>{t({ message: "used up", context: "sheet state" })}</Badge>;
-  return null;
+  // #350: the code goes on the back and nobody has confirmed it yet; the sheet page offers "Print back side".
+  const back = sheet.back_side_missing ? <Badge tone="warn">{t`Back side missing`}</Badge> : null;
+  if (isUsedUp(sheet)) return <>{back}<Badge>{t({ message: "used up", context: "sheet state" })}</Badge></>;
+  return back;
 }
 
 /** The question before a discard, in the mockup's words, with the two traps of the server's rules. */
@@ -238,7 +240,7 @@ export function SheetsPage() {
   const [adding, setAdding] = useState(false);
   const [discarding, setDiscarding] = useState<SheetSummary | null>(null);
   // On a phone the filters take the first screen: they start folded unless one is in use.
-  const [filtersOpen, setFiltersOpen] = useState(() => Boolean(search.type || search.q || search.full || search.discarded));
+  const [filtersOpen, setFiltersOpen] = useState(() => Boolean(search.type || search.q || search.full || search.discarded || search.back_missing));
 
   const commit = useCallback(
     (next: Partial<SheetsSearch>) => void navigate({ to: "/sheets", search: (prev) => ({ ...prev, ...next }), replace: true }),
@@ -259,10 +261,10 @@ export function SheetsPage() {
   }, [unknownType, commit]);
 
   const hideUsedUp = search.full !== true;
-  const rows = (list.data ?? []).filter((s) => !(hideUsedUp && isUsedUp(s)));
+  const rows = (list.data ?? []).filter((s) => !(hideUsedUp && isUsedUp(s)) && (!search.back_missing || s.back_side_missing));
   const hidden = hideUsedUp ? (list.data ?? []).filter(isUsedUp).length : 0;
-  const narrowed = Boolean(search.type || search.q);
-  const activeFilters = [search.type, search.q, search.full, search.discarded].filter(Boolean).length;
+  const narrowed = Boolean(search.type || search.q || search.back_missing);
+  const activeFilters = [search.type, search.q, search.full, search.discarded, search.back_missing].filter(Boolean).length;
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -297,7 +299,7 @@ export function SheetsPage() {
           role="search"
           aria-label={t`Filter the sheets`}
           onSubmit={(e) => e.preventDefault()}
-          className={`${PANEL} ${filtersOpen ? "grid" : "hidden"} gap-4 md:grid md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] lg:items-end`}
+          className={`${PANEL} ${filtersOpen ? "grid" : "hidden"} gap-4 md:grid md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] lg:items-end`}
         >
           <TextInput label={t`Search by code`} value={q} onChange={setQ} placeholder="L4736-0004" mono maxLength={MAX_CODE_SEARCH} />
           <SheetTypeCombobox
@@ -310,6 +312,7 @@ export function SheetsPage() {
           />
           <SwitchField label={t`Hide used-up sheets`} isSelected={hideUsedUp} onChange={(on) => commit({ full: on ? undefined : true })} />
           <SwitchField label={t`Show discarded sheets`} isSelected={search.discarded === true} onChange={(on) => commit({ discarded: on ? true : undefined })} />
+          <SwitchField label={t`Back side missing`} isSelected={search.back_missing === true} onChange={(on) => commit({ back_missing: on ? true : undefined })} />
         </form>
       </div>
 
@@ -323,7 +326,7 @@ export function SheetsPage() {
                 {narrowed ? t`No sheet matches.` : hidden > 0 ? t`Every sheet is used up.` : t`No sheets yet.`}
               </p>
               {narrowed ? (
-                <Button onPress={() => commit({ type: undefined, q: undefined })} className={SECONDARY_BUTTON}>
+                <Button onPress={() => commit({ type: undefined, q: undefined, back_missing: undefined })} className={SECONDARY_BUTTON}>
                   {t`Clear filters`}
                 </Button>
               ) : null}
