@@ -16,7 +16,9 @@ from app.models.tape import TapeSpec
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
 from app.printer_backends.exceptions import (
     MediaTypeMismatchError,
+    NoTapeLoadedError,
     PrinterOfflineError,
+    PrinterReportedError,
     PrintFailedError,
     TapeMismatchError,
 )
@@ -43,6 +45,7 @@ class _Printer:
         self, monkeypatch: pytest.MonkeyPatch, *, loaded_mm: int | None, media_raw: str | None
     ) -> None:
         self.preflights = 0
+        self.flags: list[str] = []
         self.sent: list[int] = []
         self.send_result: Any = {"outcome": "sent"}
 
@@ -51,7 +54,7 @@ class _Printer:
             return PreflightStatus(
                 hr_printer_status="idle",
                 loaded_tape_mm=loaded_mm,
-                error_flags=[],
+                error_flags=list(self.flags),
                 media_raw=media_raw,
             )
 
@@ -151,3 +154,42 @@ async def test_an_error_outcome_of_the_send_fails_the_print(
         await BrotherQLBackend(host="192.0.2.11").print_image(_image(), _spec(29))
 
     assert err.value.nothing_sent is False
+
+
+async def test_a_sticky_error_bit_refuses_before_sending(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#389 I3: a bit that is there before sending refuses, nothing is printed."""
+    printer = _Printer(monkeypatch, loaded_mm=29, media_raw="29mm")
+    printer.flags = ["serviceRequested"]
+
+    with pytest.raises(PrinterReportedError) as err:
+        await BrotherQLBackend(host="192.0.2.11").print_image(_image(), _spec(29))
+
+    assert err.value.flags == ["serviceRequested"]
+    assert err.value.nothing_sent is True
+    assert printer.sent == []
+
+
+async def test_the_send_records_the_roll_and_the_bits_it_was_checked_against(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    printer = _Printer(monkeypatch, loaded_mm=29, media_raw="29mm")
+    printer.flags = ["lowPaper"]
+    backend = BrotherQLBackend(host="192.0.2.11")
+
+    await backend.print_image(_image(), _spec(29))
+
+    assert backend.roll_at_send() == {
+        "width_mm": 29,
+        "media_raw": "29mm",
+        "media_kind": "continuous",
+    }
+    assert backend.flags_before_send == frozenset({"lowPaper"})
+
+
+async def test_a_roll_without_tape_is_no_tape_not_a_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _Printer(monkeypatch, loaded_mm=None, media_raw=None)
+
+    with pytest.raises(NoTapeLoadedError):
+        await BrotherQLBackend(host="192.0.2.11").print_image(_image(), _spec(29))

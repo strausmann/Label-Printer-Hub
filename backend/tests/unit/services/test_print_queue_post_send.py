@@ -108,3 +108,74 @@ async def test_an_unreadable_status_after_sending_does_not_fail_a_sent_label(
         assert not queue.is_paused(_PRINTER)
     finally:
         await queue.stop()
+
+
+class _RollPrinter(_Printer):
+    """A queue printer whose last send was checked against a 29 mm roll."""
+
+    def __init__(
+        self, after_send: Exception | None = None, refuse: Exception | None = None
+    ) -> None:
+        super().__init__(after_send)
+        self.refuse = refuse
+
+    async def print_image(self, image: Image.Image, *, tape_mm: int, **options: Any) -> None:
+        if self.refuse is not None:
+            raise self.refuse
+        self.printed += 1
+
+    def roll_at_send(self) -> dict[str, object] | None:
+        return {"width_mm": 29, "media_raw": "29mm", "media_kind": "continuous"}
+
+
+async def _run_with_store(printer: _Printer) -> tuple[PrintQueue, Any, Any]:
+    from uuid import uuid4
+
+    from app.models.job import Job as JobRow
+    from app.services.job_store import MemoryJobStore
+
+    store = MemoryJobStore()
+    queue = PrintQueue([printer], store=store)
+    asked: list[tuple[Any, ...]] = []
+
+    async def colour(printer_id: UUID, width: int | None, raw: str | None) -> str | None:
+        asked.append((printer_id, width, raw))
+        return "white"
+
+    queue.set_roll_colour(colour)
+    await queue.start()
+    job_id = uuid4()
+    # The row as the print service stores it: with the roll it was drawn for (62 mm).
+    await store.save_queued(
+        JobRow(id=job_id, printer_id=_PRINTER, payload={"loaded_roll": {"width_mm": 62}})
+    )
+    await queue.submit_with_id(job_id, _PRINTER, Image.new("1", (306, 120)), tape_mm=62)
+    await queue.wait_for_job(str(job_id), timeout_s=5)
+    return queue, await store.get(job_id), asked
+
+
+_SENT_TO_29 = {"width_mm": 29, "media_raw": "29mm", "media_kind": "continuous", "colour": "white"}
+
+
+@pytest.mark.asyncio
+async def test_a_job_records_the_roll_it_was_sent_to() -> None:
+    queue, row, asked = await _run_with_store(_RollPrinter())
+    try:
+        assert row is not None
+        assert row.payload["loaded_roll"] == _SENT_TO_29
+        assert asked == [(_PRINTER, 29, "29mm")]
+    finally:
+        await queue.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_job_refused_at_send_records_the_roll_that_refused_it() -> None:
+    """A retry drawn for 62 mm and refused on the 29 mm roll names the 29 mm roll."""
+    printer = _RollPrinter(refuse=TapeMismatchError(expected_mm=62, loaded_mm=29))
+    queue, row, _asked = await _run_with_store(printer)
+    try:
+        assert row is not None
+        assert row.state == JobState.FAILED.value
+        assert row.payload["loaded_roll"] == _SENT_TO_29
+    finally:
+        await queue.stop()

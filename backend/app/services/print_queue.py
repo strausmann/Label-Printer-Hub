@@ -158,6 +158,9 @@ def _is_deferred_sheet_label(payload: Any) -> bool:
     )
 
 
+RollColour = Callable[[UUID, int | None, str | None], Awaitable[str | None]]
+"""The colour the operator gave the roll ``(printer_id, width_mm, media_raw)`` (#389)."""
+
 DEFERRED_INTERRUPTED = "deferred_interrupted"
 """Error of a deferred job (#281) that a restart or a re-wire caught before it was queued."""
 
@@ -462,6 +465,11 @@ class PrintQueue:
         self._on_run_change = on_run_change
         self._pause_info: dict[UUID, PauseInfo] = {}
         self._store: JobStore = store if store is not None else MemoryJobStore()
+        # #389: the colour the operator gave a roll, for the roll a job is sent to (the runtime
+        # sets it to ``RollTracker.colour_of``).
+        self._roll_colour: (
+            Callable[[UUID, int | None, str | None], Awaitable[str | None]] | None
+        ) = None
         self._engine: LayoutEngine = engine if engine is not None else LayoutEngine()
         self._printers: dict[UUID, _PrinterLike] = {p.id: p for p in printers}
         # D18: page printers (IPP) get their own queues and worker; tape printers keep theirs.
@@ -1539,6 +1547,8 @@ class PrintQueue:
                     continue
                 new_id = uuid4()
                 payload = dict(row.payload)
+                # #389: the reprint records the roll it is sent to, never the source's.
+                payload.pop("loaded_roll", None)
                 # The reprint repeats its own source, like every retry; a ``retry_of`` copied
                 # from the source (itself a retry) would name the wrong job.
                 payload["retry_of"] = old
@@ -2589,7 +2599,12 @@ class PrintQueue:
                 if job.image_payload is None:
                     raise RuntimeError(f"Job {job.id} has no image payload")
                 image = await asyncio.to_thread(Image.open, BytesIO(job.image_payload))
-                await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
+                try:
+                    await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
+                finally:
+                    # #389: the job records the roll it was sent to (a retry, a reprint or a
+                    # recovered job the roll loaded now, never the original's).
+                    await self._record_roll_at_send(printer, [job.id])
                 # #389: the libraries read nothing back over the network; ask the printer.
                 await self._check_after_send(printer, job)
                 _from = job.state
@@ -2663,6 +2678,42 @@ class PrintQueue:
                 # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
                 await self._store.mark_failed(UUID(job.id), str(exc))
                 logger.exception("Job %s failed on %s", job.id, printer_id)
+
+    def set_roll_colour(self, roll_colour: RollColour | None) -> None:
+        """#389: where the colour of the roll a job is sent to comes from (the roll record)."""
+        self._roll_colour = roll_colour
+
+    async def _record_roll_at_send(self, printer: _PrinterLike, job_ids: list[str]) -> None:
+        """#389: store the roll the printer's last send was checked against on each job.
+
+        Overwrites the record made at submit time: a retry, a reprint or a recovered job names
+        the roll loaded when it was sent, never the one of the job it repeats. A printer without
+        such a read (test fakes, the mock backend) records nothing. Never raises: the record is
+        for tracing, it must not change the outcome of the print.
+        """
+        get = getattr(type(printer), "roll_at_send", None)
+        if get is None:
+            return
+        try:
+            roll = get(printer)
+            if roll is None:
+                return
+            colour: str | None = None
+            if self._roll_colour is not None:
+                width = roll.get("width_mm")
+                raw = roll.get("media_raw")
+                colour = await self._roll_colour(
+                    printer.id,
+                    width if isinstance(width, int) else None,
+                    raw if isinstance(raw, str) else None,
+                )
+            record = {**roll, "colour": colour}
+            for job_id in job_ids:
+                await self._store.set_loaded_roll(UUID(job_id), record)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("The roll of a sent job could not be recorded", exc_info=True)
 
     @staticmethod
     async def _check_after_send(printer: _PrinterLike, job: Job) -> None:
@@ -2936,6 +2987,7 @@ class PrintQueue:
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
+                    await self._record_roll_at_send(printer, [job.id for job in active])
                     # A refusal of the backend's own preflight sent nothing: the group did not
                     # print. Anything else may have happened while sending: unknown.
                     nothing_sent = isinstance(exc, PrinterError) and exc.nothing_sent
@@ -2943,6 +2995,7 @@ class PrintQueue:
                         printer_id, batch, run, active, later, exc, nothing_sent=nothing_sent
                     )
                     return
+                await self._record_roll_at_send(printer, [job.id for job in active])
                 check = getattr(printer, "check_status", None)
                 if check is not None:
                     try:

@@ -272,6 +272,11 @@ class _QLQueuePrinter:
     ``post_send_settle_s`` (the mock backend has no printer to wait for), else
     ``POST_SEND_SETTLE_S``."""
 
+    def roll_at_send(self) -> dict[str, object] | None:
+        """#389: the roll the backend's last send was checked against, for the job record."""
+        get = getattr(type(self._backend), "roll_at_send", None)
+        return None if get is None else get(self._backend)
+
     async def check_status(self) -> None:
         """#277: the status check after each group of a tape run (``check_after_send``)."""
         await self.check_after_send()

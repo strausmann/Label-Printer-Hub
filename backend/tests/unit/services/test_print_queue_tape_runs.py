@@ -920,6 +920,25 @@ async def test_reprint_of_a_retried_label_points_at_its_own_source() -> None:
         await queue.stop(timeout_s=2.0)
 
 
+async def test_a_reprint_does_not_copy_the_roll_of_its_source() -> None:
+    """#389: a reprint records the roll it is sent to, never the source's."""
+    printer = TapeRoll(15)
+    queue, run_id, ids, store = await _run(printer, 30)
+    try:
+        await _until(_stopped(queue, run_id))
+        printer.k = None
+        row = await store.get(ids[13])
+        assert row is not None
+        row.payload["loaded_roll"] = {"width_mm": 62, "media_raw": "62mm"}
+
+        result = await queue.reprint_from(run_id, 14)
+
+        first = await store.get(result.new_job_ids[0])
+        assert first is not None and "loaded_roll" not in first.payload
+    finally:
+        await queue.stop(timeout_s=2.0)
+
+
 @pytest.mark.parametrize("label", [10, 22, 0])
 async def test_reprint_from_outside_the_unknown_group_is_refused(label: int) -> None:
     printer = TapeRoll(15)

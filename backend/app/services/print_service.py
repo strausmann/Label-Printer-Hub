@@ -32,6 +32,7 @@ from app.printer_backends.exceptions import (
     MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterDisabledError,
+    PrinterReportedError,
     QrPayloadTooLongError,
     SpoolLabelOnlyTapeError,
     TapeMismatchError,
@@ -64,6 +65,7 @@ _DEFERRED_FAILURE_MESSAGES: dict[str, str] = {
     "tape_empty": "The tape is empty.",
     "tape_mismatch": "The loaded tape does not fit the label.",
     "media_type_mismatch": "The loaded roll is die-cut labels; only continuous tape prints.",
+    "printer_error": "The printer reports an error state.",
     "unsupported_tape": "The loaded tape is not supported.",
     "content_type_data_mismatch": "The label data does not fit the content type.",
     "qr_payload_too_long": "The QR code content is too long for the loaded tape.",
@@ -267,7 +269,7 @@ class PrintService:
             "media_raw": media_raw,
             "media_kind": media_kind,
             "colour": colour,
-        }
+        }  # the same keys as ``snmp_helper.roll_record`` plus the colour
 
     async def _enqueue(
         self,
@@ -567,6 +569,8 @@ class PrintService:
                 detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
             elif isinstance(exc, MediaTypeMismatchError):
                 detail = {"loaded_kind": exc.loaded_kind, "media_raw": exc.media_raw}
+            elif isinstance(exc, PrinterReportedError):
+                detail = {"flags": list(exc.flags)}
             elif isinstance(exc, QrPayloadTooLongError):
                 detail = {"length": exc.length, "max_bytes": exc.max_bytes}
             message = _DEFERRED_FAILURE_MESSAGES.get(code, _DEFERRED_FAILURE_FALLBACK)

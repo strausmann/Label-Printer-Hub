@@ -496,7 +496,11 @@ async def retry_job(
         session,
         printer_id=job.printer_id,
         template_key=job.template_key,
-        payload={**job.payload, "retry_of": str(job.id)},
+        # #389: the retry records the roll it is sent to, never the original's.
+        payload={
+            **{k: v for k, v in job.payload.items() if k != "loaded_roll"},
+            "retry_of": str(job.id),
+        },
         # #294: the clone belongs to the caller that asked for it, like a page retry.
         api_key_id=_auth.api_key_id if _auth is not None else None,
         source_ip=_auth.ip if _auth is not None else None,

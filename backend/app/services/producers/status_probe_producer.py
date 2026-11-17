@@ -54,7 +54,12 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from app.printer_backends.snmp_helper import PreflightStatus, query_identity, query_preflight
+from app.printer_backends.snmp_helper import (
+    PreflightStatus,
+    parse_media_kind,
+    query_identity,
+    query_preflight,
+)
 from app.services.event_bus import BusEvent, EventBus
 from app.services.hardware_identity import IdentitySink
 from app.services.producers.tape_change_producer import TapeChangeProducer
@@ -167,9 +172,22 @@ class StatusProbeProducer:
         except (ValueError, AttributeError):
             return
         try:
-            await self._roll_tracker.observe(printer_uuid, status.loaded_tape_mm, status.media_raw)
+            change = await self._roll_tracker.observe(
+                printer_uuid, status.loaded_tape_mm, status.media_raw
+            )
         except Exception:
             _log.exception("RollTracker failed for printer=%s", self._printer_id)
+            return
+        if change is not None:
+            # #389: what the printer itself reports for a new roll, so a refused print can be
+            # traced to it (the media type it has is not visible over SNMP).
+            _log.info(
+                "Roll changed on printer=%s: width_mm=%s media_raw=%r media_kind=%s",
+                self._printer_id,
+                change.width_mm,
+                change.media_raw,
+                parse_media_kind(change.media_raw),
+            )
 
     async def _observe_identity(self) -> None:
         """Read the hardware identity and hand it to the sink; neither step can fail a probe.

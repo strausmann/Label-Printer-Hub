@@ -24,6 +24,7 @@ __all__ = [
     "query_loaded_tape_mm",
     "query_model_pjl",
     "query_preflight",
+    "roll_record",
 ]
 
 import asyncio
@@ -189,6 +190,20 @@ class PreflightStatus:
     def media_kind(self) -> MediaKind | None:
         """Continuous or die-cut, read from ``media_raw`` (#389); ``None`` when unknown."""
         return parse_media_kind(self.media_raw)
+
+
+def roll_record(status: PreflightStatus | None) -> dict[str, object] | None:
+    """The roll a status read saw, as a job records it (#389): width, media text, kind.
+
+    ``None`` for no read. The colour is not part of it: the printer reports none.
+    """
+    if status is None:
+        return None
+    return {
+        "width_mm": status.loaded_tape_mm,
+        "media_raw": status.media_raw,
+        "media_kind": status.media_kind,
+    }
 
 
 @dataclass(frozen=True)

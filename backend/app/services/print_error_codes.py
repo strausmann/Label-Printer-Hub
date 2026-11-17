@@ -20,6 +20,7 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterDisabledError,
     PrinterOfflineError,
+    PrinterReportedError,
     QrPayloadTooLongError,
     SnmpQueryError,
     SpoolLabelOnlyTapeError,
@@ -38,6 +39,7 @@ SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     TapeEmptyError: (409, "tape_empty"),
     NoTapeLoadedError: (409, "no_tape_loaded"),
     PrinterCoverOpenError: (409, "printer_cover_open"),
+    PrinterReportedError: (409, "printer_error"),
     PrinterOfflineError: (503, "printer_offline"),
     UnsupportedTapeError: (409, "unsupported_tape"),
     ContentTypeDataMismatchError: (422, "content_type_data_mismatch"),
@@ -59,6 +61,7 @@ _UNSUPPORTED_ORIENTATION = "The selected orientation is not available for this t
 _NO_TAPE = "No tape loaded — insert a Brother TZe or DK cartridge."
 _MISSING_FIELDS = "The label data is missing fields required for the selected content type."
 _DIE_CUT = "The loaded roll is die-cut labels; the hub prints on continuous tape only."
+_PRINTER_ERROR = "The printer reports an error state. Fix it on the printer and try again."
 _QR_TOO_LONG = "The QR payload does not fit the fixed QR code of this tape."
 # The cause of these two names the printer's address or the SNMP library's error: log only.
 _UNREACHABLE: dict[str, str] = {
@@ -118,6 +121,10 @@ def describe_print_error(exc: Exception) -> KnownPrintError:
     elif isinstance(exc, TapeMismatchError):
         message = str(exc)
         detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+    elif isinstance(exc, PrinterReportedError):
+        # The flag names only; the words for them live in the app (#376).
+        message = _PRINTER_ERROR
+        detail = {"flags": list(exc.flags)}
     elif isinstance(exc, MediaTypeMismatchError):
         message = _DIE_CUT
         detail = {"loaded_kind": exc.loaded_kind, "media_raw": exc.media_raw}

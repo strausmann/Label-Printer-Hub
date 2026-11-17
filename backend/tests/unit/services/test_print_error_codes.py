@@ -14,6 +14,7 @@ from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterDisabledError,
     PrinterOfflineError,
+    PrinterReportedError,
     QrPayloadTooLongError,
     SnmpQueryError,
     SpoolLabelOnlyTapeError,
@@ -44,6 +45,7 @@ SAMPLES: dict[type[Exception], Exception] = {
     QrPayloadTooLongError: QrPayloadTooLongError(length=300, max_bytes=100),
     SnmpQueryError: SnmpQueryError("preflight SNMP failed"),
     MediaTypeMismatchError: MediaTypeMismatchError(loaded_kind="die_cut", media_raw="29mm x 90mm"),
+    PrinterReportedError: PrinterReportedError(["jammed"]),
 }
 
 
@@ -65,6 +67,14 @@ def test_a_die_cut_roll_has_a_fixed_message_and_its_detail() -> None:
     assert (known.status, known.code) == (409, "media_type_mismatch")
     assert known.detail == {"loaded_kind": "die_cut", "media_raw": "29mm x 90mm"}
     assert "continuous tape only" in known.message
+
+
+def test_a_printer_error_state_names_the_flags_not_the_words() -> None:
+    """#389: the flags go to the detail; the app says them in its own words (#376)."""
+    known = describe_print_error(PrinterReportedError(["jammed", "serviceRequested"]))
+    assert (known.status, known.code) == (409, "printer_error")
+    assert known.detail == {"flags": ["jammed", "serviceRequested"]}
+    assert "jammed" not in known.message
 
 
 def test_spool_only_tape_keeps_its_content_types() -> None:

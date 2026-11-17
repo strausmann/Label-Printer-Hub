@@ -120,6 +120,12 @@ class JobStore(Protocol):
         whether the row changed (a caller announces the failure only then).
         """
 
+    async def set_loaded_roll(self, job_id: UUID, roll: dict[str, Any]) -> bool:
+        """Set ``payload.loaded_roll`` (any state, #389): the roll the job was sent to.
+
+        Returns False when the job is unknown; the rest of the payload is kept.
+        """
+
     async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
         """Replace the payload of a QUEUED job (a deferred job completed, #281).
 
@@ -246,6 +252,13 @@ class MemoryJobStore(JobStore):
         job.error = f"{code}: {message}"
         job.result = _with_detail(dict(result) if result is not None else job.result, detail)
         job.finished_at = datetime.now(UTC)
+        return True
+
+    async def set_loaded_roll(self, job_id: UUID, roll: dict[str, Any]) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        job.payload = {**(job.payload or {}), "loaded_roll": dict(roll)}
         return True
 
     async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:

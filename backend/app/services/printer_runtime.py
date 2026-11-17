@@ -246,6 +246,10 @@ class PrinterRuntime:
         self._retries: dict[UUID, asyncio.Task[None]] = {}
         self.reconciles: set[asyncio.Task[None]] = set()
         self.roll_tracker = RollTracker(getattr(app.state, "event_bus", None), session_factory)
+        # #389: a job sent to a roll records that roll's colour too.
+        queue = getattr(app.state, "print_queue", None)
+        if queue is not None and getattr(type(queue), "set_roll_colour", None) is not None:
+            queue.set_roll_colour(self.roll_tracker.colour_of)
         self._wired: dict[UUID, _Wiring] = {}
         self._ipp_limiter = asyncio.Semaphore(_IPP_PROBE_CONCURRENCY)
         self._tape_registry = TapeRegistry()

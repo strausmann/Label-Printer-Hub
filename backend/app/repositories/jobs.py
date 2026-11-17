@@ -181,6 +181,20 @@ async def set_result(session: AsyncSession, job_id: UUID, result: dict[str, Any]
     return job
 
 
+async def set_loaded_roll(session: AsyncSession, job_id: UUID, roll: dict[str, Any]) -> bool:
+    """Set ``payload.loaded_roll`` of a job (any state, #389): the roll it was sent to.
+
+    ``False`` when the job is unknown. The rest of the payload is kept.
+    """
+    job = await session.get(Job, job_id)
+    if job is None:
+        return False
+    job.payload = {**(job.payload or {}), "loaded_roll": dict(roll)}
+    session.add(job)
+    await session.commit()
+    return True
+
+
 async def set_queued_payload(session: AsyncSession, job_id: UUID, payload: dict[str, Any]) -> bool:
     """Replace the payload of a QUEUED job (a deferred job completed, #281). ``False``: the job
     is unknown or no longer QUEUED (cancelled meanwhile), nothing written."""

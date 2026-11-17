@@ -20,16 +20,15 @@ from PIL import Image
 
 from app.models.tape import TapeSpec
 from app.printer_backends.exceptions import (
-    PrinterCoverOpenError,
     PrinterError,
     PrinterOfflineError,
     PrintFailedError,
     SnmpQueryError,
-    TapeEmptyError,
     TapeMismatchError,
     refused_before_sending,
 )
-from app.printer_backends.snmp_helper import PreflightStatus, query_preflight
+from app.printer_backends.post_send import raise_for_error_flags
+from app.printer_backends.snmp_helper import PreflightStatus, query_preflight, roll_record
 from app.printer_backends.status_query import query_status_over_socket
 from app.services.status_block import StatusBlock
 
@@ -199,6 +198,8 @@ class PTouchBackend:
         self._model_id = model_id
         # The stored SNMP community (#296): the preflight asks with it, like discovery does.
         self._community = community
+        # #389: the status read right before the last send (``None``: none was read for it).
+        self.last_send_status: PreflightStatus | None = None
 
     @classmethod
     def from_settings(cls, settings: Any) -> PTouchBackend:
@@ -227,30 +228,20 @@ class PTouchBackend:
         assert last_exc is not None
         raise last_exc
 
-    async def preflight_check(
+    async def read_status(
         self,
         *,
         community: str | None = None,
         timeout_s: float = 3.0,
     ) -> PreflightStatus:
-        """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
+        """One SNMP read: hrPrinterStatus, error bitmap, loaded tape. Never refuses on a bit.
 
-        Use this BEFORE submitting a print job to validate the printer is
-        ready and the loaded tape matches the requested width. ESC i S
-        (used by query_status) is unreliable on PT-Series in idle state
-        — SNMP runs in parallel on UDP/161 and returns reliably.
-
-        Raises:
-            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
-            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
-            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
-
-        Does NOT raise TapeMismatchError — the caller compares
-        `preflight.loaded_tape_mm` to the request's tape_mm and raises if
-        needed. This keeps PTouchBackend agnostic of what's being printed.
+        ESC i S (used by query_status) is unreliable on PT-Series in idle state — SNMP runs in
+        parallel on UDP/161 and returns reliably. Raises ``PrinterOfflineError`` when the
+        printer does not answer.
         """
         try:
-            preflight = await query_preflight(
+            return await query_preflight(
                 self.host,
                 community=self._community if community is None else community,
                 timeout_s=timeout_s,
@@ -258,11 +249,51 @@ class PTouchBackend:
         except SnmpQueryError as exc:
             raise PrinterOfflineError(f"preflight SNMP failed: {exc}") from exc
 
-        if "noPaper" in preflight.error_flags:
-            raise TapeEmptyError()
-        if "doorOpen" in preflight.error_flags:
-            raise PrinterCoverOpenError()
+    async def preflight_check(
+        self,
+        *,
+        community: str | None = None,
+        timeout_s: float = 3.0,
+    ) -> PreflightStatus:
+        """SNMP-based preflight: ``read_status`` plus a refusal on every blocking error bit.
+
+        Use this BEFORE submitting a print job to validate the printer is
+        ready and the loaded tape matches the requested width.
+
+        Raises:
+            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
+            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
+            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
+            PrinterReportedError: any other bit of ``post_send.HARD_ERROR_FLAGS`` (#389)
+
+        Does NOT raise TapeMismatchError — the caller compares
+        `preflight.loaded_tape_mm` to the request's tape_mm and raises if
+        needed. This keeps PTouchBackend agnostic of what's being printed.
+        """
+        preflight = await self.read_status(community=community, timeout_s=timeout_s)
+        raise_for_error_flags(preflight.error_flags)
         return preflight
+
+    async def _check_before_send(self, tape_spec: TapeSpec) -> None:
+        """#389: one status read right before sending; kept for the check after sending and the
+        job record. Refuses on a blocking bit or a different tape width."""
+        status = await self.preflight_check()  # refuses on every blocking bit
+        self.last_send_status = status
+        if status.loaded_tape_mm != tape_spec.width_mm:
+            raise TapeMismatchError(
+                expected_mm=tape_spec.width_mm,
+                loaded_mm=status.loaded_tape_mm,
+            )
+
+    @property
+    def flags_before_send(self) -> frozenset[str]:
+        """The error bits of the read before the last send (``post_send.check_after_send``)."""
+        status = self.last_send_status
+        return frozenset(status.error_flags) if status is not None else frozenset()
+
+    def roll_at_send(self) -> dict[str, object] | None:
+        """The tape the last send was checked against (#389), for the job record."""
+        return roll_record(self.last_send_status)
 
     async def print_image(
         self,
@@ -291,13 +322,9 @@ class PTouchBackend:
         # SNMP preflight — replaces the broken ESC i S query_status path for
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
         # / PrinterOfflineError on detected issues.
+        self.last_send_status = None
         try:
-            preflight = await self.preflight_check()
-            if preflight.loaded_tape_mm != tape_spec.width_mm:
-                raise TapeMismatchError(
-                    expected_mm=tape_spec.width_mm,
-                    loaded_mm=preflight.loaded_tape_mm,
-                )
+            await self._check_before_send(tape_spec)
         except PrinterError as exc:
             refused_before_sending(exc)  # #277: the preflight refused, nothing was sent
             raise
@@ -346,14 +373,10 @@ class PTouchBackend:
         if not images:
             raise ValueError("print_images requires at least one image")
 
+        self.last_send_status = None
         try:
             _require_tape_class(tape_spec.width_mm)
-            preflight = await self.preflight_check()
-            if preflight.loaded_tape_mm != tape_spec.width_mm:
-                raise TapeMismatchError(
-                    expected_mm=tape_spec.width_mm,
-                    loaded_mm=preflight.loaded_tape_mm,
-                )
+            await self._check_before_send(tape_spec)
         except PrinterError as exc:
             # #277: refused before sending (no tape class, or the preflight said no): nothing
             # was sent, the labels did not print.

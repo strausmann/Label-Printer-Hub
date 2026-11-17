@@ -9,11 +9,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 from app.printer_backends.exceptions import (
+    PrinterCoverOpenError,
     PrinterOfflineError,
     PrinterReportedError,
     TapeEmptyError,
 )
-from app.printer_backends.post_send import check_after_send
+from app.printer_backends.post_send import check_after_send, raise_for_error_flags
 from app.printer_backends.snmp_helper import PreflightStatus, parse_media_kind
 
 pytestmark = pytest.mark.anyio
@@ -94,3 +95,43 @@ def test_media_kind_from_the_media_text(text: str | None, kind: str | None) -> N
         PreflightStatus(hr_printer_status="idle", loaded_tape_mm=None, media_raw=text).media_kind
         == kind
     )
+
+
+class _Backend:
+    """A backend whose read before sending saw ``before`` and whose read after sees ``after``."""
+
+    def __init__(self, before: set[str], after: list[str]) -> None:
+        self.flags_before_send = frozenset(before)
+        self.after = after
+        self.preflights = 0
+
+    async def read_status(self) -> PreflightStatus:
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=29, error_flags=self.after)
+
+    async def preflight_check(self) -> PreflightStatus:  # must not be used when read_status exists
+        self.preflights += 1
+        raise AssertionError("the check after sending refuses nothing itself")
+
+
+async def test_only_a_bit_new_after_sending_fails_the_job() -> None:
+    """#389 I3: a bit that was there before sending never fails a sent job."""
+    await check_after_send(_Backend({"lowPaper"}, ["lowPaper"]), settle_s=0)
+    await check_after_send(_Backend({"jammed"}, ["jammed"]), settle_s=0)
+
+    with pytest.raises(PrinterReportedError) as err:
+        await check_after_send(_Backend({"jammed"}, ["jammed", "offline"]), settle_s=0)
+    assert err.value.flags == ["offline"]
+
+
+@pytest.mark.parametrize(
+    ("flags", "error"),
+    [
+        (["noPaper", "jammed"], TapeEmptyError),
+        (["doorOpen", "jammed"], PrinterCoverOpenError),
+        (["lowPaper", "serviceRequested"], PrinterReportedError),
+    ],
+)
+def test_the_blocking_bits_map_to_their_codes(flags: list[str], error: type[Exception]) -> None:
+    with pytest.raises(error):
+        raise_for_error_flags(flags)
+    raise_for_error_flags(["lowPaper", "lowToner", "overduePreventMaint"])

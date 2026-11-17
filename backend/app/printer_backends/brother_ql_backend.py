@@ -29,18 +29,19 @@ from app.models.tape import TapeSpec
 from app.printer_backends.batch_helper import default_print_images_loop
 from app.printer_backends.exceptions import (
     MediaTypeMismatchError,
-    PrinterCoverOpenError,
+    NoTapeLoadedError,
     PrinterError,
     PrinterOfflineError,
     PrintFailedError,
-    TapeEmptyError,
     TapeMismatchError,
     refused_before_sending,
 )
+from app.printer_backends.post_send import raise_for_error_flags
 from app.printer_backends.snmp_helper import (
     PreflightStatus,
     SnmpQueryError,
     query_preflight,
+    roll_record,
 )
 from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import StatusBlock
@@ -153,6 +154,8 @@ class BrotherQLBackend:
         # The stored SNMP community (#296): the preflight asks with it, like discovery does.
         self._community = community
         self._identifier = f"tcp://{host}:{port}"
+        # #389: the status read right before the last send (``None``: none was read for it).
+        self.last_send_status: PreflightStatus | None = None
 
     async def print_image(
         self,
@@ -189,6 +192,8 @@ class BrotherQLBackend:
                 self.host,
             )
 
+        if not media_checked:
+            self.last_send_status = None
         ql_label = _ql_label_of(tape_spec)
         if not media_checked:
             await self._check_loaded_media(tape_spec)
@@ -224,21 +229,37 @@ class BrotherQLBackend:
             raise PrintFailedError("The printer reported an error while printing")
 
     async def _check_loaded_media(self, tape_spec: TapeSpec) -> None:
-        """One preflight: the loaded roll must be continuous and of ``tape_spec``'s width.
+        """One status read right before sending: no blocking error bit, a roll is loaded, it is
+        continuous and of ``tape_spec``'s width.
 
-        Every error is a refusal before sending (#277): nothing of the job reached the printer.
+        The read is kept (``last_send_status``, ``flags_before_send``): the check after sending
+        counts only bits that are new, and the job records the roll it was sent to. Every error
+        is a refusal before sending (#277): nothing of the job reached the printer.
         """
         try:
-            preflight = await self.preflight_check()
-            if preflight.media_kind == "die_cut":
-                raise MediaTypeMismatchError(loaded_kind="die_cut", media_raw=preflight.media_raw)
-            if preflight.loaded_tape_mm != tape_spec.width_mm:
+            status = await self.preflight_check()  # refuses on every blocking bit
+            self.last_send_status = status
+            if status.loaded_tape_mm is None:
+                raise NoTapeLoadedError()
+            if status.media_kind == "die_cut":
+                raise MediaTypeMismatchError(loaded_kind="die_cut", media_raw=status.media_raw)
+            if status.loaded_tape_mm != tape_spec.width_mm:
                 raise TapeMismatchError(
-                    expected_mm=tape_spec.width_mm, loaded_mm=preflight.loaded_tape_mm
+                    expected_mm=tape_spec.width_mm, loaded_mm=status.loaded_tape_mm
                 )
         except PrinterError as exc:
             refused_before_sending(exc)
             raise
+
+    @property
+    def flags_before_send(self) -> frozenset[str]:
+        """The error bits of the read before the last send (``post_send.check_after_send``)."""
+        status = self.last_send_status
+        return frozenset(status.error_flags) if status is not None else frozenset()
+
+    def roll_at_send(self) -> dict[str, object] | None:
+        """The roll the last send was checked against (#389), for the job record."""
+        return roll_record(self.last_send_status)
 
     async def print_images(
         self,
@@ -259,6 +280,7 @@ class BrotherQLBackend:
         ``orientation`` (#258) applies to every image of the batch.
         """
         # #389: one media check for the whole batch, not one per label (no probe storm).
+        self.last_send_status = None
         _ql_label_of(tape_spec)
         await self._check_loaded_media(tape_spec)
         # QL-Series: half_cut existiert nicht. Backend-Capability-Flag erzwingt False.
@@ -273,26 +295,21 @@ class BrotherQLBackend:
             media_checked=True,
         )
 
-    async def preflight_check(
+    async def read_status(
         self,
         *,
         community: str | None = None,
         timeout_s: float = 3.0,
     ) -> PreflightStatus:
-        """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
+        """One SNMP read: hrPrinterStatus, error bitmap, loaded tape. Never refuses on a bit.
 
         QL-820NWB nutzt dieselbe Printer MIB wie PT-Series — query_preflight()
         funktioniert identisch auf beiden Gerätereihen.
 
-        Raises:
-            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
-            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
-            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
-
-        Does NOT raise TapeMismatchError — caller compares loaded_tape_mm.
+        Raises ``PrinterOfflineError`` when the printer does not answer.
         """
         try:
-            preflight = await query_preflight(
+            return await query_preflight(
                 self.host,
                 community=self._community if community is None else community,
                 timeout_s=timeout_s,
@@ -305,10 +322,24 @@ class BrotherQLBackend:
                 msg = f"preflight SNMP failed: {msg}"
             raise PrinterOfflineError(msg) from exc
 
-        if "noPaper" in preflight.error_flags:
-            raise TapeEmptyError()
-        if "doorOpen" in preflight.error_flags:
-            raise PrinterCoverOpenError()
+    async def preflight_check(
+        self,
+        *,
+        community: str | None = None,
+        timeout_s: float = 3.0,
+    ) -> PreflightStatus:
+        """``read_status`` plus a refusal on every blocking error bit (#389, ``post_send``).
+
+        Raises:
+            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
+            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
+            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
+            PrinterReportedError: any other bit of ``post_send.HARD_ERROR_FLAGS``
+
+        Does NOT raise TapeMismatchError — caller compares loaded_tape_mm.
+        """
+        preflight = await self.read_status(community=community, timeout_s=timeout_s)
+        raise_for_error_flags(preflight.error_flags)
         return preflight
 
     async def query_status(self) -> StatusBlock:

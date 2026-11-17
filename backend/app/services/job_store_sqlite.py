@@ -172,6 +172,11 @@ class SQLiteJobStore(JobStore):
             )
             return True
 
+    async def set_loaded_roll(self, job_id: UUID, roll: dict[str, Any]) -> bool:
+        """Record the roll a job was sent to (``payload.loaded_roll``, #389)."""
+        async with self._session_factory() as session:
+            return await jobs_repo.set_loaded_roll(session, job_id, roll)
+
     async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
         """Replace the payload of a QUEUED job; False when unknown or no longer QUEUED."""
         async with self._session_factory() as session:

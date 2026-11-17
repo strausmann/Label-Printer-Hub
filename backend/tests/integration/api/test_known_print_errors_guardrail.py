@@ -35,10 +35,12 @@ from app.models.print_batch import PrintBatch
 from app.models.printer import Printer
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
+    MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterDisabledError,
     PrinterOfflineError,
+    PrinterReportedError,
     QrPayloadTooLongError,
     SnmpQueryError,
     TapeEmptyError,
@@ -96,6 +98,10 @@ def _sample(cls: type[Exception]) -> Exception:
         ),
         QrPayloadTooLongError: lambda: QrPayloadTooLongError(length=300, max_bytes=100),
         SnmpQueryError: lambda: SnmpQueryError("preflight SNMP failed: community hunter2"),
+        MediaTypeMismatchError: lambda: MediaTypeMismatchError(
+            loaded_kind="die_cut", media_raw="29mm x 90mm"
+        ),
+        PrinterReportedError: lambda: PrinterReportedError(["jammed", "serviceRequested"]),
     }
     return samples[cls]()
 
