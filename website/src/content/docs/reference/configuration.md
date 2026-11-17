@@ -163,7 +163,7 @@ Also set in the web UI; a value set here wins and locks the field there.
 
 Default: `material`
 
-What the black bar of the Spoolman spool label shows: `material` (the filament's material) or `name` (the filament name). The line under the bar shows the other one.
+What the black bar of the spool label shows: `material` (default) or the filament `name`. The line under the bar shows the other one.
 
 Also set in the web UI; a value set here wins and locks the field there.
 

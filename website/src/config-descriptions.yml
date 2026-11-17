@@ -58,6 +58,9 @@ spoolman_url:
 spoolman_timeout:
   en: 'Seconds to wait for Spoolman.'
   de: 'Sekunden, die auf Spoolman gewartet wird.'
+spoolman_label_title_source:
+  en: 'What the black bar of the spool label shows: `material` (default) or the filament `name`. The line under the bar shows the other one.'
+  de: 'Was der schwarze Balken des Spulen-Etiketts zeigt: `material` (Standard) oder den Filamentnamen `name`. Die Zeile darunter zeigt jeweils das andere.'
 server_port:
   en: 'The port the container listens on. The start command and the container healthcheck read it, not the application itself; they take `LABELYARD_SERVER_PORT` (or its name from earlier releases, see [upgrades](/admin/upgrades/)), then `PORT`, and use `8000` when none is set. Change the published port in your compose file to match.'
   de: 'Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Containers samt Healthcheck, nicht die Anwendung selbst; er nimmt `LABELYARD_SERVER_PORT` (oder den Namen aus früheren Versionen, siehe [Aktualisieren](/de/admin/upgrades/)), dann `PORT` und fällt auf `8000` zurück. Passe den veröffentlichten Port in deiner Compose-Datei entsprechend an.'
