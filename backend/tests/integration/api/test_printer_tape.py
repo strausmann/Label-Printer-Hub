@@ -241,7 +241,11 @@ async def test_status_names_a_die_cut_roll_without_the_raw_text(api) -> None:
     app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
     r = await client.get(f"/api/v1/printers/{pid}/status")
     body = r.json()
-    assert (body["media_kind"], body["label_length_mm"], body["tape_width_mm"]) == ("die_cut", 90, 29)
+    assert (body["media_kind"], body["label_length_mm"], body["tape_width_mm"]) == (
+        "die_cut",
+        90,
+        29,
+    )
     assert "media_raw" not in body
     assert _DIE_CUT_TEXT not in r.text
 

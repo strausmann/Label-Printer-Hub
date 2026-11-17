@@ -241,14 +241,17 @@ class PrinterStatus(BaseModel):
         default=None,
         description=(
             "Kind of the loaded roll, derived from the media name the printer reports: "
-            "``continuous`` (width only) or ``die_cut`` (a label length is named); None when no roll "
-            "is loaded, the printer reports nothing recognisable, or the status is stale or unpolled. "
+            "``continuous`` (width only) or ``die_cut`` (a label length is named); None when no "
+            "roll is loaded, the printer reports nothing recognisable, or the status is stale or "
+            "unpolled. "
             "Printing on a ``die_cut`` roll is refused with 409 ``media_type_mismatch``."
         ),
     )
     label_length_mm: int | None = Field(
         default=None,
-        description="Label length in mm of a ``die_cut`` roll; None for a continuous roll or when unknown",
+        description=(
+            "Label length in mm of a ``die_cut`` roll; None for a continuous roll or when unknown"
+        ),
     )
     tape_colour: TapeColourName | None = Field(
         default=None,
