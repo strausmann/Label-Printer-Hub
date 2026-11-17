@@ -974,3 +974,35 @@ async def test_shipped_type_with_a_changed_placement_exports_as_version_2(
     assert doc["type"]["id_placement"] == "cell" and doc["type"]["id_cell"] == 2
     # Once the placement is the user's, the design travels with it.
     assert doc["type"]["backing_design"]["key"] == "avery-zweckform-ultragrip"
+
+
+async def test_changed_shipped_design_exports_v2_and_imports_back(api_client_with_seed, admin):
+    """A user-changed design makes the export version 2, and a 1.7 hub imports it (I4)."""
+    client = api_client_with_seed
+    strips = [{"x_mm": 30.0, "y_mm": 20.0, "w_mm": 25.0, "h_mm": 250.0}]
+    patched = await client.patch(
+        "/api/v1/backing-designs/avery-zweckform-ultragrip", json={"strips": strips}, headers=admin
+    )
+    assert patched.status_code == 200, patched.text
+    doc = (
+        await client.get("/api/v1/sheet-types/avery-zweckform-3490/export", headers=admin)
+    ).json()
+    assert doc["format_version"] == 2
+    assert doc["type"]["backing_design"]["strips"] == strips
+    assert "id_placement" not in doc["type"]  # still auto: only the design changed
+
+    # Import it as a new type with a design this hub does not know: both are created.
+    doc["type"]["key"], doc["type"]["prefix"] = "acme-3490", "AZ9"
+    doc["type"]["backing_design"]["key"] = "acme-liner"
+    created = await client.post("/api/v1/sheet-types/import", json=doc, headers=admin)
+    assert created.status_code == 201, created.text
+    assert created.json() == {"outcome": "created", "key": "acme-3490", "version": 1}
+    read = (await client.get("/api/v1/sheet-types/acme-3490", headers=admin)).json()
+    assert read["origin"] == "imported" and read["id_placement"] == "auto"
+    assert read["backing_design"]["key"] == "acme-liner"
+    assert read["backing_design"]["strips"] == strips
+
+    # Exported again it is version 2 with the same design: the round trip is stable.
+    again = (await client.get("/api/v1/sheet-types/acme-3490/export", headers=admin)).json()
+    assert again["format_version"] == 2
+    assert again["type"]["backing_design"] == doc["type"]["backing_design"]
