@@ -3,31 +3,43 @@
 
 import { describe, expect, it } from "vitest";
 import type { Notification } from "../features/notifications/derive";
-import { newRollEntries } from "./RollToast";
+import { newRollEntries, rollBaseline } from "./RollToast";
 
-const entry = (id: string, textKey = "printer.unsupported_roll"): Notification => ({
+const entry = (id: string, printerId = "p", textKey = "printer.unsupported_roll"): Notification => ({
   id,
   severity: "warning",
   kind: "printer",
   textKey,
   values: {},
   at: "",
-  target: { to: "/printers/$printerId", params: { printerId: "p" } },
+  target: { to: "/printers/$printerId", params: { printerId } },
 });
-const MOUNTED = Date.parse("2026-11-17T12:00:00Z");
-const later = "2026-11-17T12:05:00Z";
-const earlier = "2026-11-17T11:00:00Z";
+const DIE = entry("printer:p:roll:die_cut:29x90");
+const OTHER = entry("printer:p:roll:die_cut:29x50");
 
-describe("newRollEntries", () => {
-  it("toasts a roll first seen after the page opened", () => {
-    expect(newRollEntries([entry("a")], { a: later }, MOUNTED, new Set())).toHaveLength(1);
+describe("rollBaseline / newRollEntries", () => {
+  it("first-ever load with a die-cut roll in: the baseline holds it, nothing toasts", () => {
+    const baseline = rollBaseline([DIE]);
+    expect(newRollEntries([DIE], baseline, new Set())).toEqual([]);
   });
-  it("is quiet for a roll that was already known at page load (counter-check)", () => {
-    expect(newRollEntries([entry("a")], { a: earlier }, MOUNTED, new Set())).toEqual([]);
+
+  it("a roll that appears after a baseline without one toasts", () => {
+    expect(newRollEntries([DIE], rollBaseline([]), new Set())).toEqual([DIE]);
   });
-  it("is quiet for an entry not yet tracked, a closed one and other entries", () => {
-    expect(newRollEntries([entry("a")], {}, MOUNTED, new Set())).toEqual([]);
-    expect(newRollEntries([entry("a")], { a: later }, MOUNTED, new Set(["a"]))).toEqual([]);
-    expect(newRollEntries([entry("b", "printer.flag")], { b: later }, MOUNTED, new Set())).toEqual([]);
+
+  it("a different roll key than the baseline toasts (counter-check for 'same roll')", () => {
+    expect(newRollEntries([OTHER], rollBaseline([DIE]), new Set())).toEqual([OTHER]);
+  });
+
+  it("the roll coming back after a supported one toasts again, but a closed toast does not return", () => {
+    expect(newRollEntries([DIE], rollBaseline([DIE]), new Set())).toEqual([]);
+    expect(newRollEntries([OTHER], rollBaseline([DIE]), new Set([OTHER.id]))).toEqual([]);
+  });
+
+  it("ignores other entries and tracks printers apart", () => {
+    const flag = entry("printer:p:flag:doorOpen", "p", "printer.flag");
+    expect(newRollEntries([flag], rollBaseline([]), new Set())).toEqual([]);
+    const q = entry("printer:q:roll:die_cut:29x90", "q");
+    expect(newRollEntries([DIE, q], rollBaseline([DIE]), new Set())).toEqual([q]);
   });
 });

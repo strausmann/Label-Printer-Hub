@@ -15,11 +15,11 @@ afterEach(() => vi.unstubAllGlobals());
 
 const DIE_CUT = { tape_loaded: "29mm", tape_width_mm: 29, media_kind: "die_cut", label_length_mm: 90, tape_colour: null };
 
-const routes = (aStatus: Record<string, unknown>) => ({
+const routes = (aStatus: Record<string, unknown>, bStatus: Record<string, unknown> = aStatus) => ({
   "GET /api/v1/lookup/snipeit/42": { app: "snipeit", id: "42", name: "Cordless drill", url: "https://assets.example.invalid/snipeit/42", extra: {} },
   "GET /api/v1/printers": [PRINTER_A, PRINTER_B],
   [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, aStatus),
-  [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id),
+  [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, bStatus),
   "GET /api/v1/jobs": [],
   "POST /api/v1/render/preview": () => pngResponse(),
 });
@@ -45,7 +45,22 @@ describe("the printer picker with a die-cut roll (#391)", () => {
   it("names the reason in German", async () => {
     mockApi(routes(DIE_CUT));
     await renderApp({ path: "/asset/42", language: "de" });
-    expect(await screen.findByRole("option", { name: /Nicht unterstützte Rolle eingelegt: 29 × 90 mm Stanzetiketten/ })).toBeDisabled();
+    expect(await screen.findByRole("option", { name: /Workshop.*Nicht unterstützte Rolle eingelegt: 29 × 90 mm Stanzetiketten/ })).toBeDisabled();
+  });
+
+  it("falls back to the first printer that can print, and keeps the hint when none can", async () => {
+    mockApi(routes(DIE_CUT, {}));
+    await renderApp({ path: "/asset/42" });
+    expect(await screen.findByRole("combobox", { name: "Printer" })).toHaveValue(PRINTER_B.id);
+    expect(await screen.findByRole("button", { name: "Print now" })).toBeEnabled();
+  });
+
+  it("keeps the die-cut printer selected, with the hint, when no printer can print", async () => {
+    mockApi(routes(DIE_CUT));
+    await renderApp({ path: "/asset/42" });
+    await screen.findByRole("option", { name: /Workshop/, hidden: true });
+    expect(document.querySelector("select")).toHaveValue(PRINTER_A.id);
+    expect((await screen.findAllByText(/Printing on die-cut labels comes in a later version/))[0]).toBeVisible();
   });
 
   it("the cart disables its print button too", async () => {
@@ -53,7 +68,7 @@ describe("the printer picker with a die-cut roll (#391)", () => {
     reloadCart();
     mockApi({ ...routes(DIE_CUT), "POST /api/v1/print/check": [] });
     await renderApp({ path: "/cart" });
-    const option = await screen.findByRole("option", { name: /Unsupported roll loaded/ });
+    const option = await screen.findByRole("option", { name: /Workshop.*Unsupported roll loaded/ });
     expect(option).toBeDisabled();
     expect(await screen.findByRole("button", { name: "Print 1 label" })).toBeDisabled();
   });

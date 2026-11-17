@@ -121,8 +121,9 @@ export function CartPage() {
   const readOnly = useSession().scope === "read";
   const cart = useCart();
   const printers = usePrinters();
-  const { usable, selected, choose } = usePrinterChoice(printers.data);
-  const statuses = usePrinterStatuses(usable);
+  const enabled = (printers.data ?? []).filter((x) => x.enabled);
+  const statuses = usePrinterStatuses(enabled);
+  const { usable, selected, choose } = usePrinterChoice(printers.data, statuses);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // `/cart?sheet=<code>` (the link from a sheet's page) preselects that sheet in the sheet section.

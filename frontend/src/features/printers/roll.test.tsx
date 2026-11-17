@@ -8,7 +8,7 @@ import { job, mockApi, PRINTER_A, status } from "../test-api";
 import type { Printer, PrinterStatus } from "./api";
 import { describePrinter } from "./model";
 import { NOT_WAITING, printerWaiting } from "./flags";
-import { rollKey, rollSize, unsupportedRoll } from "./roll";
+import { rollKey, rollSinceMs, rollSize, unsupportedRoll } from "./roll";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -60,17 +60,40 @@ describe("describePrinter with a die-cut roll", () => {
 describe("printerWaiting: a refusal because of the roll", () => {
   const mk = (id: string, state: string, error: string | null, at: string) =>
     job(id, A.id, state, { error, created_at: at, updated_at: at }) as never;
+  const REFUSED = mk("1", "failed", "media_type_mismatch: die-cut", "2026-11-17T10:00:00Z");
+  const T = (iso: string) => Date.parse(iso);
 
-  it("counts when the newest finished job failed with media_type_mismatch", () => {
-    const w = printerWaiting(A.id, [mk("1", "failed", "media_type_mismatch: die-cut", "2026-11-17T10:00:00Z")], {});
+  it("counts when the newest finished job failed with media_type_mismatch after the roll came in", () => {
+    const w = printerWaiting(A.id, [REFUSED], {}, T("2026-11-17T09:00:00Z"));
     expect(w.rollRefused).toBe(true);
     expect(w.waiting).toBe(false);
   });
 
+  it("does not count a refusal from before the current roll (any roll change forgets it)", () => {
+    expect(printerWaiting(A.id, [REFUSED], {}, T("2026-11-17T11:00:00Z")).rollRefused).toBeUndefined();
+  });
+
+  it("does not count without a known first-seen time", () => {
+    expect(printerWaiting(A.id, [REFUSED], {}, null)).toEqual(NOT_WAITING);
+  });
+
   it("does not count when a later print went through, or the failure had another cause", () => {
-    const later = [mk("1", "failed", "media_type_mismatch: x", "2026-11-17T10:00:00Z"), mk("2", "done", null, "2026-11-17T11:00:00Z")];
-    expect(printerWaiting(A.id, later, {}).rollRefused).toBeUndefined();
-    expect(printerWaiting(A.id, [mk("3", "failed", "printer_offline: x", "2026-11-17T10:00:00Z")], {})).toEqual(NOT_WAITING);
+    const later = [REFUSED, mk("2", "done", null, "2026-11-17T11:00:00Z")];
+    expect(printerWaiting(A.id, later, {}, T("2026-11-17T09:00:00Z")).rollRefused).toBeUndefined();
+    expect(printerWaiting(A.id, [mk("3", "failed", "printer_offline: x", "2026-11-17T10:00:00Z")], {}, T("2026-11-17T09:00:00Z"))).toEqual(NOT_WAITING);
+  });
+});
+
+describe("rollSinceMs", () => {
+  it("reads the first-seen time of the roll in the printer now", () => {
+    const seen = { [`printer:${A.id}:roll:die_cut:29x90`]: "2026-11-17T09:00:00Z" };
+    expect(rollSinceMs(A.id, st(), seen)).toBe(Date.parse("2026-11-17T09:00:00Z"));
+  });
+  it("is null for a continuous roll, an unseen roll, or another roll's time", () => {
+    const seen = { [`printer:${A.id}:roll:die_cut:29x90`]: "2026-11-17T09:00:00Z" };
+    expect(rollSinceMs(A.id, st({ media_kind: "continuous", label_length_mm: null }), seen)).toBeNull();
+    expect(rollSinceMs(A.id, st(), {})).toBeNull();
+    expect(rollSinceMs(A.id, st({ label_length_mm: 50 }), seen)).toBeNull();
   });
 });
 

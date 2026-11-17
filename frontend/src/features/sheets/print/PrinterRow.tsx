@@ -22,7 +22,7 @@ export function PrinterRow({ printer, status }: { printer: Printer; status: Prin
   const kinds = useKindLabel();
   // The same `Waiting` as the card and the notification, so they all say the same state (#376).
   const waitingOf = usePrinterWaiting();
-  const view = describePrinter(printer, status, false, waitingOf(printer.id));
+  const view = describePrinter(printer, status, false, waitingOf(printer.id, status));
   const ahead = status?.jobs_ahead ?? 0;
   const unanswered = noAnswerYet(status);
   return (

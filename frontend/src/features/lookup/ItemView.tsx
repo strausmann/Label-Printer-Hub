@@ -120,9 +120,10 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const readOnly = useSession().scope === "read";
   const cart = useCart();
   const printers = usePrinters();
-  const { usable, selected, choose } = usePrinterChoice(printers.data);
+  const enabled = (printers.data ?? []).filter((x) => x.enabled);
+  const statuses = usePrinterStatuses(enabled);
+  const { usable, selected, choose } = usePrinterChoice(printers.data, statuses);
   const status = usePrinterStatus(selected?.id ?? "", !!selected);
-  const statuses = usePrinterStatuses(usable);
   // The user's own pick stays; until there is one, the start layout follows the printer and tape (#346).
   const [chosen, setContentType] = useState<ContentType | null>(null);
   const [copies, setCopies] = useState(1);

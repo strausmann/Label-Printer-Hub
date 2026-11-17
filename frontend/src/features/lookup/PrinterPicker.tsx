@@ -21,12 +21,15 @@ const readChoice = (): string | null => {
 
 /**
  * The printer to print on: the one chosen last time (a per-browser convenience), else the
- * first enabled one. A remembered printer that is gone is ignored.
+ * first enabled one. A remembered printer that is gone is ignored. A printer that holds a roll the hub cannot print on
+ * (`statuses`, #391) is passed over for the first one that can print; when none can, the choice stays and the hint says why.
  */
-export function usePrinterChoice(printers: Printer[] | undefined) {
+export function usePrinterChoice(printers: Printer[] | undefined, statuses?: ReadonlyMap<string, PrinterStatus>) {
   const [chosen, setChosen] = useState<string | null>(readChoice);
   const usable = (printers ?? []).filter((p) => p.enabled);
-  const selected = usable.find((p) => p.id === chosen) ?? usable[0] ?? null;
+  const preferred = usable.find((p) => p.id === chosen) ?? usable[0] ?? null;
+  const printable = (p: Printer) => unsupportedRoll(statuses?.get(p.id)) === null;
+  const selected = preferred && !printable(preferred) ? (usable.find(printable) ?? preferred) : preferred;
   const choose = (id: string) => {
     setChosen(id);
     try {
@@ -49,7 +52,7 @@ function usePrinterOptionText(): (printer: Printer, status: PrinterStatus | unde
     const page = isPagePrinter(printer, status);
     const kind = page ? t({ message: "Page printer", context: "printer kind" }) : t({ message: "Tape printer", context: "printer kind" });
     const parts = [printer.name, kind];
-    if (status) parts.push(states[describePrinter(printer, status, false, waitingOf(printer.id)).kind]);
+    if (status) parts.push(states[describePrinter(printer, status, false, waitingOf(printer.id, status)).kind]);
     // Not offered for printing, with the reason in the option itself (#391); the hub's 409 stays the backstop.
     const roll = page ? null : unsupportedRoll(status);
     if (roll) parts.push(rollWords(roll).unsupported);

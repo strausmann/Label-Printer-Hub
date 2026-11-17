@@ -203,7 +203,7 @@ function AttentionItem({
   }
 
   if (entry.kind === "printer" && printer && !entry.id.endsWith(":material")) {
-    const view = describePrinter(printer, status, busy.has(printer.id), waitingOf(printer.id));
+    const view = describePrinter(printer, status, busy.has(printer.id), waitingOf(printer.id, status));
     const lastAge = status?.last_probe_age_s;
     const ageWord = typeof lastAge === "number" ? formatAge(lastAge, i18n.locale) : "";
     return (

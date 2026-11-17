@@ -233,7 +233,7 @@ export function SheetSection({ items, printer, preselectedSheet, preselectedTray
   const errorText = usePrintDialogErrorText(itemName);
   const session = useSession();
   const waitingOf = usePrinterWaiting();
-  const view = describePrinter(printer, status.data, false, waitingOf(printer.id));
+  const view = describePrinter(printer, status.data, false, waitingOf(printer.id, status.data));
   const waits = printerWaits(view.kind);
   const trayLabel = tray?.label ?? "";
   const trayText = t`Tray: ${trayLabel}`;

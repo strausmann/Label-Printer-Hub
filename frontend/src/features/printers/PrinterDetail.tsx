@@ -56,7 +56,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const calibration = useFeature("calibration");
   const printing = (queue.data ?? []).some((j) => j.state === "printing");
   const waitingOf = usePrinterWaiting();
-  const view = describePrinter(printer, status.data, printing, waitingOf(printer.id));
+  const view = describePrinter(printer, status.data, printing, waitingOf(printer.id, status.data));
   const page = isPagePrinter(printer, status.data);
   // The union is wider than what the server sends: an IPP printer's address is left out for keys below admin.
   const connection: Record<string, unknown> = printer.connection;

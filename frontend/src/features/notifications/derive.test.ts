@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { job, PAGE_PRINTER, pageStatus, PRINTER_A, PRINTER_B, status } from "../test-api";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { SheetSummary } from "../sheets/api";
+import { EMPTY_STATE, trackFirstSeen } from "./store";
 import { deriveNotices, deriveNotifications, deriveUpdate, mergeFeed, type SheetTypeNotice } from "./derive";
 
 const NOW = Date.parse("2026-11-14T12:00:00Z");
@@ -462,9 +463,29 @@ describe("deriveNotifications: a roll the hub cannot print on (#391)", () => {
     expect(entries[0]).toMatchObject({ id: `printer:${A.id}:roll:die_cut:29x90`, severity: "error" });
   });
 
-  it("is an error after a print was refused because of the roll", () => {
-    const refused = mkJob(J1, "failed", { error: "media_type_mismatch: die-cut roll" });
-    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [refused] })[0]!.severity).toBe("error");
+  const refused = () => mkJob(J1, "failed", { error: "media_type_mismatch: die-cut roll" });
+  const rollId = `printer:${A.id}:roll:die_cut:29x90`;
+
+  it("is an error after a print was refused because of this roll", () => {
+    const firstSeen = { [rollId]: minutesAgo(20) };
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [refused()], firstSeen })[0]!.severity).toBe("error");
+  });
+
+  it("forgets the refusal with a roll change: die-cut, continuous, die-cut again is a warning (counter-check)", () => {
+    // The refusal (5 min ago) is older than the second time the roll was first seen (1 min ago, after the entry went away).
+    const firstSeen = { [rollId]: minutesAgo(1) };
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [refused()], firstSeen })[0]!.severity).toBe("warning");
+    // With no first-seen time yet (first derivation) it is a warning as well.
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [refused()] })[0]!.severity).toBe("warning");
+  });
+
+  it("a continuous roll between clears the first-seen time, so the old refusal stays forgotten", () => {
+    // trackFirstSeen drops the id while the continuous roll is in; the next die-cut roll starts a new time.
+    const st = trackFirstSeen({ ...EMPTY_STATE, firstSeen: { [rollId]: minutesAgo(20) } }, [], ["printer"]);
+    expect(st.firstSeen[rollId]).toBeUndefined();
+    const again = trackFirstSeen(st, rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) } }), ["printer"]);
+    expect(Date.parse(again.firstSeen[rollId]!)).toBeGreaterThanOrEqual(NOW);
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [refused()], firstSeen: again.firstSeen })[0]!.severity).toBe("warning");
   });
 
   it("adds no second entry for the same printer (no 'Warning' entry beside it)", () => {

@@ -11,17 +11,22 @@ import { useNotifications } from "../features/notifications/useNotifications";
 
 const ROLL_TEXT_KEY = "printer.unsupported_roll";
 
+const isRoll = (e: Notification) => e.textKey === ROLL_TEXT_KEY;
+
+/** Printer id → the roll entry id the printer showed at the first full read; a printer without a roll has none. */
+export function rollBaseline(entries: readonly Notification[]): Record<string, string> {
+  const baseline: Record<string, string> = {};
+  for (const e of entries) if (isRoll(e)) baseline[e.target.params.printerId ?? ""] = e.id;
+  return baseline;
+}
+
 /**
- * The roll entries that are new since `mountedAt`: this browser first saw the roll after the page opened, so it was loaded
- * while someone was looking (a roll change). A roll that was already in at page load, or that was seen before, is no news;
- * the card and the bell say it. Pure.
+ * The roll entries that are a change: a printer whose roll key differs from the baseline taken at the first full status read
+ * after the page opened (also from "no such roll"). Reloading, or opening the app in a new browser, finds the roll already
+ * there and so toasts nothing; the card and the bell say it. Pure.
  */
-export function newRollEntries(visible: readonly Notification[], firstSeen: Readonly<Record<string, string>>, mountedAt: number, toasted: ReadonlySet<string>): Notification[] {
-  return visible.filter((e) => {
-    if (e.textKey !== ROLL_TEXT_KEY || toasted.has(e.id)) return false;
-    const seen = Date.parse(firstSeen[e.id] ?? "");
-    return !Number.isNaN(seen) && seen >= mountedAt;
-  });
+export function newRollEntries(visible: readonly Notification[], baseline: Readonly<Record<string, string>>, toasted: ReadonlySet<string>): Notification[] {
+  return visible.filter((e) => isRoll(e) && !toasted.has(e.id) && baseline[e.target.params.printerId ?? ""] !== e.id);
 }
 
 /** One toast per roll change that leaves a roll in the printer the hub cannot print on yet (#391). It stays until closed. */
@@ -29,10 +34,12 @@ export function RollToast() {
   const { t } = useLingui();
   const feed = useNotifications();
   const text = useEntryText();
-  const [mountedAt] = useState(() => Date.now());
+  // The roll each printer held at the first full read; nothing toasts before it exists.
+  const [baseline, setBaseline] = useState<Record<string, string> | null>(null);
+  if (baseline === null && feed.printersRead) setBaseline(rollBaseline(feed.entries));
   const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
-  const fresh = useMemo(() => newRollEntries(feed.visible, feed.state.firstSeen, mountedAt, closed), [feed.visible, feed.state.firstSeen, mountedAt, closed]);
-  // Once shown, a toast stays until it is closed, even when `firstSeen` is later rewritten.
+  const fresh = useMemo(() => (baseline ? newRollEntries(feed.visible, baseline, closed) : []), [feed.visible, baseline, closed]);
+  // Once shown, a toast stays until it is closed.
   const [shown, setShown] = useState<Notification[]>([]);
   const pending = fresh.filter((e) => !shown.some((s) => s.id === e.id));
   if (pending.length > 0) setShown((s) => [...s, ...pending]);

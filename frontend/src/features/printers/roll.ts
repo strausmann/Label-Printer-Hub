@@ -31,6 +31,20 @@ export function rollSize(roll: UnsupportedRoll): string {
 /** The same roll in one string for a notification entry id: one entry per printer and roll. */
 export const rollKey = (roll: UnsupportedRoll): string => `${roll.kind}:${roll.widthMm ?? ""}x${roll.lengthMm ?? ""}`;
 
+/** The id of a printer's roll entry in the notification centre; also the key of its first-seen time. */
+export const rollEntryId = (printerId: string, roll: UnsupportedRoll): string => `printer:${printerId}:roll:${rollKey(roll)}`;
+
+/**
+ * When this browser first saw the roll that is in the printer now (ms), or null when it holds none the hub cannot print on
+ * or the time is not known yet. A refusal counts only if it came after this: any roll change forgets older refusals.
+ */
+export function rollSinceMs(printerId: string, status: PrinterStatus | undefined, firstSeen: Readonly<Record<string, string>>): number | null {
+  const roll = unsupportedRoll(status);
+  if (!roll) return null;
+  const at = Date.parse(firstSeen[rollEntryId(printerId, roll)] ?? "");
+  return Number.isNaN(at) ? null : at;
+}
+
 export interface RollWords {
   /** "29 × 90 mm · Die-cut labels" */
   title: string;

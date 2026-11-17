@@ -6,7 +6,7 @@ import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { CoverRefusal } from "../printers/coverRefusals";
 import { flagSeverity, printerWaiting, type Waiting } from "../printers/flags";
 import { describePrinter, isFailed, type PrinterKind } from "../printers/model";
-import { rollKey, rollSize } from "../printers/roll";
+import { rollEntryId, rollSinceMs, rollSize } from "../printers/roll";
 import type { SheetSummary } from "../sheets/api";
 import type { components } from "../../api/schema.gen";
 import type { UpdateNotice } from "../../app/updates";
@@ -160,7 +160,7 @@ function printerEntries(
   // A roll the hub cannot print on yet: one entry per printer and roll, gone as soon as a supported roll is loaded. Warning
   // until something waits for the printer or was refused because of the roll, then a problem (same rule as the card).
   if (view.roll) {
-    const id = `printer:${printer.id}:roll:${rollKey(view.roll)}`;
+    const id = rollEntryId(printer.id, view.roll);
     entries.push({
       id,
       severity: view.badge === "bad" ? "error" : "warning",
@@ -285,7 +285,7 @@ export function deriveNotifications(input: DeriveInput): Notification[] {
     if (entry) entries.push(entry);
   }
   for (const printer of printers) {
-    const waiting = printerWaiting(printer.id, jobs, refusals);
+    const waiting = printerWaiting(printer.id, jobs, refusals, rollSinceMs(printer.id, statuses[printer.id], firstSeen));
     entries.push(...printerEntries(printer, statuses[printer.id], busy.has(printer.id), waiting, firstSeen, now));
   }
   for (const sheet of sheets) {

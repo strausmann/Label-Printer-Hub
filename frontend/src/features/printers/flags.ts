@@ -5,10 +5,12 @@ import { msg } from "@lingui/core/macro";
 import type { MessageDescriptor } from "@lingui/core";
 import { useLingui } from "@lingui/react";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { jobTitle } from "../jobs/model";
 import { notificationJobsQuery } from "../notifications/jobsQuery";
-import type { Job } from "./api";
+import { notificationStore } from "../notifications/store";
+import type { Job, PrinterStatus } from "./api";
+import { rollSinceMs } from "./roll";
 import { useCoverRefusals, type CoverRefusal } from "./coverRefusals";
 import type { Translate } from "./reasons";
 
@@ -59,7 +61,13 @@ const time = (iso: string): number => {
  * A job of the printer is queued or printing (the oldest of them by `created_at` is named), or a print to it was refused
  * because of its open cover (`coverRefusals.ts`).
  */
-export function printerWaiting(printerId: string, jobs: readonly Job[], refusals: Readonly<Record<string, CoverRefusal>>): Waiting {
+export function printerWaiting(
+  printerId: string,
+  jobs: readonly Job[],
+  refusals: Readonly<Record<string, CoverRefusal>>,
+  /** When the roll in the printer was first seen (ms); a roll refusal counts only if it is newer. Null: no roll refusal counts. */
+  rollSince: number | null = null,
+): Waiting {
   const refusal = Object.hasOwn(refusals, printerId) ? refusals[printerId] : undefined;
   const active = jobs
     .filter((j) => j.printer_id === printerId && (j.state === "queued" || j.state === "printing"))
@@ -69,7 +77,11 @@ export function printerWaiting(printerId: string, jobs: readonly Job[], refusals
   const finished = jobs
     .filter((j) => j.printer_id === printerId && (j.state === "done" || j.state === "failed" || j.state === "failed_restart"))
     .sort((a, b) => time(b.updated_at) - time(a.updated_at))[0];
-  const rollRefused = finished?.state === "failed" && (finished.error ?? "").startsWith("media_type_mismatch");
+  const rollRefused =
+    finished?.state === "failed" &&
+    (finished.error ?? "").startsWith("media_type_mismatch") &&
+    rollSince !== null &&
+    time(finished.updated_at) > rollSince;
   const extra = rollRefused ? { rollRefused: true } : {};
   if (first) return { waiting: true, job: jobTitle(first) ?? "", refused: false, ...extra };
   if (refusal) return { waiting: true, job: refusal.title, refused: true, ...extra };
@@ -117,9 +129,14 @@ export function useFlagText(): (flag: string) => { headline: string; detail: str
  * `printerWaiting` for components: the jobs the notification centre reads (same query key, so the card, the detail page,
  * the overview row and the entry decide from the same data) and the cover refusals of this tab.
  */
-export function usePrinterWaiting(): (printerId: string) => Waiting {
+export function usePrinterWaiting(): (printerId: string, status?: PrinterStatus) => Waiting {
   const jobs = useQuery(notificationJobsQuery());
   const refusals = useCoverRefusals();
   const data = jobs.data;
-  return useCallback((printerId: string) => printerWaiting(printerId, data ?? [], refusals), [data, refusals]);
+  const store = notificationStore();
+  const { firstSeen } = useSyncExternalStore(store.subscribe, store.get);
+  return useCallback(
+    (printerId: string, status?: PrinterStatus) => printerWaiting(printerId, data ?? [], refusals, rollSinceMs(printerId, status, firstSeen)),
+    [data, refusals, firstSeen],
+  );
 }

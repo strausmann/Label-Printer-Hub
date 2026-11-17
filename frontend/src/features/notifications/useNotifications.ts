@@ -25,6 +25,8 @@ export interface Feed {
   state: StoredState;
   badge: ReturnType<typeof badgeOf>;
   status: FeedStatus;
+  /** Every printer and its status have been read once: what the entries say about printers is a full picture. */
+  printersRead: boolean;
   retry: () => void;
   markAllRead: () => void;
   clearAll: () => void;
@@ -123,6 +125,7 @@ export function useNotifications(): Feed {
     state,
     badge,
     status,
+    printersRead,
     retry,
     markAllRead: () => store.update((s) => markAllRead(s, visible)),
     clearAll: () => store.update((s) => clearAll(s, entries)),

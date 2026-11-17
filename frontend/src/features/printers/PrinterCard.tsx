@@ -27,7 +27,7 @@ export function PrinterCard({
   const { t, i18n } = useLingui();
   const kinds = useKindLabel();
   const waitingOf = usePrinterWaiting();
-  const view = describePrinter(printer, status, printing, waitingOf(printer.id));
+  const view = describePrinter(printer, status, printing, waitingOf(printer.id, status));
   const page = isPagePrinter(printer, status);
   const unknown = statusIsUnknown(status);
   const age = staleAgeSeconds(status);
