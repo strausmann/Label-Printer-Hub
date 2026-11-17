@@ -19,8 +19,8 @@ import {
 } from "./updates";
 
 afterEach(() => {
-  resetUpdatesForTest();
   vi.unstubAllGlobals();
+  resetUpdatesForTest();
 });
 
 describe("new version prompt", () => {
@@ -137,9 +137,101 @@ describe("the update notice", () => {
     act(() => noteServerVersion("1.1.0"));
     act(() => dismissUpdateToast());
     expect(result.current).toMatchObject({ waiting: true, version: "1.1.0", toastOpen: false });
-    // For the page's lifetime: a newer version does not bring the toast back.
+    expect(window.localStorage.getItem("labelyard.update.dismissed")).toBe("1.1.0");
+  });
+
+  it("a different waiting version than the dismissed one opens the toast again", () => {
+    setVersionCheckForTest({ buildVersion: "1.0.0" });
+    const { result } = renderHook(() => useUpdateNotice());
+    act(() => noteServerVersion("1.1.0"));
+    act(() => dismissUpdateToast());
     act(() => noteServerVersion("1.2.0"));
-    expect(result.current).toMatchObject({ waiting: true, version: "1.2.0", toastOpen: false });
+    expect(result.current).toMatchObject({ waiting: true, version: "1.2.0", toastOpen: true });
+  });
+
+  it("Later survives a reload: the toast stays closed, the notice still waits", () => {
+    setVersionCheckForTest({ buildVersion: "1.0.0" });
+    const first = renderHook(() => useUpdateNotice());
+    act(() => noteServerVersion("1.1.0"));
+    act(() => dismissUpdateToast());
+    first.unmount();
+    // A reload: fresh module state, the same storage.
+    resetUpdatesForTest({ reload: true });
+    setVersionCheckForTest({ buildVersion: "1.0.0" });
+    const { result } = renderHook(() => useUpdateNotice());
+    act(() => noteServerVersion("1.1.0"));
+    expect(result.current).toMatchObject({ waiting: true, version: "1.1.0", toastOpen: false });
+    // A newer version after the reload brings it back.
+    act(() => noteServerVersion("1.3.0"));
+    expect(result.current.toastOpen).toBe(true);
+  });
+
+  it("Later for a waiting worker without a version survives a reload too", () => {
+    const first = renderHook(() => useUpdateNotice());
+    const needRefresh = workerWaiting();
+    act(() => needRefresh());
+    act(() => dismissUpdateToast());
+    first.unmount();
+    resetUpdatesForTest({ reload: true });
+    const again = workerWaiting();
+    const { result } = renderHook(() => useUpdateNotice());
+    act(() => again());
+    expect(result.current).toMatchObject({ waiting: true, version: null, toastOpen: false });
+  });
+
+  it("with blocked storage Later still closes the toast for the page and does not throw", () => {
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    vi.stubGlobal("localStorage", blocked);
+    resetUpdatesForTest({ reload: true });
+    setVersionCheckForTest({ buildVersion: "1.0.0" });
+    const { result } = renderHook(() => useUpdateNotice());
+    act(() => noteServerVersion("1.1.0"));
+    expect(() => act(() => dismissUpdateToast())).not.toThrow();
+    expect(result.current).toMatchObject({ waiting: true, version: "1.1.0", toastOpen: false });
+  });
+
+  it("the stored Later is removed once the app runs the dismissed version", () => {
+    setVersionCheckForTest({ buildVersion: "1.0.0" });
+    renderHook(() => useUpdateNotice());
+    act(() => noteServerVersion("1.1.0"));
+    act(() => dismissUpdateToast());
+    expect(window.localStorage.getItem("labelyard.update.dismissed")).toBe("1.1.0");
+    // The update was applied: the hub's version is the bundle's again.
+    act(() => noteServerVersion("1.0.0"));
+    expect(window.localStorage.getItem("labelyard.update.dismissed")).toBeNull();
+  });
+
+  it("Reload from the notice removes the stored Later", async () => {
+    setVersionCheckForTest({ buildVersion: "1.0.0", reload: vi.fn(), workerWaitMs: 1 });
+    renderHook(() => useUpdateNotice());
+    act(() => noteServerVersion("1.1.0"));
+    act(() => dismissUpdateToast());
+    expect(window.localStorage.getItem("labelyard.update.dismissed")).toBe("1.1.0");
+    await act(async () => applyUpdate());
+    expect(window.localStorage.getItem("labelyard.update.dismissed")).toBeNull();
+  });
+
+  it("Escape on the toast is Later and is remembered", async () => {
+    mockApi({});
+    setVersionCheckForTest({ buildVersion: "1.0.0" });
+    startUpdates(() => async () => {});
+    await renderApp({ path: "/" });
+    await act(async () => noteServerVersion("1.1.0"));
+    const toast = screen.getByRole("region", { name: "New version" });
+    within(toast).getByRole("button", { name: "Reload" }).focus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("region", { name: "New version" })).toBeNull();
+    expect(window.localStorage.getItem("labelyard.update.dismissed")).toBe("1.1.0");
   });
 
   it("a waiting worker alone has no version", () => {
