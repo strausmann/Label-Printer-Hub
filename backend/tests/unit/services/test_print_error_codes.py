@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
+    MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterDisabledError,
@@ -42,6 +43,7 @@ SAMPLES: dict[type[Exception], Exception] = {
     ),
     QrPayloadTooLongError: QrPayloadTooLongError(length=300, max_bytes=100),
     SnmpQueryError: SnmpQueryError("preflight SNMP failed"),
+    MediaTypeMismatchError: MediaTypeMismatchError(loaded_kind="die_cut", media_raw="29mm x 90mm"),
 }
 
 
@@ -53,6 +55,16 @@ def test_every_known_class_is_described() -> None:
         assert 400 <= known.status < 500 or known.status in (502, 503), (cls, known.status)
         assert known.code, cls
         assert known.message, cls
+
+
+def test_a_die_cut_roll_has_a_fixed_message_and_its_detail() -> None:
+    """#389: a die-cut roll answers 409 with the loaded kind and the printer's media text."""
+    known = describe_print_error(
+        MediaTypeMismatchError(loaded_kind="die_cut", media_raw="29mm x 90mm")
+    )
+    assert (known.status, known.code) == (409, "media_type_mismatch")
+    assert known.detail == {"loaded_kind": "die_cut", "media_raw": "29mm x 90mm"}
+    assert "continuous tape only" in known.message
 
 
 def test_spool_only_tape_keeps_its_content_types() -> None:

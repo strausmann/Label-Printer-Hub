@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
+    MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterDisabledError,
@@ -33,6 +34,7 @@ SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     LookupFailedError: (502, "integration_lookup_failed"),
     PrinterDisabledError: (409, "printer_disabled"),
     TapeMismatchError: (409, "tape_mismatch"),
+    MediaTypeMismatchError: (409, "media_type_mismatch"),
     TapeEmptyError: (409, "tape_empty"),
     NoTapeLoadedError: (409, "no_tape_loaded"),
     PrinterCoverOpenError: (409, "printer_cover_open"),
@@ -56,6 +58,7 @@ _UNSUPPORTED_WIDTH = "The currently loaded tape width is not supported by the la
 _UNSUPPORTED_ORIENTATION = "The selected orientation is not available for this tape width."
 _NO_TAPE = "No tape loaded — insert a Brother TZe or DK cartridge."
 _MISSING_FIELDS = "The label data is missing fields required for the selected content type."
+_DIE_CUT = "The loaded roll is die-cut labels; the hub prints on continuous tape only."
 _QR_TOO_LONG = "The QR payload does not fit the fixed QR code of this tape."
 # The cause of these two names the printer's address or the SNMP library's error: log only.
 _UNREACHABLE: dict[str, str] = {
@@ -115,6 +118,9 @@ def describe_print_error(exc: Exception) -> KnownPrintError:
     elif isinstance(exc, TapeMismatchError):
         message = str(exc)
         detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+    elif isinstance(exc, MediaTypeMismatchError):
+        message = _DIE_CUT
+        detail = {"loaded_kind": exc.loaded_kind, "media_raw": exc.media_raw}
     elif code in _FIXED_MESSAGES:
         message = _FIXED_MESSAGES[code]
     elif code in _UNREACHABLE:

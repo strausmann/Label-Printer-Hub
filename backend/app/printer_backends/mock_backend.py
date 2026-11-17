@@ -81,6 +81,9 @@ class MockPrinterBackend:
     backend_id = "mock"
     half_cut_supported: bool = False
 
+    # #389: no hardware to wait for after sending (``post_send.check_after_send``).
+    post_send_settle_s: float = 0.0
+
     def __init__(
         self,
         host: str = "mock://test",

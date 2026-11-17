@@ -56,6 +56,32 @@ class PrintFailedError(PrinterError):
     """Encoding or transport failure during print()."""
 
 
+class MediaTypeMismatchError(PrinterError):
+    """The loaded media is not the kind the hub prints on (#389).
+
+    The hub renders and sends continuous tape only. A loaded roll the printer names as die-cut
+    labels (``media_raw`` with a label length, e.g. ``29mm x 90mm``) is refused before anything
+    is rendered or sent instead of letting the printer reject it.
+    """
+
+    def __init__(self, *, loaded_kind: str, media_raw: str | None) -> None:
+        self.loaded_kind = loaded_kind
+        self.media_raw = media_raw
+        super().__init__(f"Loaded media is {loaded_kind}; the hub prints on continuous tape only")
+
+
+class PrinterReportedError(PrinterError):
+    """The printer reports an error state in its status (#389), e.g. after a job was sent.
+
+    ``flags`` are the RFC 3805 ``hrPrinterDetectedErrorState`` bit names that count as an error
+    (``app.printer_backends.post_send.HARD_ERROR_FLAGS``), in bit order.
+    """
+
+    def __init__(self, flags: list[str]) -> None:
+        self.flags = list(flags)
+        super().__init__(f"The printer reports an error: {', '.join(self.flags)}")
+
+
 class StatusQueryFailedError(PrinterError):
     """The 32-byte ESC i S reply could not be parsed."""
 

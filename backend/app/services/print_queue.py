@@ -45,10 +45,13 @@ from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.models.printer_state import PrinterState
 from app.printer_backends.exceptions import (
+    MediaTypeMismatchError,
     PrinterCoverOpenError,
     PrinterError,
     PrinterOfflineError,
+    PrinterReportedError,
     PrintFailedError,
+    SnmpQueryError,
     StatusQueryFailedError,
     TapeEmptyError,
     TapeMismatchError,
@@ -166,6 +169,8 @@ _RECOVERABLE_PRINTER_ERRORS: tuple[type[PrinterError], ...] = (
     TapeEmptyError,
     PrinterCoverOpenError,
     PrinterOfflineError,
+    MediaTypeMismatchError,
+    PrinterReportedError,
 )
 
 _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
@@ -175,6 +180,8 @@ _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
     PrinterOfflineError: "printer_offline",
     StatusQueryFailedError: "printer_status_unavailable",
     PrintFailedError: "print_failed",
+    MediaTypeMismatchError: "media_type_mismatch",
+    PrinterReportedError: "printer_error",
 }
 
 
@@ -184,6 +191,10 @@ def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any
     detail: dict[str, Any] | None = None
     if isinstance(exc, TapeMismatchError):
         detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+    elif isinstance(exc, MediaTypeMismatchError):
+        detail = {"loaded_kind": exc.loaded_kind, "media_raw": exc.media_raw}
+    elif isinstance(exc, PrinterReportedError):
+        detail = {"flags": exc.flags}
     return code, str(exc) or code, detail
 
 
@@ -2579,6 +2590,8 @@ class PrintQueue:
                     raise RuntimeError(f"Job {job.id} has no image payload")
                 image = await asyncio.to_thread(Image.open, BytesIO(job.image_payload))
                 await printer.print_image(image, tape_mm=job.tape_mm, **job.options)
+                # #389: the libraries read nothing back over the network; ask the printer.
+                await self._check_after_send(printer, job)
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
                 # The event goes out before the write, as in ``_complete_group``: a removal
@@ -2650,6 +2663,28 @@ class PrintQueue:
                 # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
                 await self._store.mark_failed(UUID(job.id), str(exc))
                 logger.exception("Job %s failed on %s", job.id, printer_id)
+
+    @staticmethod
+    async def _check_after_send(printer: _PrinterLike, job: Job) -> None:
+        """#389: the status check after one tape job was sent (``check_after_send``).
+
+        An error state the printer reports (``PrinterError``) propagates: the job fails with its
+        code and the printer pauses, as for any printer error. A status that cannot be read
+        after sending says nothing about the label, which was sent: the job counts as printed
+        and a warning is logged, never a guess either way. A printer without the check (test
+        fakes, page printers) is not checked.
+        """
+        check = getattr(type(printer), "check_after_send", None)
+        if check is None:
+            return
+        try:
+            await check(printer)
+        except (PrinterOfflineError, SnmpQueryError, StatusQueryFailedError) as exc:
+            logger.warning(
+                "Job %s: the status after sending could not be read (%s); counted as printed",
+                job.id,
+                type(exc).__name__,
+            )
 
     def _notify_page_change(self, job: Job, from_state: JobState, to_state: JobState) -> None:
         """Event hook of the page-job runner (``from == to`` = ``at_printer`` changed)."""

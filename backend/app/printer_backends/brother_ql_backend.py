@@ -28,10 +28,13 @@ from PIL import Image
 from app.models.tape import TapeSpec
 from app.printer_backends.batch_helper import default_print_images_loop
 from app.printer_backends.exceptions import (
+    MediaTypeMismatchError,
     PrinterCoverOpenError,
+    PrinterError,
     PrinterOfflineError,
     PrintFailedError,
     TapeEmptyError,
+    TapeMismatchError,
     refused_before_sending,
 )
 from app.printer_backends.snmp_helper import (
@@ -110,6 +113,20 @@ def _fit_to_printable_width(
     return image
 
 
+def _ql_label_of(tape_spec: TapeSpec) -> str:
+    """The brother_ql label identifier of the tape; a width without one is refused before
+    anything is sent (#277)."""
+    try:
+        return _TAPE_MM_TO_QL_LABEL[tape_spec.width_mm]
+    except KeyError as exc:
+        raise refused_before_sending(
+            PrintFailedError(
+                f"No QL label mapping for {tape_spec.width_mm}mm — "
+                f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
+            )
+        ) from exc
+
+
 class BrotherQLBackend:
     """PrinterBackend backed by the brother_ql library (v0.9.x).
 
@@ -147,8 +164,14 @@ class BrotherQLBackend:
         half_cut: bool = False,
         last_page: bool = True,  # noqa: ARG002
         orientation: LabelOrientation | None = None,
+        media_checked: bool = False,
     ) -> None:
-        """Convert *image* to QL raster data and send to the printer.
+        """Check the loaded roll, convert *image* to QL raster data and send it to the printer.
+
+        #389: before anything is sent, one SNMP preflight checks that the loaded roll is the
+        one the image was drawn for (``TapeMismatchError``) and is not die-cut
+        (``MediaTypeMismatchError``); both are refusals before sending. ``media_checked`` skips
+        the check when the caller (``print_images``) made it for the whole batch already.
 
         ``half_cut`` is silently ignored with a WARNING — QL-Series hardware
         does not support half-cut (PT-Series only).
@@ -166,16 +189,9 @@ class BrotherQLBackend:
                 self.host,
             )
 
-        try:
-            ql_label = _TAPE_MM_TO_QL_LABEL[tape_spec.width_mm]
-        except KeyError as exc:
-            # #277: refused before anything was sent: the label did not print.
-            raise refused_before_sending(
-                PrintFailedError(
-                    f"No QL label mapping for {tape_spec.width_mm}mm — "
-                    f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
-                )
-            ) from exc
+        ql_label = _ql_label_of(tape_spec)
+        if not media_checked:
+            await self._check_loaded_media(tape_spec)
 
         # Build raster instructions. convert() populates qlr.data.
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
@@ -195,12 +211,34 @@ class BrotherQLBackend:
 
         # _helpers_send is synchronous and performs blocking I/O.
         # Wrap in to_thread to avoid blocking the event loop.
-        await asyncio.to_thread(
+        result = await asyncio.to_thread(
             _helpers_send,
             qlr.data,
             self._identifier,
             blocking=True,
         )
+        # #389: brother_ql 0.9.4 reads nothing back over the network backend (``outcome`` stays
+        # ``sent``); a backend that does read back reports ``error``. The queue's status check
+        # after sending covers the network case.
+        if isinstance(result, dict) and result.get("outcome") == "error":
+            raise PrintFailedError("The printer reported an error while printing")
+
+    async def _check_loaded_media(self, tape_spec: TapeSpec) -> None:
+        """One preflight: the loaded roll must be continuous and of ``tape_spec``'s width.
+
+        Every error is a refusal before sending (#277): nothing of the job reached the printer.
+        """
+        try:
+            preflight = await self.preflight_check()
+            if preflight.media_kind == "die_cut":
+                raise MediaTypeMismatchError(loaded_kind="die_cut", media_raw=preflight.media_raw)
+            if preflight.loaded_tape_mm != tape_spec.width_mm:
+                raise TapeMismatchError(
+                    expected_mm=tape_spec.width_mm, loaded_mm=preflight.loaded_tape_mm
+                )
+        except PrinterError as exc:
+            refused_before_sending(exc)
+            raise
 
     async def print_images(
         self,
@@ -220,6 +258,9 @@ class BrotherQLBackend:
         default_print_images_loop mit half_cut=False (QL ignoriert das Argument).
         ``orientation`` (#258) applies to every image of the batch.
         """
+        # #389: one media check for the whole batch, not one per label (no probe storm).
+        _ql_label_of(tape_spec)
+        await self._check_loaded_media(tape_spec)
         # QL-Series: half_cut existiert nicht. Backend-Capability-Flag erzwingt False.
         await default_print_images_loop(
             self,
@@ -229,6 +270,7 @@ class BrotherQLBackend:
             high_resolution=high_resolution,
             half_cut=False,
             orientation=orientation,
+            media_checked=True,
         )
 
     async def preflight_check(

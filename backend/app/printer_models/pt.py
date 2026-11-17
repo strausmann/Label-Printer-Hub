@@ -17,6 +17,7 @@ from PIL import Image
 
 from app.models.tape import TapeSpec
 from app.printer_backends.base import PrinterBackend
+from app.printer_backends.post_send import POST_SEND_SETTLE_S, check_after_send
 from app.printer_models.base import PrinterModel
 from app.printer_models.registry import ModelRegistry
 from app.services.producers.tape_description import TapeDescription
@@ -296,14 +297,25 @@ class _PTPQueuePrinter:
             half_cut=bool(options.pop("half_cut", True)),
         )
 
-    async def check_status(self) -> None:
-        """#277: the status check after each group of a tape run: the SNMP preflight.
+    post_send_settle_s: float | None = None
+    """Wait before the status is read after sending (#389). ``None``: the backend's own
+    ``post_send_settle_s`` (the mock backend has no printer to wait for), else
+    ``POST_SEND_SETTLE_S``."""
 
-        Raises ``TapeEmptyError`` (``noPaper``), ``PrinterCoverOpenError`` or
-        ``PrinterOfflineError``; the queue then stops the run.
+    async def check_status(self) -> None:
+        """#277: the status check after each group of a tape run (``check_after_send``)."""
+        await self.check_after_send()
+
+    async def check_after_send(self) -> None:
+        """#389: after a job was sent, read the status once; an error state fails the job.
+
+        Raises ``TapeEmptyError``, ``PrinterCoverOpenError``, ``PrinterReportedError`` (any
+        other error bit) or ``PrinterOfflineError`` when the status cannot be read.
         """
-        backend: Any = self._backend  # the PrinterBackend protocol has no preflight_check
-        await backend.preflight_check()
+        settle_s = self.post_send_settle_s
+        if settle_s is None:
+            settle_s = float(getattr(self._backend, "post_send_settle_s", POST_SEND_SETTLE_S))
+        await check_after_send(self._backend, settle_s=settle_s)
 
 
 # Module-level registration so any import path triggers it.

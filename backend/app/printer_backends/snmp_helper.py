@@ -19,6 +19,7 @@ __all__ = [
     "decode_error_flags",
     "format_mac",
     "parse_loaded_tape_mm",
+    "parse_media_kind",
     "query_identity",
     "query_loaded_tape_mm",
     "query_model_pjl",
@@ -150,6 +151,30 @@ def parse_loaded_tape_mm(text: str) -> int | None:
     return int(match.group(1))
 
 
+# A media name with a second dimension (a label length): ``29mm x 90mm``, ``29 x 90 mm``,
+# ``29x90mm``. A continuous roll is named by its width only (``29mm``, ``12mm(0.47")``).
+_DIE_CUT_RE = re.compile(r"^\s*\d+\s*(?:mm)?\s*[x\u00d7]\s*\d+\s*mm", re.IGNORECASE)
+
+MediaKind = Literal["continuous", "die_cut"]
+
+
+def parse_media_kind(text: str | None) -> MediaKind | None:
+    """The kind of media a ``prtInputMediaName`` text names (#389); ``None`` when unknown.
+
+    The printer reports no media type code over SNMP, only this text. A text with a label
+    length is die-cut, a text with a width only is continuous, anything else is unknown. Which
+    text a QL printer reports for a die-cut roll is not verified on hardware; a text this
+    function does not recognise stays unknown and is not refused.
+    """
+    if not text:
+        return None
+    if _DIE_CUT_RE.match(text):
+        return "die_cut"
+    if _TAPE_MM_RE.match(text):
+        return "continuous"
+    return None
+
+
 @dataclass(frozen=True)
 class PreflightStatus:
     """Combined preflight: printer status + loaded tape + error bitmap."""
@@ -159,6 +184,11 @@ class PreflightStatus:
     error_flags: list[str] = field(default_factory=list)
     # Trimmed ``prtInputMediaName`` text as the printer reported it; ``None`` when blank.
     media_raw: str | None = None
+
+    @property
+    def media_kind(self) -> MediaKind | None:
+        """Continuous or die-cut, read from ``media_raw`` (#389); ``None`` when unknown."""
+        return parse_media_kind(self.media_raw)
 
 
 @dataclass(frozen=True)

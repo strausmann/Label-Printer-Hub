@@ -5759,7 +5759,7 @@ export interface operations {
                     "application/json": components["schemas"]["PrintJobResponse"];
                 };
             };
-            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -5830,7 +5830,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `media_kind_mismatch`: a page printer (IPP). Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            /** @description `media_kind_mismatch`: a page printer (IPP). Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6721,7 +6721,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape`: the printer model does not take the loaded tape; it carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
+            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape`: the printer model does not take the loaded tape; it carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `media-type-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8050,7 +8050,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8231,7 +8231,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             409: {
                 headers: {
                     [name: string]: unknown;
