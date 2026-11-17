@@ -123,7 +123,7 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
             </Row>
             <Row label={t`Labels`}>{page.cellCount}</Row>
             <Row label={t`Cells`}>{page.cells.length > 0 ? <CellNumbers cells={page.cells} /> : "—"}</Row>
-            {page.idCell !== null && <Row label={t`Sheet ID in cell`}><span className="code">{page.idCell}</span></Row>}
+            {page.idCell !== null && <Row label={t`Sheet code in cell`}><span className="code">{page.idCell}</span></Row>}
           </>
         )}
       </dl>

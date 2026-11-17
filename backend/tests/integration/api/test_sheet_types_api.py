@@ -878,6 +878,8 @@ async def test_patch_placement_and_cell(api_client_with_seed, admin):
     read = (await api_client_with_seed.get("/api/v1/sheet-types/acme-t1", headers=admin)).json()
     assert read["id_placement"] == "cell" and read["id_cell"] == 5
     assert read["id_placement_resolved"] == "cell"
+    # What ``auto`` would choose stays visible, so the type setting can offer going back (M7).
+    assert read["id_placement_auto"] == "margin"
 
 
 async def test_patch_id_cell_out_of_range(api_client_with_seed, admin):
@@ -907,6 +909,8 @@ async def test_read_has_resolved_placement(api_client_with_seed, reader):
     assert by_key["avery-zweckform-3490"]["id_placement"] == "auto"
     assert by_key["avery-zweckform-3490"]["id_placement_resolved"] == "back_side"
     assert by_key["avery-zweckform-6121"]["id_placement_resolved"] == "margin"
+    assert by_key["avery-zweckform-3490"]["id_placement_auto"] == "back_side"
+    assert by_key["avery-zweckform-6121"]["id_placement_auto"] == "margin"
     design = by_key["avery-zweckform-3490"]["backing_design"]
     assert design["key"] == "avery-zweckform-ultragrip"
     assert design["strips"][0] == {"x_mm": 33.5, "y_mm": 22.0, "w_mm": 22.0, "h_mm": 253.0}

@@ -10,6 +10,7 @@ import { Button } from "react-aria-components";
 import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
+import { useSheetType } from "../archive/api";
 import { Badge } from "../archive/fields";
 import { isLookupApp, useAppName } from "../lookup/apps";
 import { ModalDialog, TextInput } from "../settings/controls";
@@ -48,7 +49,7 @@ function useCellLine(): (cell: CellData) => string {
   return (cell) => {
     const n = cell.cell;
     const purpose = cell.purpose && cell.purpose.trim() !== "" ? cell.purpose : t`no purpose`;
-    const source = cell.is_id_cell ? t({ message: "Sheet ID", context: "cell source" }) : sourceName(cell.source);
+    const source = cell.is_id_cell ? t({ message: "Sheet code", context: "cell source" }) : sourceName(cell.source);
     return t`Cell ${n} → ${purpose} · ${source}`;
   };
 }
@@ -108,6 +109,11 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const handMarked = useMemo(() => new Set(sheet.cells.filter((c) => c.marked_by_hand).map((c) => c.cell)), [sheet.cells]);
   const unconfirmed = sheet.cells.filter((c) => c.state === "unconfirmed");
   const canEdit = canWrite && !discarded;
+  // Only an unprinted margin or manual sheet asks its type whether the code may go on the back (R-350-11).
+  const sheetType = useSheetType(
+    sheet.type_key,
+    canEdit && !sheet.id_printed && (sheet.id_placement === "margin" || sheet.id_placement === "manual"),
+  );
   // The sheet can be discarded, or taken away from this key, while a choice is open: then it is only viewed.
   const mode: Mode = canEdit ? chosenMode : "view";
 
@@ -179,6 +185,14 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   }
 
   const idNotPrinted = !discarded && sheet.id_placement !== "manual" && !sheet.id_printed;
+  // R-350-11: an unprinted margin or manual sheet whose type puts the code on the back can switch to it.
+  const switchable = !discarded && !sheet.id_printed && (sheet.id_placement === "margin" || sheet.id_placement === "manual");
+  const offerBack = switchable && sheetType.data?.id_placement_resolved === "back_side";
+  const backButton = canEdit ? (
+    <Button onPress={() => setPrintingBack(true)} className={SECONDARY_BUTTON}>
+      {t`Print back side`}
+    </Button>
+  ) : null;
   const sizeLine = `${formatMm(sheet.label_w, i18n.locale).replace(/ mm$/, "")} × ${formatMm(sheet.label_h, i18n.locale)}`;
   const placementWord = { cell: t`in a cell`, margin: t`in the margin`, manual: t`added by hand`, back_side: t`on the back of the liner` }[sheet.id_placement];
   const writing = mode === "mark" ? mark : unmark;
@@ -210,21 +224,25 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
           {sheet.type_label} · {sizeLine}
         </p>
         {discarded && sheet.discarded_at ? (
-          <p className="font-bold">{t`Discarded on ${discardedOn}, this ID is not used again.`}</p>
+          <p className="font-bold">{t`Discarded on ${discardedOn}, this code is not used again.`}</p>
         ) : null}
         {idNotPrinted && sheet.id_placement === "back_side" ? (
           <div className="flex flex-wrap items-center gap-3">
             <p className="font-bold">{t`Sheet code on the back not confirmed`}</p>
-            {canEdit ? (
-              <Button onPress={() => setPrintingBack(true)} className={SECONDARY_BUTTON}>
-                {t`Print back side`}
-              </Button>
-            ) : null}
+            {backButton}
           </div>
         ) : idNotPrinted ? (
-          <div className="flex flex-col gap-0.5">
-            <p className="font-bold">{t`Sheet ID not printed yet`}</p>
-            {sheet.unconfirmed > 0 ? <p className="text-ink-2">{t`Resolve the unconfirmed cells first; the sheet ID waits for them`}</p> : null}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-0.5">
+              <p className="font-bold">{t`Sheet code not printed yet`}</p>
+              {sheet.unconfirmed > 0 ? <p className="text-ink-2">{t`Resolve the unconfirmed cells first; the sheet code waits for them`}</p> : null}
+            </div>
+            {offerBack ? backButton : null}
+          </div>
+        ) : offerBack ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="font-bold">{t`Sheet code not printed yet`}</p>
+            {backButton}
           </div>
         ) : sheet.id_placement === "back_side" && !discarded ? (
           <p className="text-ink-2">{t`The sheet code is on the back of the liner.`}</p>
@@ -240,7 +258,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             </h2>
             <Usage sheet={sheet} />
             <dl className="m-0 flex flex-col gap-1.5 text-small">
-              <Fact label={t`Sheet ID`}>
+              <Fact label={t`Sheet code`}>
                 {sheet.id_printed ? t`printed` : t`not printed yet`}, {placementWord}
               </Fact>
               <Fact label={t`Feed mark printed`}>{sheet.feed_mark_printed ? t`yes` : t`no`}</Fact>

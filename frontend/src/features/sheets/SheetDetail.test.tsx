@@ -66,7 +66,7 @@ describe("the sheet detail page", () => {
 
   it("names the discard date and that the ID is not used again, and offers no actions", async () => {
     await open(sheetRead(CODE, { used: [1] }, { state: "discarded", discarded_at: "2026-11-02T12:00:00Z" }));
-    expect(screen.getByText("Discarded on Nov 2, 2026, this ID is not used again.")).toBeVisible();
+    expect(screen.getByText("Discarded on Nov 2, 2026, this code is not used again.")).toBeVisible();
     for (const name of [/Mark cells as used/, /Un-mark cells/, /Discard sheet/, /Print onto this sheet/]) {
       expect(screen.queryByRole("button", { name })).toBeNull();
       expect(screen.queryByRole("link", { name })).toBeNull();
@@ -78,19 +78,19 @@ describe("the sheet detail page", () => {
     expect(screen.queryByRole("button", { name: /^Printed/ })).toBeNull();
   });
 
-  it("says 'Sheet ID not printed yet' for a margin sheet whose ID is not printed, and not for a manual one", async () => {
+  it("says 'Sheet code not printed yet' for a margin sheet whose ID is not printed, and not for a manual one", async () => {
     const { unmount } = await open(sheetRead(CODE, { used: [1] }, { id_placement: "margin", id_printed: false }));
-    expect(screen.getByText("Sheet ID not printed yet")).toBeVisible();
+    expect(screen.getByText("Sheet code not printed yet")).toBeVisible();
     expect(screen.queryByText(/Resolve the unconfirmed cells first/)).toBeNull();
     unmount();
     await open(sheetRead(CODE, { used: [1] }, { id_placement: "manual", id_printed: false }));
-    expect(screen.queryByText("Sheet ID not printed yet")).toBeNull();
+    expect(screen.queryByText("Sheet code not printed yet")).toBeNull();
   });
 
   it("adds that the ID waits for the unconfirmed cells when there are some", async () => {
     await open(sheetRead(CODE, { unconfirmed: [2, 3] }, { id_placement: "cell", id_printed: false }));
-    expect(screen.getByText("Sheet ID not printed yet")).toBeVisible();
-    expect(screen.getByText("Resolve the unconfirmed cells first; the sheet ID waits for them")).toBeVisible();
+    expect(screen.getByText("Sheet code not printed yet")).toBeVisible();
+    expect(screen.getByText("Resolve the unconfirmed cells first; the sheet code waits for them")).toBeVisible();
   });
 
   it("shows whether the feed mark is printed", async () => {
@@ -122,7 +122,7 @@ describe("the sheet detail page", () => {
     const list = screen.getByRole("list", { name: "Cells in use" });
     expect(within(list).getByText("Cell 1 → item 1 · marked by hand")).toBeVisible();
     expect(within(list).getByText("Cell 2 → flour 1 kg · Grocy")).toBeVisible();
-    expect(within(list).getByText("Cell 3 → no purpose · Sheet ID")).toBeVisible();
+    expect(within(list).getByText("Cell 3 → no purpose · Sheet code")).toBeVisible();
     expect(within(list).getByText("Cell 4 → tag · kept-app")).toBeVisible();
   });
 
@@ -473,7 +473,7 @@ describe("discarding from the detail page", () => {
     expect(within(dialog).getByText(/its number is never given out again/)).toBeVisible();
     expect(posts(calls)).toHaveLength(0);
     await userEvent.click(within(dialog).getByRole("button", { name: "Discard sheet" }));
-    expect(await screen.findByText("Discarded on Nov 2, 2026, this ID is not used again.")).toBeVisible();
+    expect(await screen.findByText("Discarded on Nov 2, 2026, this code is not used again.")).toBeVisible();
   });
 
   it("with unconfirmed cells the question says to resolve them first", async () => {
@@ -536,7 +536,7 @@ describe("a sheet that changes while a choice is open (break-ui)", () => {
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: sheetKey(CODE) });
     });
-    expect(await screen.findByText("Discarded on Nov 2, 2026, this ID is not used again.")).toBeVisible();
+    expect(await screen.findByText("Discarded on Nov 2, 2026, this code is not used again.")).toBeVisible();
     expect(screen.queryByRole("heading", { level: 2, name: "Mark cells as used" })).toBeNull();
   });
 });
@@ -566,6 +566,35 @@ describe("the code on the back (#350)", () => {
     const dialog = await screen.findByRole("dialog", { name: "Activate new sheet" });
     expect(await within(dialog).findByRole("listitem", { current: "step" })).toHaveTextContent("Turn over");
     expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sheets")).toHaveLength(0);
+  });
+
+  // R-350-11 (review I2): an unprinted margin or manual sheet of a type that resolves to the back side can
+  // switch from the sheet page; a type that keeps its code in the margin does not offer it.
+  const margin = (printed: boolean, placement: "margin" | "manual" = "margin") =>
+    sheetRead(CODE, { used: [] }, { id_placement: placement, id_printed: printed });
+  const typeOf = (resolved: "margin" | "back_side") => ({
+    [`GET /api/v1/sheet-types/${margin(false).type_key}`]: { ...SHEET_TYPE, id_placement: "auto", id_placement_resolved: resolved, versions: [] },
+  });
+
+  it("an unprinted margin sheet of a back-side type offers Print back side", async () => {
+    await open(margin(false), typeOf("back_side"));
+    expect(await screen.findByRole("button", { name: "Print back side" })).toBeVisible();
+  });
+
+  it("an unprinted manual sheet of a back-side type offers it too", async () => {
+    await open(margin(false, "manual"), typeOf("back_side"));
+    expect(await screen.findByRole("button", { name: "Print back side" })).toBeVisible();
+  });
+
+  it("a margin type, or a printed margin sheet, does not offer it", async () => {
+    await open(margin(false), typeOf("margin"));
+    await screen.findByText("Sheet code not printed yet");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull());
+  });
+
+  it("a printed margin sheet does not offer it", async () => {
+    await open(margin(true), typeOf("back_side"));
+    expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull();
   });
 
   it("a confirmed back side says where the code is", async () => {

@@ -23,18 +23,6 @@ export function placeStrip(free: readonly StripMm[]): StripMm | null {
   return { x_mm: fit.x_mm + (fit.w_mm - CODE_STRIP.w) / 2, y_mm: fit.y_mm + CODE_STRIP.gap, w_mm: CODE_STRIP.w, h_mm: CODE_STRIP.h };
 }
 
-/** The hub's assumption for a printer that does not report its margins (5 mm), its safety (1 mm) and the smallest band for the margin text (4 mm). */
-const HW_MM = 5;
-const SAFETY_MM = 1;
-const MIN_BAND_MM = 4;
-
-/** Whether a margin band of 4 mm fits this geometry with the assumed hardware margin: the rule `auto` resolves by without a printer. */
-export function marginPossible(g: GeometryMm): boolean {
-  const { right, bottom } = remainingMargins(g);
-  const bands = [g.margin_top, bottom, right, g.margin_left].map((m) => m - HW_MM - SAFETY_MM);
-  return Math.max(...bands) >= MIN_BAND_MM - 1e-9;
-}
-
 /** The deepest free band, for the reason text: the largest margin of the four sides, in mm. */
 export function widestMargin(g: GeometryMm): number {
   const { right, bottom } = remainingMargins(g);

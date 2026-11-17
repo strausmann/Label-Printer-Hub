@@ -28,6 +28,7 @@ const T3490: SheetTypeDetail = {
   geometry: { page_size: "A4", page_w: 210, page_h: 297, label_w: 70, label_h: 36, cols: 3, rows: 8, pitch_x: 70, pitch_y: 36, margin_top: 4.5, margin_left: 0, corner_radius: null, shape: "rectangle" },
   id_placement: "auto",
   id_placement_resolved: "back_side",
+  id_placement_auto: "back_side",
   id_cell: null,
   backing_design: ULTRAGRIP,
   versions: [],
@@ -92,6 +93,35 @@ describe("where the sheet code goes", () => {
     await show(T_MARGIN);
     expect(screen.getByRole("radio", { name: /Margin/ })).toBeChecked();
     expect(screen.getByRole("radio", { name: /Margin/ })).toBeEnabled();
+  });
+
+  it("follows the server's automatic choice, not its own reading of the geometry (M7)", async () => {
+    mockApi({ "GET /api/v1/backing-designs": [ULTRAGRIP] });
+    // The geometry alone has a 4.5 mm band; the server says the code still goes on the back.
+    await show({ ...T3490, geometry: { ...T3490.geometry, margin_top: 20 } });
+    expect(screen.getByRole("radio", { name: /Back side/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /Margin/ })).toBeDisabled();
+  });
+
+  it("an explicit choice can go back to automatic, which saves auto (M7)", async () => {
+    const explicit: SheetTypeDetail = { ...T3490, id_placement: "cell", id_placement_resolved: "cell", id_cell: 2 };
+    const { calls } = mockApi({
+      "GET /api/v1/backing-designs": [ULTRAGRIP],
+      [`PATCH /api/v1/sheet-types/${T3490.key}`]: { ...T3490 },
+    });
+    await show(explicit);
+    expect(screen.getByRole("radio", { name: /Reserved cell/ })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Choose automatically" }));
+    expect(screen.getByRole("radio", { name: /Back side/ })).toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+    expect(JSON.parse(calls.find((c) => c.method === "PATCH")!.body!)).toEqual({ id_placement: "auto", backing_design: ULTRAGRIP.key });
+  });
+
+  it("automatic is not offered while the setting is already automatic", async () => {
+    mockApi({ "GET /api/v1/backing-designs": [ULTRAGRIP] });
+    await show(T3490);
+    expect(screen.queryByRole("button", { name: "Choose automatically" })).toBeNull();
   });
 
   it("a read-only user sees the setting but no Save", async () => {

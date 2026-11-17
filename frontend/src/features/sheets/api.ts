@@ -198,12 +198,12 @@ export type SheetBackPrint = Schemas["SheetBackPrint"];
 export type PageJobQueued = Schemas["PageJobQueued"];
 export type TrayLoadingRead = Schemas["TrayLoadingRead"];
 
-/** "Print sheet code" / "Print again": queues the code strip on the back of an existing sheet. */
+/** "Print sheet code" / "Print again": queues the code strip on the back of an existing sheet; the caller watches the job. */
 export function usePrintBackSide() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ code, body }: { code: string; body: SheetBackPrint }) => post<PageJobQueued>(`/api/v1/sheets/${encode(code)}/back-side`, body),
-    onSuccess: (queued, { body }) => void watchPrint({ kind: "sheet", printerId: body.printer, jobIds: [queued.job_id] }),
+    // The caller registers the job (with its own live line), so it is watched once (#350 review M6).
     onSettled: (_d, _e, { code }) => {
       refreshAfterWrite(client);
       void client.invalidateQueries({ queryKey: sheetKey(code) });

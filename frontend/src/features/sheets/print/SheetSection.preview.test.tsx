@@ -293,20 +293,20 @@ describe("the preview", () => {
   it("shows the feed mark entry, the margin ID with its band, and the not-printed warning", async () => {
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {}, { feed_mark: true, margin_id: true, margin_band: "bottom" }) }));
     expect(await screen.findByText("Top-edge mark")).toBeVisible();
-    expect(screen.getByText("Sheet ID in the bottom margin")).toBeVisible();
-    expect(screen.queryByText("Sheet ID not printed, add it by hand")).toBeNull();
+    expect(screen.getByText("Sheet code in the bottom margin")).toBeVisible();
+    expect(screen.queryByText("Sheet code not printed, add it by hand")).toBeNull();
   });
 
   it("warns when no margin can hold the sheet ID", async () => {
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {}, { id_not_printed: true }) }));
-    expect(await screen.findByText("Sheet ID not printed, add it by hand")).toBeVisible();
+    expect(await screen.findByText("Sheet code not printed, add it by hand")).toBeVisible();
   });
 
   it("a back-side sheet shows no \"Sheet ID not printed\" warning", async () => {
     // #350: the server plans no margin ID for a sheet whose code goes on the back, and says so.
     await itemView(routes({ preview: previewFor("L4736-0001", NEW_9, USED_17, {}, { id_not_printed: false, margin_id: false }) }));
     await screen.findByRole("grid", { name: /L4736-0001/ });
-    expect(screen.queryByText("Sheet ID not printed, add it by hand")).toBeNull();
+    expect(screen.queryByText("Sheet code not printed, add it by hand")).toBeNull();
   });
 
   it("draws the PNG of the API as it is, under the cells, and says what the page is", async () => {

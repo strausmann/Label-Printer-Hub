@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { marginPossible, placeStrip } from "./strip";
+import { placeStrip, widestMargin } from "./strip";
 
 const G3490 = { page_size: "A4", page_w: 210, page_h: 297, label_w: 70, label_h: 36, cols: 3, rows: 8, pitch_x: 70, pitch_y: 36, margin_top: 4.5, margin_left: 0, corner_radius: null, shape: "rectangle" } as const;
 const G6121 = { ...G3490, label_w: 38.1, label_h: 21.18, cols: 5, rows: 13, pitch_x: 38.1, pitch_y: 21.18, margin_top: 10.8, margin_left: 9.9 } as const;
@@ -19,8 +19,8 @@ describe("code strip", () => {
     expect(placeStrip([])).toEqual({ x_mm: 10, y_mm: 10, w_mm: 22, h_mm: 62 });
   });
 
-  it("knows 3490 has no usable margin and 6121 has one", () => {
-    expect(marginPossible(G3490)).toBe(false);
-    expect(marginPossible(G6121)).toBe(true);
+  it("names the widest margin for the reason text", () => {
+    expect(widestMargin(G3490)).toBeCloseTo(4.5);
+    expect(widestMargin(G6121)).toBeGreaterThan(10);
   });
 });

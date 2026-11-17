@@ -101,6 +101,16 @@ export function sheetIdJobFailed(error: unknown): { sheetCode: string } | null {
   return d && typeof d.sheet_code === "string" ? { sheetCode: d.sheet_code } : null;
 }
 
+/**
+ * The sheet a create left behind when its first job failed after the commit (#350 back side): any sheet
+ * error may carry `error_detail.sheet_code` then. The caller adopts the code, so a second attempt prints
+ * on THAT sheet instead of creating another.
+ */
+export function createdSheetCode(error: unknown): string | null {
+  const d = error instanceof ApiError ? error.errorDetail : null;
+  return d && typeof d.sheet_code === "string" ? d.sheet_code : null;
+}
+
 /** `422 invalid_import`: what the import document got wrong (the server's list, at most 20 entries). */
 export function invalidImport(error: unknown): { errors: string[] } | null {
   const d = detailOf(error, "invalid_import");

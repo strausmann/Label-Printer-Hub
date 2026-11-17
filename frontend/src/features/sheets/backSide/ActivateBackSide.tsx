@@ -4,6 +4,7 @@
 import { useLingui } from "@lingui/react/macro";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "react-aria-components";
+import { createdSheetCode } from "../../../api/errorDetail";
 import { useCapabilities } from "../../calibration/api";
 import { useJob } from "../../jobs/api";
 import { useJobErrorText } from "../../jobs/jobErrorText";
@@ -140,6 +141,12 @@ export function ActivateBackSide({
         onSuccess: (created) => {
           setCode(created.code);
           if (created.job_id) started(created.job_id);
+        },
+        // The sheet was created but its job failed: keep that sheet, so the next press prints its back
+        // instead of creating another one (#350 review I1).
+        onError: (error) => {
+          const left = createdSheetCode(error);
+          if (left) setCode(left);
         },
       },
     );

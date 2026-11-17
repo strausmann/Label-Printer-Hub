@@ -217,7 +217,7 @@ function PageView({
         {page.feed_mark && <li className="flex items-center gap-2"><span aria-hidden="true">▲</span>{t`Top-edge mark`}</li>}
         {page.margin_id && <li>{sheetIdBand(page.margin_band)}</li>}
       </ul>
-      {page.id_not_printed && <p className="font-bold text-warn">{t`Sheet ID not printed, add it by hand`}</p>}
+      {page.id_not_printed && <p className="font-bold text-warn">{t`Sheet code not printed, add it by hand`}</p>}
 
       {rows.length > LONG_LIST ? (
         <details>

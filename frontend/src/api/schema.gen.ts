@@ -4171,6 +4171,12 @@ export interface components {
              */
             id_placement: "auto" | "margin" | "back_side" | "cell";
             /**
+             * Id Placement Auto
+             * @description What `auto` resolves to for this type, whatever `id_placement` is set to: `margin` when a margin band can hold the code, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_auto: "margin" | "back_side";
+            /**
              * Id Placement Resolved
              * @description `id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.
              * @enum {string}
@@ -4314,6 +4320,12 @@ export interface components {
              * @enum {string}
              */
             id_placement: "auto" | "margin" | "back_side" | "cell";
+            /**
+             * Id Placement Auto
+             * @description What `auto` resolves to for this type, whatever `id_placement` is set to: `margin` when a margin band can hold the code, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_auto: "margin" | "back_side";
             /**
              * Id Placement Resolved
              * @description `id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.

@@ -134,6 +134,7 @@ async def _type_read(
         id_placement=t.id_placement,  # type: ignore[arg-type]
         id_cell=t.id_cell,
         id_placement_resolved=resolve_type_placement(t.id_placement, geometry),
+        id_placement_auto=resolve_type_placement("auto", geometry),  # type: ignore[arg-type]
         backing_design=None if linked is None else design_read(*linked),
     )
     return read, [_version_read(v, count) for v, count in versions]

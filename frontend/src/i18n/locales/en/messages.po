@@ -1185,6 +1185,10 @@ msgstr "Choose a sheet type to see its measurements and versions."
 msgid "Choose any cell. It is left out of planning."
 msgstr "Choose any cell. It is left out of planning."
 
+#: src/features/archive/IdPlacementSection.tsx
+msgid "Choose automatically"
+msgstr "Choose automatically"
+
 #: src/features/sheets/print/SheetSection.tsx
 msgid "Choose cells"
 msgstr "Choose cells"
@@ -1643,8 +1647,8 @@ msgid "discarded"
 msgstr "discarded"
 
 #: src/features/sheets/SheetDetail.tsx
-msgid "Discarded on {discardedOn}, this ID is not used again."
-msgstr "Discarded on {discardedOn}, this ID is not used again."
+msgid "Discarded on {discardedOn}, this code is not used again."
+msgstr "Discarded on {discardedOn}, this code is not used again."
 
 #: src/features/overview/OverviewPage.tsx
 msgid "Dismiss"
@@ -3934,8 +3938,8 @@ msgid "Resolve as printed"
 msgstr "Resolve as printed"
 
 #: src/features/sheets/SheetDetail.tsx
-msgid "Resolve the unconfirmed cells first; the sheet ID waits for them"
-msgstr "Resolve the unconfirmed cells first; the sheet ID waits for them"
+msgid "Resolve the unconfirmed cells first; the sheet code waits for them"
+msgstr "Resolve the unconfirmed cells first; the sheet code waits for them"
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "Result of the fit"
@@ -4273,6 +4277,48 @@ msgstr "Sheet archive"
 msgid "sheet code"
 msgstr "sheet code"
 
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet code"
+msgstr "Sheet code"
+
+#: src/features/sheets/SheetDetail.tsx
+msgctxt "cell source"
+msgid "Sheet code"
+msgstr "Sheet code"
+
+#: src/features/jobs/PageJobInfo.tsx
+msgid "Sheet code in cell"
+msgstr "Sheet code in cell"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet code in the bottom margin"
+msgstr "Sheet code in the bottom margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet code in the left margin"
+msgstr "Sheet code in the left margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet code in the margin"
+msgstr "Sheet code in the margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet code in the right margin"
+msgstr "Sheet code in the right margin"
+
+#: src/features/sheets/print/bandWord.ts
+msgid "Sheet code in the top margin"
+msgstr "Sheet code in the top margin"
+
+#: src/features/sheets/SheetDetail.tsx
+msgid "Sheet code not printed yet"
+msgstr "Sheet code not printed yet"
+
+#: src/features/sheets/print/PrintResult.tsx
+#: src/features/sheets/print/SheetPreview.tsx
+msgid "Sheet code not printed, add it by hand"
+msgstr "Sheet code not printed, add it by hand"
+
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Sheet code on the back"
@@ -4285,48 +4331,6 @@ msgstr "Sheet code on the back · {code}"
 #: src/features/sheets/SheetDetail.tsx
 msgid "Sheet code on the back not confirmed"
 msgstr "Sheet code on the back not confirmed"
-
-#: src/features/sheets/SheetDetail.tsx
-msgid "Sheet ID"
-msgstr "Sheet ID"
-
-#: src/features/sheets/SheetDetail.tsx
-msgctxt "cell source"
-msgid "Sheet ID"
-msgstr "Sheet ID"
-
-#: src/features/jobs/PageJobInfo.tsx
-msgid "Sheet ID in cell"
-msgstr "Sheet ID in cell"
-
-#: src/features/sheets/print/bandWord.ts
-msgid "Sheet ID in the bottom margin"
-msgstr "Sheet ID in the bottom margin"
-
-#: src/features/sheets/print/bandWord.ts
-msgid "Sheet ID in the left margin"
-msgstr "Sheet ID in the left margin"
-
-#: src/features/sheets/print/bandWord.ts
-msgid "Sheet ID in the margin"
-msgstr "Sheet ID in the margin"
-
-#: src/features/sheets/print/bandWord.ts
-msgid "Sheet ID in the right margin"
-msgstr "Sheet ID in the right margin"
-
-#: src/features/sheets/print/bandWord.ts
-msgid "Sheet ID in the top margin"
-msgstr "Sheet ID in the top margin"
-
-#: src/features/sheets/SheetDetail.tsx
-msgid "Sheet ID not printed yet"
-msgstr "Sheet ID not printed yet"
-
-#: src/features/sheets/print/PrintResult.tsx
-#: src/features/sheets/print/SheetPreview.tsx
-msgid "Sheet ID not printed, add it by hand"
-msgstr "Sheet ID not printed, add it by hand"
 
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
@@ -6377,12 +6381,9 @@ msgid "Where the numbers come from"
 msgstr "Where the numbers come from"
 
 #: src/features/archive/IdPlacementSection.tsx
+#: src/features/sheets/AddSheetDialog.tsx
 msgid "Where the sheet code goes"
 msgstr "Where the sheet code goes"
-
-#: src/features/sheets/AddSheetDialog.tsx
-msgid "Where the sheet ID goes"
-msgstr "Where the sheet ID goes"
 
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "While this is off, the hub refuses labels from Grocy."

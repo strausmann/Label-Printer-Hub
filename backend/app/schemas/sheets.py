@@ -147,6 +147,12 @@ class SheetTypeRead(BaseModel):
             "of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`."
         )
     )
+    id_placement_auto: Literal["margin", "back_side"] = Field(
+        description=(
+            "What `auto` resolves to for this type, whatever `id_placement` is set to: `margin` "
+            "when a margin band can hold the code, otherwise `back_side`."
+        )
+    )
     backing_design: BackingDesignRead | None = Field(
         description="The vendor print on the back of the liner; `null` for a plain liner."
     )

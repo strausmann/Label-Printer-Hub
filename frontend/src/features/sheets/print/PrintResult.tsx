@@ -46,7 +46,7 @@ export function PrintResult({ pages, printerId }: { pages: Page[]; printerId?: s
             <li key={page.job_id} className="flex min-w-0 flex-col gap-0.5">
               <span className="[overflow-wrap:anywhere]">{t`Page ${number}: ${code}, cells ${cells}`}</span>
               {page.id_not_printed ? (
-                <span className="font-bold text-warn">{t`Sheet ID not printed, add it by hand`}</span>
+                <span className="font-bold text-warn">{t`Sheet code not printed, add it by hand`}</span>
               ) : page.margin_id ? (
                 <span className="text-small text-ink-2">{sheetIdBand(page.margin_band)}</span>
               ) : null}

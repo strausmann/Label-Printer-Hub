@@ -296,6 +296,7 @@ export const SHEET_TYPE: Schemas["SheetTypeRead"] = {
   id_placement: "auto",
   id_cell: null,
   id_placement_resolved: "margin",
+  id_placement_auto: "margin",
   backing_design: null,
 };
 

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n, initI18n } from "../../../i18n";
 import type * as PrintWatch from "../../jobs/printWatch";
 import type { JobLive } from "../../jobs/printWatch";
-import { mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, sheetRead, type Call } from "../../test-api";
+import { mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, respond, sheetRead, type Call } from "../../test-api";
 import { ActivateBackSide, type BackSideTarget } from "./ActivateBackSide";
 
 const live: { value: Record<string, JobLive> } = { value: {} };
@@ -164,6 +164,35 @@ describe("activating a sheet with its code on the back", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Print again" }));
     await waitFor(() => expect(posts(calls, "/api/v1/sheets/A3490-0001/back-side")).toHaveLength(2));
     expect(posts(calls, "/api/v1/sheets")).toHaveLength(0);
+  });
+
+  it("a create that fails after the commit adopts the sheet code: the next press prints that sheet (I1)", async () => {
+    const { calls } = mockApi(
+      routes({
+        "POST /api/v1/sheets": () =>
+          respond(409, { error_code: "printer-unavailable", error_message: "Busy.", error_detail: { sheet_code: "A3490-0007" } }),
+        "POST /api/v1/sheets/A3490-0007/back-side": { job_id: JOB2 },
+      }),
+    );
+    show();
+    await screen.findByText("Load it into Main tray, liner side down");
+    await userEvent.click(screen.getByRole("button", { name: "Print sheet code" }));
+    await waitFor(() => expect(posts(calls, "/api/v1/sheets")).toHaveLength(1));
+    expect(await screen.findByText("A3490-0007")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Print sheet code" }));
+    await waitFor(() => expect(posts(calls, "/api/v1/sheets/A3490-0007/back-side")).toHaveLength(1));
+    expect(posts(calls, "/api/v1/sheets")).toHaveLength(1);
+  });
+
+  it("starts watching the job once (M6)", async () => {
+    const { watchPrint } = await import("../../jobs/printWatch");
+    vi.mocked(watchPrint).mockClear();
+    mockApi(routes());
+    show({ kind: "existing", code: "A3490-0001" });
+    await screen.findByText("Load it into Main tray, liner side down");
+    await userEvent.click(screen.getByRole("button", { name: "Print sheet code" }));
+    await waitFor(() => expect(current()).toHaveTextContent("Print"));
+    expect(vi.mocked(watchPrint)).toHaveBeenCalledTimes(1);
   });
 
   it("Use a reserved cell instead switches the dialog to the reserved cell option", async () => {

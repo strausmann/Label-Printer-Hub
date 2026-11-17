@@ -340,7 +340,7 @@ function AddSheetForm({ onClose, onTitle }: { onClose: () => void; onTitle: (tit
           </section>
 
           <RadioGroup value={placement} onChange={(v) => setPlacement(v as Placement)} className="flex min-w-0 flex-col gap-1">
-            <Label className={LABEL}>{t`Where the sheet ID goes`}</Label>
+            <Label className={LABEL}>{t`Where the sheet code goes`}</Label>
             <PlacementOption
               value="margin"
               title={t`In the margin`}

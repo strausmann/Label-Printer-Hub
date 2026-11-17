@@ -7,7 +7,7 @@ import { Button, Radio, RadioGroup } from "react-aria-components";
 import { HINT, SelectField } from "../settings/controls";
 import { formatMm, pageSizeMm } from "../sheets/cellState";
 import { LinerPreview } from "../sheets/backSide/LinerPreview";
-import { marginPossible, placeStrip, widestMargin } from "../sheets/backSide/strip";
+import { placeStrip, widestMargin } from "../sheets/backSide/strip";
 import { PANEL, PRIMARY_BUTTON, SECONDARY_BUTTON } from "../ui";
 import { useBackingDesigns, usePatchType, type SheetTypeDetail } from "./api";
 import { useArchiveErrorText } from "./errors";
@@ -43,10 +43,13 @@ export function IdPlacementSection({ type, admin }: { type: SheetTypeDetail; adm
   const designs = useBackingDesigns();
   const g = type.geometry;
   const total = g.cols * g.rows;
-  const marginOk = marginPossible(g);
-  const automatic: Choice = marginOk ? "margin" : "back_side";
+  // The server decides what `auto` means (M7): the client never re-derives it from the geometry.
+  const automatic: Choice = type.id_placement_auto;
+  const marginOk = automatic === "margin";
   const stored: Choice = type.id_placement === "auto" ? automatic : type.id_placement;
   const [choice, setChoice] = useState<Choice>(stored);
+  /** "Choose automatically" was pressed on an explicit setting: saving writes `auto` again. */
+  const [backToAuto, setBackToAuto] = useState(false);
   const [cell, setCell] = useState(String(type.id_cell ?? 1));
   const [design, setDesign] = useState(type.backing_design?.key ?? PLAIN);
   const [saved, setSaved] = useState(false);
@@ -56,10 +59,15 @@ export function IdPlacementSection({ type, admin }: { type: SheetTypeDetail; adm
   const strips = chosenDesign?.strips ?? [];
   const where = placeStrip(strips);
   const widest = formatMm(Math.max(0, widestMargin(g)), i18n.locale);
-  const dirty = choice !== stored || (choice === "cell" && cell !== String(type.id_cell ?? 1)) || design !== (type.backing_design?.key ?? PLAIN);
+  const autoNow = type.id_placement === "auto" || (backToAuto && choice === automatic);
+  const dirty =
+    choice !== stored ||
+    (backToAuto && type.id_placement !== "auto") ||
+    (choice === "cell" && cell !== String(type.id_cell ?? 1)) ||
+    design !== (type.backing_design?.key ?? PLAIN);
 
   function save() {
-    const setting = choice === automatic && type.id_placement === "auto" ? "auto" : choice;
+    const setting = choice === automatic && autoNow ? "auto" : choice;
     patch.mutate(
       {
         key: type.key,
@@ -74,6 +82,7 @@ export function IdPlacementSection({ type, admin }: { type: SheetTypeDetail; adm
   }
   function reset() {
     setChoice(stored);
+    setBackToAuto(false);
     setCell(String(type.id_cell ?? 1));
     setDesign(type.backing_design?.key ?? PLAIN);
   }
@@ -90,6 +99,7 @@ export function IdPlacementSection({ type, admin }: { type: SheetTypeDetail; adm
           value={choice}
           onChange={(v) => {
             setChoice(v as Choice);
+            setBackToAuto(false);
             setSaved(false);
           }}
           isReadOnly={!admin}
@@ -144,8 +154,19 @@ export function IdPlacementSection({ type, admin }: { type: SheetTypeDetail; adm
             <p className={HINT}>{t`Choose any cell. It is left out of planning.`}</p>
           </div>
         ) : null}
-        {type.id_placement === "auto" ? (
+        {autoNow ? (
           <p className="text-small text-ink-2">{t`Chosen automatically from the usable margin. You can change it.`}</p>
+        ) : admin ? (
+          <Button
+            onPress={() => {
+              setChoice(automatic);
+              setBackToAuto(true);
+              setSaved(false);
+            }}
+            className="self-start text-small font-bold text-link underline underline-offset-2 data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link"
+          >
+            {t`Choose automatically`}
+          </Button>
         ) : null}
         <div className="flex max-w-sm flex-col gap-1">
           <SelectField
