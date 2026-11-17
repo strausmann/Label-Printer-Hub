@@ -254,6 +254,178 @@
         "title": "ApiKeyRead",
         "type": "object"
       },
+      "BackingDesignCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "page_size": {
+            "enum": [
+              "A4",
+              "Letter"
+            ],
+            "title": "Page Size",
+            "type": "string"
+          },
+          "strips": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/StripMm"
+            },
+            "maxItems": 8,
+            "title": "Strips",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "page_size"
+        ],
+        "title": "BackingDesignCreate",
+        "type": "object"
+      },
+      "BackingDesignDoc": {
+        "additionalProperties": false,
+        "description": "A backing design inside a sheet type document (R-350-8).",
+        "properties": {
+          "key": {
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "page_size": {
+            "enum": [
+              "A4",
+              "Letter"
+            ],
+            "title": "Page Size",
+            "type": "string"
+          },
+          "strips": {
+            "items": {
+              "$ref": "#/components/schemas/StripMm"
+            },
+            "maxItems": 8,
+            "title": "Strips",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "page_size",
+          "strips"
+        ],
+        "title": "BackingDesignDoc",
+        "type": "object"
+      },
+      "BackingDesignPatch": {
+        "additionalProperties": false,
+        "description": "Only the fields the client sends change; the page size of a design is fixed.",
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "strips": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StripMm"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strips"
+          }
+        },
+        "title": "BackingDesignPatch",
+        "type": "object"
+      },
+      "BackingDesignRead": {
+        "description": "A backing design: the vendor print on the back of a liner and its free strips.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "seed",
+              "custom",
+              "imported"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "page_size": {
+            "enum": [
+              "A4",
+              "Letter"
+            ],
+            "title": "Page Size",
+            "type": "string"
+          },
+          "strips": {
+            "description": "Free strips on the back of the liner in mm, viewed on the liner with the sheet's top at the top after turning it over along the long edge.",
+            "items": {
+              "$ref": "#/components/schemas/StripMm"
+            },
+            "title": "Strips",
+            "type": "array"
+          },
+          "types_in_use": {
+            "description": "Sheet types that point to this design.",
+            "title": "Types In Use",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "name",
+          "page_size",
+          "strips",
+          "origin",
+          "types_in_use"
+        ],
+        "title": "BackingDesignRead",
+        "type": "object"
+      },
       "BatchRead": {
         "properties": {
           "created_at": {
@@ -1126,7 +1298,10 @@
             "type": "string"
           },
           "format_version": {
-            "const": 1,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Format Version",
             "type": "integer"
           },
@@ -5621,6 +5796,17 @@
             ],
             "title": "Archived At"
           },
+          "backing_design": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackingDesignRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vendor print on the back of the liner; `null` for a plain liner."
+          },
           "created_at": {
             "anyOf": [
               {
@@ -5658,6 +5844,39 @@
             },
             "title": "Hints",
             "type": "array"
+          },
+          "id_cell": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preferred cell of a `cell` sheet's code.",
+            "title": "Id Cell"
+          },
+          "id_placement": {
+            "description": "Where the sheet code of a new sheet goes. `auto` resolves to `margin` or `back_side` (see `id_placement_resolved`).",
+            "enum": [
+              "auto",
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Id Placement",
+            "type": "string"
+          },
+          "id_placement_resolved": {
+            "description": "`id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.",
+            "enum": [
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Id Placement Resolved",
+            "type": "string"
           },
           "key": {
             "title": "Key",
@@ -5780,6 +5999,10 @@
           "geometry",
           "hints",
           "sheets_in_use",
+          "id_placement",
+          "id_cell",
+          "id_placement_resolved",
+          "backing_design",
           "versions"
         ],
         "title": "SheetTypeDetail",
@@ -5834,6 +6057,20 @@
             "title": "Allow Qr",
             "type": "boolean"
           },
+          "backing_design": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Key of a backing design; `null` clears it (plain liner).",
+            "title": "Backing Design"
+          },
           "description": {
             "anyOf": [
               {
@@ -5845,6 +6082,30 @@
               }
             ],
             "title": "Description"
+          },
+          "id_cell": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Checked against the current version's cell count.",
+            "title": "Id Cell"
+          },
+          "id_placement": {
+            "enum": [
+              "auto",
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Id Placement",
+            "type": "string"
           },
           "notes": {
             "anyOf": [
@@ -5935,6 +6196,17 @@
             ],
             "title": "Archived At"
           },
+          "backing_design": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackingDesignRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The vendor print on the back of the liner; `null` for a plain liner."
+          },
           "created_at": {
             "anyOf": [
               {
@@ -5972,6 +6244,39 @@
             },
             "title": "Hints",
             "type": "array"
+          },
+          "id_cell": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The preferred cell of a `cell` sheet's code.",
+            "title": "Id Cell"
+          },
+          "id_placement": {
+            "description": "Where the sheet code of a new sheet goes. `auto` resolves to `margin` or `back_side` (see `id_placement_resolved`).",
+            "enum": [
+              "auto",
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Id Placement",
+            "type": "string"
+          },
+          "id_placement_resolved": {
+            "description": "`id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.",
+            "enum": [
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Id Placement Resolved",
+            "type": "string"
           },
           "key": {
             "title": "Key",
@@ -6086,7 +6391,11 @@
           "current_version",
           "geometry",
           "hints",
-          "sheets_in_use"
+          "sheets_in_use",
+          "id_placement",
+          "id_cell",
+          "id_placement_resolved",
+          "backing_design"
         ],
         "title": "SheetTypeRead",
         "type": "object"
@@ -6391,6 +6700,44 @@
           "type"
         ],
         "title": "SpoolmanWebhookPayload",
+        "type": "object"
+      },
+      "StripMm": {
+        "additionalProperties": false,
+        "description": "A free strip on the back of the liner, in mm, in back-side coordinates (R-350-4).",
+        "properties": {
+          "h_mm": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "H Mm",
+            "type": "number"
+          },
+          "w_mm": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "W Mm",
+            "type": "number"
+          },
+          "x_mm": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "X Mm",
+            "type": "number"
+          },
+          "y_mm": {
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Y Mm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x_mm",
+          "y_mm",
+          "w_mm",
+          "h_mm"
+        ],
+        "title": "StripMm",
         "type": "object"
       },
       "TapeMedia": {
@@ -6907,6 +7254,16 @@
             "title": "Allow Qr",
             "type": "boolean"
           },
+          "backing_design": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackingDesignDoc"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "description": {
             "anyOf": [
               {
@@ -6918,6 +7275,30 @@
               }
             ],
             "title": "Description"
+          },
+          "id_cell": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Cell"
+          },
+          "id_placement": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Id Placement",
+            "type": "string"
           },
           "key": {
             "maxLength": 64,
@@ -8237,6 +8618,179 @@
         "summary": "Sign in to the web UI",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/backing-designs": {
+      "get": {
+        "operationId": "list_backing_designs_api_v1_backing_designs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/BackingDesignRead"
+                  },
+                  "title": "Response List Backing Designs Api V1 Backing Designs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "List backing designs",
+        "tags": [
+          "sheet-types"
+        ]
+      },
+      "post": {
+        "operationId": "create_backing_design_api_v1_backing_designs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackingDesignCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackingDesignRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "The key exists (`backing_design_exists`)."
+          },
+          "422": {
+            "description": "Invalid request: a strip is smaller than 1 mm or reaches outside the page (`invalid_geometry`, `error_detail.field` names it, e.g. `strips.0`)."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Create a backing design",
+        "tags": [
+          "sheet-types"
+        ]
+      }
+    },
+    "/api/v1/backing-designs/{key}": {
+      "delete": {
+        "operationId": "delete_backing_design_api_v1_backing_designs__key__delete",
+        "parameters": [
+          {
+            "description": "Design key, e.g. `avery-zweckform-ultragrip`.",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Design key, e.g. `avery-zweckform-ultragrip`.",
+              "maxLength": 64,
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Backing design not found."
+          },
+          "409": {
+            "description": "A sheet type uses the design (`backing_design_in_use`)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Delete a backing design no sheet type uses",
+        "tags": [
+          "sheet-types"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_backing_design_api_v1_backing_designs__key__patch",
+        "parameters": [
+          {
+            "description": "Design key, e.g. `avery-zweckform-ultragrip`.",
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Design key, e.g. `avery-zweckform-ultragrip`.",
+              "maxLength": 64,
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackingDesignPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackingDesignRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Backing design not found."
+          },
+          "422": {
+            "description": "Invalid request: a strip is smaller than 1 mm or reaches outside the page (`invalid_geometry`, `error_detail.field` names it, e.g. `strips.0`)."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Change the name or the free strips of a backing design",
+        "tags": [
+          "sheet-types"
         ]
       }
     },
@@ -11420,6 +11974,7 @@
         ]
       },
       "patch": {
+        "description": "`id_placement` sets where the sheet code of a new sheet goes, `id_cell` the preferred cell of a `cell` sheet (checked against the current version's cell count), `backing_design` the vendor print on the back of the liner (a design key; `null` clears it).",
         "operationId": "patch_sheet_type_api_v1_sheet_types__key__patch",
         "parameters": [
           {
@@ -11463,7 +12018,7 @@
                 }
               }
             },
-            "description": "Sheet type not found."
+            "description": "Sheet type or backing design not found."
           },
           "422": {
             "content": {
@@ -11473,7 +12028,7 @@
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "A field is invalid, `id_cell` is outside the sheet (`id_cell_out_of_range`) or the design is for another page size (`backing_design_page_size_mismatch`)."
           }
         },
         "security": [

@@ -212,6 +212,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/backing-designs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List backing designs */
+        get: operations["list_backing_designs_api_v1_backing_designs_get"];
+        put?: never;
+        /** Create a backing design */
+        post: operations["create_backing_design_api_v1_backing_designs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backing-designs/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a backing design no sheet type uses */
+        delete: operations["delete_backing_design_api_v1_backing_designs__key__delete"];
+        options?: never;
+        head?: never;
+        /** Change the name or the free strips of a backing design */
+        patch: operations["patch_backing_design_api_v1_backing_designs__key__patch"];
+        trace?: never;
+    };
     "/api/v1/batches/runs/held": {
         parameters: {
             query?: never;
@@ -1141,7 +1177,10 @@ export interface paths {
         delete: operations["delete_sheet_type_api_v1_sheet_types__key__delete"];
         options?: never;
         head?: never;
-        /** Edit the non-geometric fields of a sheet type */
+        /**
+         * Edit the non-geometric fields of a sheet type
+         * @description `id_placement` sets where the sheet code of a new sheet goes, `id_cell` the preferred cell of a `cell` sheet (checked against the current version's cell count), `backing_design` the vendor print on the back of the liner (a design key; `null` clears it).
+         */
         patch: operations["patch_sheet_type_api_v1_sheet_types__key__patch"];
         trace?: never;
     };
@@ -1598,6 +1637,80 @@ export interface components {
             /** Scopes */
             scopes: string[];
         };
+        /** BackingDesignCreate */
+        BackingDesignCreate: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /**
+             * Strips
+             * @default []
+             */
+            strips: components["schemas"]["StripMm"][];
+        };
+        /**
+         * BackingDesignDoc
+         * @description A backing design inside a sheet type document (R-350-8).
+         */
+        BackingDesignDoc: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /** Strips */
+            strips: components["schemas"]["StripMm"][];
+        };
+        /**
+         * BackingDesignPatch
+         * @description Only the fields the client sends change; the page size of a design is fixed.
+         */
+        BackingDesignPatch: {
+            /** Name */
+            name?: string | null;
+            /** Strips */
+            strips?: components["schemas"]["StripMm"][] | null;
+        };
+        /**
+         * BackingDesignRead
+         * @description A backing design: the vendor print on the back of a liner and its free strips.
+         */
+        BackingDesignRead: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "seed" | "custom" | "imported";
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /**
+             * Strips
+             * @description Free strips on the back of the liner in mm, viewed on the liner with the sheet's top at the top after turning it over along the long edge.
+             */
+            strips: components["schemas"]["StripMm"][];
+            /**
+             * Types In Use
+             * @description Sheet types that point to this design.
+             */
+            types_in_use: number;
+        };
         /** BatchRead */
         BatchRead: {
             /** Created At */
@@ -1976,9 +2089,9 @@ export interface components {
             format: "label-printer-hub.sheet-type";
             /**
              * Format Version
-             * @constant
+             * @enum {integer}
              */
-            format_version: 1;
+            format_version: 1 | 2;
             type: components["schemas"]["TypeDoc"];
             version: components["schemas"]["VersionDoc"];
         };
@@ -3907,6 +4020,8 @@ export interface components {
             allow_qr: boolean;
             /** Archived At */
             archived_at: string | null;
+            /** @description The vendor print on the back of the liner; `null` for a plain liner. */
+            backing_design: components["schemas"]["BackingDesignRead"] | null;
             /** Created At */
             created_at: string | null;
             /** Current Version */
@@ -3920,6 +4035,23 @@ export interface components {
              * @description Advisory codes about the current geometry.
              */
             hints: string[];
+            /**
+             * Id Cell
+             * @description The preferred cell of a `cell` sheet's code.
+             */
+            id_cell: number | null;
+            /**
+             * Id Placement
+             * @description Where the sheet code of a new sheet goes. `auto` resolves to `margin` or `back_side` (see `id_placement_resolved`).
+             * @enum {string}
+             */
+            id_placement: "auto" | "margin" | "back_side" | "cell";
+            /**
+             * Id Placement Resolved
+             * @description `id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_resolved: "margin" | "back_side" | "cell";
             /** Key */
             key: string;
             /** Notes */
@@ -3994,8 +4126,23 @@ export interface components {
         SheetTypePatch: {
             /** Allow Qr */
             allow_qr?: boolean;
+            /**
+             * Backing Design
+             * @description Key of a backing design; `null` clears it (plain liner).
+             */
+            backing_design?: string | null;
             /** Description */
             description?: string | null;
+            /**
+             * Id Cell
+             * @description Checked against the current version's cell count.
+             */
+            id_cell?: number | null;
+            /**
+             * Id Placement
+             * @enum {string}
+             */
+            id_placement?: "auto" | "margin" | "back_side" | "cell";
             /** Notes */
             notes?: string | null;
             /** Prefix */
@@ -4017,6 +4164,8 @@ export interface components {
             allow_qr: boolean;
             /** Archived At */
             archived_at: string | null;
+            /** @description The vendor print on the back of the liner; `null` for a plain liner. */
+            backing_design: components["schemas"]["BackingDesignRead"] | null;
             /** Created At */
             created_at: string | null;
             /** Current Version */
@@ -4030,6 +4179,23 @@ export interface components {
              * @description Advisory codes about the current geometry.
              */
             hints: string[];
+            /**
+             * Id Cell
+             * @description The preferred cell of a `cell` sheet's code.
+             */
+            id_cell: number | null;
+            /**
+             * Id Placement
+             * @description Where the sheet code of a new sheet goes. `auto` resolves to `margin` or `back_side` (see `id_placement_resolved`).
+             * @enum {string}
+             */
+            id_placement: "auto" | "margin" | "back_side" | "cell";
+            /**
+             * Id Placement Resolved
+             * @description `id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_resolved: "margin" | "back_side" | "cell";
             /** Key */
             key: string;
             /** Notes */
@@ -4146,6 +4312,20 @@ export interface components {
              * @description Event type string (e.g. 'updated', 'created', 'consumed')
              */
             type: string;
+        };
+        /**
+         * StripMm
+         * @description A free strip on the back of the liner, in mm, in back-side coordinates (R-350-4).
+         */
+        StripMm: {
+            /** H Mm */
+            h_mm: number;
+            /** W Mm */
+            w_mm: number;
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
         };
         /** TapeMedia */
         TapeMedia: {
@@ -4380,8 +4560,17 @@ export interface components {
         TypeDoc: {
             /** Allow Qr */
             allow_qr: boolean;
+            backing_design?: components["schemas"]["BackingDesignDoc"] | null;
             /** Description */
             description?: string | null;
+            /** Id Cell */
+            id_cell?: number | null;
+            /**
+             * Id Placement
+             * @default auto
+             * @enum {string}
+             */
+            id_placement: "auto" | "margin" | "back_side" | "cell";
             /** Key */
             key: string;
             /** Notes */
@@ -5138,6 +5327,149 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_backing_designs_api_v1_backing_designs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackingDesignRead"][];
+                };
+            };
+        };
+    };
+    create_backing_design_api_v1_backing_designs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackingDesignCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackingDesignRead"];
+                };
+            };
+            /** @description The key exists (`backing_design_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request: a strip is smaller than 1 mm or reaches outside the page (`invalid_geometry`, `error_detail.field` names it, e.g. `strips.0`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_backing_design_api_v1_backing_designs__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Design key, e.g. `avery-zweckform-ultragrip`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Backing design not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A sheet type uses the design (`backing_design_in_use`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_backing_design_api_v1_backing_designs__key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Design key, e.g. `avery-zweckform-ultragrip`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackingDesignPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackingDesignRead"];
+                };
+            };
+            /** @description Backing design not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request: a strip is smaller than 1 mm or reaches outside the page (`invalid_geometry`, `error_detail.field` names it, e.g. `strips.0`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7235,7 +7567,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetTypeRead"];
                 };
             };
-            /** @description Sheet type not found. */
+            /** @description Sheet type or backing design not found. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -7244,7 +7576,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description A field is invalid, `id_cell` is outside the sheet (`id_cell_out_of_range`) or the design is for another page size (`backing_design_page_size_mismatch`). */
             422: {
                 headers: {
                     [name: string]: unknown;

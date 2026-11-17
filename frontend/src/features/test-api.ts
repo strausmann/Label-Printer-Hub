@@ -293,6 +293,10 @@ export const SHEET_TYPE: Schemas["SheetTypeRead"] = {
   source_name: null,
   source_url: null,
   source_url_shipped: false,
+  id_placement: "auto",
+  id_cell: null,
+  id_placement_resolved: "margin",
+  backing_design: null,
 };
 
 /** A sheet with the given cells in the given state; everything else is free. */

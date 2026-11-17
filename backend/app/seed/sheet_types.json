@@ -1,5 +1,5 @@
 {
-  "seed_revision": 2,
+  "seed_revision": 3,
   "types": [
     {
       "format": "label-printer-hub.sheet-type",
@@ -1668,6 +1668,37 @@
       "previous_geometry_hash": "6bd4184640be593fc62e1f994173d53156f1494e99536b391510626916035033",
       "previous_notes_sha256": "405856ac2aa22e2aac0afdfe74d9cd1119bd1da3811a40a950192f5823cfb044",
       "change_note": "Verified geometry shipped with Labelyard 1.7.0 (top margin 13.5 → 12.54 mm, row pitch 10.0 → 9.98 mm)"
+    }
+  },
+  "backing_designs": [
+    {
+      "key": "avery-zweckform-ultragrip",
+      "name": "Avery Zweckform ultragrip",
+      "page_size": "A4",
+      "strips_mm": [
+        [
+          33.5,
+          22,
+          22,
+          253
+        ],
+        [
+          154.5,
+          22,
+          22,
+          253
+        ]
+      ]
+    }
+  ],
+  "backing_links": {
+    "avery-zweckform-3490": {
+      "design": "avery-zweckform-ultragrip",
+      "revision": 1
+    },
+    "avery-zweckform-6121": {
+      "design": "avery-zweckform-ultragrip",
+      "revision": 1
     }
   }
 }

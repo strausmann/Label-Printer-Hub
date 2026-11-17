@@ -29,6 +29,15 @@ Two top-level maps of the seed file carry the exceptions (spec 10i, #334):
 Both are recorded in ``app_settings`` (``internal.seed.adopted`` / ``internal.seed.corrected``,
 ``{key: revision}``), so a second start does nothing; each takeover leaves one notice in
 ``internal.notices`` for the notification centre. All of it happens inside the entry's savepoint.
+
+Two more maps carry the backing designs (#350, R-350-4), applied after the types, each design and
+each link in its own savepoint:
+
+- ``backing_designs``: inserted once (``internal.seed.backing_designs``, ``{key: 1}``), so a
+  design an admin deleted is not inserted again; a key that exists already is left alone.
+- ``backing_links``: a shipped type points to its design once (``internal.seed.backing``,
+  ``{type_key: revision}``), and only while it has no design. A user's later choice, a cleared
+  one included, is never overwritten.
 """
 
 from __future__ import annotations
@@ -52,6 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col
 
 from app.models.app_setting import AppSetting
+from app.models.backing_design import BackingDesign
 from app.models.sheet import Sheet, SheetType, SheetTypeVersion
 from app.sheets import type_service as ts
 from app.sheets.exchange import ExportDoc, geometry_from_doc
@@ -67,6 +77,8 @@ SEED_ACTOR = "system:seed"  # the "system:" prefix is reserved; API actors canno
 # settings store ignores them and the settings API never lists them.
 ADOPTED_KEY: Final = "internal.seed.adopted"
 CORRECTED_KEY: Final = "internal.seed.corrected"
+BACKING_LINKS_KEY: Final = "internal.seed.backing"
+BACKING_DESIGNS_KEY: Final = "internal.seed.backing_designs"
 NOTICES_KEY: Final = "internal.notices"
 NOTICE_MAX_AGE: Final = timedelta(days=30)
 
@@ -80,6 +92,8 @@ class SeedReport:
     skipped: dict[str, str] = field(default_factory=dict)
     adopted: list[str] = field(default_factory=list)
     corrected: list[str] = field(default_factory=list)
+    designs_inserted: list[str] = field(default_factory=list)
+    linked: list[str] = field(default_factory=list)
 
 
 class SeedAdoption(BaseModel):
@@ -98,11 +112,35 @@ class SeedCorrection(BaseModel):
     change_note: str
 
 
+class SeedBackingDesign(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    name: str
+    page_size: Literal["A4", "Letter"]
+    strips_mm: tuple[tuple[float, float, float, float], ...]
+
+    def strips_hmm(self) -> list[dict[str, int]]:
+        return [
+            {"x": round(x * 100), "y": round(y * 100), "w": round(w * 100), "h": round(h * 100)}
+            for x, y, w, h in self.strips_mm
+        ]
+
+
+class SeedBackingLink(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    design: str
+    revision: int
+
+
 class SeedFile(NamedTuple):
     revision: int
     docs: list[ExportDoc]
     adopt: dict[str, SeedAdoption]
     corrections: dict[str, SeedCorrection]
+    backing_designs: tuple[SeedBackingDesign, ...] = ()
+    backing_links: tuple[tuple[str, SeedBackingLink], ...] = ()
 
 
 def load_seed(path: Traversable = SEED_FILE) -> SeedFile:
@@ -114,6 +152,12 @@ def load_seed(path: Traversable = SEED_FILE) -> SeedFile:
         corrections={
             k: SeedCorrection.model_validate(v) for k, v in raw.get("corrections", {}).items()
         },
+        backing_designs=tuple(
+            SeedBackingDesign.model_validate(d) for d in raw.get("backing_designs", [])
+        ),
+        backing_links=tuple(
+            (k, SeedBackingLink.model_validate(v)) for k, v in raw.get("backing_links", {}).items()
+        ),
     )
 
 
@@ -177,6 +221,18 @@ async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> S
                 key = log_value(doc.type.key)
                 logger.exception("seed type %s skipped: it could not be stored", key)
                 report.skipped[doc.type.key] = "error"
+        for design in seed.backing_designs:
+            try:
+                async with session.begin_nested():
+                    await _seed_design(session, design, report)
+            except Exception:
+                logger.exception("seed backing design %s skipped", log_value(design.key))
+        for type_key, link in seed.backing_links:
+            try:
+                async with session.begin_nested():
+                    await _seed_link(session, type_key, link, report)
+            except Exception:
+                logger.exception("seed backing link of %s skipped", log_value(type_key))
         await session.commit()
     logger.info(
         "sheet seed revision %d: %d inserted, %d versions added, %d adopted, %d corrected, "
@@ -464,3 +520,50 @@ async def _seed_one(
         session, key, geometry, actor=SEED_ACTOR, change_note=f"seed update ({key})"
     )
     report.versions_added.append(key)
+
+
+async def _seed_design(
+    session: AsyncSession, design: SeedBackingDesign, report: SeedReport
+) -> None:
+    """Insert a shipped backing design once; a deleted one stays deleted (R-350-4)."""
+    from app.sheets import backing_design_service as bds  # deferred: it imports the type service
+
+    if (await _setting_map(session, BACKING_DESIGNS_KEY)).get(design.key):
+        return
+    query = select(col(BackingDesign.id)).where(col(BackingDesign.key) == design.key)
+    exists = (await session.execute(query)).first()
+    if exists is None:
+        await bds.create_locked(
+            session,
+            key=design.key,
+            name=design.name,
+            page_size=design.page_size,
+            strips=design.strips_hmm(),
+            origin="seed",
+        )
+        report.designs_inserted.append(design.key)
+    await _mark(session, BACKING_DESIGNS_KEY, design.key, 1)
+
+
+async def _seed_link(
+    session: AsyncSession, type_key: str, link: SeedBackingLink, report: SeedReport
+) -> None:
+    """Point a shipped type to its design once, only while it has none (R-350-4)."""
+    if (await _setting_map(session, BACKING_LINKS_KEY)).get(type_key, 0) >= link.revision:
+        return
+    t = (
+        await session.execute(select(SheetType).where(col(SheetType.key) == type_key))
+    ).scalar_one_or_none()
+    if t is None:
+        return  # the type was not stored (prefix taken): nothing to link, nothing to record
+    if t.backing_design_id is None:
+        design = (
+            await session.execute(
+                select(BackingDesign).where(col(BackingDesign.key) == link.design)
+            )
+        ).scalar_one_or_none()
+        if design is not None:
+            t.backing_design_id = design.id
+            await session.flush()
+            report.linked.append(type_key)
+    await _mark(session, BACKING_LINKS_KEY, type_key, link.revision)

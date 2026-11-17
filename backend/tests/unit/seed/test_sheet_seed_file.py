@@ -58,14 +58,14 @@ def _by_key() -> dict[str, object]:
     return {d.type.key: d for d in load_seed().docs}
 
 
-def test_seed_revision_is_2() -> None:
-    assert load_seed().revision == 2
+def test_seed_revision_is_3() -> None:
+    assert load_seed().revision == 3
 
 
 def test_seed_has_39_valid_documents() -> None:
     seed = load_seed()
     docs = seed.docs
-    assert seed.revision == 2
+    assert seed.revision == 3
     assert len(docs) == 39
     keys = [d.type.key for d in docs]
     prefixes = [d.type.prefix for d in docs]

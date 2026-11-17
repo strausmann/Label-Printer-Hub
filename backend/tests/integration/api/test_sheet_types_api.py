@@ -846,3 +846,99 @@ async def test_patch_refuses_over_long_free_text_before_the_service(
     )
     assert resp.status_code == 422, resp.text
     assert _err(resp)["error_code"] == "invalid_request"
+
+
+# ---------------------------------------------------------------------------
+# Where the sheet code goes (#350)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def printer_key() -> dict[str, str]:
+    return {"X-Label-Hub-Key": await _insert_key(["print"])}
+
+
+async def _letter_design(client, admin, key: str = "letter-liner") -> None:
+    body = {
+        "key": key,
+        "name": "Letter liner",
+        "page_size": "Letter",
+        "strips": [{"x_mm": 10, "y_mm": 10, "w_mm": 30, "h_mm": 80}],
+    }
+    resp = await client.post("/api/v1/backing-designs", json=body, headers=admin)
+    assert resp.status_code == 201, resp.text
+
+
+async def test_patch_placement_and_cell(api_client_with_seed, admin):
+    await _create(api_client_with_seed, admin)
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/acme-t1", json={"id_placement": "cell", "id_cell": 5}, headers=admin
+    )
+    assert resp.status_code == 200, resp.text
+    read = (await api_client_with_seed.get("/api/v1/sheet-types/acme-t1", headers=admin)).json()
+    assert read["id_placement"] == "cell" and read["id_cell"] == 5
+    assert read["id_placement_resolved"] == "cell"
+
+
+async def test_patch_id_cell_out_of_range(api_client_with_seed, admin):
+    url = "/api/v1/sheet-types/avery-zweckform-3490"
+    resp = await api_client_with_seed.patch(url, json={"id_cell": 25}, headers=admin)
+    assert resp.status_code == 422, resp.text
+    assert _err(resp)["error_code"] == "id_cell_out_of_range"
+    ok = await api_client_with_seed.patch(url, json={"id_cell": 24}, headers=admin)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["id_cell"] == 24
+
+
+async def test_patch_needs_admin(api_client_with_seed, printer_key):
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/avery-zweckform-3490",
+        json={"id_placement": "cell"},
+        headers=printer_key,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_read_has_resolved_placement(api_client_with_seed, reader):
+    by_key = {
+        t["key"]: t
+        for t in (await api_client_with_seed.get("/api/v1/sheet-types", headers=reader)).json()
+    }
+    assert by_key["avery-zweckform-3490"]["id_placement"] == "auto"
+    assert by_key["avery-zweckform-3490"]["id_placement_resolved"] == "back_side"
+    assert by_key["avery-zweckform-6121"]["id_placement_resolved"] == "margin"
+    design = by_key["avery-zweckform-3490"]["backing_design"]
+    assert design["key"] == "avery-zweckform-ultragrip"
+    assert design["strips"][0] == {"x_mm": 33.5, "y_mm": 22.0, "w_mm": 22.0, "h_mm": 253.0}
+
+
+async def test_patch_backing_design_unknown(api_client_with_seed, admin):
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/avery-zweckform-3490",
+        json={"backing_design": "no-such-design"},
+        headers=admin,
+    )
+    assert resp.status_code == 404, resp.text
+    assert _err(resp)["error_code"] == "backing_design_not_found"
+
+
+async def test_patch_backing_design_null_clears(api_client_with_seed, admin):
+    url = "/api/v1/sheet-types/avery-zweckform-3490"
+    resp = await api_client_with_seed.patch(url, json={"backing_design": None}, headers=admin)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["backing_design"] is None
+    again = await api_client_with_seed.patch(
+        url, json={"backing_design": "avery-zweckform-ultragrip"}, headers=admin
+    )
+    assert again.json()["backing_design"]["key"] == "avery-zweckform-ultragrip"
+
+
+async def test_patch_backing_design_page_size_mismatch(api_client_with_seed, admin):
+    await _letter_design(api_client_with_seed, admin)
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/avery-zweckform-3490",
+        json={"backing_design": "letter-liner"},
+        headers=admin,
+    )
+    assert resp.status_code == 422, resp.text
+    assert _err(resp)["error_code"] == "backing_design_page_size_mismatch"

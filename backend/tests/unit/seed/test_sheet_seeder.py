@@ -292,3 +292,116 @@ async def test_older_seed_does_not_add_revert_version(
         t = await ts.get_type(s, "herma-4098")
         current = await ts.current_version(s, t.id)
         assert current.version == 2 and current.cols == g.cols - 1
+
+
+# ---------------------------------------------------------------- backing designs (#350)
+
+ULTRAGRIP = "avery-zweckform-ultragrip"
+
+
+async def _design_of(factory: Factory, type_key: str) -> str | None:
+    from app.models.backing_design import BackingDesign
+
+    async with factory() as s:
+        t = await ts.get_type(s, type_key)
+        if t.backing_design_id is None:
+            return None
+        design = await s.get(BackingDesign, t.backing_design_id)
+        return None if design is None else design.key
+
+
+async def _setting(factory: Factory, key: str) -> object:
+    import json
+
+    from app.models.app_setting import AppSetting
+
+    async with factory() as s:
+        row = await s.get(AppSetting, key)
+        return None if row is None or row.value_json is None else json.loads(row.value_json)
+
+
+async def _set_design(factory: Factory, type_key: str, design_key: str | None) -> None:
+    async with factory() as s:
+        await ts.patch_type(s, type_key, {"backing_design": design_key}, actor="t")
+
+
+async def test_seed_inserts_ultragrip_and_links_both_types(async_session_factory: Factory) -> None:
+    from app.models.backing_design import BackingDesign
+
+    report = await run_sheet_seed(async_session_factory)
+
+    assert report.designs_inserted == [ULTRAGRIP]
+    async with async_session_factory() as s:
+        design = (
+            await s.execute(select(BackingDesign).where(BackingDesign.key == ULTRAGRIP))
+        ).scalar_one()
+    assert design.page_size == "A4" and design.origin == "seed"
+    assert design.strips == [
+        {"x": 3350, "y": 2200, "w": 2200, "h": 25300},
+        {"x": 15450, "y": 2200, "w": 2200, "h": 25300},
+    ]
+    assert await _design_of(async_session_factory, "avery-zweckform-3490") == ULTRAGRIP
+    assert await _design_of(async_session_factory, "avery-zweckform-6121") == ULTRAGRIP
+    assert await _design_of(async_session_factory, "herma-4098") is None
+    assert await _setting(async_session_factory, sheet_seed.BACKING_LINKS_KEY) == {
+        "avery-zweckform-3490": 1,
+        "avery-zweckform-6121": 1,
+    }
+
+
+async def test_seed_does_not_relink_after_user_cleared(async_session_factory: Factory) -> None:
+    await run_sheet_seed(async_session_factory)
+    await _set_design(async_session_factory, "avery-zweckform-3490", None)
+
+    report = await run_sheet_seed(async_session_factory)
+
+    assert not report.linked
+    assert await _design_of(async_session_factory, "avery-zweckform-3490") is None
+
+
+async def test_seed_leaves_user_design_alone(
+    async_session_factory: Factory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.sheets import backing_design_service as bds
+
+    # An older install: the types exist, the seed of that time knew no backing designs.
+    real = load_seed()
+    with monkeypatch.context() as m:
+        m.setattr(
+            sheet_seed,
+            "load_seed",
+            lambda: SeedFile(real.revision, real.docs, real.adopt, real.corrections),
+        )
+        await run_sheet_seed(async_session_factory)
+    async with async_session_factory() as s:
+        await bds.create(
+            s,
+            key="my-liner",
+            name="Mine",
+            page_size="A4",
+            strips=[{"x": 1000, "y": 1000, "w": 3000, "h": 8000}],
+        )
+    await _set_design(async_session_factory, "avery-zweckform-3490", "my-liner")
+
+    await run_sheet_seed(async_session_factory)
+
+    assert await _design_of(async_session_factory, "avery-zweckform-3490") == "my-liner"
+    assert await _design_of(async_session_factory, "avery-zweckform-6121") == ULTRAGRIP
+    links = await _setting(async_session_factory, sheet_seed.BACKING_LINKS_KEY)
+    assert links == {"avery-zweckform-3490": 1, "avery-zweckform-6121": 1}
+
+
+async def test_seed_does_not_reinsert_a_deleted_design(async_session_factory: Factory) -> None:
+    from app.models.backing_design import BackingDesign
+    from app.sheets import backing_design_service as bds
+
+    await run_sheet_seed(async_session_factory)
+    await _set_design(async_session_factory, "avery-zweckform-3490", None)
+    await _set_design(async_session_factory, "avery-zweckform-6121", None)
+    async with async_session_factory() as s:
+        await bds.delete(s, ULTRAGRIP)
+
+    report = await run_sheet_seed(async_session_factory)
+
+    assert not report.designs_inserted
+    assert await _count(async_session_factory, BackingDesign) == 0

@@ -15,11 +15,14 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
-from app.sheets.exchange import GeometryMm
+from app.sheets.exchange import MAX_STRIPS, GeometryMm, StripMm
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN
 from app.sheets.text import check_http_url
 
 __all__ = [
+    "BackingDesignCreate",
+    "BackingDesignPatch",
+    "BackingDesignRead",
     "CellHitRead",
     "CellNumbers",
     "CellRead",
@@ -73,6 +76,40 @@ class VersionRead(BaseModel):
         return _utc(dt, info)
 
 
+class BackingDesignRead(BaseModel):
+    """A backing design: the vendor print on the back of a liner and its free strips."""
+
+    key: str
+    name: str
+    page_size: Literal["A4", "Letter"]
+    strips: list[StripMm] = Field(
+        description=(
+            "Free strips on the back of the liner in mm, viewed on the liner with the sheet's "
+            "top at the top after turning it over along the long edge."
+        )
+    )
+    origin: Literal["seed", "custom", "imported"]
+    types_in_use: int = Field(description="Sheet types that point to this design.")
+
+
+class BackingDesignCreate(_Body):
+    key: _Key
+    name: Annotated[str, Field(min_length=1, max_length=200)]
+    page_size: Literal["A4", "Letter"]
+    strips: list[StripMm] = Field(default=[], max_length=MAX_STRIPS)
+
+
+class BackingDesignPatch(_Body):
+    """Only the fields the client sends change; the page size of a design is fixed."""
+
+    name: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    strips: Annotated[list[StripMm], Field(max_length=MAX_STRIPS)] | None = None
+
+
+_TypePlacement = Literal["auto", "margin", "back_side", "cell"]
+_IdCell = Annotated[int, Field(ge=1, le=10000)]
+
+
 class SheetTypeRead(BaseModel):
     key: str
     prefix: str
@@ -95,6 +132,22 @@ class SheetTypeRead(BaseModel):
     geometry: GeometryMm = Field(description="Geometry of the current version.")
     hints: list[str] = Field(description="Advisory codes about the current geometry.")
     sheets_in_use: int = Field(description="Sheets of any state of this type.")
+    id_placement: _TypePlacement = Field(
+        description=(
+            "Where the sheet code of a new sheet goes. `auto` resolves to `margin` or "
+            "`back_side` (see `id_placement_resolved`)."
+        )
+    )
+    id_cell: int | None = Field(description="The preferred cell of a `cell` sheet's code.")
+    id_placement_resolved: Literal["margin", "back_side", "cell"] = Field(
+        description=(
+            "`id_placement` resolved without a printer: `auto` is `margin` when a margin band "
+            "of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`."
+        )
+    )
+    backing_design: BackingDesignRead | None = Field(
+        description="The vendor print on the back of the liner; `null` for a plain liner."
+    )
 
     @field_serializer("archived_at", "created_at", "updated_at")
     def _ser_dt(self, dt: datetime | None, info: Any) -> str | None:
@@ -121,7 +174,7 @@ class SheetTypeCreate(_Body):
     geometry: GeometryMm
 
 
-_PATCH_NOT_NULLABLE = ("prefix", "product_codes", "allow_qr", "verified")
+_PATCH_NOT_NULLABLE = ("prefix", "product_codes", "allow_qr", "verified", "id_placement")
 
 
 def _patch_schema(schema: dict[str, Any]) -> None:
@@ -146,6 +199,13 @@ class SheetTypePatch(_Body):
     source_name: Annotated[str, Field(max_length=200)] | None = None
     source_url: _Url | None = None
     notes: Annotated[str, Field(max_length=2000)] | None = None
+    id_placement: _TypePlacement | None = None
+    id_cell: _IdCell | None = Field(
+        default=None, description="Checked against the current version's cell count."
+    )
+    backing_design: _Key | None = Field(
+        default=None, description="Key of a backing design; `null` clears it (plain liner)."
+    )
 
 
 class VersionCreate(_Body):

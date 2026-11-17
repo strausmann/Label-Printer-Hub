@@ -503,3 +503,72 @@ class PrintInterruptedError(SheetApiError):
 
     def __init__(self, batch_id: str, job_ids: list[str]) -> None:
         super().__init__(detail={"batch_id": batch_id, "job_ids": job_ids})
+
+
+# ---------------------------------------------------------------- sheet code placement (#350)
+
+
+class IdCellOutOfRangeError(SheetApiError):
+    """A sheet type's preferred ID cell is outside its current geometry (R-350-7)."""
+
+    status = 422
+    error_code = "id_cell_out_of_range"
+    message = "The ID cell is outside the sheet."
+
+    def __init__(self, cell: int, total: int) -> None:
+        super().__init__(detail={"id_cell": cell, "total": total})
+
+
+class BackingDesignNotFoundError(SheetApiError):
+    status = 404
+    error_code = "backing_design_not_found"
+    message = "Backing design not found."
+
+
+class BackingDesignExistsError(SheetApiError):
+    status = 409
+    error_code = "backing_design_exists"
+    message = "A backing design with this key already exists."
+
+
+class BackingDesignInUseError(SheetApiError):
+    """A design some sheet type still points to is not deleted (R-350-4)."""
+
+    status = 409
+    error_code = "backing_design_in_use"
+    message = "The backing design is used by a sheet type."
+
+    def __init__(self, types_in_use: int) -> None:
+        super().__init__(detail={"types_in_use": types_in_use})
+
+
+class BackingDesignPageSizeMismatchError(SheetApiError):
+    """The design's page size differs from the sheet type's current version (R-350-4)."""
+
+    status = 422
+    error_code = "backing_design_page_size_mismatch"
+    message = "The backing design is for another page size."
+
+
+class BackStripDoesNotFitError(SheetApiError):
+    """No free strip of the backing design takes the 22 x 62 mm code strip (R-350-3)."""
+
+    status = 422
+    error_code = "back_strip_does_not_fit"
+    message = "The sheet code does not fit any free strip on the back of this sheet."
+
+
+class IdPlacementMismatchError(SheetApiError):
+    """The sheet's code does not go on the back side (R-350-6, R-350-11)."""
+
+    status = 409
+    error_code = "id_placement_mismatch"
+    message = "The sheet code of this sheet does not go on the back side."
+
+
+class TrayLoadingAlreadySetError(SheetApiError):
+    """A print-scope key may set a tray's loading only while it is unset (R-350-5)."""
+
+    status = 409
+    error_code = "tray_loading_already_set"
+    message = "How this tray takes paper is already set; an admin can change it."
