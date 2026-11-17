@@ -2060,7 +2060,6 @@ async def print_sheet_back(
     (a 3490 from 1.6) switches to ``back_side`` in the same call, recorded as a sheet event
     (R-350-11). The strip, the date and the turn are read again: a second job prints the same.
     """
-    del actor  # the job records the key; the sheet is not changed beyond its placement
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
     scan = scan_payload_builder(str(get_settings().public_url))
@@ -2070,7 +2069,7 @@ async def print_sheet_back(
             found = await repo.get_by_code(session, code)
             in_flight = found is not None and await margin_id_in_flight(session, found.id)
             sheet, switched = await ss.back_side_sheet_locked(
-                session, code, margin_in_flight=in_flight
+                session, code, margin_in_flight=in_flight, actor=actor
             )
             payload = await _back_payload(
                 session, sheet, tray_key=tray_key, printer_id=printer.id, scan=scan

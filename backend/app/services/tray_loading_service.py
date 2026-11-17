@@ -23,6 +23,7 @@ from uuid import UUID
 
 from sqlalchemy import CursorResult, select
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
@@ -97,7 +98,12 @@ async def put(
     else:
         stmt = stmt.on_conflict_do_nothing(index_elements=["printer_id", "tray_key"])
     try:
-        result = await session.execute(stmt)
+        try:
+            result = await session.execute(stmt)
+        except IntegrityError:
+            # The only foreign key is the printer: an unknown printer is a 404 (review M3). The
+            # failed statement wrote nothing; the rollback below ends the transaction.
+            raise PrinterNotFoundError() from None
         inserted = isinstance(result, CursorResult) and result.rowcount == 1
         tray = (
             await session.execute(

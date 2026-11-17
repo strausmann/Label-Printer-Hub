@@ -152,6 +152,22 @@ async def test_loading_unknown_tray_is_422() -> None:
         assert await _rows(rig) == {}
 
 
+async def test_loading_unknown_printer_is_404() -> None:
+    """An unknown printer is a 404, not a foreign-key failure (review M3)."""
+    from uuid import uuid4
+
+    async with running() as rig:
+        transport = httpx.ASGITransport(app=rig.app, raise_app_exceptions=False)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            resp = await client.put(
+                f"/api/v1/printers/{uuid4()}/trays/auto/loading",
+                json=UP_TOP,
+                headers=await _admin(),
+            )
+        assert resp.status_code == 404, resp.text
+        assert _err(resp)["error_code"] == "printer_not_found"
+
+
 async def test_loading_db_failure_is_500_without_detail(monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services import tray_loading_service
 

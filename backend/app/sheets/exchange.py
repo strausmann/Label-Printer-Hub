@@ -205,6 +205,25 @@ def geometry_from_doc(g: GeometryMm) -> Geometry:
     )
 
 
+def _is_shipped_default(t: Any, design: Any) -> bool:
+    """A shipped type still on the design the seed linked it to, strips unchanged (I4).
+
+    Such a type is untouched: its export stays version 1, so a 1.6 hub imports it. Once the user
+    changes the placement, the cell or the design, the design travels with the version-2 document.
+    """
+    from app.seed.sheet_seed import (
+        shipped_backing_defaults,
+    )  # deferred: the seed imports this module
+
+    if t.origin != "seed":
+        return False
+    shipped = shipped_backing_defaults().get(t.key)
+    if shipped is None or shipped[0] != design.key:
+        return False
+    strips = tuple((s["x"], s["y"], s["w"], s["h"]) for s in design.strips)
+    return strips == shipped[1]
+
+
 async def export_type(session: AsyncSession, key: str, version: int | None) -> ExportDoc:
     from app.main import HUB_VERSION  # deferred: app.main imports the routers
 
@@ -224,7 +243,7 @@ async def export_type(session: AsyncSession, key: str, version: int | None) -> E
         from app.sheets.backing_design_service import to_doc
 
         design = await session.get(BackingDesign, t.backing_design_id)
-        if design is not None:
+        if design is not None and (placement or not _is_shipped_default(t, design)):
             placement["backing_design"] = to_doc(design)
     return ExportDoc(
         format="label-printer-hub.sheet-type",

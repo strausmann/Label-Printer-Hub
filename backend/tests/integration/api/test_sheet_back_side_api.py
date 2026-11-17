@@ -272,6 +272,22 @@ async def test_unprinted_margin_sheet_switches_to_back_side() -> None:
         assert resp.status_code == 202, resp.text
         assert (await rig.sheet(code))["id_placement"] == "back_side"
         assert any(getattr(e, "data", {}).get("code") == code for e in events), events
+        # Who switched it stays on the sheet (review M5), like created_by and discarded_by.
+        async with _factory()() as s:
+            row = (await s.execute(select(Sheet).where(col(Sheet.code) == code))).scalar_one()
+            assert row.placement_changed_by is not None and row.placement_changed_by.startswith(
+                "key:"
+            )
+            assert row.placement_changed_at is not None
+
+
+async def test_back_side_sheet_print_records_no_switch() -> None:
+    async with running() as rig:
+        code = await _new_sheet("back_side")
+        assert (await _back(rig, code)).status_code == 202
+        async with _factory()() as s:
+            row = (await s.execute(select(Sheet).where(col(Sheet.code) == code))).scalar_one()
+            assert row.placement_changed_by is None and row.placement_changed_at is None
 
 
 async def test_printed_margin_sheet_cannot_switch() -> None:

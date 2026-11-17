@@ -942,3 +942,31 @@ async def test_patch_backing_design_page_size_mismatch(api_client_with_seed, adm
     )
     assert resp.status_code == 422, resp.text
     assert _err(resp)["error_code"] == "backing_design_page_size_mismatch"
+
+
+@pytest.mark.parametrize("key", ["avery-zweckform-3490", "avery-zweckform-6121"])
+async def test_untouched_shipped_type_exports_as_version_1(api_client_with_seed, admin, key):
+    """A shipped type still on its seeded backing design exports for a 1.6 hub (I4)."""
+    resp = await api_client_with_seed.get(f"/api/v1/sheet-types/{key}/export", headers=admin)
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["format_version"] == 1
+    for name in ("id_placement", "id_cell", "backing_design"):
+        assert name not in doc["type"]
+
+
+async def test_shipped_type_with_a_changed_placement_exports_as_version_2(
+    api_client_with_seed, admin
+):
+    key = "avery-zweckform-3490"
+    patched = await api_client_with_seed.patch(
+        f"/api/v1/sheet-types/{key}", json={"id_placement": "cell", "id_cell": 2}, headers=admin
+    )
+    assert patched.status_code == 200
+    doc = (
+        await api_client_with_seed.get(f"/api/v1/sheet-types/{key}/export", headers=admin)
+    ).json()
+    assert doc["format_version"] == 2
+    assert doc["type"]["id_placement"] == "cell" and doc["type"]["id_cell"] == 2
+    # Once the placement is the user's, the design travels with it.
+    assert doc["type"]["backing_design"]["key"] == "avery-zweckform-ultragrip"

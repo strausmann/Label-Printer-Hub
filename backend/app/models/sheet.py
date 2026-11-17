@@ -138,6 +138,9 @@ class Sheet(SQLModel, table=True):
     state: str = Field(default="active", sa_column=Column(String, nullable=False))
     discarded_at: datetime | None = Field(default=None, sa_column=_dt(nullable=True))
     discarded_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
+    # #350 review M5: who switched an unprinted margin/manual sheet to the code on the back.
+    placement_changed_at: datetime | None = Field(default=None, sa_column=_dt(nullable=True))
+    placement_changed_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     id_placement: str = Field(sa_column=Column(String, nullable=False))
     id_printed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
     # The preferred ID cell of a ``cell`` sheet (R-350-7); taken when it is free.

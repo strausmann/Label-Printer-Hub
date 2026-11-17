@@ -167,6 +167,23 @@ def notice_code(product_codes: Sequence[str]) -> str:
 
 
 @functools.cache
+def shipped_backing_defaults() -> dict[str, tuple[str, tuple[tuple[int, int, int, int], ...]]]:
+    """Type key -> (design key, strips in hmm) of the design the seed links it to (I4).
+
+    A shipped type still on exactly this design is untouched: its export stays a version-1 document.
+    """
+    seed = load_seed()
+    designs = {d.key: d for d in seed.backing_designs}
+    out: dict[str, tuple[str, tuple[tuple[int, int, int, int], ...]]] = {}
+    for type_key, link in seed.backing_links:
+        design = designs.get(link.design)
+        if design is not None:
+            strips = tuple((s["x"], s["y"], s["w"], s["h"]) for s in design.strips_hmm())
+            out[type_key] = (design.key, strips)
+    return out
+
+
+@functools.cache
 def shipped_source_urls() -> dict[str, str]:
     """The source URL of every seed type as shipped, by key (a type without one is left out)."""
     return {d.type.key: d.type.source_url for d in load_seed().docs if d.type.source_url}

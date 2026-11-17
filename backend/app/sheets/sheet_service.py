@@ -680,14 +680,14 @@ async def confirm_back_side(
 
 
 async def back_side_sheet_locked(
-    session: AsyncSession, code: str, *, margin_in_flight: bool
+    session: AsyncSession, code: str, *, margin_in_flight: bool, actor: str
 ) -> tuple[Sheet, bool]:
     """The sheet a back-side job prints onto, read under the caller's write lock.
 
     An ``active`` ``back_side`` sheet is returned as it is. An unprinted ``margin`` or ``manual``
     sheet whose margin ID is not in flight switches to ``back_side`` (R-350-11; the caller
-    commits and publishes); every other sheet is refused. Returns the sheet and whether it
-    switched.
+    commits and publishes) and records who switched it; every other sheet is refused. Returns
+    the sheet and whether it switched.
     """
     sheet = await _sheet(session, code)
     if sheet.state == "discarded":
@@ -697,6 +697,8 @@ async def back_side_sheet_locked(
     if sheet.id_placement not in _SWITCHABLE or sheet.id_printed or margin_in_flight:
         raise IdPlacementMismatchError()
     sheet.id_placement = "back_side"
+    sheet.placement_changed_at = datetime.now(UTC)
+    sheet.placement_changed_by = actor  # stored like created_by/discarded_by, never logged
     await session.flush()
     return sheet, True
 

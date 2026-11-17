@@ -206,3 +206,38 @@ def test_downgrade_maps_back_side_to_manual(tmp_path):
     assert "id_cell_no" not in _sheet_columns(db)
     command.upgrade(cfg, _PLACE_REV)
     assert "id_cell_no" in _sheet_columns(db)
+
+
+# ---------------------------------------------------- 20261117a2 who switched the placement (#350)
+
+_CHANGED_REV = "20261117a2"
+
+
+def test_placement_changed_columns_keep_existing_sheets(tmp_path):
+    db = tmp_path / "changed.db"
+    cfg = _cfg(db)
+    command.upgrade(cfg, _PLACE_REV)
+    _insert_type_and_sheets(db, {"AT1-0001": "margin", "AT1-0002": "back_side"})
+
+    command.upgrade(cfg, _CHANGED_REV)
+
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.connect() as c:
+        rows = c.execute(
+            text(
+                "SELECT code, id_placement, placement_changed_at, placement_changed_by FROM sheets"
+            )
+        ).all()
+    eng.dispose()
+    assert sorted(tuple(r) for r in rows) == [
+        ("AT1-0001", "margin", None, None),
+        ("AT1-0002", "back_side", None, None),
+    ]
+
+    command.downgrade(cfg, _PLACE_REV)
+    assert not ({"placement_changed_at", "placement_changed_by"} & set(_sheet_columns(db)))
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.connect() as c:
+        kept = dict(c.execute(text("SELECT code, id_placement FROM sheets")).all())
+    eng.dispose()
+    assert kept == {"AT1-0001": "margin", "AT1-0002": "back_side"}
