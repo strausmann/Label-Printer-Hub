@@ -175,12 +175,16 @@ def _make_handler(
     mutable reference from the loop body in :func:`register_error_handlers`.
     """
 
-    async def handler(_request: Request, exc: Exception) -> JSONResponse:
+    async def handler(request: Request, exc: Exception) -> JSONResponse:
+        detail = str(exc)
+        if isinstance(exc, PrinterOfflineError):
+            # #378: the cause names the printer's address; it goes to the log, not the client.
+            detail = print_error_problem(exc, request).title
         problem = ProblemDetail(
             type=problem_type,
             title=problem_type.replace("-", " ").replace("_", " ").title(),
             status=http_status,
-            detail=str(exc),
+            detail=detail,
         )
         return JSONResponse(
             status_code=http_status,

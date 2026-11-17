@@ -117,3 +117,18 @@ def test_an_unknown_subclass_maps_by_its_base() -> None:
 
 def test_deferred_snmp_failure_has_a_message() -> None:
     assert _DEFERRED_FAILURE_MESSAGES["snmp_query_failed"]
+
+
+def test_offline_and_snmp_answer_fixed_sentences_and_keep_the_cause_for_the_log() -> None:
+    """#378 M5: the printer's address or the SNMP error text never reaches the client."""
+    offline = describe_print_error(PrinterOfflineError("cannot reach 192.0.2.10:9100: refused"))
+    snmp = describe_print_error(SnmpQueryError("preflight SNMP failed: community hunter2"))
+    assert offline.message == "The printer could not be reached."
+    assert snmp.message == "The printer did not answer the status query."
+    assert offline.log_detail == "cannot reach 192.0.2.10:9100: refused"
+    assert snmp.log_detail == "preflight SNMP failed: community hunter2"
+
+
+def test_fixed_classes_carry_no_log_detail() -> None:
+    assert describe_print_error(SAMPLES[LookupFailedError]).log_detail is None
+    assert describe_print_error(SAMPLES[UnsupportedTapeError]).log_detail is None

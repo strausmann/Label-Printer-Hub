@@ -56,7 +56,9 @@ def test_printer_offline_returns_503_problem_detail() -> None:
     body = r.json()
     assert body["type"] == "printer-offline"
     assert body["status"] == 503
-    assert "host unreachable" in body["detail"]
+    # #378: the cause (it names the printer's address) is logged, not answered.
+    assert body["detail"] == "The printer could not be reached."
+    assert "host unreachable" not in r.text
     assert "title" in body
 
 

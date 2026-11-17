@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.print_errors import print_error_http
+from app.api.print_errors import print_error_http, print_error_responses
 from app.auth.dependencies import (
     AuthContext,
     charge_lookup_fan_out,
@@ -66,6 +66,17 @@ _NO_LOOKUP_RAN = (
     status_code=status.HTTP_202_ACCEPTED,
     response_model=BatchResponse,
     tags=["print"],
+    responses=print_error_responses(
+        "wrapped",
+        extra={
+            400: "`printer_slug_mismatch`: `printer_slug` names another printer.",
+            404: "`printer_not_found`.",
+            409: "`media_kind_mismatch`: a page printer (IPP).",
+            422: "`conflicting_orientation`, or an invalid body.",
+            429: "`too-many-queued-runs` or `rate_limit_exceeded`, with Retry-After.",
+            503: "`router_not_initialized`, `printer_unreachable` or `service_not_initialized`.",
+        },
+    ),
     summary="Submit a batch of print jobs",
     description=(
         "Validates all items and enqueues the batch as one tape run — no per-item errors are "

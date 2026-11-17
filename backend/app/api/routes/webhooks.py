@@ -53,7 +53,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.webhook_auth import enforce_webhook_rate_limit, require_webhook_key
-from app.api.print_errors import print_error_response
+from app.api.print_errors import print_error_response, print_error_responses
 from app.db.session import get_session
 from app.repositories import printers as printers_repo
 from app.schemas.content_type import ContentType
@@ -71,6 +71,18 @@ router = APIRouter(prefix="/api/v1/webhook", tags=["webhooks"])
 
 # Type alias for the session dependency
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+_WEBHOOK_RESPONSES = print_error_responses(
+    "envelope",
+    extra={
+        401: "The webhook key is wrong.",
+        404: "`app-lookup-not-found` (problem body): unknown spool or product.",
+        422: "Missing payload fields (`invalid_request`, field paths only).",
+        429: "Above the per-key rate limit, with Retry-After.",
+        503: "The webhook key is not configured, no enabled tape printer, or "
+        "`integration_not_configured` (problem body).",
+    },
+)
 
 _WEBHOOK_DEPENDENCIES = [Depends(require_webhook_key), Depends(enforce_webhook_rate_limit)]
 
@@ -165,6 +177,7 @@ async def _print_label(
         "language, and never counts copies."
     ),
     dependencies=_WEBHOOK_DEPENDENCIES,
+    responses=_WEBHOOK_RESPONSES,
 )
 async def spoolman_webhook(
     payload: SpoolmanWebhookPayload,
@@ -202,6 +215,7 @@ async def spoolman_webhook(
         "language, and never counts copies."
     ),
     dependencies=_WEBHOOK_DEPENDENCIES,
+    responses=_WEBHOOK_RESPONSES,
 )
 async def grocy_webhook(
     payload: GrocyWebhookPayload,

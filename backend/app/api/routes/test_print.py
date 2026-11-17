@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.printer_runtime import get_printer_runtime
-from app.api.print_errors import print_error_problem
+from app.api.print_errors import print_error_problem, print_error_responses
 from app.api.routes.pause_view import pause_view
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
@@ -98,26 +98,28 @@ def _version() -> str:
     "/{printer_id}/test-print",
     response_model=TestPrintAccepted,
     status_code=status.HTTP_202_ACCEPTED,
-    responses={
-        status.HTTP_404_NOT_FOUND: {"description": "Unknown printer (`printer-not-found`)."},
-        status.HTTP_409_CONFLICT: {
-            "description": (
+    responses=print_error_responses(
+        "problem",
+        extra={
+            status.HTTP_404_NOT_FOUND: "Unknown printer (`printer-not-found`).",
+            status.HTTP_409_CONFLICT: (
                 "`printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer "
-                "the hub does not poll), `printer-offline`, `media-unknown` (page printer) or "
-                "`printer-unavailable`. A tape printer also answers `no-tape-loaded`, "
-                "`unsupported-tape` (the loaded width; `extensions.tape_mm`), "
-                "`printer-cover-open`, `tape-mismatch` or `tape-empty`."
-            )
-        },
-        status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": (
+                "the hub does not poll), `printer-offline` (also an SNMP failure of a tape "
+                "printer), `media-unknown` (page printer) or `printer-unavailable`. "
+                "`unsupported-tape` carries the loaded width in `extensions.tape_mm`."
+            ),
+            status.HTTP_422_UNPROCESSABLE_CONTENT: (
                 "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. "
                 "`qr-payload-too-long`: the printer link does not fit the fixed QR code of "
                 "the loaded tape (QL 62 mm). `content-type-data-mismatch`: the test label "
                 "lacks data its layout needs (`extensions.missing_fields`)."
-            )
+            ),
         },
-    },
+        overrides={
+            "printer_offline": (409, "printer_offline"),
+            "snmp_query_failed": (409, "printer_offline"),
+        },
+    ),
     summary="Print a test label (tape) or a test page (page printer)",
     description=(
         "Prints one test label on a tape printer (printer name, tape width, time, a QR to the "

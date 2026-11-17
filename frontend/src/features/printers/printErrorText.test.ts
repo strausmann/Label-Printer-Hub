@@ -25,6 +25,7 @@ describe("printErrorText", () => {
     ["content_type_data_mismatch", { missing_fields: ["title"] }, "The label is missing data this layout needs."],
     ["printer_offline", null, UNREACHABLE],
     ["snmp_query_failed", null, UNREACHABLE],
+    ["printer_disabled", null, "The printer is switched off in the hub. Switch it on in the printer settings."],
   ] as const)("%s %j reads in the app's own words", (code, detail, words) => {
     expect(printErrorText(code, detail, t)).toBe(words);
   });

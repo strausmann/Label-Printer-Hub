@@ -147,6 +147,16 @@ describe("ItemView", () => {
     );
   });
 
+  it("a disabled printer reads in the app's words, without the server's id", async () => {
+    const refusal = { detail: { error_code: "printer_disabled", error_message: "Printer tape-a (0000-uuid) is disabled" } };
+    mockApi(routes("snipeit", "42", { [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, refusal) }));
+    await renderApp({ path: "/asset/42" });
+    await userEvent.click(await screen.findByRole("button", { name: "Print now" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The printer is switched off in the hub. Switch it on in the printer settings.");
+    expect(alert).not.toHaveTextContent("0000-uuid");
+  });
+
   it("Add to cart stores the item and shows the cart link", async () => {
     mockApi(routes());
     await renderApp({ path: "/asset/42" });

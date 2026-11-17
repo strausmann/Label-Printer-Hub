@@ -5759,14 +5759,33 @@ export interface operations {
                     "application/json": components["schemas"]["PrintJobResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description `no_tape_printer`: no tape printer is configured. Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5795,14 +5814,54 @@ export interface operations {
                     "application/json": components["schemas"]["BatchResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description `printer_slug_mismatch`: `printer_slug` names another printer. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `printer_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `media_kind_mismatch`: a page printer (IPP). Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description `too-many-queued-runs` or `rate_limit_exceeded`, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `router_not_initialized`, `printer_unreachable` or `service_not_initialized`. Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6658,15 +6717,22 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline`, `media-unknown` (page printer) or `printer-unavailable`. A tape printer also answers `no-tape-loaded`, `unsupported-tape` (the loaded width; `extensions.tape_mm`), `printer-cover-open`, `tape-mismatch` or `tape-empty`. */
+            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape` carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). `content-type-data-mismatch`: the test label lacks data its layout needs (`extensions.missing_fields`). */
+            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). `content-type-data-mismatch`: the test label lacks data its layout needs (`extensions.missing_fields`). Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration-lookup-failed`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7964,7 +8030,28 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookAcceptedResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The webhook key is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `app-lookup-not-found` (problem body): unknown spool or product. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7972,6 +8059,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
+            };
+            /** @description Above the per-key rate limit, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The webhook key is not configured, no enabled tape printer, or `integration_not_configured` (problem body). Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -8103,7 +8211,28 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookAcceptedResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The webhook key is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `app-lookup-not-found` (problem body): unknown spool or product. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -8111,6 +8240,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
+            };
+            /** @description Above the per-key rate limit, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The webhook key is not configured, no enabled tape printer, or `integration_not_configured` (problem body). Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

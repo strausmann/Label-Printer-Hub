@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.print_errors import print_error_response
+from app.api.print_errors import print_error_response, print_error_responses
 from app.auth.dependencies import AuthContext, charge_lookup_fan_out, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
@@ -63,6 +63,10 @@ class _PrinterResumeResponse(BaseModel):
     status_code=status.HTTP_202_ACCEPTED,
     response_model=PrintJobResponse,
     tags=["print"],
+    responses=print_error_responses(
+        "envelope",
+        extra={503: "`no_tape_printer`: no tape printer is configured."},
+    ),
     summary="Submit a print job",
     description=(
         "Submit a label-print job.  The job is queued and dispatched "

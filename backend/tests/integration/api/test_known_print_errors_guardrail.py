@@ -89,15 +89,25 @@ def _sample(cls: type[Exception]) -> Exception:
         TapeEmptyError: TapeEmptyError,
         NoTapeLoadedError: NoTapeLoadedError,
         PrinterCoverOpenError: PrinterCoverOpenError,
-        PrinterOfflineError: lambda: PrinterOfflineError("unreachable"),
+        PrinterOfflineError: lambda: PrinterOfflineError("cannot reach 192.0.2.10:9100: refused"),
         UnsupportedTapeError: lambda: UnsupportedTapeError(tape_mm=70),
         ContentTypeDataMismatchError: lambda: ContentTypeDataMismatchError(
             content_type="qr_two_lines", missing_fields=("title",)
         ),
         QrPayloadTooLongError: lambda: QrPayloadTooLongError(length=300, max_bytes=100),
-        SnmpQueryError: lambda: SnmpQueryError("preflight SNMP failed"),
+        SnmpQueryError: lambda: SnmpQueryError("preflight SNMP failed: community hunter2"),
     }
     return samples[cls]()
+
+
+# What the samples carry and no answer may repeat (CWE-209): an upstream URL and a secret, the
+# printer's address, an SNMP community, the API key.
+TAINT = ("grocy.example.invalid", "secret", "192.0.2.10", "hunter2", PRINT_KEY)
+
+
+def _assert_untainted(text: str) -> None:
+    leaked = [t for t in TAINT if t in text]
+    assert not leaked, f"the answer repeats {leaked}: {text}"
 
 
 # ------------------------------------------------------------------------------------- the hub
@@ -309,6 +319,7 @@ async def test_known_errors_answer_as_documented(
     _raise_on(monkeypatch, case, _sample(cls))
     resp = await _post(hub, case)
     assert (resp.status_code, _code(case, cls, resp.json())) == _expected(case, cls), resp.text
+    _assert_untainted(resp.text)
 
 
 @pytest.mark.parametrize("cls", NET_CLASSES, ids=lambda c: c.__name__)
@@ -318,6 +329,7 @@ async def test_net_routes_never_answer_500(
 ) -> None:
     _raise_on(monkeypatch, case, _sample(cls))
     resp = await _post(hub, case)
+    _assert_untainted(resp.text)
     body = resp.json()
     if cls is UnsupportedTapeError:
         assert (resp.status_code, body["type"]) == (409, "unsupported-tape"), resp.text
@@ -351,3 +363,60 @@ async def test_known_error_logs_one_line_without_traceback(
     assert record.levelno == logging.WARNING
     assert record.exc_info is None
     assert record.getMessage().endswith(": unsupported_tape")
+
+
+DOCUMENTED = ("print", "webhook-spoolman", "webhook-grocy", "batch", "test-print")
+
+
+@pytest.mark.parametrize("case", [c for c in MATRIX if c.name in DOCUMENTED], ids=lambda c: c.name)
+async def test_printing_routes_document_every_known_code(
+    app_with_fake_auth: Any, case: Case
+) -> None:
+    """#378 I2: a client learns every status and code these routes answer from the OpenAPI."""
+    responses = app_with_fake_auth._app.openapi()["paths"][case.route]["post"]["responses"]
+    missing = []
+    for cls in KNOWN_PRINT_ERROR_TYPES:
+        status, code = _expected(case, cls)
+        description = responses.get(str(status), {}).get("description", "")
+        if f"`{code}`" not in description:
+            missing.append(f"{status} {code}")
+    assert not missing, f"{case.route} does not document: {missing}"
+
+
+@pytest.mark.parametrize("cls", (LookupFailedError, PrinterOfflineError, SnmpQueryError))
+async def test_the_net_repeats_no_secret(
+    hub: Hub, monkeypatch: pytest.MonkeyPatch, cls: type[Exception]
+) -> None:
+    """The safety net answers from the same fixed texts: no URL, address or community."""
+    case = next(c for c in NET if c.name == "sheet")
+    _raise_on(monkeypatch, case, _sample(cls))
+    resp = await _post(hub, case)
+    assert resp.status_code in (502, 503), resp.text
+    _assert_untainted(resp.text)
+
+
+async def test_the_log_line_has_no_query_string(
+    hub: Hub, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The Grocy label key can ride in ``?token=``: the net logs the path only."""
+    case = next(c for c in NET if c.name == "grocy-label")
+    _raise_on(monkeypatch, case, UnsupportedTapeError(tape_mm=70))
+    with caplog.at_level(logging.WARNING, logger="app.api.print_errors"):
+        resp = await hub.client.post(f"{case.route}?token={PRINT_KEY}", json=case.body)
+    assert resp.status_code == 409, resp.text
+    [record] = [r for r in caplog.records if r.name == "app.api.print_errors"]
+    assert record.getMessage() == f"refused POST {case.route}: unsupported_tape"
+    assert record.exc_info is None
+    _assert_untainted(resp.text)
+
+
+async def test_offline_cause_goes_to_the_log_only(
+    hub: Hub, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    case = next(c for c in MATRIX if c.name == "print")
+    _raise_on(monkeypatch, case, _sample(PrinterOfflineError))
+    with caplog.at_level(logging.WARNING, logger="app.api.print_errors"):
+        resp = await _post(hub, case)
+    assert resp.json()["error_message"] == "The printer could not be reached."
+    [record] = [r for r in caplog.records if r.name == "app.api.print_errors"]
+    assert "192.0.2.10" in record.getMessage()

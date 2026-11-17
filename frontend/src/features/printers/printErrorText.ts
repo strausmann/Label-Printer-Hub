@@ -52,6 +52,9 @@ export function printErrorText(code: string | null | undefined, detail: Record<s
     }
     case "content_type_data_mismatch":
       return t(msg`The label is missing data this layout needs.`);
+    case "printer_disabled":
+      // The server's text names the printer's id: the app says it in its own words.
+      return t(msg`The printer is switched off in the hub. Switch it on in the printer settings.`);
     case "printer_offline":
     case "snmp_query_failed":
       return t(msg`The printer is not reachable. Check that it is switched on and connected, then try again.`);

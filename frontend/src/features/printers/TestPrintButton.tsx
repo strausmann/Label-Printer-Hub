@@ -43,8 +43,6 @@ function useErrorText(error: unknown): string {
     switch (error.code?.split("/").pop()) {
       case "media-unknown":
         return t`The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray.`;
-      case "printer-disabled":
-        return t`The printer is switched off in the hub. Switch it on in the printer settings.`;
       case "printer-paused":
         return t`The printer is paused. Resume it, then try again.`;
       case "printer-status-unknown":

@@ -57,6 +57,11 @@ _UNSUPPORTED_ORIENTATION = "The selected orientation is not available for this t
 _NO_TAPE = "No tape loaded — insert a Brother TZe or DK cartridge."
 _MISSING_FIELDS = "The label data is missing fields required for the selected content type."
 _QR_TOO_LONG = "The QR payload does not fit the fixed QR code of this tape."
+# The cause of these two names the printer's address or the SNMP library's error: log only.
+_UNREACHABLE: dict[str, str] = {
+    "printer_offline": "The printer could not be reached.",
+    "snmp_query_failed": "The printer did not answer the status query.",
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,8 @@ class KnownPrintError:
     code: str
     message: str
     detail: dict[str, object] | None
+    log_detail: str | None = None
+    """The cause for the hub's own log only (a printer address, an SNMP error), never sent."""
 
 
 def print_error_mapping(exc: Exception) -> tuple[int, str]:
@@ -87,6 +94,7 @@ def describe_print_error(exc: Exception) -> KnownPrintError:
     status, code = print_error_mapping(exc)
     message: str
     detail: dict[str, object] | None = None
+    log_detail: str | None = None
     if isinstance(exc, SpoolLabelOnlyTapeError):
         message = (
             f"Only the spool label prints on {exc.tape_mm} mm tape. Remove the other labels "
@@ -109,10 +117,15 @@ def describe_print_error(exc: Exception) -> KnownPrintError:
         detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
     elif code in _FIXED_MESSAGES:
         message = _FIXED_MESSAGES[code]
+    elif code in _UNREACHABLE:
+        message = _UNREACHABLE[code]
+        log_detail = str(exc) or None
     else:
         # The hardware errors carry only hardware-state descriptions.
         message = str(exc) or code
-    return KnownPrintError(status=status, code=code, message=message, detail=detail)
+    return KnownPrintError(
+        status=status, code=code, message=message, detail=detail, log_detail=log_detail
+    )
 
 
 def print_error_code(exc: Exception) -> str:
