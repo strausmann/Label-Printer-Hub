@@ -786,3 +786,86 @@ async def test_two_refused_sheets_are_skipped(_tape_backend: MockPrinterBackend)
         await _until(lambda: _settled(1))
     (new,) = [c for c in await _sheet_codes() if c not in refused]
     assert await _grocy_cells() == [(new, 1, "used")]
+
+
+# ---------------------------------------------------------------------------- retry
+
+
+async def _failed_held_label(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> Job:
+    """A battery label that failed on an identity-held page printer, before any reservation."""
+    monkeypatch.setattr(rig.app.state.print_queue, "is_identity_held", lambda _pid: True)
+    resp = await rig.post()
+    assert resp.status_code == 202, resp.text
+    row = await _ends(resp.json()["job_id"], "failed")
+    monkeypatch.setattr(rig.app.state.print_queue, "is_identity_held", lambda _pid: False)
+    return row
+
+
+async def test_retry_of_a_failed_sheet_label_prints_it_onto_a_cell(
+    _tape_backend: MockPrinterBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Whole-branch review I-1: the retry goes through the Grocy sheet path (the same choice
+    and locks as a new label), not to the tape queue, which answered 409 printer-unavailable."""
+    seeded = await _seed_base()
+    code = await _sheet(used=5)
+    async with running(_tape_backend, seeded=seeded) as rig:
+        original = await _failed_held_label(rig, monkeypatch)
+        resp = await rig.client.post(f"/api/v1/jobs/{original.id}/retry", headers=rig.key)
+        assert resp.status_code == 201, resp.text
+        new_id = resp.json()["id"]
+        assert new_id != str(original.id)
+        await _until(lambda: _used(code, 6))
+        row = await _ends(new_id, "done")
+    (cell,) = [c for code_, c in await _cells() if c.source == "grocy"]
+    assert (cell.cell_no, cell.ref, cell.job_id) == (6, "grcy:b:4", row.id)
+    assert row.printer_id == rig.page_id
+    assert row.payload["kind"] == "sheet_page"
+    assert row.payload["retry_of"] == str(original.id)
+    assert rig.print_jobs() == 1
+    assert (await _job(original.id)).state == "failed"  # the original stays as history
+
+
+async def test_retry_of_a_sheet_label_whose_type_was_archived_is_refused(
+    _tape_backend: MockPrinterBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with running(_tape_backend) as rig:
+        original = await _failed_held_label(rig, monkeypatch)
+        async with _factory()() as s:
+            await ts.archive_type(s, TYPE, actor="t")
+        before = await _job_count()
+        resp = await rig.client.post(f"/api/v1/jobs/{original.id}/retry", headers=rig.key)
+        assert resp.status_code == 409, resp.text
+        assert _code(resp) == "sheet_type_archived"
+        assert await _job_count() == before
+    assert await _cells() == []
+
+
+async def test_retry_of_a_sheet_label_on_a_disabled_printer_is_refused(
+    _tape_backend: MockPrinterBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with running(_tape_backend) as rig:
+        original = await _failed_held_label(rig, monkeypatch)
+        async with _factory()() as s:
+            printer = await s.get(Printer, rig.page_id)
+            assert printer is not None
+            printer.enabled = False
+            await s.commit()
+        before = await _job_count()
+        resp = await rig.client.post(f"/api/v1/jobs/{original.id}/retry", headers=rig.key)
+        assert resp.status_code == 409, resp.text
+        assert _code(resp) == "printer_disabled"
+        assert await _job_count() == before
+    assert await _cells() == []
+
+
+async def test_retry_of_a_sheet_label_on_a_held_printer_is_refused(
+    _tape_backend: MockPrinterBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with running(_tape_backend) as rig:
+        original = await _failed_held_label(rig, monkeypatch)
+        monkeypatch.setattr(rig.app.state.print_queue, "is_identity_held", lambda _pid: True)
+        before = await _job_count()
+        resp = await rig.client.post(f"/api/v1/jobs/{original.id}/retry", headers=rig.key)
+        assert resp.status_code == 409, resp.text
+        assert "identity" in resp.text
+        assert await _job_count() == before

@@ -1579,12 +1579,14 @@ async def _queue_pages(
     actor: str,
     bus: Any,
     stored: bool = False,
+    retry_of: UUID | None = None,
 ) -> tuple[UUID, list[PrintedPage]]:
     """Payloads, the batch and the page jobs of reserved pages; the part of a print that follows
     the reservation, shared by ``print_sheets`` and ``create_sheet_with_id_label``.
 
     ``stored``: each page's ``jobs`` row exists already (a Grocy label's deferred row, #281);
     the hand-off swaps its payload (``submit_stored_page_job``) instead of inserting a row.
+    ``retry_of``: the id of the job a retried Grocy label repeats, kept in each page payload.
 
     Everything that can fail without touching the queue comes first, so that the queue is the
     only failure point left once the first page is submitted. A failure frees the reservations
@@ -1598,17 +1600,18 @@ async def _queue_pages(
         payloads: list[PagePayload] = []
         for page in reserved:
             info = await _type_info(session, page.type_version_id, types)
-            payloads.append(
-                _page_payload(
-                    page,
-                    items,
-                    info,
-                    tray=tray,
-                    render_dpi=facts.render_dpi,
-                    calibration=snapshot,
-                    scan=scan,
-                )
+            payload = _page_payload(
+                page,
+                items,
+                info,
+                tray=tray,
+                render_dpi=facts.render_dpi,
+                calibration=snapshot,
+                scan=scan,
             )
+            if retry_of is not None:
+                payload = payload.model_copy(update={"retry_of": retry_of})
+            payloads.append(payload)
         # The batch exists before the first job and names all of them (ruling T7-2).
         batch = await batches_repo.create(
             session,
@@ -1670,13 +1673,15 @@ async def print_sheets(
     bus: Any = None,
     job_id: UUID | None = None,
     source_app: str = "manual",
+    retry_of: UUID | None = None,
 ) -> SheetPrintResponse:
     """Print the items onto sheets: one page job per planned page, one batch for all of them.
 
     ``job_id``: the page prints as this stored ``queued`` row (a Grocy label, R-281-16): the
     reservation takes the id, the hand-off swaps the row's payload, and a failure frees the
     cell unless the row already is a queued page. A run prints one sheet, so one page.
-    ``source_app`` reaches the label data of raw items.
+    ``source_app`` reaches the label data of raw items. ``retry_of`` (with ``job_id``): the
+    id of the failed Grocy label this run repeats, kept in the page payload.
 
     Order: printer kind, tray and the calibration snapshot (once, before anything is reserved),
     a dry plan for the cheap refusals, the integration lookups, the per-item check against the
@@ -1752,6 +1757,7 @@ async def print_sheets(
             actor=actor,
             bus=bus,
             stored=job_id is not None,
+            retry_of=retry_of,
         )
     return SheetPrintResponse(
         batch_id=batch_id, pages=printed, placed=placed, remaining=total - placed

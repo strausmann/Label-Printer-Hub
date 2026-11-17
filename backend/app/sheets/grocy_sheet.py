@@ -140,9 +140,13 @@ class GrocySheetLabels:
         ref: str,
         api_key_id: UUID | None,
         source_ip: str | None,
+        retry_of: UUID | None = None,
     ) -> UUID:
         """Store the ``queued`` row and print it after the caller answered: one insert, no
-        reservation. ``ref`` is the Grocycode cut to entity and id (``grcy:p:12``)."""
+        reservation. ``ref`` is the Grocycode cut to entity and id (``grcy:p:12``).
+
+        ``retry_of``: the id of the failed job this one repeats (a retry from the jobs page);
+        the row and the page payload of the hand-off carry it."""
         label = LabelData(
             source_app=SOURCE,
             title=raw.title,
@@ -152,18 +156,21 @@ class GrocySheetLabels:
             items=raw.items,
         )
         job_id = uuid4()
+        payload: dict[str, Any] = {
+            "deferred": True,
+            "deferred_kind": DEFERRED_KIND,
+            "label_data": label.model_dump(),
+            "content_type": str(content_type),
+            "sheet_type": sheet_type,
+        }
+        if retry_of is not None:
+            payload["retry_of"] = str(retry_of)
         await self._store.save_queued(
             Job(
                 id=job_id,
                 printer_id=printer.id,
                 template_key=None,
-                payload={
-                    "deferred": True,
-                    "deferred_kind": DEFERRED_KIND,
-                    "label_data": label.model_dump(),
-                    "content_type": str(content_type),
-                    "sheet_type": sheet_type,
-                },
+                payload=payload,
                 api_key_id=api_key_id,
                 source_ip=source_ip,
             )
@@ -178,6 +185,7 @@ class GrocySheetLabels:
                 ref=ref,
                 api_key_id=api_key_id,
                 source_ip=source_ip,
+                retry_of=retry_of,
             ),
             name=f"grocy-sheet-{job_id}",
         )
@@ -235,6 +243,7 @@ class GrocySheetLabels:
         ref: str,
         api_key_id: UUID | None,
         source_ip: str | None,
+        retry_of: UUID | None = None,
     ) -> None:
         try:
             async with self._factory() as session:
@@ -281,6 +290,7 @@ class GrocySheetLabels:
                             bus=self._bus,
                             job_id=job_id,
                             source_app=SOURCE,
+                            retry_of=retry_of,
                         )
                         return
                     except _SHEET_GONE:

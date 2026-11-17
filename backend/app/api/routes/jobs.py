@@ -61,7 +61,9 @@ from app.db.session import get_session
 from app.models.job import Job, JobState, is_page_payload
 from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
+from app.repositories import sheet_types as types_repo
 from app.schemas.content_type import ContentType
+from app.schemas.grocy_label import grocycode_ref, is_grocycode
 from app.schemas.job import JobRead
 from app.schemas.print_request import RawLabelData
 from app.schemas.problem import ProblemDetail
@@ -74,7 +76,9 @@ from app.sheets.errors import (
     PageJobNotRetryableError,
     SheetApiError,
     SheetPrinterDisabledError,
+    SheetTypeArchivedError,
 )
+from app.sheets.grocy_sheet import is_deferred_sheet
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["jobs"])
 
@@ -435,7 +439,12 @@ async def resume_job(
         "(e.g. webhook-created jobs).  A Grocy label job that failed before its render "
         "(printer offline, no tape) is accepted again on its printer and completes in the "
         "background, like the webhook; a Grocy label that could not be built answers 422 "
-        "and creates no row.  Page jobs: a calibration page is re-submitted from "
+        "and creates no row.  A Grocy label for a sheet that ended before it reached the "
+        "printer is accepted again the same way: a new job takes a free cell of the sheet type, "
+        "chosen like a new label; it answers 409 ``printer_disabled``, ``media_kind_mismatch`` "
+        "or ``sheet_type_archived``, 409 ``printer-identity-mismatch`` for a held printer, and "
+        "409 ``job_not_retryable`` when the sheet type was deleted, without creating a row.  "
+        "Page jobs: a calibration page is re-submitted from "
         "its payload, so retry prints the same page again with its original calibration "
         "snapshot and date; a fresh check print with the current calibration is a new "
         "calibration-page request.  A sheet page is retried onto the same cells of the same "
@@ -479,6 +488,8 @@ async def retry_job(
     queue = getattr(request.app.state, "print_queue", None)
     if is_page_payload(job.payload):
         return await _retry_page_job(request, session, queue, job, _auth)
+    if is_deferred_sheet(job.payload):
+        return await _retry_deferred_sheet(request, session, queue, job, _auth)
     if _is_unfinished_deferred(job.payload):
         return await _retry_deferred_job(request, session, job, _auth)
     new_job = await jobs_repo.create_queued(
@@ -578,6 +589,71 @@ async def _retry_deferred_job(
             "Printer is not available to the print queue",
             f"Job {new_id} could not be read back",
         )
+    return JobRead.model_validate(new_job, from_attributes=True)
+
+
+_SHEET_LABEL_GONE = (
+    "The sheet type of this label no longer exists; send the label again from Grocy."
+)
+
+
+async def _retry_deferred_sheet(
+    request: Request, session: AsyncSession, queue: Any, job: Job, auth: AuthContext | None
+) -> JobRead:
+    """Accept a Grocy sheet label again that ended before its hand-off (#281, R-281-16).
+
+    The label goes through ``GrocySheetLabels.accept`` like a new one from the webhook: a new
+    ``queued`` row, then the sheet choice and the reservation under the per-type lock and the
+    sheet write lock, so a retry never takes a cell another label takes at the same time. The
+    printer and the sheet type are checked again first; a refusal creates no row.
+    """
+    payload = job.payload
+    printer = await printers_repo.get(session, job.printer_id)
+    if printer is None:
+        raise _printer_unavailable(job.printer_id)
+    if not printer.enabled:
+        raise SheetPrinterDisabledError().to_http()
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError().to_http()  # re-wired to a tape printer since
+    ensure_not_held(queue, job.printer_id)  # #231
+    sheet_type = str(payload.get("sheet_type") or "")
+    known = await types_repo.get_by_key(session, sheet_type) if sheet_type else None
+    if known is None:
+        raise PageJobNotRetryableError(_SHEET_LABEL_GONE).to_http()
+    if known.archived_at is not None:
+        raise SheetTypeArchivedError().to_http()
+    label_data = payload.get("label_data")
+    try:
+        if not isinstance(label_data, dict):
+            raise ValueError("no label data")
+        raw = RawLabelData.model_validate(
+            {k: v for k, v in label_data.items() if k in RawLabelData.model_fields}
+        )
+        content_type = ContentType(str(payload.get("content_type")))
+        if not is_grocycode(raw.qr_payload):
+            raise ValueError("no Grocycode")
+    except (ValidationError, ValueError):
+        raise _retry_rejected(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "job-not-retryable",
+            "Job payload cannot be re-rendered",
+            "The label of this job could not be built; send it again from its source",
+        ) from None
+    await session.commit()  # no read transaction stays open behind the job insert
+    new_id = await request.app.state.grocy_sheet_labels.accept(
+        printer,
+        sheet_type=sheet_type,
+        raw=raw,
+        content_type=content_type,
+        ref=grocycode_ref(str(raw.qr_payload)),
+        # #294: the new job belongs to the caller that asked for it.
+        api_key_id=auth.api_key_id if auth is not None else None,
+        source_ip=auth.ip if auth is not None else None,
+        retry_of=job.id,
+    )
+    new_job = await jobs_repo.get(session, new_id)
+    if new_job is None:  # pragma: no cover - the row is inserted before ``accept`` returns
+        raise _printer_unavailable(job.printer_id)
     return JobRead.model_validate(new_job, from_attributes=True)
 
 

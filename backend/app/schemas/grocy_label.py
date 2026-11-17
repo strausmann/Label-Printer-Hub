@@ -144,6 +144,11 @@ class GrocyLabelPayload(BaseModel):
         )
 
 
+def grocycode_ref(code: str) -> str:
+    """The Grocycode cut to entity and id (``grcy:p:12``): the cell's ``ref`` (R-281-15)."""
+    return ":".join(code.split(":")[:3])
+
+
 def is_grocycode(value: object) -> bool:
     """Whether ``value`` is a string in :data:`GROCYCODE_PATTERN`."""
     return isinstance(value, str) and _CODE_RE.fullmatch(value) is not None

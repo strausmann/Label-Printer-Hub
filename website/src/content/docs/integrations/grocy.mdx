@@ -45,7 +45,7 @@ The panel fills in the address from `LABELYARD_PUBLIC_URL`. `LABEL_PRINTER_RUN_S
 
 Use a key with the print scope, restricted to the label printer. Grocy writes the address with the key to its own log. It also shows the address to the Grocy user when the hub refuses a label or does not answer within 2 seconds.
 
-The hub answers within two seconds with `202` and the ID of a new job; printing happens after that answer. So Grocy reports success even when the label cannot print. A printer that is offline or out of tape, or a label the hub cannot read, ends as a **failed** job. Failed labels show on the **Jobs** page with the reason, and can be retried there.
+The hub answers within two seconds with `202` and the ID of a new job; printing happens after that answer. So Grocy reports success even when the label cannot print. A printer that is offline or out of tape, or a label the hub cannot read, ends as a **failed** job. Failed labels show on the **Jobs** page with the reason, and can be retried there; a sheet label that failed before it reached the page printer takes a free cell like a new label. A label the hub could not read has nothing to print again: send it again from Grocy.
 
 A proxy with single sign-on must let `/api/v1/webhook/` through, as for the other [webhooks](/integrations/webhooks/#behind-a-proxy-with-sso).
 

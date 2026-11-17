@@ -61,6 +61,7 @@ from app.schemas.grocy_label import (
     GrocyLabelPayload,
     GrocyLabelType,
     grocy_label_type,
+    grocycode_ref,
     is_grocycode,
 )
 from app.schemas.webhook import WebhookAcceptedResponse
@@ -209,11 +210,6 @@ async def _target_printer(
     return TapeTarget(service=service)
 
 
-def _grocycode_ref(code: str) -> str:
-    """The Grocycode cut to entity and id (``grcy:p:12``): the cell's ``ref`` (R-281-15)."""
-    return ":".join(code.split(":")[:3])
-
-
 _OPENAPI_EXTRA: dict[str, Any] = {
     "parameters": [
         {
@@ -356,7 +352,7 @@ async def grocy_label_webhook(
             sheet_type=target.sheet_type,
             raw=label,
             content_type=content_type,
-            ref=_grocycode_ref(payload.grocycode),
+            ref=grocycode_ref(payload.grocycode),
             api_key_id=auth.api_key_id,
             source_ip=source_ip,
         )

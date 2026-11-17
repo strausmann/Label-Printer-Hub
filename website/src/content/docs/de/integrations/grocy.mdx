@@ -45,7 +45,7 @@ Die Adresse füllt der Bereich aus `LABELYARD_PUBLIC_URL`. `LABEL_PRINTER_RUN_SE
 
 Nimm einen Schlüssel mit dem Bereich `print`, beschränkt auf den Drucker für diese Etiketten. Grocy schreibt die Adresse mit dem Schlüssel in sein eigenes Protokoll. Außerdem zeigt Grocy sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet.
 
-Der Hub antwortet innerhalb von zwei Sekunden mit `202` und der ID eines neuen Auftrags; gedruckt wird nach dieser Antwort. Grocy meldet also auch dann Erfolg, wenn das Etikett nicht drucken kann. Ein Drucker ohne Verbindung oder ohne Band endet als **fehlgeschlagener** Auftrag, ebenso ein Etikett, das der Hub nicht lesen kann. Fehlgeschlagene Etiketten stehen mit dem Grund auf der Seite **Aufträge** und lassen sich dort erneut drucken.
+Der Hub antwortet innerhalb von zwei Sekunden mit `202` und der ID eines neuen Auftrags; gedruckt wird nach dieser Antwort. Grocy meldet also auch dann Erfolg, wenn das Etikett nicht drucken kann. Ein Drucker ohne Verbindung oder ohne Band endet als **fehlgeschlagener** Auftrag, ebenso ein Etikett, das der Hub nicht lesen kann. Fehlgeschlagene Etiketten stehen mit dem Grund auf der Seite **Aufträge** und lassen sich dort erneut drucken; ein Bogenetikett, das vor der Übergabe an den Seitendrucker fehlgeschlagen ist, nimmt dabei eine freie Zelle wie ein neues Etikett. Ein Etikett, das der Hub nicht lesen konnte, hat nichts zum erneuten Drucken: Sende es noch einmal aus Grocy.
 
 Ein Proxy mit Single Sign-on muss `/api/v1/webhook/` durchlassen, wie bei den anderen [Webhooks](/de/integrations/webhooks/#hinter-einem-proxy-mit-sso).
 
