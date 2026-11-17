@@ -5,18 +5,24 @@ import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { StatusBadge } from "../../../shell/StatusBadge";
 import type { Printer, PrinterStatus } from "../../printers/api";
+import { usePrinterWaiting } from "../../printers/flags";
 import { describePrinter, statusIsUnknown, useKindLabel, type PrinterKind } from "../../printers/model";
 import { MarkerList, noAnswerYet, ReasonLine } from "../../printers/PageStatus";
 
-/** States in which a print waits in the hub's queue instead of starting at once. */
-const WAITS: readonly PrinterKind[] = ["stopped", "error", "offline", "paused"];
+/**
+ * States in which a print waits in the hub's queue instead of starting at once. `attention` is a printer that reports a
+ * condition (an open cover, #376): a print to it does not start at once either.
+ */
+const WAITS: readonly PrinterKind[] = ["stopped", "error", "attention", "offline", "paused"];
 export const printerWaits = (kind: PrinterKind): boolean => WAITS.includes(kind);
 
 /** The page printer in one block: its state as a shape and a word, the supplies, and other computers' jobs ahead of ours. */
 export function PrinterRow({ printer, status }: { printer: Printer; status: PrinterStatus | undefined }) {
   const { t } = useLingui();
   const kinds = useKindLabel();
-  const view = describePrinter(printer, status, false);
+  // The same `Waiting` as the card and the notification, so they all say the same state (#376).
+  const waitingOf = usePrinterWaiting();
+  const view = describePrinter(printer, status, false, waitingOf(printer.id));
   const ahead = status?.jobs_ahead ?? 0;
   const unanswered = noAnswerYet(status);
   return (

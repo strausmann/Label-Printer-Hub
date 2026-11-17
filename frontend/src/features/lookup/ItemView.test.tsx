@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { mockApi, PAGE_PRINTER, pageStatus, pngResponse, PRINTER_A, PRINTER_B, respond, status } from "../test-api";
+import { job, mockApi, PAGE_PRINTER, pageStatus, pngResponse, PRINTER_A, PRINTER_B, respond, status } from "../test-api";
 import { CART_KEY, reloadCart } from "./cart";
 
 beforeEach(() => {
@@ -83,6 +83,31 @@ describe("ItemView", () => {
     expect(within(picker).getAllByRole("option").map((o) => o.textContent)).toEqual(["Workshop PT-P750W · Tape printer · Ready", "Office QL-820NWB · Tape printer"]);
     const preview = calls.find((c) => c.path === "/api/v1/render/preview")!;
     expect(JSON.parse(preview.body!)).toMatchObject({ content_type: "qr_two_lines", tape_mm: 12, data: { title: "Cordless drill", primary_id: "42" } });
+  });
+
+  it("the printer option says Problem for an open cover while a job waits, Warning without (#376)", async () => {
+    const cover = status(PRINTER_A.id, { error_flags: ["doorOpen"], error_state: "doorOpen" });
+    mockApi(routes("snipeit", "42", { [`GET /api/v1/printers/${PRINTER_A.id}/status`]: cover, "GET /api/v1/jobs": [job("aaaaaaaa-0000-4000-8000-000000000009", PRINTER_A.id, "queued")] }));
+    await renderApp({ path: "/asset/42" });
+    const picker = await screen.findByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(within(picker).getAllByRole("option")[0]).toHaveTextContent("Workshop PT-P750W · Tape printer · Problem"));
+  });
+
+  it("a print refused on the open cover turns the printer option into a problem at once (#376)", async () => {
+    const cover = status(PRINTER_A.id, { error_flags: ["doorOpen"], error_state: "doorOpen" });
+    mockApi(
+      routes("snipeit", "42", {
+        [`GET /api/v1/printers/${PRINTER_A.id}/status`]: cover,
+        "GET /api/v1/jobs": [],
+        [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "printer_cover_open", error_message: "The printer cover is open." } }),
+      }),
+    );
+    await renderApp({ path: "/asset/42" });
+    const picker = await screen.findByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(within(picker).getAllByRole("option")[0]).toHaveTextContent("Workshop PT-P750W · Tape printer · Warning"));
+    await screen.findByRole("img", { name: "Label preview" });
+    await userEvent.click(screen.getByRole("button", { name: "Print now" }));
+    await waitFor(() => expect(within(picker).getAllByRole("option")[0]).toHaveTextContent("Workshop PT-P750W · Tape printer · Problem"));
   });
 
   it("does not turn a script URL from the integration into a link", async () => {

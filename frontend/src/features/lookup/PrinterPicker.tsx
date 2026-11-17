@@ -5,6 +5,7 @@ import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
 import { ApiError } from "../../api/client";
 import { FIELD } from "../../shell/SignIn";
+import { usePrinterWaiting } from "../printers/flags";
 import { describePrinter, isPagePrinter, useKindLabel } from "../printers/model";
 import type { Printer, PrinterStatus } from "../printers/api";
 
@@ -41,11 +42,13 @@ export function usePrinterChoice(printers: Printer[] | undefined) {
 function usePrinterOptionText(): (printer: Printer, status: PrinterStatus | undefined) => string {
   const { t } = useLingui();
   const states = useKindLabel();
+  // The same `Waiting` as the card and the notification, so the option names the same state (#376).
+  const waitingOf = usePrinterWaiting();
   return (printer, status) => {
     const page = isPagePrinter(printer, status);
     const kind = page ? t({ message: "Page printer", context: "printer kind" }) : t({ message: "Tape printer", context: "printer kind" });
     const parts = [printer.name, kind];
-    if (status) parts.push(states[describePrinter(printer, status, false).kind]);
+    if (status) parts.push(states[describePrinter(printer, status, false, waitingOf(printer.id)).kind]);
     return parts.join(" · ");
   };
 }

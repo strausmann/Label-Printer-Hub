@@ -13,6 +13,7 @@ import { useSheetTypes } from "../../archive/api";
 import { useCart, type CartItem } from "../../lookup/cart";
 import { ApiError } from "../../../api/client";
 import { usePrinterStatus, type Printer } from "../../printers/api";
+import { usePrinterWaiting } from "../../printers/flags";
 import { describePrinter } from "../../printers/model";
 import { ReasonLine } from "../../printers/PageStatus";
 import { HINT, LABEL, SelectField } from "../../settings/controls";
@@ -231,7 +232,8 @@ export function SheetSection({ items, printer, preselectedSheet, preselectedTray
   const itemName = (index: number) => lineOf(index)?.name ?? t`An item`;
   const errorText = usePrintDialogErrorText(itemName);
   const session = useSession();
-  const view = describePrinter(printer, status.data, false);
+  const waitingOf = usePrinterWaiting();
+  const view = describePrinter(printer, status.data, false, waitingOf(printer.id));
   const waits = printerWaits(view.kind);
   const trayLabel = tray?.label ?? "";
   const trayText = t`Tray: ${trayLabel}`;

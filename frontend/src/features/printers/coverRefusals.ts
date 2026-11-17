@@ -56,6 +56,9 @@ export function notePrintError(printerId: string, title: string, error: unknown)
 }
 
 /**
+ * Called by `useNotifications`, which the shell's bell keeps mounted on every signed-in page; a refusal therefore
+ * clears wherever the user is. A page without the shell would keep it until the bell is mounted again.
+ *
  * Clears a refusal once a new reading of its printer reports no open cover. The reading current when the refusal was
  * first seen does not count: it can predate the cover opening (the print was refused before the next poll).
  */
