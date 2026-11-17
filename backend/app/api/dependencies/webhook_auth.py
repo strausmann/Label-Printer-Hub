@@ -68,7 +68,9 @@ async def require_webhook_key(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Webhook auth not configured (LABELYARD_WEBHOOK_API_KEY missing)",
         )
-    if not hmac.compare_digest(x_api_key, expected):
+    # Compare bytes, not str: compare_digest raises TypeError on a str with non-ASCII characters,
+    # which would surface as a 500 instead of the 401 a wrong key deserves.
+    if not hmac.compare_digest(x_api_key.encode(), expected.encode()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API key",

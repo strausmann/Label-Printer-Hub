@@ -468,7 +468,19 @@ Releases are **scheduled, not on every merge.** Merging to `main` does NOT publi
 
 The release tooling (semantic-release and its plugins, pinned to exact versions with a lockfile) lives only in `.github/release-tools/`; `release.yml` installs it from there. The root `package.json` holds only commitlint.
 
-Behind the scenes, semantic-release reads the Conventional Commit messages on `main` since the previous tag, decides the next semver version, checks it against the release guard (next patch or an open milestone), generates the `CHANGELOG.md` entry, creates the Git tag and GitHub Release, and triggers the Docker image push to GHCR and Docker Hub.
+Behind the scenes, semantic-release reads the Conventional Commit messages on `main` since the previous tag, decides the next semver version and checks it against the release guard (next patch or an open milestone). It then generates the `CHANGELOG.md` entry, pushes the Git tag and creates the GitHub Release as a **draft**.
+
+The repository has GitHub [immutable releases](https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/immutable-releases) enabled: once a release is published, its assets and its tag are locked. So the release is published last. The jobs of `release.yml` run in this order:
+
+| Job | Does |
+|---|---|
+| `semantic-release` | Pushes the tag `v<version>` and creates the draft release (`draftRelease` in `.releaserc.json`) |
+| `Release images` | Builds and signs the images from the tag and pushes them to GHCR and Docker Hub; its `SBOM` job generates `labelyard-<version>.cdx.json` from the published image |
+| `Release SBOM` | Attaches `labelyard-<version>.cdx.json` to the draft |
+| `Publish release` | Checks that the draft carries exactly that asset, then publishes it. It is marked "Latest" only when no published release has a higher version |
+| `Report unpublished release` | Runs only when the release was not published. Its step summary lists the result of each job and the command to finish the release |
+
+A job that fails stops the jobs after it, so the release stays a draft: nothing half-finished is published. In every case the fix is `gh run rerun <run-id> --failed`; it reruns the failed jobs and the ones after them on `refs/heads/main`. A draft that is left behind is not published by a later release run. `Release SBOM` refuses a release that is already published, because an immutable release takes no further asset.
 
 **A scheduled run only skips publishing when there are no releasable commits since the last tag.** semantic-release evaluates the entire history since the previous release, not just "today's" commits. If a `feat`, `fix`, or `perf` commit is already on `main` from an earlier merge, the next scheduled run **will** publish — adding a `chore` or `docs` commit on top doesn't suppress that. To genuinely skip a release window, the only options are: rely on there being no releasable commits, or postpone merges that would bump the version. A milestone is released at the first release run after its PR is merged.
 

@@ -278,7 +278,7 @@ def test_images_job_skips_dry_run() -> None:
 
 def test_semantic_release_pushes_over_ssh() -> None:
     releaserc = json.loads((REPO_ROOT / ".releaserc.json").read_text(encoding="utf-8"))
-    assert releaserc["repositoryUrl"] == "git@github.com:strausmann/Label-Printer-Hub.git"
+    assert releaserc["repositoryUrl"] == "git@github.com:strausmann/labelyard.git"
 
     steps = _load("release.yml")["jobs"]["release"]["steps"]
     load = next(s for s in steps if "Load deploy key" in str(s.get("name", "")))
@@ -911,21 +911,23 @@ def test_registry_logins_retry_without_leaking_credentials() -> None:
     assert total == 5  # GHCR in build, merge, sbom; Docker Hub in build, merge
 
 
-def test_missing_images_are_reported_with_the_rebuild_command() -> None:
+def test_unpublished_release_is_reported_with_the_rebuild_command() -> None:
     wf = _load("release.yml")
-    job = wf["jobs"]["images-missing"]
-    assert job["needs"] == ["release", "images"]
+    job = wf["jobs"]["release-unfinished"]
+    assert job["needs"] == ["release", "images", "release-sbom", "publish-release"]
     cond = str(job["if"])
     assert "always()" in cond
     assert "new-release-published == 'true'" in cond
     assert "!inputs.dry_run" in cond
-    assert "needs.images.result != 'success'" in cond
+    # Fires on every path that leaves the draft unpublished, not only on failed images.
+    # The evaluated truth table is in scripts/test_release_workflow.py.
+    assert "needs.publish-release.result != 'success'" in cond
     assert job["permissions"] == {}
     run = str(job["steps"][0]["run"])
     assert "GITHUB_STEP_SUMMARY" in run
-    assert "## Release images missing: ${VERSION}" in run
+    assert "## Release not published: ${VERSION}" in run
     # Primary path: rerun the failed jobs of the same run. It keeps the run's ref
-    # (refs/heads/main), so the images are signed and release-sbom runs again.
+    # (refs/heads/main), so the images are signed and the later jobs run again.
     env = job["steps"][0]["env"]
     assert env["RUN_ID"] == "${{ github.run_id }}"
     assert '[[ "$RUN_ID" =~ ^[0-9]+$ ]]' in run

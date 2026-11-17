@@ -1,5 +1,5 @@
 {
-  "repositoryUrl": "git@github.com:strausmann/Label-Printer-Hub.git",
+  "repositoryUrl": "git@github.com:strausmann/labelyard.git",
   "branches": ["main"],
   "plugins": [
     [
@@ -51,6 +51,7 @@
     [
       "@semantic-release/github",
       {
+        "draftRelease": true,
         "successComment": false,
         "failComment": false,
         "labels": ["release-note"],
