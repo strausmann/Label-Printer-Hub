@@ -35,9 +35,9 @@ A new sheet type chooses automatically: the margin when a band of 4 mm fits on t
 
 **Activating a sheet with its code on the back.** When you add such a sheet, the hub guides you in three steps: turn the sheet over along the long edge and load it top edge first, print the sheet code, then check it. The code counts as printed only after you answer **Yes, it is printed**: a finished job says nothing about smeared toner. If it smeared, **Print again** prints on the same sheet. If you close the dialog before you confirm, the sheet page offers **Print back side** later. The first time, the hub asks how the tray takes paper (see [How a tray takes paper](/using/printers/#how-a-tray-takes-paper)).
 
-**Backing designs.** Many liners carry the vendor's print on the back. A backing design names its free strips, and the code goes into the first strip that takes it. Labelyard ships the design of Avery Zweckform ultragrip and links it to 3490 and 6121. Choose a design, or a plain liner, in the same tab; adding or changing a design is done through the API (`/api/v1/backing-designs`).
+**Backing designs.** Many liners carry the vendor's print on the back. A backing design names its free strips, and the code goes into the first strip that takes it. Labelyard ships the design of Avery Zweckform ultragrip and links it to 3490 and 6121. Choose a design, or a plain liner, in the same tab; **Choose automatically** returns a type to the automatic choice; adding or changing a design is done through the API (`/api/v1/backing-designs`).
 
-A sheet that you start from the print dialog, or that a Grocy label opens, follows its type in the same way. A 3490 sheet from before 1.7.0 whose code was never printed can switch to the back side: open it and choose **Print back side**.
+A sheet that you start from the print dialog, or that a Grocy label opens, follows its type in the same way. A sheet in the margin or added by hand whose code was never printed, such as a 3490 sheet from before 1.7.0, can switch to the back side when its type puts the code there: open it and choose **Print back side**.
 
 ## Printing onto a sheet
 

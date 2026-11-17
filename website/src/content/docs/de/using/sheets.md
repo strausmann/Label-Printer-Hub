@@ -35,9 +35,9 @@ Ein neuer Bogentyp wählt automatisch: den Rand, wenn auf dem Drucker ein Rand v
 
 **Einen Bogen mit dem Code auf der Rückseite aktivieren.** Wenn du so einen Bogen hinzufügst, führt dich der Hub in drei Schritten: Bogen an der langen Kante umdrehen und mit der oberen Kante zuerst einlegen, Bogencode drucken, dann prüfen. Der Code gilt erst als gedruckt, wenn du **Ja, ist gedruckt** antwortest: Ein fertiger Auftrag sagt nichts über verschmierten Toner. Ist er verschmiert, druckt **Noch einmal drucken** auf denselben Bogen. Schließt du den Dialog, bevor du bestätigst, bietet die Seite des Bogens später **Rückseite drucken** an. Beim ersten Mal fragt der Hub, wie das Fach das Papier nimmt (siehe [Wie ein Fach das Papier nimmt](/de/using/printers/#wie-ein-fach-das-papier-nimmt)).
 
-**Trägerdesigns.** Viele Trägerpapiere tragen auf der Rückseite einen Herstelleraufdruck. Ein Trägerdesign nennt dessen freie Streifen, und der Code kommt in den ersten Streifen, der ihn aufnimmt. Labelyard bringt das Design von Avery Zweckform ultragrip mit und verknüpft es mit 3490 und 6121. Ein Design oder unbedrucktes Trägerpapier wählst du im selben Reiter; ein Design anlegen oder ändern geht über die API (`/api/v1/backing-designs`).
+**Trägerdesigns.** Viele Trägerpapiere tragen auf der Rückseite einen Herstelleraufdruck. Ein Trägerdesign nennt dessen freie Streifen, und der Code kommt in den ersten Streifen, der ihn aufnimmt. Labelyard bringt das Design von Avery Zweckform ultragrip mit und verknüpft es mit 3490 und 6121. Ein Design oder unbedrucktes Trägerpapier wählst du im selben Reiter, **Automatisch wählen** stellt einen Typ wieder auf die automatische Wahl; ein Design anlegen oder ändern geht über die API (`/api/v1/backing-designs`).
 
-Ein Bogen, den du im Druckdialog anfängst oder den ein Grocy-Etikett öffnet, folgt seinem Typ genauso. Ein 3490-Bogen von vor 1.7.0, dessen Code nie gedruckt wurde, kann auf die Rückseite wechseln: Öffne ihn und wähle **Rückseite drucken**.
+Ein Bogen, den du im Druckdialog anfängst oder den ein Grocy-Etikett öffnet, folgt seinem Typ genauso. Ein Bogen mit dem Code im Rand oder von Hand angelegt, dessen Code nie gedruckt wurde, etwa ein 3490-Bogen von vor 1.7.0, kann auf die Rückseite wechseln, wenn sein Typ den Code dorthin legt: Öffne ihn und wähle **Rückseite drucken**.
 
 ## Auf einen Bogen drucken
 
