@@ -20,6 +20,16 @@ Bei Druckern der PT-Serie und QL-Serie liest der Hub das eingelegte Band oder di
 
 Meldet der Drucker mitten in der Warteschlange ein behebbares Problem, hält die Warteschlange an, statt Aufträge wegzuwerfen. Wenn du es behoben hast, setzt du den Drucker fort: in der Weboberfläche auf der Druckerseite oder mit `POST /api/v1/printer/resume`.
 
+## Wie ein Fach das Papier nimmt
+
+Damit der Bogencode auf die Rückseite eines Bogens kommt, muss der Hub wissen, wie ein Fach eines Seitendruckers das Papier nimmt: auf welche Seite es druckt und welche Kante des Drucks zuerst kommt. Das legst du einmal je Fach fest, in den **Einstellungen** bei den Fächern des Druckers über **Einrichten**, oder wenn der Hub beim Aktivieren eines Bogens danach fragt:
+
+1. Nimm ein leeres Blatt und mach auf der Seite, die nach oben zeigt, ein Kreuz neben die Kante, die zuerst hineingeht.
+2. Lege es in das Fach und drucke die Testseite. Sie zeigt groß „OBEN ↑“ an der oberen Kante des Drucks und „BEDRUCKTE SEITE“ in der Mitte.
+3. Beantworte, ob der Druck auf der Seite mit dem Kreuz ist und ob „OBEN“ neben dem Kreuz steht.
+
+Wer auf dem Drucker drucken darf, kann einmal antworten. Danach ändert es nur noch ein Admin, mit **Neu einrichten**. Verschwindet ein Fach aus der Liste des Druckers oder wird der Drucker durch ein anderes Gerät ersetzt, geht seine Antwort mit.
+
 ## Abgeschaltete Drucker
 
 Ein abgeschalteter Drucker nimmt keine Aufträge an: Ein Druck darauf wird mit `printer_disabled` abgelehnt.

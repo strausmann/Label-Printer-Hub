@@ -9,7 +9,7 @@ A page printer prints onto label sheets: A4 or letter pages with a grid of label
 
 A **sheet type** describes a product: page size, the number of rows and columns and the measurements of a cell. Open **Sheets** to create one or to import one. Sheet types are versioned: when you correct a measurement, you add a version, and sheets that were already in use keep the version they were printed with.
 
-Sheet types marked **verified** were measured on real sheets. Labelyard 1.7.0 adds Avery Zweckform 6121, 3490 and L4737REV (3490 prints no sheet code in the margin; that comes with #350) and corrects L4731REV (sheets you already have keep the old measurement). A type you created or imported under the same key is taken over with your prefix and its older versions kept, and the bell tells you once. A taken-over type counts as shipped from then on, so you can archive it but not delete it.
+Sheet types marked **verified** were measured on real sheets. Labelyard 1.7.0 adds Avery Zweckform 6121, 3490 and L4737REV (3490 has its sheet code printed on the back of the liner, see [Where the sheet code goes](#where-the-sheet-code-goes)) and corrects L4731REV (sheets you already have keep the old measurement). A type you created or imported under the same key is taken over with your prefix and its older versions kept, and the bell tells you once. A taken-over type counts as shipped from then on, so you can archive it but not delete it.
 
 You can export a sheet type to a file and import it in this or another hub, so a product only has to be measured once.
 
@@ -22,6 +22,22 @@ Each physical sheet gets its own code. When you add a sheet, you can print an ID
 - **Free cells** take the next labels.
 - **Unconfirmed cells** are cells of a job whose outcome is not known, for example when the printer failed mid-page. Check the sheet and confirm which of them were printed, one by one. When there are two or more, **Resolve all as printed** and **Resolve all as not printed** settle them in one go; the hub asks first and names how many cells it is about. If the number changed in the meantime, nothing is written and you are asked to check the list again.
 - **Discarding** a sheet takes it out of the picker. Its code is never given out again; labels already printed stay printed.
+
+## Where the sheet code goes
+
+The sheet code identifies a sheet when you scan it, for example `A3490-0001`. Each sheet type says where the hub prints it; change it in the **Sheet archive**, tab **Where the code goes**:
+
+- **Margin**: the code goes in the free band around the labels, with the sheet's first print. No extra pass.
+- **Back side**: the code goes on the back of the liner, in a pass of its own.
+- **Reserved cell**: one cell of the sheet holds the code and takes no label. You choose the cell; it is left out of planning, and when it is already used the code takes the first free cell.
+
+A new sheet type chooses automatically: the margin when a band of 4 mm fits on the printer, otherwise the back side. The tab marks that option as **Default for this sheet**. Avery Zweckform 3490 has no usable margin, so its code goes on the back.
+
+**Activating a sheet with its code on the back.** When you add such a sheet, the hub guides you in three steps: turn the sheet over along the long edge and load it top edge first, print the sheet code, then check it. The code counts as printed only after you answer **Yes, it is printed**: a finished job says nothing about smeared toner. If it smeared, **Print again** prints on the same sheet. If you close the dialog before you confirm, the sheet page offers **Print back side** later. The first time, the hub asks how the tray takes paper (see [How a tray takes paper](/using/printers/#how-a-tray-takes-paper)).
+
+**Backing designs.** Many liners carry the vendor's print on the back. A backing design names its free strips, and the code goes into the first strip that takes it. Labelyard ships the design of Avery Zweckform ultragrip and links it to 3490 and 6121. Choose a design, or a plain liner, in the same tab; adding or changing a design is done through the API (`/api/v1/backing-designs`).
+
+A sheet that you start from the print dialog, or that a Grocy label opens, follows its type in the same way. A 3490 sheet from before 1.7.0 whose code was never printed can switch to the back side: open it and choose **Print back side**.
 
 ## Printing onto a sheet
 

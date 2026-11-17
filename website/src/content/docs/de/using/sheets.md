@@ -9,7 +9,7 @@ Ein Seitendrucker bedruckt Etikettenbögen: A4- oder Letter-Seiten mit einem Ras
 
 Ein **Bogentyp** beschreibt ein Produkt: Seitengröße, Zahl der Zeilen und Spalten und die Maße eines Felds. Unter **Bögen** legst du einen an oder importierst einen. Bogentypen haben Versionen: Wenn du ein Maß korrigierst, fügst du eine Version hinzu, und Bögen, die schon in Gebrauch sind, behalten die Version, mit der sie gedruckt wurden.
 
-Bogentypen mit dem Vermerk **geprüft** wurden auf echten Bögen vermessen. Labelyard 1.7.0 bringt Avery Zweckform 6121, 3490 und L4737REV mit (3490 druckt keinen Bogencode in den Rand; das kommt mit #350) und korrigiert L4731REV (Bögen, die du schon hast, behalten die alte Messung). Einen Typ, den du unter demselben Schlüssel selbst angelegt oder importiert hast, übernimmt Labelyard mit deinem Präfix und behält die älteren Versionen; die Glocke sagt es dir einmal. Ein übernommener Typ gilt ab dann als mitgeliefert: Du kannst ihn archivieren, aber nicht löschen.
+Bogentypen mit dem Vermerk **geprüft** wurden auf echten Bögen vermessen. Labelyard 1.7.0 bringt Avery Zweckform 6121, 3490 und L4737REV mit (bei 3490 kommt der Bogencode auf die Rückseite des Trägerpapiers, siehe [Wo der Bogencode hinkommt](#wo-der-bogencode-hinkommt)) und korrigiert L4731REV (Bögen, die du schon hast, behalten die alte Messung). Einen Typ, den du unter demselben Schlüssel selbst angelegt oder importiert hast, übernimmt Labelyard mit deinem Präfix und behält die älteren Versionen; die Glocke sagt es dir einmal. Ein übernommener Typ gilt ab dann als mitgeliefert: Du kannst ihn archivieren, aber nicht löschen.
 
 Einen Bogentyp kannst du in eine Datei exportieren und in diesem oder einem anderen Hub importieren, damit ein Produkt nur einmal vermessen werden muss.
 
@@ -22,6 +22,22 @@ Jeder echte Bogen bekommt einen eigenen Code. Wenn du einen Bogen hinzufügst, k
 - **Freie Felder** nehmen die nächsten Etiketten auf.
 - **Unbestätigte Felder** gehören zu einem Auftrag mit unklarem Ergebnis, zum Beispiel wenn der Drucker mitten auf der Seite ausgefallen ist. Schau dir den Bogen an und bestätige einzeln, welche davon gedruckt wurden. Sind es zwei oder mehr, erledigen **Alle als gedruckt bestätigen** und **Alle als nicht gedruckt bestätigen** das in einem Zug; der Hub fragt vorher nach und nennt, um wie viele Zellen es geht. Hat sich die Zahl inzwischen geändert, wird nichts geschrieben, und du prüfst die Liste noch einmal.
 - **Verwerfen** nimmt einen Bogen aus der Auswahl. Sein Code wird nie wieder vergeben; schon gedruckte Etiketten bleiben gedruckt.
+
+## Wo der Bogencode hinkommt
+
+Der Bogencode erkennt einen Bogen, wenn du ihn scannst, zum Beispiel `A3490-0001`. Jeder Bogentyp legt fest, wo der Hub ihn druckt; ändern kannst du das im **Bogenarchiv**, Reiter **Wo der Code hinkommt**:
+
+- **Rand**: Der Code kommt in den freien Rand um die Etiketten, mit dem ersten Druck auf den Bogen. Kein zusätzlicher Durchgang.
+- **Rückseite**: Der Code kommt auf die Rückseite des Trägerpapiers, in einem eigenen Durchgang.
+- **Reservierte Zelle**: Eine Zelle des Bogens trägt den Code und nimmt kein Etikett auf. Du wählst die Zelle; die Planung lässt sie aus, und ist sie schon belegt, nimmt der Code die erste freie Zelle.
+
+Ein neuer Bogentyp wählt automatisch: den Rand, wenn auf dem Drucker ein Rand von 4 mm passt, sonst die Rückseite. Der Reiter zeigt diese Möglichkeit als **Standard für diesen Bogen**. Avery Zweckform 3490 hat keinen nutzbaren Rand, deshalb kommt sein Code auf die Rückseite.
+
+**Einen Bogen mit dem Code auf der Rückseite aktivieren.** Wenn du so einen Bogen hinzufügst, führt dich der Hub in drei Schritten: Bogen an der langen Kante umdrehen und mit der oberen Kante zuerst einlegen, Bogencode drucken, dann prüfen. Der Code gilt erst als gedruckt, wenn du **Ja, ist gedruckt** antwortest: Ein fertiger Auftrag sagt nichts über verschmierten Toner. Ist er verschmiert, druckt **Noch einmal drucken** auf denselben Bogen. Schließt du den Dialog, bevor du bestätigst, bietet die Seite des Bogens später **Rückseite drucken** an. Beim ersten Mal fragt der Hub, wie das Fach das Papier nimmt (siehe [Wie ein Fach das Papier nimmt](/de/using/printers/#wie-ein-fach-das-papier-nimmt)).
+
+**Trägerdesigns.** Viele Trägerpapiere tragen auf der Rückseite einen Herstelleraufdruck. Ein Trägerdesign nennt dessen freie Streifen, und der Code kommt in den ersten Streifen, der ihn aufnimmt. Labelyard bringt das Design von Avery Zweckform ultragrip mit und verknüpft es mit 3490 und 6121. Ein Design oder unbedrucktes Trägerpapier wählst du im selben Reiter; ein Design anlegen oder ändern geht über die API (`/api/v1/backing-designs`).
+
+Ein Bogen, den du im Druckdialog anfängst oder den ein Grocy-Etikett öffnet, folgt seinem Typ genauso. Ein 3490-Bogen von vor 1.7.0, dessen Code nie gedruckt wurde, kann auf die Rückseite wechseln: Öffne ihn und wähle **Rückseite drucken**.
 
 ## Auf einen Bogen drucken
 

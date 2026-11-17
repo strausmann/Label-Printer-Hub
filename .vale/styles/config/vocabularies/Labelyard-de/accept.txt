@@ -9,6 +9,9 @@
 ^Vorlage$
 ^Drucker$
 ^Fach$
+^Bogencode$
+^Trägerpapier$
+^Trägerdesign$
 ^Kalibrierung$
 ^Vorschau$
 ^Auftrag$

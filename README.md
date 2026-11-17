@@ -150,6 +150,17 @@ The catalogue of sheet types: search by product code, filter by page size, vendo
   </picture>
 </p>
 
+### Sheet code on the back
+
+Where the sheet code goes is a setting of the sheet type: the margin, a reserved cell, or the back of the liner. A sheet without a usable margin, such as Avery Zweckform 3490, gets its code on the back: the hub asks you to turn the sheet over, prints the code into a free strip of the vendor print and asks you to check it before the code counts as printed.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/activate-back-side-dark.png">
+    <img src="docs/screenshots/activate-back-side-light.png" alt="Activating a 3490 sheet: turn it over, load it top edge first, and the question how the tray takes paper.">
+  </picture>
+</p>
+
 ### Calibration
 
 Page printers rarely print exactly where the page says. Choose printer and tray, print the calibration page onto a real sheet, read the offsets from its scales and enter them; the hub then moves every print on that tray by the opposite amount.
