@@ -40,6 +40,7 @@ from sqlmodel import col
 from app.api.dependencies.printer_runtime import get_printer_runtime
 from app.api.routes.pause_view import pause_view
 from app.auth.dependencies import AuthContext, check_printer_access
+from app.printer_backends.snmp_helper import parse_label_length_mm, parse_media_kind
 from app.auth.ownership import may_see, owner_only
 from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
@@ -465,6 +466,8 @@ async def _cached_status(
     # producer cleared it may still hold the last one).
     loaded_tape_mm = None if tape.get("online") is False else tape.get("loaded_tape_mm")
     tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None
+    # #389: the kind and label length come from the media text; only the derived values leave the hub.
+    media_raw = None if tape.get("online") is False or not loaded_tape_mm else tape.get("media_raw")
 
     error_flags = tape.get("error_flags") or []
     error_state = ", ".join(error_flags) if error_flags else None
@@ -479,6 +482,8 @@ async def _cached_status(
         online=tape.get("online"),
         tape_loaded=tape_loaded,
         tape_width_mm=loaded_tape_mm,
+        media_kind=parse_media_kind(media_raw),
+        label_length_mm=parse_label_length_mm(media_raw),
         tape_colour=roll_colour(roll, loaded_tape_mm),  # type: ignore[arg-type]
         roll_prompt=bool(
             roll is not None

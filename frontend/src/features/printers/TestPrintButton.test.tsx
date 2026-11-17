@@ -39,6 +39,14 @@ describe("TestPrintButton", () => {
     expect(screen.getByRole("link", { name: "Open the job" })).toHaveAttribute("href", `/jobs/${JOB}`);
   });
 
+  it("is off with the reason for a die-cut roll (#391)", async () => {
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id, { media_kind: "die_cut", label_length_mm: 90, tape_width_mm: 29, tape_loaded: "29mm" })));
+    await open(PRINTER_A);
+    const button = await screen.findByRole("button", { name: "Test print" });
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAccessibleDescription("Unsupported roll loaded: 29 × 90 mm die-cut labels");
+  });
+
   it("is enabled for an unpolled tape printer", async () => {
     mockApi(routes(PRINTER_A, status(PRINTER_A.id, { polled: false, online: null, captured_at: null })));
     await open(PRINTER_A);

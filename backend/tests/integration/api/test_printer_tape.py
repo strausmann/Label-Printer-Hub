@@ -227,3 +227,57 @@ async def test_tape_endpoint_returns_every_tape_read_field(api) -> None:
     app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid}, labels={12: "12mm"})
     body = (await client.get(f"/api/v1/printers/{pid}/tape")).json()
     assert body == {"width_mm": 12, "label": "12mm", "media_raw": "12mm", "colour": "red"}
+
+
+_DIE_CUT_TEXT = '29mm x 90mm / 1.1" x 3.5"'
+
+
+async def test_status_names_a_die_cut_roll_without_the_raw_text(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(
+        factory, pid, {"online": True, "loaded_tape_mm": 29, "media_raw": _DIE_CUT_TEXT}
+    )
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/status")
+    body = r.json()
+    assert (body["media_kind"], body["label_length_mm"], body["tape_width_mm"]) == ("die_cut", 90, 29)
+    assert "media_raw" not in body
+    assert _DIE_CUT_TEXT not in r.text
+
+
+async def test_status_continuous_roll_has_no_label_length(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(
+        factory, pid, {"online": True, "loaded_tape_mm": 29, "media_raw": '29mm(1.1")'}
+    )
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
+    assert (body["media_kind"], body["label_length_mm"]) == ("continuous", None)
+
+
+async def test_status_unknown_media_text_is_null(api) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(factory, pid, {"online": True, "loaded_tape_mm": 29, "media_raw": "weird"})
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
+    assert (body["media_kind"], body["label_length_mm"]) == (None, None)
+
+
+@pytest.mark.parametrize(
+    ("online", "age_s"), [(True, 10_000), (False, 0)], ids=["stale", "offline"]
+)
+async def test_stale_and_offline_status_hide_the_media_kind(api, online, age_s) -> None:
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(
+        factory,
+        pid,
+        {"online": online, "loaded_tape_mm": 29, "media_raw": _DIE_CUT_TEXT},
+        age_s=age_s,
+    )
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    body = (await client.get(f"/api/v1/printers/{pid}/status")).json()
+    assert (body["media_kind"], body["label_length_mm"]) == (None, None)

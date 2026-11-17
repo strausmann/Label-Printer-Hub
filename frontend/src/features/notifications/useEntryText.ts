@@ -7,6 +7,7 @@ import { useStoredJobErrorText } from "../jobs/jobErrorText";
 import { useFlagText } from "../printers/flags";
 import { useKindLabel, type PrinterKind } from "../printers/model";
 import { useReasonWord } from "../printers/reasons";
+import { useRollWords } from "../printers/roll";
 import type { Notification } from "./derive";
 
 /**
@@ -29,6 +30,7 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
   const reasonWord = useReasonWord();
   const flagText = useFlagText();
   const storedError = useStoredJobErrorText();
+  const rollWords = useRollWords();
 
   return ({ textKey, values }) => {
     const title = values.title || t`Label`;
@@ -55,6 +57,11 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
         if (values.refused) return t`${printer}: ${headline} · a print was refused`;
         if (job) return t`${printer}: ${headline} · ${job} is waiting`;
         return t`${printer}: ${headline}`;
+      }
+      case "printer.unsupported_roll": {
+        const roll = { kind: "die_cut" as const, widthMm: null, lengthMm: null };
+        const inline = values.size ? `${values.size} ${rollWords(roll).inline}` : rollWords(roll).inline;
+        return t`${printer}: Unsupported roll loaded: ${inline}`;
       }
       case "printer.different_device":
         return t`Different device at the address of ${printer}`;

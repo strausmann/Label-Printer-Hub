@@ -11,6 +11,7 @@ import { formatAge } from "./age";
 import { useFlagText, usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
+import { unsupportedRoll, useRollWords, type UnsupportedRoll } from "./roll";
 import { TapeSwatch } from "./TapeSwatch";
 
 /** One printer: name, state (shape + word), loaded tape, or supplies for a page printer. The whole card opens the detail page. */
@@ -44,6 +45,7 @@ export function PrinterCard({
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
       <FlagLine flags={view.flags} />
+      <RollLine roll={view.roll} />
       {view.kind === "paused" && <PauseReason pause={printer.pause} />}
       {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked={false} />}
       {typeof age === "number" && (
@@ -54,7 +56,7 @@ export function PrinterCard({
         {unknown ? (
           <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>
         ) : !page ? (
-          <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} offline={status?.online === false} />
+          <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} offline={status?.online === false} roll={unsupportedRoll(status)} />
         ) : noAnswerYet(status) ? (
           <span className="text-ink-2">{t`No answer yet`}</span>
         ) : (
@@ -86,4 +88,11 @@ export function FlagLine({ flags, as: Tag = "span" }: { flags: readonly string[]
       })}
     </Tag>
   );
+}
+
+/** "Unsupported roll loaded: 29 × 90 mm die-cut labels": why a printer shows a warning while it holds a roll the hub cannot print on yet. */
+export function RollLine({ roll, as: Tag = "span" }: { roll: UnsupportedRoll | undefined; as?: "span" | "p" }) {
+  const words = useRollWords();
+  if (!roll) return null;
+  return <Tag className="m-0 text-small text-ink-2 [overflow-wrap:anywhere]">{words(roll).unsupported}</Tag>;
 }

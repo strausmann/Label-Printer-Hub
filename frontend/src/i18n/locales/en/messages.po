@@ -358,6 +358,10 @@ msgstr "{printer}: {kind} ({more})"
 msgid "{printer}: {what}"
 msgstr "{printer}: {what}"
 
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: Unsupported roll loaded: {inline}"
+msgstr "{printer}: Unsupported roll loaded: {inline}"
+
 #: src/features/sheets/print/PrintResult.tsx
 msgid "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
 msgstr "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
@@ -1176,6 +1180,7 @@ msgstr "Clients"
 #: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/shell/PhoneMenu.tsx
+#: src/shell/RollToast.tsx
 msgid "Close"
 msgstr "Close"
 
@@ -1487,6 +1492,15 @@ msgstr "Diameter (mm)"
 #: src/features/jobs/JobDetail.tsx
 msgid "die-cut"
 msgstr "die-cut"
+
+#. In running text after a size, e.g. '29 × 90 mm die-cut labels'
+#: src/features/printers/roll.ts
+msgid "die-cut labels"
+msgstr "die-cut labels"
+
+#: src/features/printers/roll.ts
+msgid "Die-cut labels"
+msgstr "Die-cut labels"
 
 #: src/features/printers/model.ts
 msgid "Different device"
@@ -3050,6 +3064,10 @@ msgstr "Open in {appName}"
 msgid "Open in Grocy"
 msgstr "Open in Grocy"
 
+#: src/shell/RollToast.tsx
+msgid "Open printer"
+msgstr "Open printer"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/GrocycodePage.tsx
@@ -3413,6 +3431,10 @@ msgstr "Printing needs a print or admin key."
 msgid "Printing now"
 msgstr "Printing now"
 
+#: src/features/printers/roll.ts
+msgid "Printing on die-cut labels comes in a later version"
+msgstr "Printing on die-cut labels comes in a later version"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Prints from: {label}"
 msgstr "Prints from: {label}"
@@ -3748,6 +3770,10 @@ msgstr "right margin"
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Right margin"
 msgstr "Right margin"
+
+#: src/shell/RollToast.tsx
+msgid "Roll not supported"
+msgstr "Roll not supported"
 
 #: src/features/calibration/errors.ts
 msgid "Rotation"
@@ -5804,6 +5830,10 @@ msgstr "Unknown printer"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Unprintable margins"
 msgstr "Unprintable margins"
+
+#: src/features/printers/roll.ts
+msgid "Unsupported roll loaded: {inline}"
+msgstr "Unsupported roll loaded: {inline}"
 
 #: src/features/archive/TypeDetail.tsx
 msgid "unverified"

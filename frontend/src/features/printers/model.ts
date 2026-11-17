@@ -5,6 +5,7 @@ import { useLingui } from "@lingui/react/macro";
 import type { BadgeState } from "../../shell/StatusBadge";
 import type { Job, Printer, PrinterStatus } from "./api";
 import { flagSeverity, NOT_WAITING, type Waiting } from "./flags";
+import { unsupportedRoll, type UnsupportedRoll } from "./roll";
 
 export type PrinterKind = "paused" | "stale" | "not_polled" | "different_device" | "offline" | "error" | "attention" | "stopped" | "printing" | "ready" | "unknown";
 
@@ -17,6 +18,8 @@ export interface PrinterView {
   reasons: string[];
   /** Tape printers: the RFC 3805 error flags the status reports (`error_flags`), put into words by `flags.ts`. */
   flags: string[];
+  /** Tape printers: the roll the hub cannot print on yet (die-cut labels), when one is loaded. */
+  roll?: UnsupportedRoll;
 }
 
 /** A page (IPP) printer: the list carries `backend`, the status `kind` confirms it. */
@@ -104,6 +107,13 @@ function describe(printer: Printer, status: PrinterStatus | undefined, printing:
       return { kind: "error", badge: "bad", detail: null, reasons: blocking.length > 0 ? blocking : [status.error_state] };
     }
     return { kind: "error", badge: "bad", detail: status.error_state, reasons: [] };
+  }
+  // A roll the hub cannot print on yet (#391): a warning, a problem once something waits for this printer or was refused
+  // because of it. Same `waiting` as the flags, so the card, detail, overview row and entry agree.
+  const roll = page ? null : unsupportedRoll(status);
+  if (roll) {
+    const problem = waiting.waiting || waiting.rollRefused === true;
+    return { kind: problem ? "error" : "attention", badge: problem ? "bad" : "warn", detail: null, reasons: [], roll };
   }
   // A page printer can be busy with another computer's job, which the hub's queue never sees.
   if (printing || (page && status?.printer_state === "printing")) {

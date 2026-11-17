@@ -6,6 +6,7 @@ import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { CoverRefusal } from "../printers/coverRefusals";
 import { flagSeverity, printerWaiting, type Waiting } from "../printers/flags";
 import { describePrinter, isFailed, type PrinterKind } from "../printers/model";
+import { rollKey, rollSize } from "../printers/roll";
 import type { SheetSummary } from "../sheets/api";
 import type { components } from "../../api/schema.gen";
 import type { UpdateNotice } from "../../app/updates";
@@ -19,7 +20,7 @@ export const NOTICES_KEY = ["notices"] as const;
 export type Severity = "error" | "warning" | "success" | "info";
 
 export interface Notification {
-  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `printer:<id>:flag:<flag>`, `sheet:<code>:unconfirmed`, `sheet-type-verified:<key>:<revision>` or `update:<version>`: a new state is a new entry. */
+  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `printer:<id>:flag:<flag>`, `printer:<id>:roll:<roll>`, `sheet:<code>:unconfirmed`, `sheet-type-verified:<key>:<revision>` or `update:<version>`: a new state is a new entry. */
   id: string;
   severity: Severity;
   kind: "job" | "printer" | "sheet" | "sheet_type" | "update";
@@ -156,8 +157,22 @@ function printerEntries(
       target,
     });
   }
+  // A roll the hub cannot print on yet: one entry per printer and roll, gone as soon as a supported roll is loaded. Warning
+  // until something waits for the printer or was refused because of the roll, then a problem (same rule as the card).
+  if (view.roll) {
+    const id = `printer:${printer.id}:roll:${rollKey(view.roll)}`;
+    entries.push({
+      id,
+      severity: view.badge === "bad" ? "error" : "warning",
+      kind: "printer",
+      textKey: "printer.unsupported_roll",
+      values: { printer: printer.name, size: rollSize(view.roll), roll: view.roll.kind },
+      at: at(id),
+      target,
+    });
+  }
   const flagsOnly = view.flags.length > 0 && (view.kind === "error" || view.kind === "attention");
-  if (severity && !flagsOnly) {
+  if (severity && !flagsOnly && !view.roll) {
     const id = `printer:${printer.id}:${view.kind}`;
     entries.push({
       id,

@@ -7,6 +7,7 @@ import { FIELD } from "../../shell/SignIn";
 import { usePrinterWaiting } from "../printers/flags";
 import { describePrinter, isPagePrinter, useKindLabel } from "../printers/model";
 import type { Printer, PrinterStatus } from "../printers/api";
+import { unsupportedRoll, useRollWords } from "../printers/roll";
 
 const PRINTER_KEY = "lph.printer";
 
@@ -41,6 +42,7 @@ export function usePrinterChoice(printers: Printer[] | undefined) {
 function usePrinterOptionText(): (printer: Printer, status: PrinterStatus | undefined) => string {
   const { t } = useLingui();
   const states = useKindLabel();
+  const rollWords = useRollWords();
   // The same `Waiting` as the card and the notification, so the option names the same state (#376).
   const waitingOf = usePrinterWaiting();
   return (printer, status) => {
@@ -48,6 +50,9 @@ function usePrinterOptionText(): (printer: Printer, status: PrinterStatus | unde
     const kind = page ? t({ message: "Page printer", context: "printer kind" }) : t({ message: "Tape printer", context: "printer kind" });
     const parts = [printer.name, kind];
     if (status) parts.push(states[describePrinter(printer, status, false, waitingOf(printer.id)).kind]);
+    // Not offered for printing, with the reason in the option itself (#391); the hub's 409 stays the backstop.
+    const roll = page ? null : unsupportedRoll(status);
+    if (roll) parts.push(rollWords(roll).unsupported);
     return parts.join(" · ");
   };
 }
@@ -68,6 +73,8 @@ export function PrinterPicker({
 }) {
   const { t } = useLingui();
   const optionText = usePrinterOptionText();
+  const rollWords = useRollWords();
+  const selectedRoll = unsupportedRoll(value ? statuses?.get(value) : undefined);
   return (
     <label className="flex flex-col gap-1.5">
       <span className="font-bold">{t`Printer`}</span>
@@ -79,11 +86,12 @@ export function PrinterPicker({
       >
         {printers.length === 0 && <option value="">{loading ? t`Loading…` : t`No printer available`}</option>}
         {printers.map((p) => (
-          <option key={p.id} value={p.id}>
+          <option key={p.id} value={p.id} disabled={!isPagePrinter(p, statuses?.get(p.id)) && unsupportedRoll(statuses?.get(p.id)) !== null}>
             {optionText(p, statuses?.get(p.id))}
           </option>
         ))}
       </select>
+      {selectedRoll && <span role="status" className="text-small text-bad">{rollWords(selectedRoll).unsupported}. {rollWords(selectedRoll).hint}.</span>}
     </label>
   );
 }

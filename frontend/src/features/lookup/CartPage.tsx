@@ -21,6 +21,7 @@ import { distinctPreviews, itemKey } from "./cartPreviews";
 import { LabelPreview } from "./LabelPreview";
 import { useCartCheck, type RenderCheckResult } from "./useCartCheck";
 import { usePrintErrorText } from "../printers/printErrorText";
+import { unsupportedRoll } from "../printers/roll";
 import { PrinterPicker, usePrinterChoice } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
 
@@ -132,6 +133,7 @@ export function CartPage() {
   const pagePrinter = selected?.backend === "ipp";
   const status = usePrinterStatus(selected?.id ?? "", !!selected && !pagePrinter);
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
+  const rollBlocked = !pagePrinter && unsupportedRoll(selected ? status.data : undefined) !== null;
   const layout = useLabelLayout(selected, tapeMm);
   // A check needs a tape the printer reported; the 12 mm fallback of `tapeMmOfStatus` would flag items against a guess.
   const tapeKnown = !!selected && !pagePrinter && (typeof status.data?.tape_width_mm === "number" || !!status.data?.tape_loaded);
@@ -253,7 +255,7 @@ export function CartPage() {
               {/* A page printer prints through the sheet section below. */}
               {/* An emptied cart (a sheet print took everything out) leaves nothing to send. */}
               {!pagePrinter && cart.items.length > 0 && (
-                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy || readOnly} onPress={() => void send()}>
+                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy || readOnly || rollBlocked} onPress={() => void send()}>
                   {plural(labels, { one: "Print # label", other: "Print # labels" })}
                 </Button>
               )}

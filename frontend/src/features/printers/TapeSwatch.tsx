@@ -3,6 +3,7 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { useColourNames, type TapeColour } from "./model";
+import { useRollWords, type UnsupportedRoll } from "./roll";
 
 const SWATCH: Record<TapeColour, string> = {
   white: "bg-tape-white border-line-strong",
@@ -30,15 +31,28 @@ export function TapeSwatch({
   colour,
   probed = true,
   offline = false,
+  roll = null,
 }: {
   widthMm: number | null | undefined;
   colour: TapeColour | null | undefined;
   probed?: boolean;
   /** The printer did not answer its last probe: the hub cannot see a tape, so none is claimed or denied. */
   offline?: boolean;
+  /** A roll the hub cannot print on yet: named with its size and kind, plus a hint, instead of the bare width. */
+  roll?: UnsupportedRoll | null;
 }) {
   const { t } = useLingui();
   const names = useColourNames();
+  const rollWords = useRollWords();
+  if (roll) {
+    const words = rollWords(roll);
+    return (
+      <span className="flex flex-col gap-1">
+        <span className="font-bold">{words.title}</span>
+        <span className="text-small text-ink-2">{words.hint}</span>
+      </span>
+    );
+  }
   const width = widthMm ?? null;
   // Before the first probe "no tape" would be a guess; say that nothing is known yet.
   if (width === null && !colour && offline) return <span className="text-ink-2">{t`Tape not known`}</span>;

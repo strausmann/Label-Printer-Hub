@@ -14,14 +14,20 @@ import { notePrintError } from "./coverRefusals";
 import { isPagePrinter, printerStopReasons, unknownKind } from "./model";
 import { printErrorText } from "./printErrorText";
 import { useReasonWord } from "./reasons";
+import { unsupportedRoll, useRollWords } from "./roll";
 
 /** Why the button cannot be pressed, or null. Tape printers are not refused on status: the server's preflight decides. */
 function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): string | null {
   const { t } = useLingui();
   const word = useReasonWord();
+  const words = useRollWords();
   if (!printer.enabled) return t`Printer is disabled`;
   if (printer.paused) return t`Printer is paused`;
-  if (!isPagePrinter(printer, status)) return null;
+  if (!isPagePrinter(printer, status)) {
+    // A roll the hub cannot print on (die-cut): say so before the press; the hub's 409 stays the backstop.
+    const roll = unsupportedRoll(status);
+    return roll ? words(roll).unsupported : null;
+  }
   // A page printer has no preflight at submit time, so a status that is not a reading of it blocks.
   // No reading yet (still loading) is the same as none: pressing now would print blind.
   if (status === undefined || unknownKind(status) === "not_polled") return t`Printer status unknown`;

@@ -30,6 +30,7 @@ import { usePrintErrorText } from "../printers/printErrorText";
 import { PrinterPicker, usePrinterChoice } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
 import { notePrintError } from "../printers/coverRefusals";
+import { unsupportedRoll } from "../printers/roll";
 
 const lookupRoute = getRouteApi("/lookup/$app/$id");
 
@@ -128,6 +129,8 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const print = usePrintNow();
   // A page printer prints onto sheets (the sheet section); only tape printers get the tape preview.
   const pagePrinter = selected?.backend === "ipp";
+  // A roll the hub cannot print on: the button is off, the picker says why (the hub refuses it with 409 too).
+  const rollBlocked = !pagePrinter && unsupportedRoll(selected ? status.data : undefined) !== null;
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
   const contentType =
     chosen ?? defaultContentTypeFor(item.app, { hasSwatch: swatchOf(item) !== undefined, backend: selected?.backend, tapeMm });
@@ -218,7 +221,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
             {!pagePrinter && (
               <Button
                 className={PRIMARY_BUTTON}
-                isDisabled={!selected || print.isPending || readOnly}
+                isDisabled={!selected || print.isPending || readOnly || rollBlocked}
                 onPress={() =>
                   selected &&
                   print.mutate(

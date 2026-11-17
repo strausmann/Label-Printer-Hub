@@ -358,6 +358,10 @@ msgstr "{printer}: {kind} ({more})"
 msgid "{printer}: {what}"
 msgstr "{printer}: {what}"
 
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: Unsupported roll loaded: {inline}"
+msgstr "{printer}: Nicht unterstützte Rolle eingelegt: {inline}"
+
 #: src/features/sheets/print/PrintResult.tsx
 msgid "{queued, plural, one {# label was queued and will print.} other {# labels were queued and will print.}}"
 msgstr "{queued, plural, one {# Etikett wurde eingereiht und wird gedruckt.} other {# Etiketten wurden eingereiht und werden gedruckt.}}"
@@ -1176,6 +1180,7 @@ msgstr "Clients"
 #: src/features/settings/controls.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/shell/PhoneMenu.tsx
+#: src/shell/RollToast.tsx
 msgid "Close"
 msgstr "Schließen"
 
@@ -1487,6 +1492,15 @@ msgstr "Durchmesser (mm)"
 #: src/features/jobs/JobDetail.tsx
 msgid "die-cut"
 msgstr "Einzeletiketten (gestanzt)"
+
+#. In running text after a size, e.g. '29 × 90 mm die-cut labels'
+#: src/features/printers/roll.ts
+msgid "die-cut labels"
+msgstr "Stanzetiketten"
+
+#: src/features/printers/roll.ts
+msgid "Die-cut labels"
+msgstr "Stanzetiketten"
 
 #: src/features/printers/model.ts
 msgid "Different device"
@@ -3050,6 +3064,10 @@ msgstr "In {appName} öffnen"
 msgid "Open in Grocy"
 msgstr "In Grocy öffnen"
 
+#: src/shell/RollToast.tsx
+msgid "Open printer"
+msgstr "Drucker öffnen"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/scan/GrocycodePage.tsx
@@ -3413,6 +3431,10 @@ msgstr "Zum Drucken ist ein Druck- oder Admin-Schlüssel nötig."
 msgid "Printing now"
 msgstr "Druckt gerade"
 
+#: src/features/printers/roll.ts
+msgid "Printing on die-cut labels comes in a later version"
+msgstr "Drucken auf Stanzetiketten kommt in einer späteren Version"
+
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Prints from: {label}"
 msgstr "Druckt aus: {label}"
@@ -3748,6 +3770,10 @@ msgstr "rechten Rand"
 #: src/features/sheets/GeometryDiagram.tsx
 msgid "Right margin"
 msgstr "Rechter Rand"
+
+#: src/shell/RollToast.tsx
+msgid "Roll not supported"
+msgstr "Rolle nicht unterstützt"
 
 #: src/features/calibration/errors.ts
 msgid "Rotation"
@@ -5804,6 +5830,10 @@ msgstr "Unbekannter Drucker"
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Unprintable margins"
 msgstr "Nicht bedruckbare Ränder"
+
+#: src/features/printers/roll.ts
+msgid "Unsupported roll loaded: {inline}"
+msgstr "Nicht unterstützte Rolle eingelegt: {inline}"
 
 #: src/features/archive/TypeDetail.tsx
 msgid "unverified"

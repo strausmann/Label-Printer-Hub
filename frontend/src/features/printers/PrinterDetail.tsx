@@ -16,13 +16,14 @@ import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, us
 import { IdentityMismatchBanner, SettledNotice, useIdentityKindLabel } from "./IdentityMismatchBanner";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
-import { FlagLine } from "./PrinterCard";
+import { FlagLine, RollLine } from "./PrinterCard";
 import { usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
+import { unsupportedRoll } from "./roll";
 import { TapeSwatch } from "./TapeSwatch";
 
 const route = getRouteApi("/printers/$printerId");
@@ -100,6 +101,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
           <FlagLine flags={view.flags} as="p" />
+          <RollLine roll={view.roll} as="p" />
           {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked />}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
           <ReasonLine reasons={view.reasons} />
@@ -156,7 +158,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                   {unknown ? (
                     <span className="text-ink-2">{t`Tape not known`}</span>
                   ) : (
-                    <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} offline={status.data?.online === false} />
+                    <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} offline={status.data?.online === false} roll={unsupportedRoll(status.data)} />
                   )}
                 </p>
                 {canAskColour && tapeWidthOf(status.data) !== null && (

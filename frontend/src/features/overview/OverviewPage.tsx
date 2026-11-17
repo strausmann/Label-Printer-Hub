@@ -20,8 +20,9 @@ import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/Pag
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
 import { PrinterGrid } from "../printers/PrinterGrid";
-import { FlagLine } from "../printers/PrinterCard";
+import { FlagLine, RollLine } from "../printers/PrinterCard";
 import { usePrinterWaiting } from "../printers/flags";
+import { unsupportedRoll } from "../printers/roll";
 import { TapeSwatch } from "../printers/TapeSwatch";
 
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -210,6 +211,7 @@ function AttentionItem({
         <span className="font-bold">{printer.name}</span>
         <StatusBadge state={view.badge} label={kinds[view.kind]} />
         {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
+        <RollLine roll={view.roll} />
         {view.kind === "paused" && <PauseReason pause={printer.pause} />}
         <ReasonLine reasons={view.reasons} />
         {view.kind === "paused" && <PauseResumeButton printer={printer} named />}
@@ -273,7 +275,7 @@ function MaterialRow({ printer, status }: { printer: Printer; status: PrinterSta
           <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>
         </>
       ) : !page ? (
-        <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} offline={status?.online === false} />
+        <TapeSwatch widthMm={tapeWidthOf(status)} colour={status?.tape_colour} probed={status?.captured_at != null} offline={status?.online === false} roll={unsupportedRoll(status)} />
       ) : noAnswerYet(status) ? (
         <span className="text-ink-2">{t`No answer yet`}</span>
       ) : (

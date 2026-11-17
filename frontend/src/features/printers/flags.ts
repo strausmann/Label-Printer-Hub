@@ -44,6 +44,8 @@ export interface Waiting {
   job: string;
   /** Nothing is queued or printing, but a print to this printer was refused because of its open cover. */
   refused: boolean;
+  /** The printer's latest finished job was refused because of the roll in it (409 `media_type_mismatch`). */
+  rollRefused?: boolean;
 }
 
 export const NOT_WAITING: Waiting = { waiting: false, job: "", refused: false };
@@ -63,9 +65,15 @@ export function printerWaiting(printerId: string, jobs: readonly Job[], refusals
     .filter((j) => j.printer_id === printerId && (j.state === "queued" || j.state === "printing"))
     .sort((a, b) => time(a.created_at) - time(b.created_at));
   const first = active[0];
-  if (first) return { waiting: true, job: jobTitle(first) ?? "", refused: false };
-  if (refusal) return { waiting: true, job: refusal.title, refused: true };
-  return NOT_WAITING;
+  // The newest finished job decides: a later print that went through means the refusal is old news.
+  const finished = jobs
+    .filter((j) => j.printer_id === printerId && (j.state === "done" || j.state === "failed" || j.state === "failed_restart"))
+    .sort((a, b) => time(b.updated_at) - time(a.updated_at))[0];
+  const rollRefused = finished?.state === "failed" && (finished.error ?? "").startsWith("media_type_mismatch");
+  const extra = rollRefused ? { rollRefused: true } : {};
+  if (first) return { waiting: true, job: jobTitle(first) ?? "", refused: false, ...extra };
+  if (refusal) return { waiting: true, job: refusal.title, refused: true, ...extra };
+  return rollRefused ? { ...NOT_WAITING, ...extra } : NOT_WAITING;
 }
 
 /** An open cover is a warning while nothing waits to print, and an error once something does; every other flag has its fixed severity. */

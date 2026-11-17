@@ -3278,6 +3278,18 @@
             "description": "'page' for IPP page printers; None for tape printers",
             "title": "Kind"
           },
+          "label_length_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Label length in mm of a ``die_cut`` roll; None for a continuous roll or when unknown",
+            "title": "Label Length Mm"
+          },
           "last_calibration_print": {
             "anyOf": [
               {
@@ -3338,6 +3350,22 @@
               }
             ],
             "title": "Markers"
+          },
+          "media_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "continuous",
+                  "die_cut"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Kind of the loaded roll, derived from the media name the printer reports: ``continuous`` (width only) or ``die_cut`` (a label length is named); None when no roll is loaded, the printer reports nothing recognisable, or the status is stale or unpolled. Printing on a ``die_cut`` roll is refused with 409 ``media_type_mismatch``.",
+            "title": "Media Kind"
           },
           "note": {
             "anyOf": [

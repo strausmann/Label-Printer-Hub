@@ -19,6 +19,7 @@ __all__ = [
     "decode_error_flags",
     "format_mac",
     "parse_loaded_tape_mm",
+    "parse_label_length_mm",
     "parse_media_kind",
     "query_identity",
     "query_loaded_tape_mm",
@@ -174,6 +175,17 @@ def parse_media_kind(text: str | None) -> MediaKind | None:
     if _TAPE_MM_RE.match(text):
         return "continuous"
     return None
+
+
+_LABEL_LENGTH_RE = re.compile(r"^\s*\d+\s*(?:mm)?\s*[x\u00d7]\s*(\d+)\s*mm", re.IGNORECASE)
+
+
+def parse_label_length_mm(text: str | None) -> int | None:
+    """The label length of a die-cut media name (``29mm x 90mm`` → 90); ``None`` for anything else."""
+    if not text:
+        return None
+    match = _LABEL_LENGTH_RE.match(text)
+    return int(match.group(1)) if match else None
 
 
 @dataclass(frozen=True)

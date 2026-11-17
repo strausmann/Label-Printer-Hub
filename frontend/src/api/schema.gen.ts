@@ -2986,6 +2986,11 @@ export interface components {
              * @description 'page' for IPP page printers; None for tape printers
              */
             kind?: ("tape" | "page") | null;
+            /**
+             * Label Length Mm
+             * @description Label length in mm of a ``die_cut`` roll; None for a continuous roll or when unknown
+             */
+            label_length_mm?: number | null;
             /** @description Tray and time of the newest queued, printing or finished calibration page job of this printer; None for tape printers and when none exists. */
             last_calibration_print?: components["schemas"]["CalibrationPrintRead"] | null;
             /**
@@ -3005,6 +3010,11 @@ export interface components {
             last_sheet_tray?: string | null;
             /** Markers */
             markers?: components["schemas"]["MarkerRead"][] | null;
+            /**
+             * Media Kind
+             * @description Kind of the loaded roll, derived from the media name the printer reports: ``continuous`` (width only) or ``die_cut`` (a label length is named); None when no roll is loaded, the printer reports nothing recognisable, or the status is stale or unpolled. Printing on a ``die_cut`` roll is refused with 409 ``media_type_mismatch``.
+             */
+            media_kind?: ("continuous" | "die_cut") | null;
             /**
              * Note
              * @description Human-readable hint, e.g. 'No probe yet'

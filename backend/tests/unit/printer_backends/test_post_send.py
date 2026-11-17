@@ -135,3 +135,21 @@ def test_the_blocking_bits_map_to_their_codes(flags: list[str], error: type[Exce
     with pytest.raises(error):
         raise_for_error_flags(flags)
     raise_for_error_flags(["lowPaper", "lowToner", "overduePreventMaint"])
+
+
+@pytest.mark.parametrize(
+    ("text", "length"),
+    [
+        ('29mm x 90mm / 1.1" x 3.5"', 90),
+        ("62 x 100 mm", 100),
+        ("29x90mm", 90),
+        ('29mm(1.1")', None),
+        ("12mm", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_label_length_mm(text: str | None, length: int | None) -> None:
+    from app.printer_backends.snmp_helper import parse_label_length_mm
+
+    assert parse_label_length_mm(text) == length

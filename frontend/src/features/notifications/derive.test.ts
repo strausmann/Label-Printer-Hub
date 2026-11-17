@@ -428,3 +428,51 @@ describe("deriveUpdate (#354)", () => {
     expect(merged.map((e) => e.id)).toEqual(["update:1.7.1"]);
   });
 });
+
+
+describe("deriveNotifications: a roll the hub cannot print on (#391)", () => {
+  const DIE_CUT = { tape_loaded: "29mm", tape_width_mm: 29, media_kind: "die_cut", label_length_mm: 90 };
+  const rollEntries = (i: Input) => run(i).filter((e) => e.textKey === "printer.unsupported_roll");
+
+  it("a die-cut roll is one warning entry for this printer and roll", () => {
+    const entries = run({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) } });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: `printer:${A.id}:roll:die_cut:29x90`,
+      severity: "warning",
+      kind: "printer",
+      values: { printer: A.name, size: "29 × 90 mm" },
+      target: { to: "/printers/$printerId", params: { printerId: A.id } },
+    });
+  });
+
+  it("clears when a supported roll is loaded (counter-check)", () => {
+    const continuous = okStatus(A, { ...DIE_CUT, media_kind: "continuous", label_length_mm: null });
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: continuous } })).toEqual([]);
+  });
+
+  it("another roll is another entry, so it is unread again", () => {
+    const other = rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, { ...DIE_CUT, label_length_mm: 50 }) } });
+    expect(other[0]!.id).toBe(`printer:${A.id}:roll:die_cut:29x50`);
+  });
+
+  it("is an error once a job waits for the printer, with the same id", () => {
+    const entries = rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [mkJob(J1, "queued")] });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ id: `printer:${A.id}:roll:die_cut:29x90`, severity: "error" });
+  });
+
+  it("is an error after a print was refused because of the roll", () => {
+    const refused = mkJob(J1, "failed", { error: "media_type_mismatch: die-cut roll" });
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) }, jobs: [refused] })[0]!.severity).toBe("error");
+  });
+
+  it("adds no second entry for the same printer (no 'Warning' entry beside it)", () => {
+    const all = run({ printers: [A], statuses: { [A.id]: okStatus(A, DIE_CUT) } });
+    expect(all.filter((e) => e.id.startsWith(`printer:${A.id}:`))).toHaveLength(1);
+  });
+
+  it("says nothing for a stale status", () => {
+    expect(rollEntries({ printers: [A], statuses: { [A.id]: okStatus(A, { ...DIE_CUT, stale: true }) } })).toEqual([]);
+  });
+});
