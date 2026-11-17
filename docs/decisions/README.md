@@ -35,7 +35,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0003](0003-go-tailwind-htmx-pwa-frontend.md) | Go + Tailwind + HTMX + PWA for the frontend | Superseded by 0016 |
 | [0004](0004-plugin-architecture-for-printer-models.md) | Plugin architecture for printer models | Accepted (amended by 0020) |
 | [0005](0005-print-queue-is-mandatory.md) | Print queue is mandatory (printer has none) | Accepted (amended by 0020) |
-| [0006](0006-status-sources-by-phase.md) | Status sources by phase (ESC i S / passive / SNMP) | Accepted (amended 2026-11-10: SNMP is the network source) |
+| [0006](0006-status-sources-by-phase.md) | Status sources by phase (ESC i S / passive / SNMP) | Accepted (amended 2026-11-10: SNMP is the network source; 2026-11-17: status before and after sending) |
 | [0007](0007-docker-image-tag-scheme.md) | Docker image tag scheme | Accepted (single image, see 0015; image name amended by 0026) |
 | [0008](0008-conventional-commits-and-semantic-release.md) | Conventional Commits + semantic-release | Accepted (amended by 0025) |
 | [0009](0009-server-sent-events-over-websockets.md) | Server-Sent Events instead of WebSockets | Accepted (JSON stream, see 0015/0016) |
