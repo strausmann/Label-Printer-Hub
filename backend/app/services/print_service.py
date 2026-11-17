@@ -47,6 +47,7 @@ from app.services.print_queue import DEFERRED_INTERRUPTED, MAX_LABELS_PER_TAPE_J
 from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.services.ql_layout import resolve_layout
 from app.services.spool_swatch import SWATCH_TAPES, swatch_for_batch, swatch_orientation
+from app.services.test_label import TapeBand, TapeTestText, render_test_label
 
 _log = logging.getLogger(__name__)
 
@@ -175,39 +176,98 @@ class PrintService:
 
     async def submit_test_label(
         self,
-        build: Callable[[int], RawLabelData],
+        text: Callable[[int], TapeTestText],
+        band: Callable[[int], TapeBand],
         *,
         api_key_id: UUID | None = None,
         source_ip: str | None = None,
     ) -> UUID:
-        """Submit the test label (#228): the same path as ``submit_print_job``.
+        """Submit the test label (#228, #377): drawn by its own renderer, never the layout engine.
 
-        One preflight decides the tape; ``build`` gets its width and returns the label data.
-        The job is stored with ``template_key="test_label"`` and content type
-        ``QR_THREE_LINES``, one copy.
+        One preflight decides the tape; ``band`` gives the printable band of the printer model on
+        that tape (its ``UnsupportedTapeError`` refuses before anything is rendered) and ``text``
+        what the label says. The label always runs along the tape. The job is stored with
+        ``template_key="test_label"`` and the text, band and DPI under ``test_label``, so a
+        restart or a retry draws the same label again.
 
-        Raises: as ``submit_print_job``, plus ``PrinterOfflineError`` from the preflight.
+        Raises: ``PrinterDisabledError``, the preflight's errors (``PrinterOfflineError``, …),
+        ``NoTapeLoadedError``, ``UnsupportedTapeError``.
         """
-
-        async def resolve(tape_mm: int) -> LabelData:
-            raw = build(tape_mm)
-            return LabelData(
-                source_app="manual",
-                title=raw.title,
-                primary_id=raw.primary_id,
-                qr_payload=raw.qr_payload,
-                secondary=raw.secondary,
-                items=raw.items,
-            )
-
-        return await self._submit_label(
-            resolve,
-            content_type=ContentType.QR_THREE_LINES,
-            options=PrintOptions(),
+        tape_mm = await self._loaded_tape_mm()
+        tape_band = band(tape_mm)
+        label_text = text(tape_mm)
+        image = await asyncio.to_thread(render_test_label, tape_mm, label_text, tape_band)
+        options = PrintOptions(orientation=LabelOrientation.ALONG)
+        label_data = LabelData(
+            source_app="manual",
+            primary_id=label_text.printer,
+            title=f"{label_text.width_mm} mm · {label_text.printed_at}",
+        )
+        payload = {
+            "label_data": label_data.model_dump(),
+            "content_type": str(ContentType.TEXT_TWO_LINES),
+            "rendered_tape_mm": tape_mm,
+            "tape_mm": tape_mm,
+            "options": options.model_dump(mode="json"),
+            "test_label": {**label_text.to_payload(), "px": tape_band.px, "dpi": tape_band.dpi},
+        }
+        return await self._enqueue(
+            image,
+            payload,
+            tape_mm=tape_mm,
+            options=options,
+            orientation=LabelOrientation.ALONG,
             template_key="test_label",
             api_key_id=api_key_id,
             source_ip=source_ip,
         )
+
+    async def _loaded_tape_mm(self) -> int:
+        """enabled check → one preflight → the loaded tape width."""
+        if not self._printer_enabled:
+            raise PrinterDisabledError(self._printer_id, self._printer_slug)
+        preflight = await self._backend.preflight_check()
+        if preflight.loaded_tape_mm is None:
+            raise NoTapeLoadedError()
+        tape_mm: int = preflight.loaded_tape_mm
+        return tape_mm
+
+    async def _enqueue(
+        self,
+        image: Image.Image,
+        payload: dict[str, Any],
+        *,
+        tape_mm: int,
+        options: PrintOptions,
+        orientation: LabelOrientation,
+        template_key: str | None,
+        api_key_id: UUID | None,
+        source_ip: str | None,
+    ) -> UUID:
+        """Persist the job, then hand its image to the queue."""
+        job_id = uuid4()
+        job = Job(
+            id=job_id,
+            printer_id=self._printer_id,
+            template_key=template_key,
+            payload=payload,
+            api_key_id=api_key_id,
+            source_ip=source_ip,
+        )
+        await self._store.save_queued(job)
+        await self._queue.submit_with_id(
+            job_id,
+            self._printer_id,
+            image,
+            tape_mm=tape_mm,
+            auto_cut=options.auto_cut,
+            high_resolution=options.high_resolution,
+            half_cut=options.half_cut,
+            last_page=options.last_page,
+            # The QL backend rotates on this flag only (#258); PT adapters ignore it.
+            orientation=str(orientation),
+        )
+        return job_id
 
     async def _submit_label(
         self,
@@ -220,13 +280,7 @@ class PrintService:
         source_ip: str | None = None,
     ) -> UUID:
         """enabled check → one preflight → label data → render → persist → queue."""
-        if not self._printer_enabled:
-            raise PrinterDisabledError(self._printer_id, self._printer_slug)
-
-        preflight = await self._backend.preflight_check()
-        if preflight.loaded_tape_mm is None:
-            raise NoTapeLoadedError()
-        tape_mm = preflight.loaded_tape_mm
+        tape_mm = await self._loaded_tape_mm()
         orientation, preset = self._resolve_layout_for(tape_mm, content_type, options)
         # The job stores what was actually rendered, so a restart re-renders the same label.
         options = options.model_copy(update={"orientation": orientation, "layout_preset": preset})
@@ -246,35 +300,23 @@ class PrintService:
             )
         )
 
-        job_id = uuid4()
-        job = Job(
-            id=job_id,
-            printer_id=self._printer_id,
+        payload = {
+            "label_data": label_data.model_dump(),
+            "content_type": str(content_type),
+            "rendered_tape_mm": tape_mm,
+            "tape_mm": tape_mm,
+            "options": options.model_dump(mode="json"),
+        }
+        return await self._enqueue(
+            image,
+            payload,
+            tape_mm=tape_mm,
+            options=options,
+            orientation=orientation,
             template_key=template_key,
-            payload={
-                "label_data": label_data.model_dump(),
-                "content_type": str(content_type),
-                "rendered_tape_mm": tape_mm,
-                "tape_mm": tape_mm,
-                "options": options.model_dump(mode="json"),
-            },
             api_key_id=api_key_id,
             source_ip=source_ip,
         )
-        await self._store.save_queued(job)
-        await self._queue.submit_with_id(
-            job_id,
-            self._printer_id,
-            image,
-            tape_mm=tape_mm,
-            auto_cut=options.auto_cut,
-            high_resolution=options.high_resolution,
-            half_cut=options.half_cut,
-            last_page=options.last_page,
-            # The QL backend rotates on this flag only (#258); PT adapters ignore it.
-            orientation=str(orientation),
-        )
-        return job_id
 
     # ------------------------------------------------------------------ deferred jobs (#281)
 

@@ -38,7 +38,7 @@ Bürodrucker, die IPP sprechen, bedrucken Etikettenbögen. Füg sie als **Seiten
 
 ## Nach dem Hinzufügen
 
-- **Testdruck.** Jeder Drucker hat einen Testdruck, damit du sofort siehst, dass Adresse und Protokoll stimmen.
+- **Testdruck.** Jeder Drucker hat einen Testdruck, damit du sofort siehst, dass Adresse und Protokoll stimmen. Das Testetikett zeigt den Namen des Druckers, die Bandbreite, das Datum und ein 50-mm-Lineal – auf jedem Band, das der Drucker nimmt; ab 29 mm trägt es zusätzlich einen QR-Code zur Seite des Druckers.
 - **Seitendrucker kalibrieren.** Ein Seitendrucker druckt selten genau dorthin, wo die Seite es vorgibt. Druck die Kalibrierseite, miss, wie weit er daneben liegt, und der Hub verschiebt jeden Druck aus diesem Fach um das Gegenteil. [Seitendrucker kalibrieren](/de/using/calibration/) führt dich Schritt für Schritt durch.
 - **Den Zustand im Blick behalten.** Die Seite des Druckers zeigt seinen Zustand live: bereit, druckt, Deckel offen, Material leer.
 

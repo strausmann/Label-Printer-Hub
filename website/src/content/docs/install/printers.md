@@ -38,7 +38,7 @@ Office printers that speak IPP print label sheets. Add them as **Page printer (I
 
 ## After adding a printer
 
-- **Test print.** Each printer has a test print, so you see at once that the address and the protocol work.
+- **Test print.** Each printer has a test print, so you see at once that the address and the protocol work. The test label shows the printer's name, the tape width, the date and a 50 mm ruler on every tape the printer takes; from 29 mm it also carries a QR code to the printer's page.
 - **Calibrate page printers.** A page printer rarely prints exactly where the page says. Print the calibration page, measure how far it is off, and the hub moves every print on that tray by the opposite. [Calibrate a page printer](/using/calibration/) walks you through it.
 - **Watch the status.** The printer's page shows its state live: ready, printing, cover open, out of material.
 

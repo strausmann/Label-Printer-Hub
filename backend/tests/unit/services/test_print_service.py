@@ -19,6 +19,7 @@ from app.printer_backends.exceptions import (
     PrinterDisabledError,
     PrinterOfflineError,
     TapeEmptyError,
+    UnsupportedTapeError,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.schemas.content_type import ContentType
@@ -31,6 +32,8 @@ from app.schemas.print_request import (
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_service import PrintService
+from app.services.test_label import TapeTestText
+from app.services.test_label import test_label_band as band_of
 
 _PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 
@@ -639,3 +642,93 @@ class TestCancelDeferred:
             (str(ids[0]), "queued", "failed_restart")
         ]
         assert frames[0].data["error_code"] == "deferred_interrupted"
+
+
+# ---------------------------------------------------------------------------
+# The test label on every tape width (#377)
+# ---------------------------------------------------------------------------
+
+_TEST_LABEL_CASES = [
+    *(("brother_ql", "QL-820NWB", mm) for mm in (12, 29, 38, 50, 54, 62)),
+    *(("ptouch", "PT-E550W", mm) for mm in (4, 6, 9, 12, 18, 24)),
+    ("ptouch", "PT-P900", 36),
+]
+
+
+def _test_text(width_mm: int) -> TapeTestText:
+    return TapeTestText(
+        printer="Workshop",
+        width_mm=width_mm,
+        printed_at="2026-11-17 14:03",
+        version="1.7.0",
+        qr_payload="https://hub.example.invalid/printers/0d5c6b1e-8f6a-4f4e-9d61-3a2b9c1f7e42",
+    )
+
+
+class TestTestLabel:
+    @pytest.mark.parametrize(
+        ("backend_name", "model", "mm"),
+        _TEST_LABEL_CASES,
+        ids=[f"{m}-{mm}" for _b, m, mm in _TEST_LABEL_CASES],
+    )
+    async def test_test_label_prints_on_every_tape_width(
+        self, make_service, backend_name: str, model: str, mm: int
+    ) -> None:
+        svc, queue, store, backend = make_service(loaded_tape_mm=mm)
+        band = band_of(backend_name, model, mm)
+        job_id = await svc.submit_test_label(
+            _test_text, lambda width: band_of(backend_name, model, width)
+        )
+        queue.submit_with_id.assert_awaited_once()
+        args, kwargs = queue.submit_with_id.await_args
+        assert args[0] == job_id
+        assert args[2].height == band.px
+        assert (kwargs["tape_mm"], kwargs["orientation"]) == (mm, "along")
+        job = store.save_queued.await_args.args[0]
+        assert job.template_key == "test_label"
+        assert job.payload["options"]["orientation"] == "along"
+        assert job.payload["test_label"]["px"] == band.px
+        assert job.payload["test_label"]["dpi"] == band.dpi
+        assert job.payload["label_data"]["title"] == f"{mm} mm · 2026-11-17 14:03"
+        assert backend.preflight_check.await_count == 1
+
+    async def test_test_label_payload_names_no_connection(self, make_service) -> None:
+        svc, _queue, store, _backend = make_service(loaded_tape_mm=24)
+        await svc.submit_test_label(_test_text, lambda width: band_of("ptouch", "PT-E550W", width))
+        stored = str(store.save_queued.await_args.args[0].payload)
+        for leak in ("192.0.2", "community", "ptouch", "brother_ql", "PT-E550W", "snmp"):
+            assert leak not in stored
+
+    async def test_a_width_the_model_lacks_refuses_before_rendering(self, make_service) -> None:
+        svc, queue, store, _backend = make_service(loaded_tape_mm=36)
+        with pytest.raises(UnsupportedTapeError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+        queue.submit_with_id.assert_not_awaited()
+        store.save_queued.assert_not_awaited()
+
+    async def test_no_tape_is_refused(self, make_service) -> None:
+        svc, _queue, _store, _backend = make_service(loaded_tape_mm=None)
+        with pytest.raises(NoTapeLoadedError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+
+    async def test_a_disabled_printer_is_refused(self, make_service) -> None:
+        svc, _queue, _store, backend = make_service()
+        svc._printer_enabled = False
+        with pytest.raises(PrinterDisabledError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+        backend.preflight_check.assert_not_awaited()
+
+    async def test_an_offline_printer_is_refused(self, make_service) -> None:
+        svc, queue, _store, backend = make_service()
+        backend.preflight_check.side_effect = PrinterOfflineError("unreachable")
+        with pytest.raises(PrinterOfflineError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+        queue.submit_with_id.assert_not_awaited()

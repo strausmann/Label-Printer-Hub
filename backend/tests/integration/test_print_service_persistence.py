@@ -25,6 +25,8 @@ from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
 from app.services.print_queue import PrintQueue
 from app.services.print_service import PrintService
+from app.services.test_label import TapeTestText
+from app.services.test_label import test_label_band as band_of
 from PIL import Image
 
 
@@ -163,7 +165,14 @@ async def test_test_label_records_the_submitting_key(print_service):
     key_id = uuid4()
 
     job_id = await svc.submit_test_label(
-        lambda _mm: RawLabelData(title="T", primary_id="1", qr_payload="https://e.invalid/t"),
+        lambda mm: TapeTestText(
+            printer="1",
+            width_mm=mm,
+            printed_at="2026-11-17 14:03",
+            version="1.7.0",
+            qr_payload="https://e.invalid/t",
+        ),
+        lambda mm: band_of("ptouch", "PT-E550W", mm),
         api_key_id=key_id,
         source_ip="192.0.2.8",
     )

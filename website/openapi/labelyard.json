@@ -10547,7 +10547,7 @@
     },
     "/api/v1/printers/{printer_id}/test-print": {
       "post": {
-        "description": "Prints one test label on a tape printer (printer name, tape width, time, a QR to the printer's page in the hub) or one test page on a page printer (a frame on the printable area, name, tray, time, a QR). A tape printer is asked at submit time what tape is loaded, so the answer needs no polling; a page printer needs a fresh status.",
+        "description": "Prints one test label on a tape printer (printer name, tape width, time and a 50 mm ruler on every tape the model takes, from 29 mm also a QR to the printer's page in the hub) or one test page on a page printer (a frame on the printable area, name, tray, time, a QR). A tape printer is asked at submit time what tape is loaded, so the answer needs no polling; a page printer needs a fresh status.",
         "operationId": "test_print_api_v1_printers__printer_id__test_print_post",
         "parameters": [
           {
@@ -10595,10 +10595,10 @@
             "description": "Unknown printer (`printer-not-found`)."
           },
           "409": {
-            "description": "`printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape` carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
+            "description": "`printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape`: the printer model does not take the loaded tape; it carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
           },
           "422": {
-            "description": "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). `content-type-data-mismatch`: the test label lacks data its layout needs (`extensions.missing_fields`). Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
+            "description": "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
           },
           "502": {
             "description": "Known printer or render errors: `integration-lookup-failed`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."

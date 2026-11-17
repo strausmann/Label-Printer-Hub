@@ -1082,6 +1082,8 @@ class PrintQueue:
         Used during startup recovery for QUEUED jobs persisted before crash.
         The payload was produced by PrintService.submit_print_job (Task 15)
         and contains content_type, rendered_tape_mm, and label_data snapshot.
+        A test label (#377) carries ``test_label`` and is drawn by its own renderer; a test job
+        stored before #377 has none and re-renders through the layout engine as before.
 
         Raises:
             KeyError: wenn ``label_data`` oder ``content_type`` fehlt.
@@ -1091,6 +1093,17 @@ class PrintQueue:
         from app.schemas.content_type import ContentType
         from app.schemas.label_data import LabelData
         from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
+
+        if "test_label" in payload:
+            # #377: the test label has its own renderer; text, band and DPI are stored with it.
+            from app.services.test_label import TapeBand, TapeTestText, render_test_label
+
+            stored = payload["test_label"]
+            return render_test_label(
+                int(payload["rendered_tape_mm"]),
+                TapeTestText.from_payload(stored),
+                TapeBand(int(stored["px"]), int(stored["dpi"])),
+            )
 
         label_data = LabelData(**payload["label_data"])
         content_type = ContentType(payload["content_type"])
