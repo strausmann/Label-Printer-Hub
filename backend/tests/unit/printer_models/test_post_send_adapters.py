@@ -23,7 +23,7 @@ pytestmark = pytest.mark.anyio
 @pytest.mark.parametrize("method", ["check_after_send", "check_status"])
 async def test_an_error_bit_after_sending_raises(driver: type, method: str) -> None:
     backend = MockPrinterBackend()
-    backend.preflight_check = AsyncMock(  # type: ignore[method-assign]
+    backend.read_status = AsyncMock(  # type: ignore[method-assign]
         return_value=PreflightStatus(
             hr_printer_status="other", loaded_tape_mm=29, error_flags=["jammed"]
         )
@@ -35,7 +35,7 @@ async def test_an_error_bit_after_sending_raises(driver: type, method: str) -> N
         await getattr(printer, method)()
 
     assert err.value.flags == ["jammed"]
-    backend.preflight_check.assert_awaited_once()
+    backend.read_status.assert_awaited_once()
 
 
 @pytest.mark.parametrize("driver", [QL820NWBDriver, PTP750WDriver])

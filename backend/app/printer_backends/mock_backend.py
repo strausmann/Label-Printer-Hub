@@ -125,8 +125,11 @@ class MockPrinterBackend:
             cover_open=self._cover_open,
         )
 
-    async def preflight_check(self) -> PreflightStatus:
-        """Mock SNMP preflight — raises the same errors as PTouchBackend."""
+    async def read_status(self) -> PreflightStatus:
+        """Mock SNMP read — the status with its error bits, never a refusal on a bit (#389).
+
+        Like the real backends, the check after sending reads this, not ``preflight_check``.
+        """
         if self._offline:
             raise PrinterOfflineError(f"mock backend marked offline at {self.host!r}")
         error_flags: list[str] = []
@@ -134,15 +137,20 @@ class MockPrinterBackend:
             error_flags.append("noPaper")
         if self._cover_open:
             error_flags.append("doorOpen")
-        if self._tape_empty:
-            raise TapeEmptyError()
-        if self._cover_open:
-            raise PrinterCoverOpenError()
         return PreflightStatus(
             hr_printer_status="idle",
             loaded_tape_mm=self._loaded_tape_mm,
             error_flags=error_flags,
         )
+
+    async def preflight_check(self) -> PreflightStatus:
+        """Mock SNMP preflight — raises the same errors as PTouchBackend."""
+        status = await self.read_status()
+        if self._tape_empty:
+            raise TapeEmptyError()
+        if self._cover_open:
+            raise PrinterCoverOpenError()
+        return status
 
     async def print_image(
         self,
