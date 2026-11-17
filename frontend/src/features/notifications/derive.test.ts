@@ -26,6 +26,7 @@ interface Input {
   statuses?: Record<string, PrinterStatus | undefined>;
   sheets?: SheetSummary[];
   firstSeen?: Record<string, string>;
+  refusals?: Record<string, { title: string }>;
 }
 const run = (i: Input = {}) =>
   deriveNotifications({ jobs: [], printers: [], statuses: {}, sheets: [], firstSeen: {}, now: NOW, ...i });
@@ -116,6 +117,65 @@ describe("deriveNotifications: jobs", () => {
     const [entry] = run({ jobs: [mkJob(J1, "done", { template_key: null, payload: {} })], printers: [] });
     expect(entry?.values.printer).toBe("");
     expect(entry?.values.title).toBe("");
+  });
+});
+
+describe("deriveNotifications: a tape printer's flags (#376)", () => {
+  const cover = (flags: string[] = ["doorOpen"], over: Record<string, unknown> = {}) =>
+    okStatus(A, { error_flags: flags, error_state: flags.join(", ") || null, ...over });
+  const shelf = mkJob(J1, "queued", { payload: { label_data: { title: "Shelf 3" } } });
+  const flagEntries = (entries: ReturnType<typeof run>) => entries.filter((e) => e.kind === "printer");
+
+  it("cover open with nothing waiting is a warning", () => {
+    const entries = flagEntries(run({ printers: [A], statuses: { [A.id]: cover() } }));
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      id: `printer:${A.id}:flag:doorOpen`,
+      severity: "warning",
+      textKey: "printer.flag",
+      values: { printer: A.name, flag: "doorOpen", job: "", refused: "" },
+      target: { to: "/printers/$printerId", params: { printerId: A.id } },
+    });
+  });
+
+  it("cover open with a queued job is a problem naming the job", () => {
+    const [entry, ...rest] = flagEntries(run({ jobs: [shelf], printers: [A], statuses: { [A.id]: cover() } }));
+    expect(rest).toEqual([]);
+    expect(entry).toMatchObject({ id: `printer:${A.id}:flag:doorOpen`, severity: "error" });
+    expect(entry?.values.job).toBe("Shelf 3");
+  });
+
+  it("a refused print escalates even before the next poll", () => {
+    // The status still shows the cover open as it did before the refusal: only the refusal is new.
+    const [entry] = flagEntries(run({ printers: [A], statuses: { [A.id]: cover() }, refusals: { [A.id]: { title: "" } } }));
+    expect(entry).toMatchObject({ id: `printer:${A.id}:flag:doorOpen`, severity: "error", values: { job: "", refused: "1" } });
+  });
+
+  it("two flags give two entries", () => {
+    const entries = flagEntries(run({ printers: [A], statuses: { [A.id]: cover(["doorOpen", "noPaper"]) } }));
+    expect(entries.map((e) => [e.id, e.severity]).sort()).toEqual([
+      [`printer:${A.id}:flag:doorOpen`, "warning"],
+      [`printer:${A.id}:flag:noPaper`, "error"],
+    ]);
+    // The kind-based entry adds nothing next to them.
+    expect(entries.some((e) => e.id === `printer:${A.id}:error`)).toBe(false);
+  });
+
+  it("the entry goes when the flag clears", () => {
+    expect(flagEntries(run({ printers: [A], statuses: { [A.id]: cover() } }))).toHaveLength(1);
+    expect(flagEntries(run({ printers: [A], statuses: { [A.id]: cover([]) } }))).toEqual([]);
+  });
+
+  it("no paper is a problem", () => {
+    const [entry] = flagEntries(run({ printers: [A], statuses: { [A.id]: cover(["noPaper"]) } }));
+    expect(entry).toMatchObject({ id: `printer:${A.id}:flag:noPaper`, severity: "error" });
+  });
+
+  it("the entry keeps its first-seen time when a waiting job escalates it", () => {
+    const seen = minutesAgo(10);
+    const firstSeen = { [`printer:${A.id}:flag:doorOpen`]: seen };
+    const [entry] = flagEntries(run({ jobs: [shelf], printers: [A], statuses: { [A.id]: cover() }, firstSeen }));
+    expect(entry?.at).toBe(seen);
   });
 });
 

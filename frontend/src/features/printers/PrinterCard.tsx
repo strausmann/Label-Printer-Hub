@@ -3,10 +3,12 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
+import { Fragment } from "react";
 import { StatusBadge } from "../../shell/StatusBadge";
 import type { Printer, PrinterStatus } from "./api";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
+import { useFlagText, usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TapeSwatch } from "./TapeSwatch";
@@ -23,7 +25,8 @@ export function PrinterCard({
 }) {
   const { t, i18n } = useLingui();
   const kinds = useKindLabel();
-  const view = describePrinter(printer, status, printing);
+  const waitingOf = usePrinterWaiting();
+  const view = describePrinter(printer, status, printing, waitingOf(printer.id));
   const page = isPagePrinter(printer, status);
   const unknown = statusIsUnknown(status);
   const age = staleAgeSeconds(status);
@@ -40,6 +43,7 @@ export function PrinterCard({
       </span>
       <StatusBadge state={view.badge} label={kinds[view.kind]} />
       {view.detail && <span className="text-small text-ink-2">{view.detail}</span>}
+      <FlagLine flags={view.flags} />
       {view.kind === "paused" && <PauseReason pause={printer.pause} />}
       {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked={false} />}
       {typeof age === "number" && (
@@ -58,5 +62,28 @@ export function PrinterCard({
         )}
       </span>
     </Link>
+  );
+}
+
+/**
+ * A tape printer's error flags in words, joined " · " (#376); a flag without words of its own names itself in a
+ * quieter tone. Nothing for a printer without flags.
+ */
+export function FlagLine({ flags, as: Tag = "span" }: { flags: readonly string[]; as?: "span" | "p" }) {
+  const flagText = useFlagText();
+  if (flags.length === 0) return null;
+  return (
+    <Tag className="m-0 text-small text-ink-2 [overflow-wrap:anywhere]">
+      {flags.map((flag, i) => {
+        const { headline, detail } = flagText(flag);
+        return (
+          <Fragment key={flag}>
+            {i > 0 && " · "}
+            {headline}
+            {detail && <span className="text-ink-3"> ({detail})</span>}
+          </Fragment>
+        );
+      })}
+    </Tag>
   );
 }

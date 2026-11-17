@@ -3,6 +3,7 @@
 
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useFlagText } from "../printers/flags";
 import { useKindLabel, type PrinterKind } from "../printers/model";
 import { useReasonWord } from "../printers/reasons";
 import type { Notification } from "./derive";
@@ -15,6 +16,7 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
   const { t } = useLingui();
   const kinds = useKindLabel();
   const reasonWord = useReasonWord();
+  const flagText = useFlagText();
 
   return ({ textKey, values }) => {
     const title = values.title || t`Label`;
@@ -33,6 +35,14 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
       case "job.failed": {
         const error = (values.error ?? "").trim();
         return error ? t`${title} failed: ${error}` : t`${title} failed`;
+      }
+      case "printer.flag": {
+        // The flag in words, never the raw name (#376); a waiting job or a refused print says why it is a problem.
+        const headline = flagText(values.flag ?? "").headline;
+        const job = values.job ?? "";
+        if (job) return t`${printer}: ${headline} · ${job} is waiting`;
+        if (values.refused) return t`${printer}: ${headline} · a print was refused`;
+        return t`${printer}: ${headline}`;
       }
       case "printer.different_device":
         return t`Different device at the address of ${printer}`;

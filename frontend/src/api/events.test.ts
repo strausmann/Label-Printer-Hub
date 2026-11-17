@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emitSessionConfirmed, setOnUnauthorized, setSessionUnknown } from "./client";
 import { resetPrintWatch, useWatchedPrints, watchPrint } from "../features/jobs/printWatch";
 import { notificationJobsKey } from "../features/notifications/useNotifications";
+import { useCoverRefusals } from "../features/printers/coverRefusals";
 import { useHubEvents } from "./events";
 
 class FakeEventSource {
@@ -125,6 +126,13 @@ describe("useHubEvents", () => {
     const { invalidate } = setup();
     act(() => last().emit("job.state_changed", "p1"));
     expect(keys(invalidate)).toEqual([["jobs"], ["printers", "p1", "queue"]]);
+  });
+
+  it("a job that failed on the open cover records a cover refusal for its printer (#376)", () => {
+    setup();
+    act(() => last().emit("job.state_changed", "p1", { job_id: "j1", to_state: "failed", error_code: "printer_cover_open" }));
+    act(() => last().emit("job.state_changed", "p2", { job_id: "j2", to_state: "failed", error_code: "tape_mismatch" }));
+    expect(renderHook(() => useCoverRefusals()).result.current).toEqual({ p1: { title: "" } });
   });
 
   it("printer.status invalidates the printers prefix once, which reaches the printer's own queries", () => {

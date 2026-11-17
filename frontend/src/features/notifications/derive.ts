@@ -3,9 +3,12 @@
 
 import { jobTitle } from "../jobs/model";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
+import type { CoverRefusal } from "../printers/coverRefusals";
+import { flagSeverity, printerWaiting, type Waiting } from "../printers/flags";
 import { describePrinter, isFailed, type PrinterKind } from "../printers/model";
 import type { SheetSummary } from "../sheets/api";
 import type { components } from "../../api/schema.gen";
+import { WINDOW_MS } from "./jobsQuery";
 
 export type SheetTypeNotice = components["schemas"]["SheetTypeNotice"];
 
@@ -15,7 +18,7 @@ export const NOTICES_KEY = ["notices"] as const;
 export type Severity = "error" | "warning" | "success" | "info";
 
 export interface Notification {
-  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `sheet:<code>:unconfirmed` or `sheet-type-verified:<key>:<revision>`: a new state is a new entry. */
+  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `printer:<id>:flag:<flag>`, `sheet:<code>:unconfirmed` or `sheet-type-verified:<key>:<revision>`: a new state is a new entry. */
   id: string;
   severity: Severity;
   kind: "job" | "printer" | "sheet" | "sheet_type";
@@ -43,11 +46,12 @@ export interface DeriveInput {
   /** Entry id → ISO time this browser first saw a printer or sheet condition. */
   firstSeen: Record<string, string>;
   now: number;
+  /** Printer id → a print refused because of the open cover (`coverRefusals.ts`); none when left out. */
+  refusals?: Readonly<Record<string, CoverRefusal>>;
 }
 
 export const MAX_ENTRIES = 100;
-/** Jobs are fetched for this long back; the derivation drops what changed before it too, so a stale answer cannot show old failures. */
-export const WINDOW_MS = 24 * 60 * 60 * 1000;
+export { WINDOW_MS };
 
 const time = (iso: string): number => {
   const ms = Date.parse(iso);
@@ -123,17 +127,33 @@ function printerEntries(
   printer: Printer,
   status: PrinterStatus | undefined,
   printing: boolean,
+  waiting: Waiting,
   firstSeen: Record<string, string>,
   now: number,
 ): Notification[] {
-  const view = describePrinter(printer, status, printing);
+  const view = describePrinter(printer, status, printing, waiting);
   const target: Notification["target"] = { to: "/printers/$printerId", params: { printerId: printer.id } };
   const at = (id: string) => firstSeen[id] ?? new Date(now).toISOString();
   const entries: Notification[] = [];
 
   // A stopped page printer is an error only for a blocking or error reason; any other stop is a warning.
   const severity = view.kind === "stopped" ? (view.badge === "bad" ? "error" : "warning") : PRINTER_SEVERITY[view.kind];
-  if (severity) {
+  // A tape printer's flags are one entry each (#376), in the same severity the card shows; the view's own kind then
+  // adds nothing. The id names the flag, not its severity: the entry keeps its time when a waiting job escalates it.
+  for (const flag of view.flags) {
+    const id = `printer:${printer.id}:flag:${flag}`;
+    entries.push({
+      id,
+      severity: flagSeverity(flag, waiting),
+      kind: "printer",
+      textKey: "printer.flag",
+      values: { printer: printer.name, flag, job: waiting.waiting ? waiting.job : "", refused: waiting.refused ? "1" : "" },
+      at: at(id),
+      target,
+    });
+  }
+  const flagsOnly = view.flags.length > 0 && (view.kind === "error" || view.kind === "attention");
+  if (severity && !flagsOnly) {
     const id = `printer:${printer.id}:${view.kind}`;
     entries.push({
       id,
@@ -214,7 +234,7 @@ export function mergeFeed(derived: readonly Notification[], notices: readonly Sh
  * Pure: the clock is `now`, and the moment a printer or sheet condition began is `firstSeen`.
  */
 export function deriveNotifications(input: DeriveInput): Notification[] {
-  const { jobs, printers, statuses, sheets, firstSeen, now } = input;
+  const { jobs, printers, statuses, sheets, firstSeen, now, refusals = {} } = input;
   const byPrinter = new Map(printers.map((p) => [p.id, p]));
   const recent = jobs.filter((j) => now - time(j.updated_at) < WINDOW_MS);
   const resolved = resolvedByRetry(jobs);
@@ -225,7 +245,10 @@ export function deriveNotifications(input: DeriveInput): Notification[] {
     const entry = jobEntry(job, byPrinter, resolved);
     if (entry) entries.push(entry);
   }
-  for (const printer of printers) entries.push(...printerEntries(printer, statuses[printer.id], busy.has(printer.id), firstSeen, now));
+  for (const printer of printers) {
+    const waiting = printerWaiting(printer.id, jobs, refusals);
+    entries.push(...printerEntries(printer, statuses[printer.id], busy.has(printer.id), waiting, firstSeen, now));
+  }
   for (const sheet of sheets) {
     const entry = sheetEntry(sheet, firstSeen, now);
     if (entry) entries.push(entry);

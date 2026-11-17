@@ -136,6 +136,15 @@ describe("NotificationCentre: the panel", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("the panel says the cover sentence, never \"doorOpen\"", async () => {
+    mockApi({ ...routes(), [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id, { error_flags: ["doorOpen"], error_state: "doorOpen" }) });
+    await renderApp({ path: "/jobs" });
+    await userEvent.click(await bell());
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByRole("link", { name: /Workshop PT-P750W: Cover open — close it to print/ })).toBeVisible();
+    expect(dialog.textContent).not.toContain("doorOpen");
+  });
+
   it("an entry of a printer opens the printer page", async () => {
     mockApi(routes([], [{ ...PRINTER_A, paused: true }]));
     const { router } = await renderApp({ path: "/jobs" });

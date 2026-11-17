@@ -20,6 +20,8 @@ import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/Pag
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
 import { PrinterGrid } from "../printers/PrinterGrid";
+import { FlagLine } from "../printers/PrinterCard";
+import { usePrinterWaiting } from "../printers/flags";
 import { TapeSwatch } from "../printers/TapeSwatch";
 
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -172,14 +174,35 @@ function AttentionItem({
   const kinds = useKindLabel();
   const stateOf = useJobStateBadge();
   const text = useEntryText();
+  const waitingOf = usePrinterWaiting();
   const dismiss = (
     <Button onPress={onDismiss} className={`${SECONDARY_BUTTON} self-start`}>
       {t`Dismiss`}
     </Button>
   );
 
+  if (entry.kind === "printer" && printer && entry.textKey === "printer.flag") {
+    // One flag per entry (#376): the shape follows the entry's severity, the words the flag; what waits says why.
+    const flag = entry.values.flag ?? "";
+    const job = entry.values.job ?? "";
+    const problem = entry.severity === "error";
+    return (
+      <li className="flex flex-col items-start gap-2">
+        <span className="font-bold">{printer.name}</span>
+        <StatusBadge state={problem ? "bad" : "warn"} label={problem ? kinds.error : kinds.attention} />
+        <FlagLine flags={[flag]} />
+        {job ? (
+          <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`${job} is waiting`}</span>
+        ) : entry.values.refused ? (
+          <span className="text-small text-ink-2">{t`A print was refused`}</span>
+        ) : null}
+        {dismiss}
+      </li>
+    );
+  }
+
   if (entry.kind === "printer" && printer && !entry.id.endsWith(":material")) {
-    const view = describePrinter(printer, status, busy.has(printer.id));
+    const view = describePrinter(printer, status, busy.has(printer.id), waitingOf(printer.id));
     const lastAge = status?.last_probe_age_s;
     const ageWord = typeof lastAge === "number" ? formatAge(lastAge, i18n.locale) : "";
     return (

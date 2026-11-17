@@ -16,6 +16,8 @@ import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, us
 import { IdentityMismatchBanner, SettledNotice, useIdentityKindLabel } from "./IdentityMismatchBanner";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
+import { FlagLine } from "./PrinterCard";
+import { usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
@@ -52,7 +54,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const queue = useQueue(printer.id);
   const calibration = useFeature("calibration");
   const printing = (queue.data ?? []).some((j) => j.state === "printing");
-  const view = describePrinter(printer, status.data, printing);
+  const waitingOf = usePrinterWaiting();
+  const view = describePrinter(printer, status.data, printing, waitingOf(printer.id));
   const page = isPagePrinter(printer, status.data);
   // The union is wider than what the server sends: an IPP printer's address is left out for keys below admin.
   const connection: Record<string, unknown> = printer.connection;
@@ -96,6 +99,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <h1 className="text-title font-bold">{printer.name}</h1>
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
+          <FlagLine flags={view.flags} as="p" />
           {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked />}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
           <ReasonLine reasons={view.reasons} />

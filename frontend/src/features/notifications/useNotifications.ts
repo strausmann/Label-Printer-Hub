@@ -4,16 +4,15 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { apiFetch } from "../../api/client";
-import { queryString } from "../../api/queryString";
 import { useFeature } from "../../app/session";
-import { printerStatusQuery, usePrinters, type Job, type PrinterStatus } from "../printers/api";
+import { printerStatusQuery, usePrinters, type PrinterStatus } from "../printers/api";
+import { observeStatuses, useCoverRefusals } from "../printers/coverRefusals";
 import { useSheets } from "../sheets/api";
-import { deriveNotifications, mergeFeed, NOTICES_KEY, WINDOW_MS, type Notification, type SheetTypeNotice } from "./derive";
+import { deriveNotifications, mergeFeed, NOTICES_KEY, type Notification, type SheetTypeNotice } from "./derive";
+import { notificationJobsQuery } from "./jobsQuery";
 import { badgeOf, clearAll, dismiss, isVisible, markAllRead, notificationStore, trackFirstSeen, type StoredState } from "./store";
 
-/** Under `["jobs"]`, the prefix every job event invalidates (and the reconnect resync re-reads). */
-export const notificationJobsKey = ["jobs", "notifications"] as const;
-const JOB_LIMIT = 200;
+export { notificationJobsKey } from "./jobsQuery";
 
 export type FeedStatus = "loading" | "error" | "ready";
 
@@ -42,13 +41,7 @@ export function useNotifications(): Feed {
   const store = notificationStore();
   const state = useSyncExternalStore(store.subscribe, store.get);
 
-  const jobs = useQuery({
-    queryKey: notificationJobsKey,
-    queryFn: () => {
-      const since = new Date(Date.now() - WINDOW_MS).toISOString();
-      return apiFetch<Job[]>(`/api/v1/jobs${queryString({ since, limit: JOB_LIMIT, order: "newest" })}`);
-    },
-  });
+  const jobs = useQuery(notificationJobsQuery());
   const printers = usePrinters();
   const statusResults = useQueries({ queries: (printers.data ?? []).map((p) => printerStatusQuery(p.id)) });
   const sheets = useSheets({}, sheetsOn);
@@ -65,6 +58,10 @@ export function useNotifications(): Feed {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [printers.data, stamps]);
 
+  // A refused print on an open cover counts until a new reading of that printer shows the cover closed (#376).
+  const refusals = useCoverRefusals();
+  useEffect(() => observeStatuses(statuses), [statuses, refusals]);
+
   // Pure render: "now" is when the newest answer arrived, as the overview always measured it.
   const now = Math.max(jobs.dataUpdatedAt, printers.dataUpdatedAt, sheets.dataUpdatedAt, ...statusResults.map((r) => r.dataUpdatedAt));
 
@@ -78,10 +75,11 @@ export function useNotifications(): Feed {
           sheets: sheetsOn ? (sheets.data ?? []) : [],
           firstSeen: state.firstSeen,
           now,
+          refusals,
         }),
         sheetsOn ? (notices.data ?? []) : [],
       ),
-    [jobs.data, printers.data, statuses, sheets.data, sheetsOn, notices.data, state.firstSeen, now],
+    [jobs.data, printers.data, statuses, sheets.data, sheetsOn, notices.data, state.firstSeen, now, refusals],
   );
 
   // A condition's time is the moment this browser first saw it. Only kinds whose source has been read are tracked,

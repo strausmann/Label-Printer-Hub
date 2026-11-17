@@ -6,6 +6,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { resetPrintWatch } from "./features/jobs/printWatch";
 import { resetNotificationStore } from "./features/notifications/store";
+import { resetCoverRefusals } from "./features/printers/coverRefusals";
 
 // Vitest globals are off, so Testing Library cannot register its own cleanup.
 // The print-status store is module state: a print started in one test must not show up in the next.
@@ -15,6 +16,7 @@ afterEach(() => {
   // Read, cleared and dismissed entries live in the browser's storage and in a module-level store.
   window.localStorage.clear();
   resetNotificationStore();
+  resetCoverRefusals();
 });
 
 // jsdom has no EventSource. Tests of the shell get one that never connects;

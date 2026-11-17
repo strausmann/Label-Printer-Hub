@@ -4,8 +4,9 @@
 import { useLingui } from "@lingui/react/macro";
 import type { BadgeState } from "../../shell/StatusBadge";
 import type { Job, Printer, PrinterStatus } from "./api";
+import { flagSeverity, NOT_WAITING, type Waiting } from "./flags";
 
-export type PrinterKind = "paused" | "stale" | "not_polled" | "different_device" | "offline" | "error" | "stopped" | "printing" | "ready" | "unknown";
+export type PrinterKind = "paused" | "stale" | "not_polled" | "different_device" | "offline" | "error" | "attention" | "stopped" | "printing" | "ready" | "unknown";
 
 export interface PrinterView {
   kind: PrinterKind;
@@ -14,6 +15,8 @@ export interface PrinterView {
   detail: string | null;
   /** Page printers: why a printer is stopped or has a problem (`printer-state-reasons` keywords, in the order sent). */
   reasons: string[];
+  /** Tape printers: the RFC 3805 error flags the status reports (`error_flags`), put into words by `flags.ts`. */
+  flags: string[];
 }
 
 /** A page (IPP) printer: the list carries `backend`, the status `kind` confirms it. */
@@ -63,7 +66,11 @@ export const staleAgeSeconds = (status: PrinterStatus | undefined): number | nul
  * What the operator can act on wins: a paused printer says Paused even when it is also
  * offline, and a held printer (another device answered at its address) says so instead of Ready. The reason for a pause comes from `printer.pause` (see PauseReason).
  */
-export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean): PrinterView {
+export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean, waiting: Waiting = NOT_WAITING): PrinterView {
+  return { flags: [], ...describe(printer, status, printing, waiting) };
+}
+
+function describe(printer: Printer, status: PrinterStatus | undefined, printing: boolean, waiting: Waiting): Omit<PrinterView, "flags"> & Partial<Pick<PrinterView, "flags">> {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null, reasons: [] };
   // Before any `online` branch: a status nobody refreshes says nothing about the printer (#227).
   const unknown = unknownKind(status);
@@ -79,7 +86,17 @@ export function describePrinter(printer: Printer, status: PrinterStatus | undefi
     const serious = reasons.some((r) => r.blocking || r.severity === "error");
     return { kind: "stopped", badge: serious ? "bad" : "warn", detail: null, reasons: reasons.map((r) => r.keyword) };
   }
+  // A tape printer's flags (#376): an open cover alone is a warning, a problem once something waits to print. The
+  // card, the detail page, the overview row and the notification pass the same `waiting`, so they agree.
+  const flags = page ? [] : (status?.error_flags ?? []);
+  if (flags.length > 0) {
+    const warning = flags.every((f) => flagSeverity(f, waiting) === "warning");
+    return warning
+      ? { kind: "attention", badge: "warn", detail: null, reasons: [], flags }
+      : { kind: "error", badge: "bad", detail: null, reasons: [], flags };
+  }
   // After the stopped case: a stopped page printer's `error_state` only repeats its reason keywords.
+  // A status without `error_flags` (an older hub) still names its `error_state`.
   if (status?.error_state) {
     if (page) {
       // The hub copies a blocking reason keyword into `error_state`; name it in words, like a stopped printer's.
@@ -105,6 +122,7 @@ export function useKindLabel(): Record<PrinterKind, string> {
     different_device: t`Different device`,
     offline: t`Offline`,
     error: t`Problem`,
+    attention: t`Warning`,
     stopped: t`Stopped`,
     printing: t`Printing`,
     ready: t`Ready`,

@@ -28,6 +28,7 @@ import { lookupIdFromQrPath } from "./labelUrl";
 import { recordRecent } from "./recent";
 import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
+import { notePrintError } from "../printers/coverRefusals";
 
 const lookupRoute = getRouteApi("/lookup/$app/$id");
 
@@ -217,7 +218,14 @@ function ItemDetail({ item }: { item: LookupResult }) {
               <Button
                 className={PRIMARY_BUTTON}
                 isDisabled={!selected || print.isPending || readOnly}
-                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem, layout: layoutOptions })}
+                onPress={() =>
+                  selected &&
+                  print.mutate(
+                    { printerKey: selected.id, item: asItem, layout: layoutOptions },
+                    // A refusal on the open cover makes the cover a problem at once (#376).
+                    { onError: (error) => notePrintError(selected.id, asItem.name, error) },
+                  )
+                }
               >
                 {t`Print now`}
               </Button>

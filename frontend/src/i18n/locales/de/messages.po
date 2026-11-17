@@ -230,6 +230,10 @@ msgstr "{item}: schon {count}× auf {sheetCount} Bögen gedruckt, zuletzt am {la
 msgid "{item}: printed before on {sheet} on {when}, cell {cells}"
 msgstr "{item}: am {when} schon auf {sheet} gedruckt, Zelle {cells}"
 
+#: src/features/overview/OverviewPage.tsx
+msgid "{job} is waiting"
+msgstr "{job} wartet"
+
 #: src/features/lookup/CartPage.tsx
 msgid "{kind}, for example {name}."
 msgstr "{kind}, zum Beispiel {name}."
@@ -329,6 +333,18 @@ msgstr "{preselectedSheet} hat keine freie Zelle mehr."
 #: src/features/sheets/print/SheetSection.tsx
 msgid "{preselectedSheet} is discarded and cannot take labels any more."
 msgstr "{preselectedSheet} ist verworfen und nimmt keine Etiketten mehr auf."
+
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: {headline}"
+msgstr "{printer}: {headline}"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: {headline} · {job} is waiting"
+msgstr "{printer}: {headline} · {job} wartet"
+
+#: src/features/notifications/useEntryText.ts
+msgid "{printer}: {headline} · a print was refused"
+msgstr "{printer}: {headline} · ein Druck wurde abgelehnt"
 
 #: src/features/notifications/useEntryText.ts
 msgid "{printer}: {kind}"
@@ -507,6 +523,10 @@ msgstr "ein neuer Bogen"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "A print is already on its way."
 msgstr "Ein Druck ist schon unterwegs."
+
+#: src/features/overview/OverviewPage.tsx
+msgid "A print was refused"
+msgstr "Ein Druck wurde abgelehnt"
 
 #: src/features/settings/AccessKeys.tsx
 msgid "A printer list is stored on this key. Ignored for admin keys: an admin key acts on every printer."
@@ -1315,6 +1335,10 @@ msgstr "Die Abdeckung ist offen"
 msgid "cover open"
 msgstr "Abdeckung offen"
 
+#: src/features/printers/flags.ts
+msgid "Cover open — close it to print"
+msgstr "Deckel offen – zum Drucken schließen"
+
 #: src/shell/BootstrapKeyCreated.tsx
 msgid "Create admin key"
 msgstr "Admin-Schlüssel erstellen"
@@ -2011,6 +2035,22 @@ msgstr "In Benutzung durch einen laufenden Auftrag"
 msgid "Information"
 msgstr "Information"
 
+#: src/features/printers/flags.ts
+msgid "Ink or toner empty"
+msgstr "Tinte oder Toner leer"
+
+#: src/features/printers/flags.ts
+msgid "Ink or toner low"
+msgstr "Tinte oder Toner knapp"
+
+#: src/features/printers/flags.ts
+msgid "Input tray empty"
+msgstr "Zufuhrfach leer"
+
+#: src/features/printers/flags.ts
+msgid "Input tray missing"
+msgstr "Zufuhrfach fehlt"
+
 #: src/features/integrations/IntegrationPage.tsx
 #: src/features/integrations/IntegrationTiles.tsx
 #: src/features/settings/Integrations.tsx
@@ -2319,6 +2359,10 @@ msgstr "MAC-Adresse"
 #: src/shell/Sidebar.tsx
 msgid "Main"
 msgstr "Hauptnavigation"
+
+#: src/features/printers/flags.ts
+msgid "Maintenance due"
+msgstr "Wartung fällig"
 
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Make and model"
@@ -2646,6 +2690,10 @@ msgstr "Es ist kein Band eingelegt. Lege ein Band ein und versuche es noch einma
 #: src/features/printers/TapeSwatch.tsx
 msgid "No tape loaded"
 msgstr "Kein Band eingelegt"
+
+#: src/features/printers/flags.ts
+msgid "No tape or paper — load it to print"
+msgstr "Kein Band oder Papier – zum Drucken einlegen"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "No tray to calibrate."
@@ -3006,6 +3054,14 @@ msgstr "Oder die Werte direkt eingeben"
 #: src/features/settings/Integrations.tsx
 msgid "Other apps that print through this hub. They are recognised by the name of their API key."
 msgstr "Andere Apps, die über diesen Hub drucken. Sie werden am Namen ihres API-Schlüssels erkannt."
+
+#: src/features/printers/flags.ts
+msgid "Output tray full"
+msgstr "Ausgabefach voll"
+
+#: src/features/printers/flags.ts
+msgid "Output tray missing"
+msgstr "Ausgabefach fehlt"
 
 #: src/features/overview/OverviewPage.tsx
 #: src/shell/labels.ts
@@ -4238,6 +4294,10 @@ msgstr "Material leer"
 msgid "supply low"
 msgstr "Material fast leer"
 
+#: src/features/printers/flags.ts
+msgid "Supply missing"
+msgstr "Verbrauchsmaterial fehlt"
+
 #: src/shell/ThemeSwitch.tsx
 msgctxt "the chosen theme, after the word Theme"
 msgid "system"
@@ -4280,6 +4340,10 @@ msgstr "Bandfarbe"
 msgid "Tape is empty"
 msgstr "Das Band ist leer"
 
+#: src/features/printers/flags.ts
+msgid "Tape jammed — clear it to print"
+msgstr "Band gestaut – zum Drucken freimachen"
+
 #: src/features/overview/OverviewPage.tsx
 #: src/features/printers/PrinterCard.tsx
 #: src/features/printers/PrinterDetail.tsx
@@ -4290,6 +4354,10 @@ msgstr "Band unbekannt"
 #: src/features/printers/TapeSwatch.tsx
 msgid "Tape not known yet"
 msgstr "Band noch nicht bekannt"
+
+#: src/features/printers/flags.ts
+msgid "Tape or paper running low"
+msgstr "Band oder Papier wird knapp"
 
 #: src/features/lookup/PrinterPicker.tsx
 msgctxt "printer kind"
@@ -4945,6 +5013,10 @@ msgstr "Der Druck hat angehalten, während dieses Etikett gesendet wurde. Ob es 
 msgid "The printer aborted the job before printing."
 msgstr "Der Drucker hat den Auftrag abgebrochen, bevor er gedruckt wurde."
 
+#: src/features/printers/flags.ts
+msgid "The printer asks for service"
+msgstr "Der Drucker verlangt eine Wartung"
+
 #: src/features/settings/feedback.tsx
 msgid "The printer cannot be reached at that address."
 msgstr "Der Drucker ist unter dieser Adresse nicht erreichbar."
@@ -5040,6 +5112,14 @@ msgstr "Der Drucker hat die Anfrage abgelehnt ({status})."
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request."
 msgstr "Der Drucker hat die Anfrage abgelehnt."
+
+#: src/features/printers/flags.ts
+msgid "The printer reports a problem."
+msgstr "Der Drucker meldet ein Problem."
+
+#: src/features/printers/flags.ts
+msgid "The printer reports itself offline"
+msgstr "Der Drucker meldet sich offline"
 
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/printers/TestPrintButton.tsx
@@ -5739,6 +5819,7 @@ msgstr "Wartet auf dich"
 
 #: src/features/notifications/NotificationCentre.tsx
 #: src/features/overview/OverviewPage.tsx
+#: src/features/printers/model.ts
 #: src/shell/StatusBadge.tsx
 msgid "Warning"
 msgstr "Warnung"

@@ -11,6 +11,7 @@ import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
 import { LayoutPicker } from "../layout/LayoutPicker";
 import { tapeMmOfStatus, useLabelLayout, type LayoutOptions } from "../layout/ql";
 import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/api";
+import { notePrintError } from "../printers/coverRefusals";
 import { HINT } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useAppName, useContentTypeLabel } from "./apps";
@@ -147,6 +148,8 @@ export function CartPage() {
       const batch = await cart.print(selected.id, layout.options);
       setOutcome({ kind: "sent", labels: count, printer: selected.name, batch });
     } catch (error) {
+      // A refusal on the open cover makes the cover a problem at once (#376); one item names its label.
+      notePrintError(selected.id, cart.items.length === 1 ? (cart.items[0]?.name ?? "") : "", error);
       // The labels are queued even though their status could not be read.
       setOutcome(error instanceof BatchStatusError ? { kind: "sent", labels: count, printer: selected.name, batch: null } : { kind: "failed", error });
     } finally {

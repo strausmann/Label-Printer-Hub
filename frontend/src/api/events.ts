@@ -7,6 +7,7 @@ import { noteServerVersion } from "../app/updates";
 import { heldRunsKey } from "../features/jobs/api";
 import { pageJobStateFrom, pageJobStateKey } from "../features/jobs/pageJobState";
 import { recordJobEvent, resyncWatchedJobs } from "../features/jobs/printWatch";
+import { noteJobEvent } from "../features/printers/coverRefusals";
 import { previewNamesCode, SHEET_PREVIEW_KEY, sheetKey, sheetsListKey, typesListKey } from "../features/sheets/keys";
 import { apiFetch, isSessionUnknown, notifyUnauthorized, onSessionConfirmed } from "./client";
 
@@ -109,6 +110,8 @@ function invalidate(client: QueryClient, type: EventType, { printerId, data }: F
       if (pageJob) client.setQueryData(pageJobStateKey(pageJob.jobId), pageJob.state);
       // The print notifications (and the calibration page) read the same event.
       recordJobEvent(data);
+      // A job that failed on the open cover makes the cover a problem at once, before the next poll (#376).
+      noteJobEvent(printerId, data);
       run(["jobs"]);
       if (printerId) run(["printers", printerId, "queue"]);
       break;
