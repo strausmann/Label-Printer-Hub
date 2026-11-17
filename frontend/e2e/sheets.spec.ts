@@ -104,7 +104,8 @@ test.describe.serial("sheets", () => {
 
     await expect(steps.getByRole("heading", { name: "Did it print?" })).toBeVisible({ timeout: 20_000 });
     const code = /A3490-\d{4}/.exec((await steps.getByText(/sheet code A3490-\d{4}/).textContent())!)![0];
-    const jobs = (await (await page.request.get("/api/v1/jobs?limit=20", { headers: KEY() })).json()) as { payload: { kind?: string; detail?: { sheet_code?: string } } }[];
+    // Newest first: the list defaults to the oldest jobs, and earlier specs of the run leave more than 20.
+    const jobs = (await (await page.request.get("/api/v1/jobs?limit=20&order=newest", { headers: KEY() })).json()) as { payload: { kind?: string; detail?: { sheet_code?: string } } }[];
     expect(jobs.some((j) => j.payload.kind === "sheet_back_page" && j.payload.detail?.sheet_code === code)).toBe(true);
     await steps.getByRole("button", { name: "Yes, it is printed" }).click();
     await expect(steps).toHaveCount(0);
