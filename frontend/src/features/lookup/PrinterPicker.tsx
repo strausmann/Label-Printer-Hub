@@ -3,7 +3,6 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
-import { ApiError } from "../../api/client";
 import { FIELD } from "../../shell/SignIn";
 import { usePrinterWaiting } from "../printers/flags";
 import { describePrinter, isPagePrinter, useKindLabel } from "../printers/model";
@@ -87,32 +86,4 @@ export function PrinterPicker({
       </select>
     </label>
   );
-}
-
-/**
- * The words for a refused print. The codes with a meaning of their own come first (a QR code that does not fit, a batch
- * with two directions); then the server's own wording when it gave one (offline, no tape, cover open …), else a plain fallback.
- */
-export function usePrintErrorText(): (error: unknown) => string {
-  const { t } = useLingui();
-  return (error) => {
-    if (error instanceof ApiError) {
-      if (error.status === 0) return t`The server cannot be reached.`;
-      if (error.code === "qr_payload_too_long") {
-        const length = Number(error.errorDetail?.length);
-        const max = Number(error.errorDetail?.max_bytes);
-        return Number.isFinite(length) && Number.isFinite(max)
-          ? t`The link in the QR code is ${length} bytes long, but this layout holds at most ${max} bytes. Pick another arrangement or a shorter link.`
-          : t`The link in the QR code is too long for this layout.`;
-      }
-      if (error.code === "unsupported_tape" && Array.isArray(error.errorDetail?.content_types)) {
-        // #346: a cart with other labels on a DK width only the spool label has.
-        const tapeMm = Number(error.errorDetail?.tape_mm);
-        return t`Only the spool label prints on ${tapeMm} mm tape. Remove the other labels from the cart or load 62 mm tape.`;
-      }
-      if (error.code === "conflicting_orientation") return t`These labels ask for different directions (along and across). Print them in separate runs.`;
-      if (error.detail && !/^HTTP \d+$/.test(error.detail)) return error.detail;
-    }
-    return t`The labels could not be sent.`;
-  };
 }

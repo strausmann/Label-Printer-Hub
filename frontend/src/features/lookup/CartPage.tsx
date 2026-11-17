@@ -20,7 +20,8 @@ import { BatchStatusError, MAX_COPIES, useCart, type BatchRead, type CartItem, t
 import { distinctPreviews, itemKey } from "./cartPreviews";
 import { LabelPreview } from "./LabelPreview";
 import { useCartCheck, type RenderCheckResult } from "./useCartCheck";
-import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
+import { usePrintErrorText } from "../printers/printErrorText";
+import { PrinterPicker, usePrinterChoice } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
 
 const cartApi = getRouteApi("/cart");

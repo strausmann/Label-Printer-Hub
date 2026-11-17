@@ -16,15 +16,10 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.print_errors import SYNC_ERROR_TYPES, print_error_response
+from app.api.print_errors import print_error_response
 from app.auth.dependencies import AuthContext, charge_lookup_fan_out, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
-from app.printer_backends.exceptions import (
-    ContentTypeDataMismatchError,
-    QrPayloadTooLongError,
-    UnsupportedTapeError,
-)
 from app.repositories import printer_state as printer_state_repo
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
@@ -34,6 +29,7 @@ from app.schemas.print_response import PrintJobResponse
 from app.schemas.render_check import RenderCheckRequest, RenderCheckResponse
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 from app.services.print_queue import PrinterAlreadyActiveError
 from app.services.render_check import check_items, distinct_lookup_count, validate_layout
 
@@ -96,8 +92,8 @@ async def create_print_job(
         job_id = await service.submit_print_job(
             request, api_key_id=_auth.api_key_id, source_ip=_auth.ip
         )
-    except SYNC_ERROR_TYPES as exc:
-        return print_error_response(exc)
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        return print_error_response(exc, http)
     # Phase 2: submit_print_job gibt jetzt UUID zurück; Response-Schema erwartet str.
     return PrintJobResponse(job_id=str(job_id), status="queued")
 
@@ -195,6 +191,7 @@ class _PreviewRequest(BaseModel):
 )
 async def render_preview(
     body: _PreviewRequest,
+    http: Request,
     _auth: Annotated[AuthContext, Depends(require_read)],
 ) -> Response:
     """Render a label preview without touching the printer or DB.
@@ -238,37 +235,9 @@ async def render_preview(
     # raw exception strings may contain stack trace fragments or internal paths.
     try:
         png_bytes = await asyncio.to_thread(_render)
-    except UnsupportedTapeError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={
-                "error_code": "unsupported_tape",
-                "error_message": (
-                    "The currently loaded tape width is not supported by the layout engine."
-                    if exc.orientation is None
-                    else "The selected orientation is not available for this tape width."
-                ),
-                "error_detail": {"tape_mm": exc.tape_mm},
-            },
-        )
-    except ContentTypeDataMismatchError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content={
-                # R2-4: align with the print endpoint (_SYNC_ERROR_MAP) which uses
-                # "content_type_data_mismatch" — was inconsistently "data_mismatch"
-                "error_code": "content_type_data_mismatch",
-                "error_message": (
-                    "The label data is missing fields required for the selected content type."
-                ),
-                "error_detail": {"missing_fields": list(exc.missing_fields)},
-            },
-        )
-    except QrPayloadTooLongError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            content=_qr_too_long_body(exc),
-        )
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # The shared table (#378): fixed texts, structured detail in ``error_detail``.
+        return print_error_response(exc, http)
 
     return Response(content=png_bytes, media_type="image/png")
 
@@ -303,6 +272,7 @@ async def render_preview(
 )
 async def render_check(
     body: RenderCheckRequest,
+    http: Request,
     auth: Annotated[AuthContext, Depends(require_read)],
 ) -> RenderCheckResponse | JSONResponse:
     """Per-item verdicts for a cart; the tape is checked before the first lookup."""
@@ -311,24 +281,6 @@ async def render_check(
         # The request's token pays for one lookup; the rest is charged like GET lookups.
         charge_lookup_fan_out(auth, distinct_lookup_count(body))
         return await check_items(body, _lookup_service)
-    except UnsupportedTapeError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={
-                "error_code": "unsupported_tape",
-                "error_message": (
-                    "The selected tape width is not supported by the layout engine."
-                    if exc.orientation is None
-                    else "The selected orientation is not available for this tape width."
-                ),
-                "error_detail": {"tape_mm": exc.tape_mm},
-            },
-        )
-
-
-def _qr_too_long_body(exc: QrPayloadTooLongError) -> dict[str, object]:
-    return {
-        "error_code": "qr_payload_too_long",
-        "error_message": "The QR payload does not fit the fixed QR code of this tape.",
-        "error_detail": {"length": exc.length, "max_bytes": exc.max_bytes},
-    }
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # A failing item is a verdict; what escapes check_items answers from the shared table.
+        return print_error_response(exc, http)

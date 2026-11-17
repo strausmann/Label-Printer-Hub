@@ -133,3 +133,39 @@ def test_all_handlers_return_problem_detail_with_required_fields(exc: Exception)
     assert "status" in body
     # extensions may be absent (exclude_none drops it when empty)
     # instance is optional
+
+
+# ---------------------------------------------------------------------------
+# #378 safety net: the known print errors the four handlers above do not cover
+# ---------------------------------------------------------------------------
+
+
+def test_unsupported_tape_answers_409_problem_with_its_width() -> None:
+    from app.printer_backends.exceptions import UnsupportedTapeError
+
+    client = TestClient(_app_raising(UnsupportedTapeError(tape_mm=70)))
+    r = client.get("/boom")
+    assert r.status_code == 409
+    body = r.json()
+    assert body["type"] == "unsupported-tape"
+    assert body["extensions"] == {"tape_mm": 70}
+    assert "70" not in body["title"], "the table's fixed sentence, not str(exc)"
+
+
+def test_lookup_failure_answers_502_without_the_upstream_text() -> None:
+    from app.services.lookup_service import LookupFailedError
+
+    exc = LookupFailedError("https://grocy.example.invalid/x secret")
+    client = TestClient(_app_raising(exc))
+    r = client.get("/boom")
+    assert r.status_code == 502
+    assert r.json()["type"] == "integration-lookup-failed"
+    assert "example.invalid" not in r.text
+    assert "secret" not in r.text
+
+
+def test_the_four_existing_handlers_keep_their_body() -> None:
+    """The safety net leaves the ``_MAPPING`` handlers alone (``detail`` is ``str(exc)``)."""
+    client = TestClient(_app_raising(PrinterCoverOpenError("cover")))
+    body = client.get("/boom").json()
+    assert (body["type"], body["detail"]) == ("printer-cover-open", "cover")

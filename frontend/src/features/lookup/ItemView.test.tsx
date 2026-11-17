@@ -141,7 +141,10 @@ describe("ItemView", () => {
     mockApi(routes("snipeit", "42", { [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "printer_offline", error_message: "The printer is offline." } }) }));
     await renderApp({ path: "/asset/42" });
     await userEvent.click(await screen.findByRole("button", { name: "Print now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The printer is offline.");
+    // #378: a known code reads in the app's own words, not the server's English.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The printer is not reachable. Check that it is switched on and connected, then try again.",
+    );
   });
 
   it("Add to cart stores the item and shows the cart link", async () => {

@@ -63,6 +63,7 @@ _DEFERRED_FAILURE_MESSAGES: dict[str, str] = {
     "unsupported_tape": "The loaded tape is not supported.",
     "content_type_data_mismatch": "The label data does not fit the content type.",
     "qr_payload_too_long": "The QR code content is too long for the loaded tape.",
+    "snmp_query_failed": "The printer did not answer the status query.",
 }
 _DEFERRED_FAILURE_FALLBACK = "The label could not be printed."
 

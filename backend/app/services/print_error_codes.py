@@ -1,13 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""The status and ``error_code`` of every error ``PrintService`` raises before a label is queued.
+"""The status, ``error_code`` and message of every known printer and render error.
 
-``POST /api/v1/print`` and the webhooks answer with them (``app/api/print_errors.py``); a
-deferred job (#281, R-281-11) records the same code when its completion fails after the answer.
+One table for every printing and rendering route (#378): the routes answer with it through the
+renderers of ``app/api/print_errors.py``, and the global handlers catch what a route lets
+through. A deferred job (#281, R-281-11) records the same code when its completion fails after
+the answer.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
@@ -16,6 +20,8 @@ from app.printer_backends.exceptions import (
     PrinterDisabledError,
     PrinterOfflineError,
     QrPayloadTooLongError,
+    SnmpQueryError,
+    SpoolLabelOnlyTapeError,
     TapeEmptyError,
     TapeMismatchError,
     UnsupportedTapeError,
@@ -34,7 +40,33 @@ SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     UnsupportedTapeError: (409, "unsupported_tape"),
     ContentTypeDataMismatchError: (422, "content_type_data_mismatch"),
     QrPayloadTooLongError: (422, "qr_payload_too_long"),
+    SnmpQueryError: (503, "snmp_query_failed"),
 }
+
+KNOWN_PRINT_ERROR_TYPES: tuple[type[Exception], ...] = tuple(SYNC_ERROR_MAP)
+"""What a printing route catches to answer with the shared table (#378)."""
+
+# Lookup errors wrap upstream text (URLs, response details): the client gets a fixed message.
+_FIXED_MESSAGES: dict[str, str] = {
+    "integration_unknown_app": "The requested integration is not available.",
+    "integration_lookup_failed": "The integration failed or could not be reached.",
+}
+
+_UNSUPPORTED_WIDTH = "The currently loaded tape width is not supported by the layout engine."
+_UNSUPPORTED_ORIENTATION = "The selected orientation is not available for this tape width."
+_NO_TAPE = "No tape loaded — insert a Brother TZe or DK cartridge."
+_MISSING_FIELDS = "The label data is missing fields required for the selected content type."
+_QR_TOO_LONG = "The QR payload does not fit the fixed QR code of this tape."
+
+
+@dataclass(frozen=True)
+class KnownPrintError:
+    """How a known printer or render error is answered: status, code, text and detail."""
+
+    status: int
+    code: str
+    message: str
+    detail: dict[str, object] | None
 
 
 def print_error_mapping(exc: Exception) -> tuple[int, str]:
@@ -43,6 +75,44 @@ def print_error_mapping(exc: Exception) -> tuple[int, str]:
         if cls in SYNC_ERROR_MAP:
             return SYNC_ERROR_MAP[cls]
     return 500, "internal_error"  # unreachable for mapped types; never raise from here
+
+
+def describe_print_error(exc: Exception) -> KnownPrintError:
+    """The answer for ``exc``, mapped by its nearest known base class.
+
+    Fixed sentences for lookup, unsupported-tape and content errors (CWE-209: never
+    ``str(exc)``, which can carry upstream URLs or internal names); the structured values go
+    to ``detail``.
+    """
+    status, code = print_error_mapping(exc)
+    message: str
+    detail: dict[str, object] | None = None
+    if isinstance(exc, SpoolLabelOnlyTapeError):
+        message = (
+            f"Only the spool label prints on {exc.tape_mm} mm tape. Remove the other labels "
+            "from the cart or load 62 mm tape."
+        )
+        detail = {"tape_mm": exc.tape_mm, "content_types": list(exc.content_types)}
+    elif isinstance(exc, UnsupportedTapeError):
+        message = _UNSUPPORTED_WIDTH if exc.orientation is None else _UNSUPPORTED_ORIENTATION
+        detail = {"tape_mm": exc.tape_mm}
+    elif isinstance(exc, NoTapeLoadedError):
+        message = _NO_TAPE
+    elif isinstance(exc, ContentTypeDataMismatchError):
+        message = _MISSING_FIELDS
+        detail = {"missing_fields": list(exc.missing_fields)}
+    elif isinstance(exc, QrPayloadTooLongError):
+        message = _QR_TOO_LONG
+        detail = {"length": exc.length, "max_bytes": exc.max_bytes}
+    elif isinstance(exc, TapeMismatchError):
+        message = str(exc)
+        detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+    elif code in _FIXED_MESSAGES:
+        message = _FIXED_MESSAGES[code]
+    else:
+        # The hardware errors carry only hardware-state descriptions.
+        message = str(exc) or code
+    return KnownPrintError(status=status, code=code, message=message, detail=detail)
 
 
 def print_error_code(exc: Exception) -> str:

@@ -150,6 +150,8 @@ describe("TestPrintButton", () => {
     ["printer-disabled", "The printer is switched off in the hub. Switch it on in the printer settings."],
     ["printer-paused", "The printer is paused. Resume it, then try again."],
     ["printer-status-unknown", "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."],
+    ["unsupported-tape", "This tape width cannot print this label. Load another tape."],
+    ["printer-cover-open", "The printer cover is open. Close it and try again."],
   ])("explains %s in the app's own words, not the server's English", async (type, words) => {
     const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
     mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
@@ -177,6 +179,25 @@ describe("TestPrintButton", () => {
     await open(PRINTER_A, SIGNED_IN, "de");
     await userEvent.click(await screen.findByRole("button", { name: "Testdruck" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Es ist kein Band eingelegt. Lege ein Band ein und versuche es noch einmal.");
+  });
+
+  it("the test print names the unsupported width", async () => {
+    const problem = { type: "unsupported-tape", title: "T", status: 409, extensions: { tape_mm: 70 } };
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: problem }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This label cannot print on 70 mm tape. Load another tape.");
+  });
+
+  it("a 500 still says the test print could not be started", async () => {
+    // Starlette answers an unhandled error with plain text, not JSON.
+    const plain = new Response("Internal Server Error", { status: 500, headers: { "Content-Type": "text/plain" } });
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: plain };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The test print could not be started.");
   });
 
   it("keeps the API detail for a problem type it does not know", async () => {

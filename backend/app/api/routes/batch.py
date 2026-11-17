@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.print_errors import print_error_http
 from app.auth.dependencies import (
     AuthContext,
     charge_lookup_fan_out,
@@ -23,21 +24,17 @@ from app.db.session import get_session
 from app.models.print_batch import PrintBatch
 from app.printer_backends.exceptions import (
     ConflictingOrientationError,
-    ContentTypeDataMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterOfflineError,
-    QrPayloadTooLongError,
     SnmpQueryError,
-    SpoolLabelOnlyTapeError,
     TapeMismatchError,
-    UnsupportedTapeError,
 )
 from app.repositories import print_batches as batches_repo
 from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
 from app.services.batch_dispatch import dispatch_batch
-from app.services.lookup_service import LookupFailedError, UnknownAppError
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 from app.services.print_queue import (
     MAX_LABELS_PER_TAPE_JOB,
     QUEUED_RUN_RETRY_AFTER_S,
@@ -51,15 +48,6 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 # prefix=/api → POST /api/v1/print/{...}/batch. print.py has no prefix
 # (POST /api/v1/print), so this is a clean separation.
 router = APIRouter(prefix="/api/v1")
-
-_SYNC_ERROR_MAP: dict[type[Exception], str] = {
-    PrinterOfflineError: "printer_offline",
-    PrinterCoverOpenError: "printer_cover_open",
-    # R2-2: align with print.py — snmp_query_failed (was snmp_error)
-    SnmpQueryError: "snmp_query_failed",
-    TapeMismatchError: "tape_mismatch",
-}
-
 
 # What dispatch_batch raises before it looks anything up: the queue claim and the preflight.
 _NO_LOOKUP_RAN = (
@@ -206,84 +194,6 @@ async def create_batch(
             },
             headers={"Retry-After": str(QUEUED_RUN_RETRY_AFTER_S)},
         ) from exc
-    except UnknownAppError as exc:
-        # 422: the request names an integration this hub does not have (a client mistake).
-        # Fixed message: the exception text lists the registered integrations.
-        raise HTTPException(
-            422,
-            detail={
-                "error_code": "integration_unknown_app",
-                "error_message": "The requested integration is not available.",
-            },
-        ) from exc
-    except LookupFailedError as exc:
-        # 502: the integration failed or its upstream is unreachable. NOT str(exc): the
-        # plugin wraps upstream errors, which can carry URLs and response details (CWE-209).
-        raise HTTPException(
-            502,
-            detail={
-                "error_code": "integration_lookup_failed",
-                "error_message": "The integration failed or could not be reached.",
-            },
-        ) from exc
-    except (PrinterCoverOpenError, TapeMismatchError) as exc:
-        # 409: hardware state the user can fix (cover open / wrong tape)
-        raise HTTPException(
-            409,
-            detail={
-                "error_code": _SYNC_ERROR_MAP[type(exc)],
-                # str(exc) is safe here: these exceptions carry only hardware-state
-                # descriptions (e.g. "Expected 12mm tape, loaded 24mm"), no stack
-                # trace fragments or internal paths.
-                "error_message": str(exc),
-            },
-        ) from exc
-    except (PrinterOfflineError, SnmpQueryError) as exc:
-        # R2-2: 503 — server-side / network issue, client should retry later.
-        # Consistent with print.py which maps PrinterOfflineError → 503.
-        raise HTTPException(
-            503,
-            detail={
-                "error_code": _SYNC_ERROR_MAP[type(exc)],
-                "error_message": str(exc),
-            },
-        ) from exc
-    except (NoTapeLoadedError, UnsupportedTapeError) as exc:
-        # 409: tape hardware state — client must change tape and retry.
-        # NOTE: We do NOT expose str(exc) — CWE-209 guard: use a fixed message
-        # + structured detail instead of raw exception text.
-        if isinstance(exc, NoTapeLoadedError):
-            error_code = "no_tape_loaded"
-            error_msg = "No tape loaded — insert a Brother TZe or DK cartridge."
-            error_detail: dict[str, object] = {}
-        elif isinstance(exc, SpoolLabelOnlyTapeError):
-            # #346: name the layouts that cannot print on this DK width (fixed text, no str(exc)).
-            error_code = "unsupported_tape"
-            error_msg = (
-                f"Only the spool label prints on {exc.tape_mm} mm tape. Remove the other labels "
-                "from the cart or load 62 mm tape."
-            )
-            error_detail = {"tape_mm": exc.tape_mm, "content_types": list(exc.content_types)}
-        else:
-            error_code = "unsupported_tape"
-            error_msg = "The currently loaded tape width is not supported by the layout engine."
-            error_detail = {"tape_mm": exc.tape_mm}
-        detail: dict[str, object] = {"error_code": error_code, "error_message": error_msg}
-        if error_detail:
-            detail["error_detail"] = error_detail
-        raise HTTPException(409, detail=detail) from exc
-    except ContentTypeDataMismatchError as exc:
-        # 422: client-side data error — missing fields for the chosen content type.
-        raise HTTPException(
-            422,
-            detail={
-                "error_code": "content_type_data_mismatch",
-                "error_message": (
-                    "The label data is missing fields required for the selected content type."
-                ),
-                "error_detail": {"missing_fields": list(exc.missing_fields)},
-            },
-        ) from exc
     except ConflictingOrientationError as exc:
         # 422: a batch prints with one orientation (#258)
         raise HTTPException(
@@ -294,16 +204,9 @@ async def create_batch(
                 "error_detail": {"orientations": list(exc.orientations)},
             },
         ) from exc
-    except QrPayloadTooLongError as exc:
-        # 422: a payload does not fit the fixed QR code of the tape (#258).
-        raise HTTPException(
-            422,
-            detail={
-                "error_code": "qr_payload_too_long",
-                "error_message": "The QR payload does not fit the fixed QR code of this tape.",
-                "error_detail": {"length": exc.length, "max_bytes": exc.max_bytes},
-            },
-        ) from exc
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # The shared table (#378): status, code, fixed text and detail under ``detail``.
+        raise print_error_http(exc, http) from exc
 
     # 7. Persist tracking row
     # auth.subject_id does NOT exist — use api_key_id or source

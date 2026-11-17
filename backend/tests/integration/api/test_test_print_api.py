@@ -39,7 +39,11 @@ from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import Sheet
 from app.page_render.test_page import render_test_page
-from app.printer_backends.exceptions import NoTapeLoadedError, PrinterOfflineError
+from app.printer_backends.exceptions import (
+    NoTapeLoadedError,
+    PrinterCoverOpenError,
+    PrinterOfflineError,
+)
 from app.printer_backends.ipp.attributes import (
     IppStatusRecord,
     Margins,
@@ -371,6 +375,27 @@ async def test_tape_without_tape_is_409(env: Env) -> None:
     assert r.status_code == 409
     assert _err(r)["type"] == "no-tape-loaded"
     assert NoTapeLoadedError  # the existing error the mapping is for
+    assert await env.job_rows() == []
+
+
+async def test_tape_test_print_on_an_unsupported_width_is_409(env: Env) -> None:
+    """#378: a width the layout engine does not draw answers 409, never 500, and names it."""
+    env.backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=70, error_flags=[]
+    )
+    r = await env.post(env.tape_id)
+    assert r.status_code == 409, r.text
+    assert _err(r)["type"] == "unsupported-tape"
+    assert _err(r)["extensions"] == {"tape_mm": 70}
+    assert await env.job_rows() == []
+
+
+async def test_tape_test_print_with_the_cover_open_is_409_wrapped(env: Env) -> None:
+    """#378: under ``detail`` like every refusal of this route, not the global handler's body."""
+    env.backend.preflight_check.side_effect = PrinterCoverOpenError()
+    r = await env.post(env.tape_id)
+    assert r.status_code == 409, r.text
+    assert _err(r)["type"] == "printer-cover-open"
     assert await env.job_rows() == []
 
 

@@ -53,7 +53,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.webhook_auth import enforce_webhook_rate_limit, require_webhook_key
-from app.api.print_errors import SYNC_ERROR_TYPES, print_error_response
+from app.api.print_errors import print_error_response
 from app.db.session import get_session
 from app.repositories import printers as printers_repo
 from app.schemas.content_type import ContentType
@@ -64,6 +64,7 @@ from app.schemas.webhook import (
     SpoolmanWebhookPayload,
     WebhookAcceptedResponse,
 )
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 from app.services.webhook_quantity import grocy_quantity_line, spoolman_quantity_line
 
 router = APIRouter(prefix="/api/v1/webhook", tags=["webhooks"])
@@ -138,8 +139,8 @@ async def _print_label(
             source_ip=request.client.host if request.client else None,
             label_transform=_third_line(line) if line else None,
         )
-    except SYNC_ERROR_TYPES as exc:
-        return print_error_response(exc)
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        return print_error_response(exc, request)
     return WebhookAcceptedResponse(job_id=job_id)
 
 

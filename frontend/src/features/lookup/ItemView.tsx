@@ -26,7 +26,8 @@ import { tapeMmOfStatus, useLabelLayout } from "../layout/ql";
 import { LabelPreview } from "./LabelPreview";
 import { lookupIdFromQrPath } from "./labelUrl";
 import { recordRecent } from "./recent";
-import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
+import { usePrintErrorText } from "../printers/printErrorText";
+import { PrinterPicker, usePrinterChoice } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
 import { notePrintError } from "../printers/coverRefusals";
 

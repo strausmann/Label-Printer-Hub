@@ -11,6 +11,7 @@ import { SelectField } from "../settings/controls";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../ui";
 import type { Printer, PrinterStatus, useTestPrint } from "./api";
 import { isPagePrinter, printerStopReasons, unknownKind } from "./model";
+import { printErrorText } from "./printErrorText";
 import { useReasonWord } from "./reasons";
 
 /** Why the button cannot be pressed, or null. Tape printers are not refused on status: the server's preflight decides. */
@@ -37,13 +38,9 @@ function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): 
  * the API's detail for a type it does not know; a plain sentence when the answer carried none (a bare `HTTP 500`).
  */
 function useErrorText(error: unknown): string {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   if (error instanceof ApiError) {
     switch (error.code?.split("/").pop()) {
-      case "printer-offline":
-        return t`The printer is not reachable. Check that it is switched on and connected, then try again.`;
-      case "no-tape-loaded":
-        return t`No tape is loaded. Put in a tape and try again.`;
       case "media-unknown":
         return t`The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray.`;
       case "printer-disabled":
@@ -53,6 +50,9 @@ function useErrorText(error: unknown): string {
       case "printer-status-unknown":
         return t`The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again.`;
     }
+    // The printer and render errors every printing route shares (#378): offline, no tape, cover open …
+    const known = printErrorText(error.code, error.errorDetail, (d) => i18n._(d));
+    if (known !== null) return known;
     if (!/^HTTP \d+$/.test(error.detail)) return error.detail;
   }
   return t`The test print could not be started.`;

@@ -31,6 +31,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from app.api.print_errors import print_error_problem, problem_response
 from app.printer_backends.exceptions import (
     PrinterCoverOpenError,
     PrinterOfflineError,
@@ -39,6 +40,7 @@ from app.printer_backends.exceptions import (
 )
 from app.schemas.problem import ProblemDetail
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 
 # Mapping: exception class → (HTTP status code, problem-type slug)
 _MAPPING: dict[type[Exception], tuple[int, str]] = {
@@ -62,7 +64,17 @@ def register_error_handlers(app: FastAPI) -> None:
             exc_class,
             _make_handler(http_status, problem_type),
         )
+    # #378 safety net: a known printer or render error that a route lets through answers its
+    # 4xx/503 from the shared table (a top-level problem), never 500. The four classes above
+    # keep their handlers.
+    for exc_class in KNOWN_PRINT_ERROR_TYPES:
+        if exc_class not in _MAPPING:
+            app.add_exception_handler(exc_class, _known_print_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
+
+
+async def _known_print_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    return problem_response(print_error_problem(exc, request))
 
 
 SHEET_PREFIXES = ("/api/v1/sheet-types", "/api/v1/sheets", "/api/v1/sheet-cells")

@@ -6658,14 +6658,14 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline`, `no-tape-loaded` (tape printer), `media-unknown` (page printer) or `printer-unavailable`. */
+            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline`, `media-unknown` (page printer) or `printer-unavailable`. A tape printer also answers `no-tape-loaded`, `unsupported-tape` (the loaded width; `extensions.tape_mm`), `printer-cover-open`, `tape-mismatch` or `tape-empty`. */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). */
+            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). `content-type-data-mismatch`: the test label lacks data its layout needs (`extensions.missing_fields`). */
             422: {
                 headers: {
                     [name: string]: unknown;

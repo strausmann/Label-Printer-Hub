@@ -2683,7 +2683,7 @@ msgstr "Noch kein Status"
 msgid "No supplies reported"
 msgstr "Keine Verbrauchsmaterialien gemeldet"
 
-#: src/features/printers/TestPrintButton.tsx
+#: src/features/printers/printErrorText.ts
 msgid "No tape is loaded. Put in a tape and try again."
 msgstr "Es ist kein Band eingelegt. Lege ein Band ein und versuche es noch einmal."
 
@@ -2971,7 +2971,7 @@ msgstr "Nur ein Bogentyp liegt daneben; andere Bögen sitzen mit derselben Korre
 msgid "Only the first {listed} of {reported} trays are listed."
 msgstr "Aufgelistet sind nur die ersten {listed} von {reported} Fächern."
 
-#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/printErrorText.ts
 msgid "Only the spool label prints on {tapeMm} mm tape. Remove the other labels from the cart or load 62 mm tape."
 msgstr "Auf {tapeMm}-mm-Band druckt nur das Spulenetikett. Nimm die anderen Etiketten aus dem Warenkorb oder leg 62-mm-Band ein."
 
@@ -4811,6 +4811,10 @@ msgstr "Das Etikett ließ sich für dieses Band nicht zeichnen."
 msgid "The label height"
 msgstr "Die Etikettenhöhe"
 
+#: src/features/printers/printErrorText.ts
+msgid "The label is missing data this layout needs."
+msgstr "Dem Etikett fehlen Angaben, die dieses Layout braucht."
+
 #: src/features/layout/LayoutPicker.tsx
 msgid "The label runs across the 62 mm width of the tape."
 msgstr "Das Etikett läuft quer über die 62 mm Breite des Bands."
@@ -4835,7 +4839,7 @@ msgstr "Die Etikettenbreite"
 msgid "The labels could not be put on the sheet."
 msgstr "Die Etiketten konnten nicht auf den Bogen gelegt werden."
 
-#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/printErrorText.ts
 msgid "The labels could not be sent."
 msgstr "Die Etiketten konnten nicht gesendet werden."
 
@@ -4870,12 +4874,12 @@ msgid "The licence list of the web app is not included in this build."
 msgstr "Die Lizenzliste der Web-App ist in diesem Build nicht enthalten."
 
 #: src/features/lookup/LabelPreview.tsx
-#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/printErrorText.ts
 msgid "The link in the QR code is {length} bytes long, but this layout holds at most {max} bytes. Pick another arrangement or a shorter link."
 msgstr "Der Link im QR-Code ist {length} Bytes lang, dieses Layout fasst aber höchstens {max} Bytes. Wähle eine andere Anordnung oder einen kürzeren Link."
 
 #: src/features/lookup/LabelPreview.tsx
-#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/printErrorText.ts
 msgid "The link in the QR code is too long for this layout."
 msgstr "Der Link im QR-Code ist für dieses Layout zu lang."
 
@@ -4883,9 +4887,17 @@ msgstr "Der Link im QR-Code ist für dieses Layout zu lang."
 msgid "The list of product codes"
 msgstr "Die Liste der Produktcodes"
 
+#: src/features/printers/printErrorText.ts
+msgid "The loaded tape ({loaded} mm) does not match this label ({expected} mm)."
+msgstr "Das eingelegte Band ({loaded} mm) passt nicht zu diesem Etikett ({expected} mm)."
+
 #: src/features/jobs/jobErrorText.ts
 msgid "The loaded tape does not match the label. Put in the right tape and retry."
 msgstr "Das eingelegte Band passt nicht zum Etikett. Lege das richtige Band ein und versuche es erneut."
+
+#: src/features/printers/printErrorText.ts
+msgid "The loaded tape does not match this label."
+msgstr "Das eingelegte Band passt nicht zu diesem Etikett."
 
 #: src/features/settings/System.tsx
 msgid "The log could not be loaded."
@@ -5053,6 +5065,10 @@ msgstr "Der Drucker konnte nicht ausgelesen werden."
 msgid "The printer cover is open. Close it and retry."
 msgstr "Die Abdeckung des Druckers ist offen. Schließe sie und versuche es erneut."
 
+#: src/features/printers/printErrorText.ts
+msgid "The printer cover is open. Close it and try again."
+msgstr "Der Deckel des Druckers ist offen. Schließe ihn und versuche es erneut."
+
 #: src/features/sheets/errors.ts
 msgid "The printer did not accept the ID label."
 msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
@@ -5073,7 +5089,7 @@ msgstr "Der Drucker meldet dieses Fach nicht."
 msgid "The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray."
 msgstr "Der Drucker meldet nicht, welches Papier im Fach liegt. Stelle das Papierformat am Drucker ein oder wähle ein anderes Fach."
 
-#: src/features/printers/TestPrintButton.tsx
+#: src/features/printers/printErrorText.ts
 msgid "The printer is not reachable. Check that it is switched on and connected, then try again."
 msgstr "Der Drucker ist nicht erreichbar. Prüfe, ob er eingeschaltet und verbunden ist, und versuche es noch einmal."
 
@@ -5194,7 +5210,7 @@ msgstr "Der selbst gehostete Label Printer Hub für all deine Etiketten"
 
 #: src/app/router.tsx
 #: src/features/archive/errors.ts
-#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/printErrorText.ts
 #: src/features/settings/feedback.tsx
 #: src/i18n/messages.ts
 #: src/shell/SignIn.tsx
@@ -5286,6 +5302,10 @@ msgstr "Die Aufteilung dieses Drucks passt nicht mehr. Prüfe die Vorschau und v
 msgid "The tape is empty. Put in a new tape and retry."
 msgstr "Das Band ist leer. Lege ein neues Band ein und versuche es erneut."
 
+#: src/features/printers/printErrorText.ts
+msgid "The tape is empty. Put in a new tape and try again."
+msgstr "Das Band ist leer. Lege ein neues ein und versuche es erneut."
+
 #: src/features/settings/Integrations.tsx
 msgid "The test could not be run."
 msgstr "Der Test konnte nicht ausgeführt werden."
@@ -5376,7 +5396,7 @@ msgstr "Diese Etiketten sind nicht auf dem Bogen. Die Zellen werden wieder frei.
 msgid "These labels are on the sheet. The cells stay marked as used."
 msgstr "Diese Etiketten sind auf dem Bogen. Die Zellen bleiben als benutzt markiert."
 
-#: src/features/lookup/PrinterPicker.tsx
+#: src/features/printers/printErrorText.ts
 msgid "These labels ask for different directions (along and across). Print them in separate runs."
 msgstr "Diese Etiketten verlangen verschiedene Richtungen (längs und quer). Drucke sie in getrennten Durchgängen."
 
@@ -5475,6 +5495,10 @@ msgstr "Dieser Schlüssel darf diesen Drucker nicht benutzen."
 msgid "This label cannot be drawn."
 msgstr "Dieses Etikett lässt sich nicht zeichnen."
 
+#: src/features/printers/printErrorText.ts
+msgid "This label cannot print on {tapeMm} mm tape. Load another tape."
+msgstr "Dieses Etikett lässt sich nicht auf {tapeMm}-mm-Band drucken. Lege ein anderes Band ein."
+
 #: src/pages/placeholders.tsx
 msgid "This page is not available yet."
 msgstr "Diese Seite ist noch nicht verfügbar."
@@ -5543,6 +5567,10 @@ msgstr "Dieser Bogentyp ist archiviert oder existiert nicht mehr. Grocy-Etikette
 #: src/features/sheets/print/SheetSection.tsx
 msgid "This sheet type is archived. It offers no new sheets, but the sheets you have keep printing."
 msgstr "Dieser Bogentyp ist archiviert. Er bietet keine neuen Bögen an, die vorhandenen Bögen lassen sich aber weiter bedrucken."
+
+#: src/features/printers/printErrorText.ts
+msgid "This tape width cannot print this label. Load another tape."
+msgstr "Diese Bandbreite kann dieses Etikett nicht drucken. Lege ein anderes Band ein."
 
 #: src/features/archive/errors.ts
 msgid "This type has sheets. Archive it instead."
