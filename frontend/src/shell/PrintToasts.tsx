@@ -272,10 +272,11 @@ export function PrintToasts() {
   const failed = shown.filter((e) => !e.claimed && e.phase === "failed");
   const rest = shown.filter((e) => !e.claimed && e.phase !== "failed");
   return (
-    // The height is bounded and scrolls inside, so Close and Retry stay reachable on a phone.
+    // The height is bounded and scrolls inside, so Close and Retry stay reachable on a phone. An open update toast
+    // (#354) publishes its height as --update-toast-h: the cards stack above it, one gap (min(h, 0.5rem)) apart.
     <section
       aria-label={t`Print status`}
-      className="pointer-events-none fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom))] z-30 flex max-h-[calc(100dvh-14rem)] flex-col gap-2 overflow-y-auto overscroll-contain lg:inset-x-auto lg:right-6 lg:bottom-6 lg:max-h-[calc(100dvh-3rem)] lg:w-96"
+      className="pointer-events-none fixed inset-x-4 bottom-[calc(7.5rem+env(safe-area-inset-bottom)+var(--update-toast-h,0px)+min(var(--update-toast-h,0px),0.5rem))] z-30 flex max-h-[calc(100dvh-14rem-var(--update-toast-h,0px))] flex-col gap-2 overflow-y-auto overscroll-contain lg:inset-x-auto lg:right-6 lg:bottom-[calc(1.5rem+var(--update-toast-h,0px)+min(var(--update-toast-h,0px),0.5rem))] lg:max-h-[calc(100dvh-3rem-var(--update-toast-h,0px))] lg:w-96"
     >
       {ordered.map((entry) => (
         <AutoDismiss key={entry.id} id={entry.id} ended={entry.phase === "done" || entry.phase === "cancelled"} held={held.has(entry.id)} />

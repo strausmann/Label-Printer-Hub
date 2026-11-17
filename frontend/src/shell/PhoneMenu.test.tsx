@@ -5,7 +5,8 @@ import { MutationObserver } from "@tanstack/react-query";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type * as Actual from "./pullToRefresh";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { noteServerVersion, resetUpdatesForTest, setVersionCheckForTest } from "../app/updates";
 import { mockApi } from "../features/test-api";
 import { renderApp, SIGNED_IN } from "../test-utils";
 import { navGroups } from "./features";
@@ -182,4 +183,20 @@ describe("PhoneMenu", () => {
     const nav = within(scroll).getByRole("navigation", { name: "Pages" });
     expect(nav.compareDocumentPosition(within(scroll).getByRole("button", { name: "Reload" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("the menu shows the update box above the status line", async () => {
+    setVersionCheckForTest({ buildVersion: "1.5.0", reload: vi.fn() });
+    mockApi({});
+    await renderApp({ path: "/", info: { version: "1.5.0" } });
+    await act(async () => noteServerVersion("1.6.0"));
+    const menu = await open();
+    const reload = within(menu).getByRole("button", { name: "Reload new version" });
+    expect(within(menu).getByText("1.6.0 ready")).toBeVisible();
+    const status = within(menu).getByText("Connected · v1.5.0");
+    expect(reload.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The page entry keeps its own name: the two Reload buttons are told apart.
+    expect(within(menu).getByRole("button", { name: "Reload" })).not.toBe(reload);
+  });
 });
+
+afterEach(() => resetUpdatesForTest());

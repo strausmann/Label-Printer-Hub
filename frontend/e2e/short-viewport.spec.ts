@@ -4,6 +4,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, signInWith, test } from "./fixtures";
+import { reportNewerHub, updateToast } from "./newerHub";
 
 // Issue #279: with the on-screen keyboard open, the field, its list and the main buttons of a dialog stay in sight.
 //
@@ -733,3 +734,29 @@ test.describe("short viewport (on-screen keyboard)", () => {
     });
   }
 });
+
+// #354: a new version found while the person types. Chromium shrinks the layout viewport with the keyboard, so the
+// heights compare equal; the toast steps aside for a focused text field on a touch device.
+test.describe("update toast on a touch device", () => {
+  test.use({ isMobile: true, hasTouch: true, viewport: { width: 390, height: 844 } });
+
+  test("Update toast: the focused field stays in sight", async ({ signedInPage: page }) => {
+    // The rule keys on a coarse pointer: on a fine one this case would pass without it.
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    await reportNewerHub(page);
+    await page.getByRole("link", { name: "Printers", exact: true }).first().click();
+    await expect(updateToast(page)).toBeVisible();
+
+    await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
+    const field = page.getByRole("combobox", { name: "Search" });
+    await expect(field).toBeFocused();
+    await expect(updateToast(page)).toHaveCount(0);
+    await expectInSight(page, field, "the search field");
+
+    // Focus leaves the field (the dialog closes): the toast is back.
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Search" })).toHaveCount(0);
+    await expect(updateToast(page)).toBeVisible();
+  });
+});
+

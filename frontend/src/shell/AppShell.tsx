@@ -11,7 +11,7 @@ import { SessionStatus } from "./SessionStatus";
 import { Sidebar } from "./Sidebar";
 import { TabBar } from "./TabBar";
 import { TopBar } from "./TopBar";
-import { UpdatePrompt } from "./UpdatePrompt";
+import { UpdateToast } from "./UpdateNotice";
 
 /** Sidebar on desktop, bottom tab bar on a phone (breakpoint 1024 px), search and Scan on top. */
 export function AppShell({ children }: { children: ReactNode }) {
@@ -35,12 +35,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
         <TopBar livePaused={livePaused} />
         <main id="content" tabIndex={-1} className="flex-1 p-4 pb-32 outline-none lg:p-8 lg:pb-8">
-          <UpdatePrompt />
           <SessionStatus />
           <LiveStatus connected={connected} connecting={connecting} onReconnect={reconnect} />
           {children}
         </main>
       </div>
+      <UpdateToast />
       <PrintToasts />
       <PullToRefresh />
       <TabBar />

@@ -436,6 +436,10 @@ msgstr "{used} of {total} used"
 msgid "{used} used"
 msgstr "{used} used"
 
+#: src/shell/UpdateNotice.tsx
+msgid "{version} ready"
+msgstr "{version} ready"
+
 #: src/features/archive/errors.ts
 msgid "{what} can have at most two decimals."
 msgstr "{what} can have at most two decimals."
@@ -2214,6 +2218,10 @@ msgstr "Last used"
 msgid "Last used {when}"
 msgstr "Last used {when}"
 
+#: src/shell/UpdateNotice.tsx
+msgid "Later"
+msgstr "Later"
+
 #: src/features/jobs/JobDetail.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
@@ -2545,7 +2553,16 @@ msgstr "New sheet type"
 msgid "New type"
 msgstr "New type"
 
-#: src/shell/UpdatePrompt.tsx
+#: src/shell/UpdateNotice.tsx
+msgid "New version"
+msgstr "New version"
+
+#: src/features/notifications/useEntryText.ts
+msgid "New version {version} available"
+msgstr "New version {version} available"
+
+#: src/features/notifications/useEntryText.ts
+#: src/shell/UpdateNotice.tsx
 msgid "New version available"
 msgstr "New version available"
 
@@ -3513,6 +3530,10 @@ msgstr "Reads the printer's state and tape over SNMP. Printing works without it.
 msgid "Ready"
 msgstr "Ready"
 
+#: src/shell/UpdateNotice.tsx
+msgid "Ready to load"
+msgstr "Ready to load"
+
 #: src/features/overview/OverviewPage.tsx
 msgid "Recent jobs"
 msgstr "Recent jobs"
@@ -3549,14 +3570,24 @@ msgstr "Red"
 msgid "Release to reload"
 msgstr "Release to reload"
 
+#: src/features/notifications/NotificationCentre.tsx
 #: src/shell/PhoneMenu.tsx
-#: src/shell/UpdatePrompt.tsx
+#: src/shell/UpdateNotice.tsx
 msgid "Reload"
 msgstr "Reload"
+
+#: src/features/notifications/NotificationCentre.tsx
+#: src/shell/UpdateNotice.tsx
+msgid "Reload new version"
+msgstr "Reload new version"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
 msgstr "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Reload to use it. Unsaved input on this page is lost."
+msgstr "Reload to use it. Unsaved input on this page is lost."
 
 #: src/shell/PullToRefresh.tsx
 msgid "Reloading…"
@@ -5741,7 +5772,8 @@ msgstr "unverified"
 msgid "Updating the preview…"
 msgstr "Updating the preview…"
 
-#: src/shell/UpdatePrompt.tsx
+#: src/features/notifications/NotificationCentre.tsx
+#: src/shell/UpdateNotice.tsx
 msgid "Updating…"
 msgstr "Updating…"
 
@@ -5802,6 +5834,10 @@ msgstr "Version"
 msgctxt "column"
 msgid "Version"
 msgstr "Version"
+
+#: src/shell/UpdateNotice.tsx
+msgid "Version {version}"
+msgstr "Version {version}"
 
 #: src/features/archive/TypeDetail.tsx
 msgid "Versions"

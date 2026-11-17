@@ -5,6 +5,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
+import { noteServerVersion, resetUpdatesForTest, setVersionCheckForTest } from "../../app/updates";
 import { job, mockApi, PRINTER_A, PRINTER_B, status } from "../test-api";
 
 afterEach(() => {
@@ -318,5 +319,37 @@ describe("NotificationCentre: the panel", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+});
+
+describe("NotificationCentre: a new version (#354)", () => {
+  afterEach(() => resetUpdatesForTest());
+
+  async function openWithUpdate(language: "en" | "de" = "en") {
+    setVersionCheckForTest({ buildVersion: "1.5.0", reload: vi.fn() });
+    mockApi(routes());
+    await renderApp({ path: "/printers", language });
+    await screen.findByRole("button", { name: language === "de" ? /^Benachrichtigungen/ : /^Notifications/ });
+    await act(async () => noteServerVersion("1.6.0"));
+    await userEvent.click(screen.getByRole("button", { name: language === "de" ? /^Benachrichtigungen/ : /^Notifications/ }));
+    return await screen.findByRole("dialog");
+  }
+
+  it("the update entry shows the hint and a Reload button, no link", async () => {
+    const panel = await openWithUpdate();
+    const sentence = within(panel).getByText("New version 1.6.0 available");
+    const entry = sentence.closest("li")!;
+    expect(within(entry).getByText("Reload to use it. Unsaved input on this page is lost.")).toBeVisible();
+    const button = within(entry).getByRole("button", { name: "Reload new version" });
+    expect(button).toHaveTextContent("Reload");
+    expect(within(entry).queryByRole("link")).toBeNull();
+    expect(entry.querySelector('[data-shape="diamond"]')).not.toBeNull();
+  });
+
+  it("de: entry and hint are German", async () => {
+    const panel = await openWithUpdate("de");
+    const entry = within(panel).getByText("Neue Version 1.6.0 verfügbar").closest("li")!;
+    expect(within(entry).getByText("Neu laden, um sie zu nutzen. Offene Eingaben auf dieser Seite gehen dabei verloren.")).toBeVisible();
+    expect(within(entry).getByRole("button", { name: "Neu laden: neue Version" })).toHaveTextContent("Neu laden");
   });
 });

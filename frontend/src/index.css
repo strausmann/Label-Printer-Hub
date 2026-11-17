@@ -135,6 +135,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       display: block;
     }
   }
+  /* The update toast (#354) is a dark surface in both themes: the inverted ink in light, a raised sunken tone with an
+     edge in dark (the inverted ink would be a light box there). The selectors mirror design/tokens.css. */
+  .update-toast {
+    --toast-ink: var(--surface);
+    --toast-ink-2: var(--line-strong);
+    background: var(--ink);
+    color: var(--toast-ink);
+    border: 1px solid transparent;
+  }
+  [data-theme="dark"] .update-toast {
+    --toast-ink: var(--ink);
+    --toast-ink-2: var(--ink-2);
+    background: var(--sunken);
+    border-color: var(--line-strong);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .update-toast {
+      --toast-ink: var(--ink);
+      --toast-ink-2: var(--ink-2);
+      background: var(--sunken);
+      border-color: var(--line-strong);
+    }
+  }
   /* The wordmark draws in currentColor; used as a mask it takes the theme's ink colour. */
   .brand-wordmark {
     background-color: var(--ink);

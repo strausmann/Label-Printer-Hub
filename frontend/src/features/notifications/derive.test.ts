@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { job, PAGE_PRINTER, pageStatus, PRINTER_A, PRINTER_B, status } from "../test-api";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { SheetSummary } from "../sheets/api";
-import { deriveNotices, deriveNotifications, mergeFeed, type SheetTypeNotice } from "./derive";
+import { deriveNotices, deriveNotifications, deriveUpdate, mergeFeed, type SheetTypeNotice } from "./derive";
 
 const NOW = Date.parse("2026-11-14T12:00:00Z");
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -385,5 +385,40 @@ describe("deriveNotices", () => {
     const [entry] = deriveNotices([notice("a")]);
     expect(entry?.severity).toBe("info");
     expect(entry?.resolved).toBeUndefined();
+  });
+});
+
+describe("deriveUpdate (#354)", () => {
+  const AT = minutesAgo(2);
+
+  it("an update becomes one warning entry with a reload action", () => {
+    expect(deriveUpdate({ waiting: true, version: "1.7.0", detectedAt: AT, toastOpen: false })).toEqual([
+      {
+        id: "update:1.7.0",
+        severity: "warning",
+        kind: "update",
+        textKey: "update.available",
+        values: { version: "1.7.0" },
+        at: AT,
+        target: { to: "/about", params: {} },
+        action: "reload",
+      },
+    ]);
+    // A waiting worker without a version mismatch has no version to name.
+    const [worker] = deriveUpdate({ waiting: true, version: null, detectedAt: AT, toastOpen: true });
+    expect(worker).toMatchObject({ id: "update:worker", values: { version: "" } });
+  });
+
+  it("no update, no entry", () => {
+    expect(deriveUpdate({ waiting: false, version: null, detectedAt: null, toastOpen: true })).toEqual([]);
+  });
+
+  it("the entry's id follows the version", () => {
+    const one = deriveUpdate({ waiting: true, version: "1.7.0", detectedAt: AT, toastOpen: true });
+    const two = deriveUpdate({ waiting: true, version: "1.7.1", detectedAt: AT, toastOpen: true });
+    expect(one[0]!.id).not.toBe(two[0]!.id);
+    // Merged into the feed by time, like any entry.
+    const merged = mergeFeed([], [], two);
+    expect(merged.map((e) => e.id)).toEqual(["update:1.7.1"]);
   });
 });

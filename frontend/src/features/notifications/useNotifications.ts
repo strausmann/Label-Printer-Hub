@@ -5,10 +5,11 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { apiFetch } from "../../api/client";
 import { useFeature } from "../../app/session";
+import { useUpdateNotice } from "../../app/updates";
 import { printerStatusQuery, usePrinters, type PrinterStatus } from "../printers/api";
 import { observeStatuses, useCoverRefusals } from "../printers/coverRefusals";
 import { useSheets } from "../sheets/api";
-import { deriveNotifications, mergeFeed, NOTICES_KEY, type Notification, type SheetTypeNotice } from "./derive";
+import { deriveNotifications, deriveUpdate, mergeFeed, NOTICES_KEY, type Notification, type SheetTypeNotice } from "./derive";
 import { notificationJobsQuery } from "./jobsQuery";
 import { badgeOf, clearAll, dismiss, isVisible, markAllRead, notificationStore, trackFirstSeen, type StoredState } from "./store";
 
@@ -48,6 +49,9 @@ export function useNotifications(): Feed {
   // The hub's notices (a sheet type marked verified or updated). A failed read is no feed error: the bell
   // then simply has none of them.
   const notices = useQuery({ queryKey: NOTICES_KEY, queryFn: () => apiFetch<SheetTypeNotice[]>("/api/v1/notices"), enabled: sheetsOn });
+  // A new version of the app waits (#354); the toast and the sidebar box read the same store.
+  const updateNotice = useUpdateNotice();
+  const update = useMemo(() => deriveUpdate(updateNotice), [updateNotice]);
 
   const stamps = statusResults.map((r) => r.dataUpdatedAt).join(",");
   const statuses = useMemo(() => {
@@ -78,8 +82,9 @@ export function useNotifications(): Feed {
           refusals,
         }),
         sheetsOn ? (notices.data ?? []) : [],
+        update,
       ),
-    [jobs.data, printers.data, statuses, sheets.data, sheetsOn, notices.data, state.firstSeen, now, refusals],
+    [jobs.data, printers.data, statuses, sheets.data, sheetsOn, notices.data, update, state.firstSeen, now, refusals],
   );
 
   // A condition's time is the moment this browser first saw it. Only kinds whose source has been read are tracked,
@@ -125,9 +130,15 @@ export function useNotifications(): Feed {
   };
 }
 
-/** The unresolved errors and warnings that were neither cleared nor dismissed: the overview's "Needs attention". */
+/**
+ * The unresolved errors and warnings that were neither cleared nor dismissed: the overview's "Needs attention". A new
+ * version is no problem of the hub; it has its toast and its sidebar box and stays out of this card.
+ */
 export function useAttention(): Pick<Feed, "dismiss" | "status"> & { entries: Notification[] } {
   const feed = useNotifications();
-  const entries = useMemo(() => feed.visible.filter((e) => !e.resolved && (e.severity === "error" || e.severity === "warning")), [feed.visible]);
+  const entries = useMemo(
+    () => feed.visible.filter((e) => e.kind !== "update" && !e.resolved && (e.severity === "error" || e.severity === "warning")),
+    [feed.visible],
+  );
   return { entries, dismiss: feed.dismiss, status: feed.status };
 }

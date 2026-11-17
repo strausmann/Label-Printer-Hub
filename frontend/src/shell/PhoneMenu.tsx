@@ -15,6 +15,7 @@ import { IntegrationNavEntries } from "./IntegrationNav";
 import { useNavLabels } from "./labels";
 import { reloadApp } from "./pullToRefresh";
 import { ThemeSwitch } from "./ThemeSwitch";
+import { UpdateSidebarNotice } from "./UpdateNotice";
 import { useBackdropClose } from "./useBackdropClose";
 
 const FOCUS = "data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-1 data-[focus-visible]:outline-link";
@@ -168,7 +169,8 @@ export function PhoneMenu() {
                   <SignOutIcon />
                 </Button>
               </div>
-              {/* The slot above this line is kept free for the update notice (#354). */}
+              {/* A waiting version (#354), right above the version it replaces. */}
+              <UpdateSidebarNotice />
               <ConnectionStatus />
             </div>
           </Dialog>

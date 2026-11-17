@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { act, render, renderHook, screen } from "@testing-library/react";
+import { act, render, renderHook, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { apiFetch } from "../api/client";
 import { mockApi } from "../features/test-api";
@@ -22,6 +22,8 @@ import {
 const BUILT_FOR = "1.5.0";
 const SERVER = "1.6.0";
 const BANNER = "New version available";
+/** The toast's Reload button (the sidebar box and the notification entry have their own). */
+const toastReload = () => within(screen.getByRole("region", { name: "New version" })).getByRole("button", { name: "Reload" });
 
 let reload: Mock<() => void>;
 // Whether the told worker takes over the page (`controllerchange`); by default it does at once.
@@ -435,22 +437,23 @@ describe("the Reload button ends on the new bundle", () => {
     mockApi({});
     await renderApp({ path: "/" });
     await act(async () => noteServerVersion(SERVER));
-    const button = screen.getByRole("button", { name: "Reload" });
+    const button = toastReload();
     expect(button).not.toHaveAttribute("aria-disabled", "true");
     button.focus();
     await act(async () => button.click());
-    const busy = screen.getByRole("button", { name: "Updating…" });
+    const toast = within(screen.getByRole("region", { name: "New version" }));
+    const busy = toast.getByRole("button", { name: "Updating…" });
     // Not `disabled`: a disabled button drops the focus to the page, and the person loses their place.
     expect(busy).toBe(button);
     expect(busy).toBeEnabled();
     expect(busy).toHaveAttribute("aria-disabled", "true");
     expect(document.activeElement).toBe(busy);
     // The label change alone is not read out; the status region next to it says it.
-    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    expect(toast.getByRole("status")).toHaveTextContent("Updating…");
     // Once the page reloads, the button stays busy until the navigation replaces the page.
     await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Updating…" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("status")).toHaveTextContent("Updating…");
+    expect(toast.getByRole("button", { name: "Updating…" })).toHaveAttribute("aria-disabled", "true");
+    expect(toast.getByRole("status")).toHaveTextContent("Updating…");
   });
 
   it("a press while it works does nothing", async () => {
@@ -459,7 +462,7 @@ describe("the Reload button ends on the new bundle", () => {
     mockApi({});
     await renderApp({ path: "/" });
     await act(async () => noteServerVersion(SERVER));
-    const button = screen.getByRole("button", { name: "Reload" });
+    const button = toastReload();
     await act(async () => button.click());
     await act(async () => button.click());
     await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
@@ -487,7 +490,7 @@ describe("the Reload button ends on the new bundle", () => {
     mockApi({});
     await renderApp({ path: "/" });
     await act(async () => noteServerVersion(SERVER));
-    await act(async () => screen.getByRole("button", { name: "Reload" }).click());
+    await act(async () => toastReload().click());
     await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(updateSW).toHaveBeenCalledWith(true);
     expect(registration.update).toHaveBeenCalled();

@@ -72,6 +72,10 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
         const code = values.code ?? "";
         return t`${code} marked as verified`;
       }
+      case "update.available": {
+        const version = values.version ?? "";
+        return version ? t`New version ${version} available` : t`New version available`;
+      }
       default: {
         if (textKey.startsWith("printer.")) {
           const kind = kinds[textKey.slice("printer.".length) as PrinterKind];

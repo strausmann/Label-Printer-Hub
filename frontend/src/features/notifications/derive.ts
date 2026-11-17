@@ -8,6 +8,7 @@ import { flagSeverity, printerWaiting, type Waiting } from "../printers/flags";
 import { describePrinter, isFailed, type PrinterKind } from "../printers/model";
 import type { SheetSummary } from "../sheets/api";
 import type { components } from "../../api/schema.gen";
+import type { UpdateNotice } from "../../app/updates";
 import { WINDOW_MS } from "./jobsQuery";
 
 export type SheetTypeNotice = components["schemas"]["SheetTypeNotice"];
@@ -18,10 +19,10 @@ export const NOTICES_KEY = ["notices"] as const;
 export type Severity = "error" | "warning" | "success" | "info";
 
 export interface Notification {
-  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `printer:<id>:flag:<flag>`, `sheet:<code>:unconfirmed` or `sheet-type-verified:<key>:<revision>`: a new state is a new entry. */
+  /** `job:<id>:<state>`, `printer:<id>:<kind>`, `printer:<id>:flag:<flag>`, `sheet:<code>:unconfirmed`, `sheet-type-verified:<key>:<revision>` or `update:<version>`: a new state is a new entry. */
   id: string;
   severity: Severity;
-  kind: "job" | "printer" | "sheet" | "sheet_type";
+  kind: "job" | "printer" | "sheet" | "sheet_type" | "update";
   /** Which sentence the component says (`job.failed`, `printer.offline` …); the words live in the component, so they are translated. */
   textKey: string;
   /** The names and numbers the sentence is made of. Empty text means "not known"; the component then says it its own way. */
@@ -29,13 +30,15 @@ export interface Notification {
   /** ISO time: the job's last change, or the moment this browser first saw the condition. */
   at: string;
   target: {
-    to: "/jobs/$jobId" | "/printers/$printerId" | "/sheets/$code" | "/sheets/archive";
+    to: "/jobs/$jobId" | "/printers/$printerId" | "/sheets/$code" | "/sheets/archive" | "/about";
     params: Record<string, string>;
     /** Search parameters of the target page (the sheet archive filters by `type`). */
     search?: { type: string };
   };
   /** A failed job that a later retry printed: information now, and no longer "needs attention". */
   resolved?: boolean;
+  /** The entry is a button that acts instead of a link to its page: `reload` loads the new version (#354). */
+  action?: "reload";
 }
 
 export interface DeriveInput {
@@ -221,11 +224,31 @@ export function deriveNotices(notices: readonly SheetTypeNotice[]): Notification
 }
 
 /**
- * The feed: what `deriveNotifications` made, plus the hub's notices, newest first. The notices join after the
- * derivation, so its 100-entry cap and its standing rule never touch them, and nothing cuts the merged list.
+ * A new version waits (#354): one warning entry whose button reloads. Its id names the version, so a newer version is a
+ * new (unread) entry; a waiting worker without a version mismatch is `update:worker`.
  */
-export function mergeFeed(derived: readonly Notification[], notices: readonly SheetTypeNotice[]): Notification[] {
-  return [...derived, ...deriveNotices(notices)].sort(newestFirst);
+export function deriveUpdate(notice: UpdateNotice): Notification[] {
+  if (!notice.waiting) return [];
+  return [
+    {
+      id: `update:${notice.version ?? "worker"}`,
+      severity: "warning",
+      kind: "update",
+      textKey: "update.available",
+      values: { version: notice.version ?? "" },
+      at: notice.detectedAt ?? "",
+      target: { to: "/about", params: {} },
+      action: "reload",
+    },
+  ];
+}
+
+/**
+ * The feed: what `deriveNotifications` made, plus the hub's notices and a waiting update, newest first. They join after
+ * the derivation, so its 100-entry cap and its standing rule never touch them, and nothing cuts the merged list.
+ */
+export function mergeFeed(derived: readonly Notification[], notices: readonly SheetTypeNotice[], update: readonly Notification[] = []): Notification[] {
+  return [...derived, ...deriveNotices(notices), ...update].sort(newestFirst);
 }
 
 /**

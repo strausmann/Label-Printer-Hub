@@ -436,6 +436,10 @@ msgstr "{used} von {total} benutzt"
 msgid "{used} used"
 msgstr "{used} benutzt"
 
+#: src/shell/UpdateNotice.tsx
+msgid "{version} ready"
+msgstr "{version} bereit"
+
 #: src/features/archive/errors.ts
 msgid "{what} can have at most two decimals."
 msgstr "{what} darf höchstens zwei Nachkommastellen haben."
@@ -2214,6 +2218,10 @@ msgstr "Zuletzt benutzt"
 msgid "Last used {when}"
 msgstr "Zuletzt benutzt {when}"
 
+#: src/shell/UpdateNotice.tsx
+msgid "Later"
+msgstr "Später"
+
 #: src/features/jobs/JobDetail.tsx
 #: src/features/lookup/ItemView.tsx
 #: src/features/settings/GrocyLabelSettings.tsx
@@ -2545,7 +2553,16 @@ msgstr "Neuer Bogentyp"
 msgid "New type"
 msgstr "Neuer Typ"
 
-#: src/shell/UpdatePrompt.tsx
+#: src/shell/UpdateNotice.tsx
+msgid "New version"
+msgstr "Neue Version"
+
+#: src/features/notifications/useEntryText.ts
+msgid "New version {version} available"
+msgstr "Neue Version {version} verfügbar"
+
+#: src/features/notifications/useEntryText.ts
+#: src/shell/UpdateNotice.tsx
 msgid "New version available"
 msgstr "Neue Version verfügbar"
 
@@ -3513,6 +3530,10 @@ msgstr "Liest Zustand und Band des Druckers über SNMP. Drucken funktioniert auc
 msgid "Ready"
 msgstr "Bereit"
 
+#: src/shell/UpdateNotice.tsx
+msgid "Ready to load"
+msgstr "Bereit zum Laden"
+
 #: src/features/overview/OverviewPage.tsx
 msgid "Recent jobs"
 msgstr "Letzte Aufträge"
@@ -3549,14 +3570,24 @@ msgstr "Rot"
 msgid "Release to reload"
 msgstr "Loslassen zum Neuladen"
 
+#: src/features/notifications/NotificationCentre.tsx
 #: src/shell/PhoneMenu.tsx
-#: src/shell/UpdatePrompt.tsx
+#: src/shell/UpdateNotice.tsx
 msgid "Reload"
 msgstr "Neu laden"
+
+#: src/features/notifications/NotificationCentre.tsx
+#: src/shell/UpdateNotice.tsx
+msgid "Reload new version"
+msgstr "Neu laden: neue Version"
 
 #: src/features/scan/CameraScanner.tsx
 msgid "Reload the page and try again. If it keeps failing, the browser may block WebAssembly."
 msgstr "Lade die Seite neu und versuche es erneut. Wenn es weiter scheitert, blockiert der Browser möglicherweise WebAssembly."
+
+#: src/features/notifications/NotificationCentre.tsx
+msgid "Reload to use it. Unsaved input on this page is lost."
+msgstr "Neu laden, um sie zu nutzen. Offene Eingaben auf dieser Seite gehen dabei verloren."
 
 #: src/shell/PullToRefresh.tsx
 msgid "Reloading…"
@@ -5741,7 +5772,8 @@ msgstr "ungeprüft"
 msgid "Updating the preview…"
 msgstr "Die Vorschau wird aktualisiert …"
 
-#: src/shell/UpdatePrompt.tsx
+#: src/features/notifications/NotificationCentre.tsx
+#: src/shell/UpdateNotice.tsx
 msgid "Updating…"
 msgstr "Wird aktualisiert…"
 
@@ -5802,6 +5834,10 @@ msgstr "Version"
 msgctxt "column"
 msgid "Version"
 msgstr "Version"
+
+#: src/shell/UpdateNotice.tsx
+msgid "Version {version}"
+msgstr "Version {version}"
 
 #: src/features/archive/TypeDetail.tsx
 msgid "Versions"

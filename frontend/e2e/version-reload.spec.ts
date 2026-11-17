@@ -6,35 +6,14 @@ import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, test } from "./fixtures";
+import { NEWER, reportNewerHub, toastReload, updateToast } from "./newerHub";
 
 // Issue #288: a tab opened before an update shows the update notice when the hub reports another version; one click on Reload lands on the new version.
+// Issue #354: the notice is a toast, a box in the sidebar and an entry in the notification centre.
 // The hub under test runs the same build as the bundle, so the mismatch is mocked: every API response
 // gets the header of a newer hub.
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
-const NEWER = "99.0.0";
-
-/**
- * Makes every API answer of the page carry the version header of a newer hub, until the page sets
- * `sessionStorage["e2e-mismatch"] = "off"`. Done inside the page: with a service worker controlling it,
- * `page.route` does not see the requests.
- */
-async function reportNewerHub(page: Page) {
-  await page.addInitScript((version) => {
-    const realFetch = window.fetch.bind(window);
-    window.fetch = async (...args: Parameters<typeof fetch>) => {
-      const response = await realFetch(...args);
-      const url = new URL(typeof args[0] === "string" ? args[0] : args[0] instanceof Request ? args[0].url : String(args[0]), location.href);
-      if (!url.pathname.startsWith("/api/v1/") || sessionStorage.getItem("e2e-mismatch") === "off") return response;
-      const headers = new Headers(response.headers);
-      headers.set("x-hub-version", version);
-      return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-    };
-  }, NEWER);
-  // The page was loaded before this script existed: load it again so the script is in place from the start.
-  await page.reload();
-  await expect(page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first()).toBeVisible();
-}
 
 test.describe("new server version", () => {
   test("shows the update notice and leaves the page alone", async ({ signedInPage: page }) => {
@@ -46,10 +25,22 @@ test.describe("new server version", () => {
     // A client-side move: the page itself stays, only API calls go out and report the version.
     await page.getByRole("link", { name: "Printers", exact: true }).first().click();
 
-    const banner = page.getByRole("status").filter({ hasText: "New version available" });
-    await expect(banner).toBeVisible();
-    await expect(page.getByRole("button", { name: "Reload" })).toBeVisible();
-    // No automatic reload, and the page is still usable.
+    const banner = updateToast(page);
+    await expect(banner.getByRole("status")).toContainText("New version available");
+    await expect(banner).toContainText(`Version ${NEWER}`);
+    await expect(toastReload(page)).toBeVisible();
+    // The box in the sidebar and the entry in the notification centre say the same.
+    const sidebar = page.getByRole("complementary");
+    await expect(sidebar.getByRole("button", { name: "Reload new version" })).toBeVisible();
+    await expect(sidebar).toContainText(`${NEWER} ready`);
+    await page.getByRole("button", { name: /^Notifications/ }).click();
+    const panel = page.getByRole("dialog");
+    await expect(panel.getByText(`New version ${NEWER} available`)).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Reload new version" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    // Nothing in the page content any more, no automatic reload, and the page is still usable.
+    await expect(page.getByRole("main").getByText("New version available")).toHaveCount(0);
     await expect(page.getByRole("main")).toBeVisible();
     expect(loads).toBe(0);
 
@@ -66,7 +57,7 @@ test.describe("new server version", () => {
         for (const view of views) {
           await page.setViewportSize({ width: view.width, height: view.height });
           await expect(banner).toBeVisible();
-          await page.screenshot({ path: resolve(SHOTS, `task-18b-${view.name}-${scheme}.png`) });
+          await page.screenshot({ path: resolve(SHOTS, `task-15m-${view.name}-${scheme}.png`) });
         }
       }
       await page.emulateMedia({ colorScheme: "light" });
@@ -96,11 +87,16 @@ test.describe("new server version with a real service worker", () => {
   test.beforeAll(() => {
     original = readFileSync(swFile, "utf8");
   });
+  // Each case starts from the shipped worker: a worker left changed by the previous case would already answer "v2".
+  test.beforeEach(() => {
+    writeFileSync(swFile, original);
+  });
   test.afterAll(() => {
     writeFileSync(swFile, original);
   });
 
-  test("one click on Reload ends on the new version, not on the old precached shell", async ({ signedInPage: page }) => {
+  /** Waits for the old worker, ships a new one and reports a newer hub; returns the page's marker reader. */
+  async function newVersionWaiting(page: Page) {
     // The first page load registered the worker; wait until it controls the page.
     await page.evaluate(async () => {
       await navigator.serviceWorker.ready;
@@ -119,6 +115,30 @@ test.describe("new server version with a real service worker", () => {
     );
 
     await reportNewerHub(page);
+    return marker;
+  }
+
+  test("Later hides the toast and the sidebar still reloads", async ({ signedInPage: page }) => {
+    const marker = await newVersionWaiting(page);
+    let loads = 0;
+    page.on("load", () => (loads += 1));
+    await page.getByRole("link", { name: "Printers", exact: true }).first().click();
+    await expect(updateToast(page)).toBeVisible();
+    await updateToast(page).getByRole("button", { name: "Later" }).click();
+    await expect(updateToast(page)).toHaveCount(0);
+    expect(loads).toBe(0);
+
+    await page.evaluate(() => sessionStorage.setItem("e2e-mismatch", "off"));
+    await page.getByRole("complementary").getByRole("button", { name: "Reload new version" }).click();
+    await expect.poll(() => marker(), { timeout: 20_000 }).toBe("v2");
+    await expect(page.getByRole("heading", { name: "Printers" }).first()).toBeVisible();
+    expect(loads).toBe(1);
+    await expect(page.getByRole("complementary").getByRole("button", { name: "Reload new version" })).toHaveCount(0);
+    expect(new URL(page.url()).origin).toBe(MAIN.url);
+  });
+
+  test("one click on Reload ends on the new version, not on the old precached shell", async ({ signedInPage: page }) => {
+    const marker = await newVersionWaiting(page);
     let loads = 0;
     page.on("load", () => (loads += 1));
 
@@ -129,7 +149,7 @@ test.describe("new server version with a real service worker", () => {
     // The page that comes back runs the new bundle, so the hub reports its version again.
     await page.evaluate(() => sessionStorage.setItem("e2e-mismatch", "off"));
     // One click: the page asks for the new worker, applies it and reloads on the new files.
-    await page.getByRole("button", { name: "Reload" }).click();
+    await toastReload(page).click();
     await expect.poll(() => marker(), { timeout: 20_000 }).toBe("v2");
     await expect(page.getByRole("heading", { name: "Printers" }).first()).toBeVisible();
     expect(loads).toBe(1);

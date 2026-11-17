@@ -8,6 +8,7 @@ import { IntegrationNavEntries } from "./IntegrationNav";
 import { navGroups } from "./features";
 import { useNavLabels } from "./labels";
 import { ConnectionStatus } from "./ConnectionStatus";
+import { UpdateSidebarNotice } from "./UpdateNotice";
 import { SourceLink } from "../features/about/SourceLink";
 import { useConfiguredIntegrations } from "../features/integrations/api";
 import { messages } from "../i18n/messages";
@@ -73,6 +74,10 @@ export function Sidebar() {
         })}
       </nav>
       <div className="flex flex-col gap-3 border-t border-line px-6 py-4">
+        {/* A waiting version (#354), above the version it replaces; it wraps instead of shortening the version. */}
+        <div className="-mx-4 empty:hidden">
+          <UpdateSidebarNotice />
+        </div>
         <ConnectionStatus />
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-small">
           <Link to="/about" className="press text-ink-2 underline underline-offset-2 hover:text-ink">

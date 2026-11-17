@@ -5,6 +5,7 @@ import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button, Dialog, DialogTrigger, Heading, Modal, ModalOverlay, Popover } from "react-aria-components";
+import { applyUpdate, useUpdating } from "../../app/updates";
 import { BellIcon } from "../../shell/icons";
 import { formatAge } from "../printers/age";
 import type { Notification, Severity } from "./derive";
@@ -89,6 +90,8 @@ function EntryLink({ entry, className, onClick, title, children }: { entry: Noti
       return <Link to="/sheets/$code" params={{ code: params.code ?? "" }} {...common}>{children}</Link>;
     case "/sheets/archive":
       return <Link to="/sheets/archive" search={search ? { type: search.type } : undefined} {...common}>{children}</Link>;
+    case "/about":
+      return <Link to="/about" {...common}>{children}</Link>;
   }
 }
 
@@ -113,7 +116,45 @@ function absoluteTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleString([], { dateStyle: "medium", timeStyle: "medium" });
 }
 
+/** The entry of a waiting version (#354): it acts instead of linking, with the same button as the sidebar box. */
+function UpdateEntry({ entry, unread, now }: { entry: Notification; unread: boolean; now: number }) {
+  const { t, i18n } = useLingui();
+  const text = useEntryText();
+  const severities = useSeverityLabel();
+  const updating = useUpdating();
+  const at = Date.parse(entry.at);
+  const bold = unread ? "font-bold" : "";
+  return (
+    <li className="flex flex-col gap-1 border-b border-line px-4 py-3 last:border-b-0" data-unread={unread || undefined}>
+      <span className="flex items-center gap-2 text-small">
+        <SeverityShape severity={entry.severity} />
+        <span className={bold}>{severities[entry.severity]}</span>
+        {unread && <span className="rounded-r2 bg-accent-soft px-1.5 font-bold text-ink">{t`New`}</span>}
+        <time className="ml-auto shrink-0 text-ink-3" dateTime={entry.at} title={absoluteTime(entry.at)}>
+          {Number.isNaN(at) ? "" : ageLabel(Math.max(0, (now - at) / 1000), i18n.locale)}
+        </time>
+      </span>
+      <span className={`text-ink [overflow-wrap:anywhere] ${bold}`}>{text(entry)}</span>
+      <span className="text-small text-ink-2">{t`Reload to use it. Unsaved input on this page is lost.`}</span>
+      {/* aria-disabled, not disabled: the focus stays on the button while the page gets the new version. */}
+      <Button
+        aria-label={updating ? t`Updating…` : t`Reload new version`}
+        aria-disabled={updating || undefined}
+        onPress={() => void applyUpdate()}
+        className={`press mt-1 inline-flex h-11 items-center self-start rounded-r2 bg-ink px-4 text-small font-bold text-bg transition-opacity duration-150 data-[hovered]:opacity-90 aria-disabled:opacity-60 ${FOCUS}`}
+      >
+        {updating ? t`Updating…` : t`Reload`}
+      </Button>
+    </li>
+  );
+}
+
 function Entry({ entry, unread, now, onNavigate }: { entry: Notification; unread: boolean; now: number; onNavigate: () => void }) {
+  if (entry.action === "reload") return <UpdateEntry entry={entry} unread={unread} now={now} />;
+  return <LinkEntry entry={entry} unread={unread} now={now} onNavigate={onNavigate} />;
+}
+
+function LinkEntry({ entry, unread, now, onNavigate }: { entry: Notification; unread: boolean; now: number; onNavigate: () => void }) {
   const { t, i18n } = useLingui();
   const text = useEntryText();
   const severities = useSeverityLabel();
