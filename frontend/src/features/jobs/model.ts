@@ -94,6 +94,12 @@ function loadedRollOf(value: unknown): LoadedRoll | null {
   return { widthMm: num(r.width_mm), mediaRaw: str(r.media_raw), mediaKind: kind, colour: str(r.colour) };
 }
 
+/** The `error_detail` a failed job stores in `result` (flags, widths, …); null when it has none. */
+export function errorDetailOf(job: Job): Record<string, unknown> | null {
+  const detail = obj(job.result).error_detail;
+  return typeof detail === "object" && detail !== null && !Array.isArray(detail) ? (detail as Json) : null;
+}
+
 /** Reads the fields the print service stores in `payload`; anything missing stays null. */
 export function summarizePayload(job: Job): PayloadSummary {
   const p = obj(job.payload);

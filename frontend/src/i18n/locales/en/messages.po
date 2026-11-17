@@ -5193,6 +5193,10 @@ msgstr "The printer reported an error after the label was sent. Check the printe
 msgid "The printer reports a problem."
 msgstr "The printer reports a problem."
 
+#: src/features/printers/printErrorText.ts
+msgid "The printer reports an error. Fix it on the printer and try again."
+msgstr "The printer reports an error. Fix it on the printer and try again."
+
 #: src/features/printers/flags.ts
 msgid "The printer reports itself offline"
 msgstr "The printer reports itself offline"
@@ -5201,6 +5205,14 @@ msgstr "The printer reports itself offline"
 #: src/features/printers/TestPrintButton.tsx
 msgid "The printer reports no trays."
 msgstr "The printer reports no trays."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer reports: {words}. Fix it on the printer and retry."
+msgstr "The printer reports: {words}. Fix it on the printer and retry."
+
+#: src/features/printers/printErrorText.ts
+msgid "The printer reports: {words}. Fix it on the printer and try again."
+msgstr "The printer reports: {words}. Fix it on the printer and try again."
 
 #: src/features/jobs/jobErrorText.ts
 msgid "The printer was busy and did not take the job."

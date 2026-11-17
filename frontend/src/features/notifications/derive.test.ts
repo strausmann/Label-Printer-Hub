@@ -59,6 +59,12 @@ describe("deriveNotifications: jobs", () => {
     expect(entry).toMatchObject({ id: `job:${J1}:cancelled`, severity: "info", textKey: "job.cancelled" });
   });
 
+  it("#389: a failed job hands its error detail to the sentence, so the flags can be named", () => {
+    const failed = mkJob(J1, "failed", { error: "printer_error: x", result: { error_detail: { flags: ["jammed"] } } });
+    const [entry] = run({ jobs: [failed], printers: [A] });
+    expect(JSON.parse(entry?.values.errorDetail ?? "null")).toEqual({ flags: ["jammed"] });
+  });
+
   it.each(["failed", "failed_restart"])("an unresolved %s job is an error with the error text of the job page", (state) => {
     const [entry] = run({ jobs: [mkJob(J1, state, { error: "Printer reported: cover open" })], printers: [A] });
     expect(entry).toMatchObject({

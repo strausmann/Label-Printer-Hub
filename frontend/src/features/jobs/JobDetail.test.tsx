@@ -101,6 +101,14 @@ describe("JobDetail", () => {
     expect(label.nextElementSibling).toHaveTextContent("—");
   });
 
+  it("#389: says a stored error code in the app's words, not the stored English", async () => {
+    mockApi(routes("failed", { error: "printer_error: The printer reports an error: jammed", result: { error_detail: { flags: ["jammed"] } } }));
+    await renderApp({ path: `/jobs/${ID}` });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The printer reports: Tape jammed — clear it to print. Fix it on the printer and retry.");
+    expect(alert).not.toHaveTextContent("printer_error");
+  });
+
   it("lists the state history from the job's timestamps", async () => {
     mockApi(routes("done", { started_at: "2026-11-04T10:00:05Z", finished_at: "2026-11-04T10:00:09Z" }));
     await renderApp({ path: `/jobs/${ID}` });

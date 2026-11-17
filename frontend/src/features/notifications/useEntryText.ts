@@ -3,6 +3,7 @@
 
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
+import { useStoredJobErrorText } from "../jobs/jobErrorText";
 import { useFlagText } from "../printers/flags";
 import { useKindLabel, type PrinterKind } from "../printers/model";
 import { useReasonWord } from "../printers/reasons";
@@ -12,11 +13,22 @@ import type { Notification } from "./derive";
  * The one sentence of an entry, in the active language. `derive.ts` keeps the words out (it only names the sentence and
  * its parts); this is where `textKey` and `values` become text. A part the data did not carry gets a plain word.
  */
+function detailOf(json: string | undefined): Record<string, unknown> | null {
+  if (!json) return null;
+  try {
+    const value: unknown = JSON.parse(json);
+    return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">) => string {
   const { t } = useLingui();
   const kinds = useKindLabel();
   const reasonWord = useReasonWord();
   const flagText = useFlagText();
+  const storedError = useStoredJobErrorText();
 
   return ({ textKey, values }) => {
     const title = values.title || t`Label`;
@@ -33,7 +45,7 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
       case "job.retried":
         return t`${title} failed, printed on retry`;
       case "job.failed": {
-        const error = (values.error ?? "").trim();
+        const error = (storedError(values.error, detailOf(values.errorDetail)) ?? "").trim();
         return error ? t`${title} failed: ${error}` : t`${title} failed`;
       }
       case "printer.flag": {

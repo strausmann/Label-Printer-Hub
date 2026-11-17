@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { jobTitle } from "../jobs/model";
+import { errorDetailOf, jobTitle } from "../jobs/model";
 import type { Job, Printer, PrinterStatus } from "../printers/api";
 import type { CoverRefusal } from "../printers/coverRefusals";
 import { flagSeverity, printerWaiting, type Waiting } from "../printers/flags";
@@ -109,7 +109,8 @@ function jobEntry(job: Job, printers: Map<string, Printer>, resolved: Set<string
     values: {
       title: jobTitle(job) ?? "",
       printer: printers.get(job.printer_id)?.name ?? "",
-      ...(textKey === "job.failed" ? { error: job.error ?? "" } : {}),
+      // The stored `code: message` and its detail; the component says it in the app's words (#389).
+      ...(textKey === "job.failed" ? { error: job.error ?? "", errorDetail: JSON.stringify(errorDetailOf(job)) } : {}),
     },
     at: job.updated_at,
     target: { to: "/jobs/$jobId", params: { jobId: job.id } },

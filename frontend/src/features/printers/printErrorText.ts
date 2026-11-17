@@ -5,6 +5,7 @@ import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { ApiError } from "../../api/client";
+import { flagText } from "./flags";
 
 export type Translate = (d: MessageDescriptor) => string;
 
@@ -50,6 +51,13 @@ export function printErrorText(code: string | null | undefined, detail: Record<s
         ? t(msg`The loaded tape (${loaded} mm) does not match this label (${expected} mm).`)
         : t(msg`The loaded tape does not match this label.`);
     }
+    case "printer_error": {
+      // #389: the blocking bits the printer reports, in the words of #376.
+      const flags = Array.isArray(detail?.flags) ? detail.flags.filter((f): f is string => typeof f === "string") : [];
+      if (flags.length === 0) return t(msg`The printer reports an error. Fix it on the printer and try again.`);
+      const words = flags.map((f) => flagText(f, t).headline).join(" · ");
+      return t(msg`The printer reports: ${words}. Fix it on the printer and try again.`);
+    }
     case "media_type_mismatch":
       return t(msg`The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll.`);
     case "content_type_data_mismatch":
@@ -72,6 +80,12 @@ export function printErrorText(code: string | null | undefined, detail: Record<s
     default:
       return null;
   }
+}
+
+/** `printErrorText` bound to the active language: null for a code it does not know. */
+export function usePrintErrorWords(): (code: string, detail: Record<string, unknown> | null) => string | null {
+  const { i18n } = useLingui();
+  return (code, detail) => printErrorText(code, detail, (d) => i18n._(d));
 }
 
 /**

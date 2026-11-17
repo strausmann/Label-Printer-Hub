@@ -14,9 +14,10 @@ import { isTapeColour, useColourNames, useJobStateBadge } from "../printers/mode
 import { HINT } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useCancelJobById, useJob, useRetryJob, type Job } from "./api";
-import { canCancel, canRetry, formatTime, historyOf, summarizePayload, type LoadedRoll } from "./model";
+import { canCancel, canRetry, errorDetailOf, formatTime, historyOf, summarizePayload, type LoadedRoll } from "./model";
 import { PageJobInfo } from "./PageJobInfo";
 import { CancelError, RetryError } from "./RetryError";
+import { useStoredJobErrorText } from "./jobErrorText";
 import { useJobTitle } from "./useJobTitle";
 
 const route = getRouteApi("/jobs/$jobId");
@@ -85,6 +86,8 @@ function JobDetail({ job }: { job: Job }) {
   const state = stateOf(job.state);
   const summary = summarizePayload(job);
   const title = useJobTitle(job);
+  // #389: the stored `code: message` in the app's words; an unknown code keeps the stored text.
+  const errorText = useStoredJobErrorText()(job.error, errorDetailOf(job));
   const cancelRequested = cancel.isSuccess && job.state === "printing";
   const printer = printers.data?.find((p) => p.id === job.printer_id);
   const printerLink = printer ? (
@@ -145,7 +148,7 @@ function JobDetail({ job }: { job: Job }) {
       {job.error && (
         <section aria-labelledby="error-h" className="rounded-r3 border border-bad bg-surface p-4">
           <h2 id="error-h" className={SECTION_HEADING}>{t`What went wrong`}</h2>
-          <p role="alert" className="mt-2 whitespace-pre-wrap break-words">{job.error}</p>
+          <p role="alert" className="mt-2 whitespace-pre-wrap break-words">{errorText}</p>
         </section>
       )}
 

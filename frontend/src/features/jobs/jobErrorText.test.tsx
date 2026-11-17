@@ -6,7 +6,7 @@ import { I18nProvider } from "@lingui/react";
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { initI18n } from "../../i18n";
-import { useJobErrorText } from "./jobErrorText";
+import { useJobErrorText, useStoredJobErrorText } from "./jobErrorText";
 
 async function textFor(code: string | null, lang: "en" | "de") {
   await initI18n(lang);
@@ -44,5 +44,38 @@ describe("job error words", () => {
 
   it("an unknown code still names the code", async () => {
     expect(await textFor("no_such_code", "en")).toBe("The print failed (error code no_such_code).");
+  });
+});
+
+async function storedFor(error: string | null, detail: Record<string, unknown> | null, lang: "en" | "de") {
+  await initI18n(lang);
+  const { result } = renderHook(() => useStoredJobErrorText(), {
+    wrapper: ({ children }) => <I18nProvider i18n={i18n}>{children}</I18nProvider>,
+  });
+  return result.current(error, detail);
+}
+
+describe("a job's stored error in the app's words (#389)", () => {
+  it("translates every known code, en and de", async () => {
+    expect(await storedFor("tape_empty: The tape is empty.", null, "en")).toBe("The tape is empty. Put in a new tape and retry.");
+    const de = await storedFor("tape_empty: The tape is empty.", null, "de");
+    expect(de).not.toBe("The tape is empty. Put in a new tape and retry.");
+    expect(de).not.toMatch(/tape_empty/);
+  });
+
+  it("falls back to the print error words for a code only a refusal knows", async () => {
+    expect(await storedFor("no_tape_loaded: No tape loaded", null, "en")).toBe("No tape is loaded. Put in a tape and try again.");
+  });
+
+  it("names the reported flags of a printer error", async () => {
+    expect(await storedFor("printer_error: The printer reports an error: jammed, offline", { flags: ["jammed", "offline"] }, "en")).toBe(
+      "The printer reports: Tape jammed — clear it to print · The printer reports itself offline. Fix it on the printer and retry.",
+    );
+  });
+
+  it("keeps the stored text of an unknown code or a message without a code", async () => {
+    expect(await storedFor("weird_code: something odd", null, "en")).toBe("weird_code: something odd");
+    expect(await storedFor("Printer reported: cover open", null, "en")).toBe("Printer reported: cover open");
+    expect(await storedFor(null, null, "en")).toBeNull();
   });
 });
