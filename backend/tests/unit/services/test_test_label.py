@@ -141,8 +141,8 @@ def test_band_table(backend: str, model: str, mm: int, px: int, dpi: int) -> Non
 
 @pytest.mark.parametrize(
     ("backend", "model", "mm"),
-    [("ptouch", "PT-E550W", 36), ("brother_ql", "QL-820NWB", 24), ("ptouch", "PT-X", 12),
-     ("ipp", "m", 12)],
+    [("ptouch", "PT-E550W", 36), ("brother_ql", "QL-820NWB", 24), ("ptouch", "PT-X", 36),
+     ("brother_ql", "QL-X", 24), ("mock", "m", 62)],
 )  # fmt: skip
 def test_band_refuses_a_width_the_model_lacks(backend: str, model: str, mm: int) -> None:
     with pytest.raises(UnsupportedTapeError) as caught:
@@ -321,3 +321,20 @@ def test_shortening_keeps_combining_and_zwj_sequences_whole() -> None:
             following = name[len(kept)]
             assert not unicodedata.combining(following) and following != "\u200d", budget
             assert not kept.endswith("\u200d"), budget
+
+
+@pytest.mark.parametrize(
+    ("backend", "model", "mm", "band"),
+    [("ptouch", "PT-H500", 24, TapeBand(128, 180)), ("ptouch", "PT-H500", 12, TapeBand(70, 180)),
+     ("ptouch", "", 4, TapeBand(24, 180)), ("brother_ql", "QL-1100", 62, TapeBand(696, 300)),
+     ("brother_ql", "QL-1100", 29, TapeBand(306, 300)),
+     ("mock", "PT-P750W", 24, TapeBand(128, 180)), ("mock", "QL-820NWB", 62, TapeBand(696, 300)),
+     ("mock", "m", 24, TapeBand(128, 180))],
+)  # fmt: skip
+def test_an_unknown_model_falls_back_by_backend(
+    backend: str, model: str, mm: int, band: TapeBand
+) -> None:
+    """An unknown model never breaks the test print: P-touch standard pins at 180 dpi, QL the
+    DK dots at 300 dpi; a backend the hub has no table for goes by the model's family."""
+    assert band_of(backend, model, mm) == band
+    assert render_test_label(mm, _text(mm), band).height == band.px

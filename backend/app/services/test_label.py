@@ -51,6 +51,8 @@ NUMBERS_FROM_TAPE_MM: Final = 12
 """The ruler carries numbers and the text runs in lines from this tape width on."""
 
 QL_DPI: Final = 300
+_STANDARD_PT: Final = _PTOUCH_PRINTER_CLASSES["PT-E550W"]
+"""The pin table of a P-touch model the hub does not know: the 128-pin, 180 dpi standard."""
 _MARGIN_MM: Final = 2.0
 _GAP_MM: Final = 1.5
 _CAP_MAX_MM: Final = 3.5
@@ -71,22 +73,24 @@ class TapeBand(NamedTuple):
 def test_label_band(backend: str, model: str, tape_mm: int) -> TapeBand:
     """The band the test label is drawn on for ``model`` of ``backend`` and ``tape_mm``.
 
-    ``brother_ql``: the DK endless tape's printable dots at 300 dpi; ``ptouch``: the pins of
-    the tape in the model's pin table at the model's resolution. Raises
-    ``UnsupportedTapeError`` for any other combination.
+    ``brother_ql``: the DK endless tape's printable dots at 300 dpi, whatever the model.
+    ``ptouch``: the pins of the tape in the model's pin table at the model's resolution; a model
+    the hub has no pin table for falls back to the standard P-touch pins at 180 dpi
+    (``_STANDARD_PT``), so an unknown model never breaks the test print. Any other tape backend
+    (``mock``) is treated as QL when the model is a QL, else as P-touch. Raises
+    ``UnsupportedTapeError`` only for a width the table in use does not have.
     """
-    if backend == "brother_ql":
+    if backend == "brother_ql" or (backend != "ptouch" and model.upper().startswith("QL")):
         for spec in QL_DK_ENDLESS_TAPES:
             if spec.width_mm == tape_mm:
                 return TapeBand(spec.print_area_dots, QL_DPI)
-    elif backend == "ptouch":
-        printer_cls: Any = _PTOUCH_PRINTER_CLASSES.get(model)
-        tape_cls = _PTOUCH_TAPE_CLASSES.get(tape_mm)
-        if printer_cls is not None and tape_cls is not None:
-            config = printer_cls.PIN_CONFIGS.get(tape_cls)
-            if config is not None:
-                return TapeBand(int(config.print_pins), int(printer_cls.RESOLUTION_DPI))
-    raise UnsupportedTapeError(tape_mm=tape_mm)
+        raise UnsupportedTapeError(tape_mm=tape_mm)
+    printer_cls: Any = _PTOUCH_PRINTER_CLASSES.get(model, _STANDARD_PT)
+    tape_cls = _PTOUCH_TAPE_CLASSES.get(tape_mm)
+    config = printer_cls.PIN_CONFIGS.get(tape_cls) if tape_cls is not None else None
+    if config is None:
+        raise UnsupportedTapeError(tape_mm=tape_mm)
+    return TapeBand(int(config.print_pins), int(printer_cls.RESOLUTION_DPI))
 
 
 test_label_band.__test__ = False  # type: ignore[attr-defined]  # a function of the hub, not a test
