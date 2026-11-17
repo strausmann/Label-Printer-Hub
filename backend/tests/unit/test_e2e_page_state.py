@@ -8,7 +8,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from tests.e2e_app import E2E_MEDIA_DEFAULT, _fake_state, _new_fake, _PageState, _reset_fake
+from tests.e2e_app import (
+    E2E_MEDIA_DEFAULT,
+    _fake_state,
+    _new_fake,
+    _PageState,
+    _reset_fake,
+    _TapeState,
+)
 
 
 def test_the_e2e_fake_reports_a4_like_the_real_hp() -> None:
@@ -48,3 +55,33 @@ def test_the_state_reports_the_uuid_and_reset_clears_it() -> None:
     assert _fake_state(fake)["printer_uuid"] == fake.printer_uuid
     _reset_fake(fake)
     assert fake.printer_uuid is None
+
+
+def test_door_open_sets_and_reset_clears_the_flag() -> None:
+    """#376: the e2e hub can open the tape printer's cover and a reset closes it again."""
+    import asyncio
+
+    from app.printer_backends.mock_backend import MockPrinterBackend
+
+    import tests.e2e_app as e2e
+
+    backend = MockPrinterBackend(loaded_tape_mm=24)
+    e2e._TAPE_BACKENDS.append(backend)
+    try:
+        e2e._apply_tape_state(e2e._TapeState.model_validate({"door_open": True}))
+        assert backend._cover_open is True
+        assert asyncio.run(e2e._fake_preflight("192.0.2.12")).error_flags == ["doorOpen"]
+
+        e2e._reset_tape_state()
+        assert backend._cover_open is False
+        assert asyncio.run(e2e._fake_preflight("192.0.2.12")).error_flags == []
+    finally:
+        e2e._TAPE_BACKENDS.remove(backend)
+        e2e._reset_tape_state()
+
+
+def test_the_tape_state_needs_at_least_one_field() -> None:
+    with pytest.raises(ValidationError):
+        _TapeState.model_validate({})
+    assert _TapeState.model_validate({"tape_runs_out_in": 3}).door_open is None
+    assert _TapeState.model_validate({"door_open": False}).tape_runs_out_in is None

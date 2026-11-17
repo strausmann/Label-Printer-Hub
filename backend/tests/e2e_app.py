@@ -40,7 +40,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
@@ -85,12 +85,19 @@ E2E_POLLED_TAPE_PRINTER: dict[str, Any] = {
 }
 
 
+_door_open = False
+"""Set by ``POST /__e2e/tape-printer/state {door_open}``: the cover is open (#376)."""
+
+
 async def _fake_preflight(host: str, **_kwargs: Any) -> Any:
     """The fake SNMP status writer: the polled printer is idle with a 12 mm tape loaded."""
     from app.printer_backends.snmp_helper import PreflightStatus
 
     return PreflightStatus(
-        hr_printer_status="idle", loaded_tape_mm=E2E_POLLED_TAPE_MM, error_flags=[], media_raw=None
+        hr_printer_status="idle",
+        loaded_tape_mm=E2E_POLLED_TAPE_MM,
+        error_flags=["doorOpen"] if _door_open else [],
+        media_raw=None,
     )
 
 
@@ -331,11 +338,22 @@ _TAPE_BACKENDS: list[Any] = []
 
 
 class _TapeState(BaseModel):
-    """Body of ``POST /__e2e/tape-printer/state``: the tape ends after this many more labels."""
+    """Body of ``POST /__e2e/tape-printer/state``: at least one field.
+
+    ``tape_runs_out_in``: the tape ends after this many more labels. ``door_open``: the cover
+    is open (the polled printer reports ``doorOpen``, prints are refused) or closed again.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    tape_runs_out_in: int = Field(ge=0, le=10_000)
+    tape_runs_out_in: int | None = Field(default=None, ge=0, le=10_000)
+    door_open: bool | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> _TapeState:
+        if self.tape_runs_out_in is None and self.door_open is None:
+            raise ValueError("set tape_runs_out_in or door_open")
+        return self
 
 
 def _tape_out_in(labels: int) -> None:
@@ -343,11 +361,32 @@ def _tape_out_in(labels: int) -> None:
         backend.tape_runs_out_after = len(backend.printed_images) + labels
 
 
+def _set_door_open(open_: bool) -> None:
+    """Open or close the cover: the status reports ``doorOpen``, every tape print is refused."""
+    global _door_open
+    _door_open = open_
+    for backend in _TAPE_BACKENDS:
+        backend._cover_open = open_
+
+
+def _apply_tape_state(tape: _TapeState) -> None:
+    if tape.tape_runs_out_in is not None:
+        _tape_out_in(tape.tape_runs_out_in)
+    if tape.door_open is not None:
+        _set_door_open(tape.door_open)
+
+
 def _new_tape() -> None:
     """A fresh tape in every tape printer: it no longer runs out, and it is not empty."""
     for backend in _TAPE_BACKENDS:
         backend.tape_runs_out_after = None
         backend._tape_empty = False
+
+
+def _reset_tape_state() -> None:
+    """``POST /__e2e/tape-printer/reset``: a fresh tape, and the cover closed."""
+    _new_tape()
+    _set_door_open(False)
 
 
 def _new_fake() -> Any:
@@ -488,10 +527,10 @@ class E2EApp:
             except (ValueError, ValidationError) as exc:
                 response = JSONResponse({"error": str(exc)}, status_code=422)
             else:
-                _tape_out_in(tape.tape_runs_out_in)
+                _apply_tape_state(tape)
                 response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
         elif path == "/__e2e/tape-printer/reset" and method == "POST":
-            _new_tape()
+            _reset_tape_state()
             await self._resume_tape_printers()
             response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
         else:
