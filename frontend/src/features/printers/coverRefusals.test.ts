@@ -27,6 +27,12 @@ describe("cover refusals", () => {
     expect(refusals.current).toEqual({ [P]: { title: "Shelf 3" } });
   });
 
+  it("the problem type printer-cover-open (the test print's answer) records one too", () => {
+    const refusals = current();
+    act(() => notePrintError(P, "", new ApiError(409, "printer-cover-open", "The printer cover is open.")));
+    expect(refusals.current).toEqual({ [P]: { title: "" } });
+  });
+
   it("another failure code records none", () => {
     const refusals = current();
     act(() => {

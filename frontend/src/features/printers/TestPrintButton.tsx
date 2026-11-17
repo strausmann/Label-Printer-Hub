@@ -10,6 +10,7 @@ import { useSession } from "../../app/session";
 import { SelectField } from "../settings/controls";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../ui";
 import type { Printer, PrinterStatus, useTestPrint } from "./api";
+import { notePrintError } from "./coverRefusals";
 import { isPagePrinter, printerStopReasons, unknownKind } from "./model";
 import { printErrorText } from "./printErrorText";
 import { useReasonWord } from "./reasons";
@@ -71,7 +72,9 @@ export function TestPrintButton({ printer, status, mutation }: { printer: Printe
   const page = isPagePrinter(printer, status);
   if (scope !== "print" && scope !== "admin") return null;
   const reasonId = `test-print-reason-${printer.id}`;
-  const send = (tray: string | null) => mutation.mutate(tray, { onSettled: () => setOpen(false) });
+  // A refusal on the open cover escalates the cover at once, like a refused label (#376); a test page names no label.
+  const send = (tray: string | null) =>
+    mutation.mutate(tray, { onError: (error) => notePrintError(printer.id, "", error), onSettled: () => setOpen(false) });
 
   return (
     <div className="flex min-w-0 max-w-full flex-col items-start gap-1.5">

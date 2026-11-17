@@ -9,7 +9,7 @@ import { ApiError } from "../../api/client";
 export type Translate = (d: MessageDescriptor) => string;
 
 /** `printer-cover-open`, `printer_cover_open` and `…/printer-cover-open` are one code. */
-function normalise(code: string): string {
+export function normalise(code: string): string {
   return (code.split("/").pop() ?? code).replaceAll("-", "_");
 }
 

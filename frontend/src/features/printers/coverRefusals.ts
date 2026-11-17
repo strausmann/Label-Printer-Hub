@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { ApiError } from "../../api/client";
 import type { PrinterStatus } from "./api";
+import { normalise } from "./printErrorText";
 
 /*
  * A print refused because the printer's cover is open (#376). It makes the open cover a problem at
@@ -50,9 +51,12 @@ export function noteJobEvent(printerId: string | null, data: Record<string, unkn
   if (printerId && data.to_state === "failed" && data.error_code === COVER_OPEN_CODE) recordCoverRefusal(printerId, "");
 }
 
-/** A print of this browser that the hub refused: an open cover records a refusal; any other failure none. */
+/**
+ * A print of this browser that the hub refused (a label, a cart, a test print): an open cover records a refusal; any
+ * other failure none. The envelope's `printer_cover_open` and the problem type `printer-cover-open` are one code.
+ */
 export function notePrintError(printerId: string, title: string, error: unknown): void {
-  if (error instanceof ApiError && error.code === COVER_OPEN_CODE) recordCoverRefusal(printerId, title);
+  if (error instanceof ApiError && error.code !== null && normalise(error.code) === COVER_OPEN_CODE) recordCoverRefusal(printerId, title);
 }
 
 /**
