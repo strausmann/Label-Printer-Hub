@@ -40,8 +40,8 @@ export function useEntryText(): (entry: Pick<Notification, "textKey" | "values">
         // The flag in words, never the raw name (#376); a waiting job or a refused print says why it is a problem.
         const headline = flagText(values.flag ?? "").headline;
         const job = values.job ?? "";
-        if (job) return t`${printer}: ${headline} · ${job} is waiting`;
         if (values.refused) return t`${printer}: ${headline} · a print was refused`;
+        if (job) return t`${printer}: ${headline} · ${job} is waiting`;
         return t`${printer}: ${headline}`;
       }
       case "printer.different_device":

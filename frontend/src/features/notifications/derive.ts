@@ -147,7 +147,7 @@ function printerEntries(
       severity: flagSeverity(flag, waiting),
       kind: "printer",
       textKey: "printer.flag",
-      values: { printer: printer.name, flag, job: waiting.waiting ? waiting.job : "", refused: waiting.refused ? "1" : "" },
+      values: { printer: printer.name, flag, job: waiting.job, refused: waiting.refused ? "1" : "" },
       at: at(id),
       target,
     });

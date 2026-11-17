@@ -42,7 +42,7 @@ export interface Waiting {
   waiting: boolean;
   /** The title of the job that waits (the oldest queued or printing one), else the refused print's; "" when none is known. */
   job: string;
-  /** A print to this printer was refused because of its open cover. */
+  /** Nothing is queued or printing, but a print to this printer was refused because of its open cover. */
   refused: boolean;
 }
 
@@ -63,7 +63,7 @@ export function printerWaiting(printerId: string, jobs: readonly Job[], refusals
     .filter((j) => j.printer_id === printerId && (j.state === "queued" || j.state === "printing"))
     .sort((a, b) => time(a.created_at) - time(b.created_at));
   const first = active[0];
-  if (first) return { waiting: true, job: jobTitle(first) ?? "", refused: refusal !== undefined };
+  if (first) return { waiting: true, job: jobTitle(first) ?? "", refused: false };
   if (refusal) return { waiting: true, job: refusal.title, refused: true };
   return NOT_WAITING;
 }

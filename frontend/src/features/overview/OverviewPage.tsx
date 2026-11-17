@@ -191,10 +191,10 @@ function AttentionItem({
         <span className="font-bold">{printer.name}</span>
         <StatusBadge state={problem ? "bad" : "warn"} label={problem ? kinds.error : kinds.attention} />
         <FlagLine flags={[flag]} />
-        {job ? (
-          <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`${job} is waiting`}</span>
-        ) : entry.values.refused ? (
+        {entry.values.refused ? (
           <span className="text-small text-ink-2">{t`A print was refused`}</span>
+        ) : job ? (
+          <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`${job} is waiting`}</span>
         ) : null}
         {dismiss}
       </li>
