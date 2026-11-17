@@ -476,6 +476,7 @@ msgstr "{what} must not be empty."
 msgid "{what} must not be negative."
 msgstr "{what} must not be negative."
 
+#: src/features/jobs/JobDetail.tsx
 #: src/features/printers/TapeSwatch.tsx
 msgid "{width} mm"
 msgstr "{width} mm"
@@ -1203,6 +1204,10 @@ msgstr "Code prefix"
 msgid "Colour modes"
 msgstr "Colour modes"
 
+#: src/features/jobs/JobDetail.tsx
+msgid "colour not given"
+msgstr "colour not given"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Columns"
 msgstr "Columns"
@@ -1258,6 +1263,10 @@ msgstr "Continue"
 #: src/features/jobs/RunControls.tsx
 msgid "Continue with part {next}"
 msgstr "Continue with part {next}"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "continuous"
+msgstr "continuous"
 
 #: src/features/scan/ScanScreen.tsx
 #: src/features/settings/AccessKeys.tsx
@@ -1474,6 +1483,10 @@ msgstr "Device swap"
 #: src/features/archive/TypeForm.tsx
 msgid "Diameter (mm)"
 msgstr "Diameter (mm)"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "die-cut"
+msgstr "die-cut"
 
 #: src/features/printers/model.ts
 msgid "Different device"
@@ -2318,6 +2331,10 @@ msgstr "Live updates paused; the list may be out of date."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Load hint"
 msgstr "Load hint"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Loaded roll"
+msgstr "Loaded roll"
 
 #: src/features/notifications/NotificationCentre.tsx
 msgid "Loading notifications…"
@@ -4918,6 +4935,14 @@ msgstr "The link in the QR code is too long for this layout."
 msgid "The list of product codes"
 msgstr "The list of product codes"
 
+#: src/features/jobs/jobErrorText.ts
+msgid "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll and retry."
+msgstr "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll and retry."
+
+#: src/features/printers/printErrorText.ts
+msgid "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."
+msgstr "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."
+
 #: src/features/printers/printErrorText.ts
 msgid "The loaded tape ({loaded} mm) does not match this label ({expected} mm)."
 msgstr "The loaded tape ({loaded} mm) does not match this label ({expected} mm)."
@@ -5159,6 +5184,10 @@ msgstr "The printer refused the request ({status})."
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request."
 msgstr "The printer refused the request."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer reported an error after the label was sent. Check the printer's display, fix it and retry."
+msgstr "The printer reported an error after the label was sent. Check the printer's display, fix it and retry."
 
 #: src/features/printers/flags.ts
 msgid "The printer reports a problem."

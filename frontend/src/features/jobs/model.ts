@@ -31,6 +31,16 @@ export interface PageInfo {
 /** The job kind of a tape test label (`template_key`); the print service names it, not the payload. */
 export const TEST_LABEL_KEY = "test_label";
 
+/** The roll that was loaded when a tape job was drawn (#389, `payload.loaded_roll`). */
+export interface LoadedRoll {
+  widthMm: number | null;
+  /** The printer's own media text, e.g. `29mm`. */
+  mediaRaw: string | null;
+  mediaKind: "continuous" | "die_cut" | null;
+  /** The colour the operator gave the roll; null when none was given. */
+  colour: string | null;
+}
+
 export interface PayloadSummary {
   page: PageInfo | null;
   title: string | null;
@@ -41,6 +51,8 @@ export interface PayloadSummary {
   copies: number | null;
   copyIndex: number | null;
   copyTotal: number | null;
+  /** Null for jobs drawn before #389 and for page jobs. */
+  loadedRoll: LoadedRoll | null;
 }
 
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
@@ -75,6 +87,13 @@ export function pageInfoOf(job: Job): PageInfo | null {
   };
 }
 
+function loadedRollOf(value: unknown): LoadedRoll | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const r = obj(value);
+  const kind = r.media_kind === "continuous" || r.media_kind === "die_cut" ? r.media_kind : null;
+  return { widthMm: num(r.width_mm), mediaRaw: str(r.media_raw), mediaKind: kind, colour: str(r.colour) };
+}
+
 /** Reads the fields the print service stores in `payload`; anything missing stays null. */
 export function summarizePayload(job: Job): PayloadSummary {
   const p = obj(job.payload);
@@ -91,6 +110,7 @@ export function summarizePayload(job: Job): PayloadSummary {
     copies: num(options.copies),
     copyIndex: num(p.copy_index),
     copyTotal: num(p.copy_total),
+    loadedRoll: loadedRollOf(p.loaded_roll),
   };
 }
 

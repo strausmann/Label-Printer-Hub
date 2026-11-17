@@ -29,12 +29,14 @@ from PIL import Image
 from app.models.job import Job, JobState
 from app.printer_backends.exceptions import (
     ConflictingOrientationError,
+    MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterDisabledError,
     QrPayloadTooLongError,
     SpoolLabelOnlyTapeError,
     TapeMismatchError,
 )
+from app.printer_backends.snmp_helper import parse_media_kind
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
@@ -61,12 +63,16 @@ _DEFERRED_FAILURE_MESSAGES: dict[str, str] = {
     "no_tape_loaded": "No tape is loaded in the printer.",
     "tape_empty": "The tape is empty.",
     "tape_mismatch": "The loaded tape does not fit the label.",
+    "media_type_mismatch": "The loaded roll is die-cut labels; only continuous tape prints.",
     "unsupported_tape": "The loaded tape is not supported.",
     "content_type_data_mismatch": "The label data does not fit the content type.",
     "qr_payload_too_long": "The QR code content is too long for the loaded tape.",
     "snmp_query_failed": "The printer did not answer the status query.",
 }
 _DEFERRED_FAILURE_FALLBACK = "The label could not be printed."
+
+RollColour = Callable[[UUID, int | None, str | None], Awaitable[str | None]]
+"""The colour the operator gave the roll ``(printer_id, width_mm, media_raw)``, if any (#229)."""
 
 DEFERRED_STOP_BUDGET_S = 2.0
 """#281 review N1: the most a stop or detach waits to end its interrupted deferred jobs."""
@@ -88,6 +94,7 @@ class PrintService:
         lookup_service: Any = None,  # optional LookupService protocol
         layout_defaults: Mapping[int, LayoutDefault] | None = None,
         event_bus: Any = None,  # optional EventBus: failed deferred jobs are announced on it
+        roll_colour: RollColour | None = None,
     ) -> None:
         self._printer_id = printer_id
         self._printer_slug = printer_slug
@@ -99,6 +106,7 @@ class PrintService:
         self._lookup_service = lookup_service
         self._layout_defaults: dict[int, LayoutDefault] = dict(layout_defaults or {})
         self._event_bus = event_bus
+        self._roll_colour = roll_colour
         # #281: the completions of deferred jobs that still run (cancelled on a stop/re-wire).
         # Task -> its job id; a job id leaves ``_unhanded`` once its payload is complete.
         self._deferred: dict[asyncio.Task[None], UUID] = {}
@@ -193,7 +201,7 @@ class PrintService:
         Raises: ``PrinterDisabledError``, the preflight's errors (``PrinterOfflineError``, …),
         ``NoTapeLoadedError``, ``UnsupportedTapeError``.
         """
-        tape_mm = await self._loaded_tape_mm()
+        tape_mm, roll = await self._loaded_tape_mm()
         tape_band = band(tape_mm)
         label_text = text(tape_mm)
         image = await asyncio.to_thread(render_test_label, tape_mm, label_text, tape_band)
@@ -210,6 +218,7 @@ class PrintService:
             "tape_mm": tape_mm,
             "options": options.model_dump(mode="json"),
             "test_label": {**label_text.to_payload(), "px": tape_band.px, "dpi": tape_band.dpi},
+            "loaded_roll": roll,
         }
         return await self._enqueue(
             image,
@@ -222,15 +231,43 @@ class PrintService:
             source_ip=source_ip,
         )
 
-    async def _loaded_tape_mm(self) -> int:
-        """enabled check → one preflight → the loaded tape width."""
+    async def _loaded_tape_mm(self) -> tuple[int, dict[str, Any]]:
+        """enabled check → one preflight → the loaded tape width and its roll record."""
         if not self._printer_enabled:
             raise PrinterDisabledError(self._printer_id, self._printer_slug)
+        return await self._read_roll()
+
+    async def _read_roll(self) -> tuple[int, dict[str, Any]]:
+        """One fresh preflight (never a cached status): the loaded width and ``loaded_roll``.
+
+        #389: every tape job records the roll that was loaded when it was drawn: width, the
+        printer's media text, its kind and the colour the operator gave the roll, so a failed
+        print can be traced. A die-cut roll is refused (``MediaTypeMismatchError``): the hub
+        draws and sends continuous tape only. A status that cannot be read raises the
+        preflight's error (``PrinterOfflineError``): nothing is guessed.
+        """
         preflight = await self._backend.preflight_check()
         if preflight.loaded_tape_mm is None:
             raise NoTapeLoadedError()
+        raw = getattr(preflight, "media_raw", None)
+        media_raw = raw if isinstance(raw, str) else None
+        media_kind = parse_media_kind(media_raw)
+        if media_kind == "die_cut":
+            raise MediaTypeMismatchError(loaded_kind=media_kind, media_raw=media_raw)
         tape_mm: int = preflight.loaded_tape_mm
-        return tape_mm
+        colour: str | None = None
+        if self._roll_colour is not None:
+            try:
+                colour = await self._roll_colour(self._printer_id, tape_mm, media_raw)
+            except Exception:
+                # The colour is for the record only: a failed read never stops the print.
+                _log.warning("Roll colour of printer %s could not be read", self._printer_id)
+        return tape_mm, {
+            "width_mm": tape_mm,
+            "media_raw": media_raw,
+            "media_kind": media_kind,
+            "colour": colour,
+        }
 
     async def _enqueue(
         self,
@@ -280,7 +317,7 @@ class PrintService:
         source_ip: str | None = None,
     ) -> UUID:
         """enabled check → one preflight → label data → render → persist → queue."""
-        tape_mm = await self._loaded_tape_mm()
+        tape_mm, roll = await self._loaded_tape_mm()
         orientation, preset = self._resolve_layout_for(tape_mm, content_type, options)
         # The job stores what was actually rendered, so a restart re-renders the same label.
         options = options.model_copy(update={"orientation": orientation, "layout_preset": preset})
@@ -306,6 +343,7 @@ class PrintService:
             "rendered_tape_mm": tape_mm,
             "tape_mm": tape_mm,
             "options": options.model_dump(mode="json"),
+            "loaded_roll": roll,
         }
         return await self._enqueue(
             image,
@@ -470,10 +508,7 @@ class PrintService:
         try:
             if not self._printer_enabled:
                 raise PrinterDisabledError(self._printer_id, self._printer_slug)
-            preflight = await self._backend.preflight_check()
-            if preflight.loaded_tape_mm is None:
-                raise NoTapeLoadedError()
-            tape_mm = preflight.loaded_tape_mm
+            tape_mm, roll = await self._read_roll()
             options = PrintOptions()
             orientation, preset = self._resolve_layout(tape_mm, options)
             options = options.model_copy(
@@ -502,6 +537,7 @@ class PrintService:
                     "rendered_tape_mm": tape_mm,
                     "tape_mm": tape_mm,
                     "options": options.model_dump(mode="json"),
+                    "loaded_roll": roll,
                     **({"retry_of": str(retry_of)} if retry_of is not None else {}),
                 },
             )
@@ -529,6 +565,8 @@ class PrintService:
             detail: dict[str, Any] | None = None
             if isinstance(exc, TapeMismatchError):
                 detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}
+            elif isinstance(exc, MediaTypeMismatchError):
+                detail = {"loaded_kind": exc.loaded_kind, "media_raw": exc.media_raw}
             elif isinstance(exc, QrPayloadTooLongError):
                 detail = {"length": exc.length, "max_bytes": exc.max_bytes}
             message = _DEFERRED_FAILURE_MESSAGES.get(code, _DEFERRED_FAILURE_FALLBACK)
@@ -603,12 +641,8 @@ class PrintService:
         if not requests:
             raise ValueError("submit_batch_job requires at least one request")
 
-        # 1. Preflight (1x für alle)
-        preflight = await self._backend.preflight_check()
-        if preflight.loaded_tape_mm is None:
-            raise NoTapeLoadedError()
-
-        tape_mm = preflight.loaded_tape_mm
+        # 1. Preflight (1x für alle): one fresh status read for the whole run (#389).
+        tape_mm, roll = await self._read_roll()
         others = sorted(
             {
                 str(r.content_type)
@@ -716,6 +750,7 @@ class PrintService:
                         "copy_index": copy_idx,
                         "copy_total": n,
                         "copy_master_id": str(master_id),
+                        "loaded_roll": roll,
                         # #277: a label past the first sub-job prints only after a confirmation;
                         # a restart that finds it still queued fails it instead of printing it.
                         "tape_run": {

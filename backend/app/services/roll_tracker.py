@@ -168,6 +168,22 @@ class RollTracker:
 
         return async_session()
 
+    async def colour_of(
+        self, printer_id: UUID, width_mm: int | None, media_raw: str | None
+    ) -> str | None:
+        """The colour the operator gave the loaded roll (#389, recorded on every tape job).
+
+        Only when the stored roll has the same identity ``(width_mm, media_raw)``: a roll the
+        probe has not seen yet (changed a moment ago) has no colour yet, and the colour of the
+        previous roll is never handed on.
+        """
+        media_raw = (media_raw or "").strip()[:MEDIA_RAW_MAX].strip() or None
+        async with self._session() as s:
+            row = await s.get(PrinterRoll, printer_id)
+        if row is None or (row.width_mm, row.media_raw) != (width_mm, media_raw):
+            return None
+        return row.colour
+
     async def observe(
         self, printer_id: UUID, width_mm: int | None, media_raw: str | None
     ) -> RollChange | None:

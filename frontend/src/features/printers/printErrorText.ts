@@ -50,6 +50,8 @@ export function printErrorText(code: string | null | undefined, detail: Record<s
         ? t(msg`The loaded tape (${loaded} mm) does not match this label (${expected} mm).`)
         : t(msg`The loaded tape does not match this label.`);
     }
+    case "media_type_mismatch":
+      return t(msg`The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll.`);
     case "content_type_data_mismatch":
       return t(msg`The label is missing data this layout needs.`);
     case "printer_disabled":

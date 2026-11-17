@@ -31,6 +31,17 @@ describe("job error words", () => {
     );
   });
 
+  it("#389: a die-cut roll and an error the printer reports after sending have their own words, en and de", async () => {
+    expect(await textFor("media_type_mismatch", "en")).toBe(
+      "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll and retry.",
+    );
+    expect(await textFor("printer_error", "en")).toBe(
+      "The printer reported an error after the label was sent. Check the printer's display, fix it and retry.",
+    );
+    expect(await textFor("media_type_mismatch", "de")).not.toMatch(/die-cut/);
+    expect(await textFor("printer_error", "de")).not.toMatch(/The printer/);
+  });
+
   it("an unknown code still names the code", async () => {
     expect(await textFor("no_such_code", "en")).toBe("The print failed (error code no_such_code).");
   });

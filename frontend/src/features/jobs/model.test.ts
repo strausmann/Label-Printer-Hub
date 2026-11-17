@@ -135,3 +135,18 @@ describe("test print jobs", () => {
     expect(canRetry(testPage({ state: "done" }) as never)).toBe(false);
   });
 });
+
+describe("loaded roll (#389)", () => {
+  it("reads the roll a tape job was drawn for", () => {
+    const tape = job("t", P, "failed", {
+      payload: { tape_mm: 29, loaded_roll: { width_mm: 29, media_raw: "29mm", media_kind: "continuous", colour: "white" } },
+    });
+    expect(summarizePayload(tape as never).loadedRoll).toEqual({ widthMm: 29, mediaRaw: "29mm", mediaKind: "continuous", colour: "white" });
+  });
+
+  it("is null for an older job, and ignores values of the wrong shape", () => {
+    expect(summarizePayload(job("t", P, "done", { payload: { tape_mm: 29 } }) as never).loadedRoll).toBeNull();
+    const odd = job("t", P, "done", { payload: { loaded_roll: { width_mm: "29", media_raw: 7, media_kind: "roll", colour: "" } } });
+    expect(summarizePayload(odd as never).loadedRoll).toEqual({ widthMm: null, mediaRaw: null, mediaKind: null, colour: null });
+  });
+});

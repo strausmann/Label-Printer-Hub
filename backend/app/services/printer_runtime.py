@@ -483,6 +483,7 @@ class PrinterRuntime:
                 store=self._app.state.job_store,
                 layout_defaults=parse_layout_defaults(printer.layout_defaults),
                 event_bus=getattr(self._app.state, "event_bus", None),
+                roll_colour=self.roll_tracker.colour_of,
             )
             self._router.register_service(cfg.slug, service)
             if self._started:

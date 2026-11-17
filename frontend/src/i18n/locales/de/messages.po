@@ -476,6 +476,7 @@ msgstr "{what} darf nicht leer sein."
 msgid "{what} must not be negative."
 msgstr "{what} darf nicht negativ sein."
 
+#: src/features/jobs/JobDetail.tsx
 #: src/features/printers/TapeSwatch.tsx
 msgid "{width} mm"
 msgstr "{width} mm"
@@ -1203,6 +1204,10 @@ msgstr "Code-Präfix"
 msgid "Colour modes"
 msgstr "Farbmodi"
 
+#: src/features/jobs/JobDetail.tsx
+msgid "colour not given"
+msgstr "Farbe nicht angegeben"
+
 #: src/features/archive/TypeForm.tsx
 msgid "Columns"
 msgstr "Spalten"
@@ -1258,6 +1263,10 @@ msgstr "Weiter"
 #: src/features/jobs/RunControls.tsx
 msgid "Continue with part {next}"
 msgstr "Mit Teil {next} weitermachen"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "continuous"
+msgstr "Endlosband"
 
 #: src/features/scan/ScanScreen.tsx
 #: src/features/settings/AccessKeys.tsx
@@ -1474,6 +1483,10 @@ msgstr "Gerätewechsel"
 #: src/features/archive/TypeForm.tsx
 msgid "Diameter (mm)"
 msgstr "Durchmesser (mm)"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "die-cut"
+msgstr "Einzeletiketten (gestanzt)"
 
 #: src/features/printers/model.ts
 msgid "Different device"
@@ -2318,6 +2331,10 @@ msgstr "Live-Aktualisierung pausiert; die Liste ist möglicherweise veraltet."
 #: src/features/settings/IppPrinterFields.tsx
 msgid "Load hint"
 msgstr "Einlegehinweis"
+
+#: src/features/jobs/JobDetail.tsx
+msgid "Loaded roll"
+msgstr "Eingelegte Rolle"
 
 #: src/features/notifications/NotificationCentre.tsx
 msgid "Loading notifications…"
@@ -4918,6 +4935,14 @@ msgstr "Der Link im QR-Code ist für dieses Layout zu lang."
 msgid "The list of product codes"
 msgstr "Die Liste der Produktcodes"
 
+#: src/features/jobs/jobErrorText.ts
+msgid "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll and retry."
+msgstr "Die eingelegte Rolle hat gestanzte Einzeletiketten. Der Hub druckt nur auf Endlosband. Lege eine Endlosrolle ein und versuche es erneut."
+
+#: src/features/printers/printErrorText.ts
+msgid "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."
+msgstr "Die eingelegte Rolle hat gestanzte Einzeletiketten. Der Hub druckt nur auf Endlosband. Lege eine Endlosrolle ein."
+
 #: src/features/printers/printErrorText.ts
 msgid "The loaded tape ({loaded} mm) does not match this label ({expected} mm)."
 msgstr "Das eingelegte Band ({loaded} mm) passt nicht zu diesem Etikett ({expected} mm)."
@@ -5159,6 +5184,10 @@ msgstr "Der Drucker hat die Anfrage abgelehnt ({status})."
 #: src/features/settings/feedback.tsx
 msgid "The printer refused the request."
 msgstr "Der Drucker hat die Anfrage abgelehnt."
+
+#: src/features/jobs/jobErrorText.ts
+msgid "The printer reported an error after the label was sent. Check the printer's display, fix it and retry."
+msgstr "Der Drucker hat nach dem Senden des Etiketts einen Fehler gemeldet. Sieh auf dem Display des Druckers nach, behebe den Fehler und versuche es erneut."
 
 #: src/features/printers/flags.ts
 msgid "The printer reports a problem."

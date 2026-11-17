@@ -10,11 +10,11 @@ import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { usePrinters } from "../printers/api";
-import { useJobStateBadge } from "../printers/model";
+import { isTapeColour, useColourNames, useJobStateBadge } from "../printers/model";
 import { HINT } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useCancelJobById, useJob, useRetryJob, type Job } from "./api";
-import { canCancel, canRetry, formatTime, historyOf, summarizePayload } from "./model";
+import { canCancel, canRetry, formatTime, historyOf, summarizePayload, type LoadedRoll } from "./model";
 import { PageJobInfo } from "./PageJobInfo";
 import { CancelError, RetryError } from "./RetryError";
 import { useJobTitle } from "./useJobTitle";
@@ -46,6 +46,29 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
     <>
       <dt className="text-ink-2">{label}</dt>
       <dd className="min-w-0 break-words">{children}</dd>
+    </>
+  );
+}
+
+/** "29 mm · continuous · White" and the printer's own media text (#389). */
+function LoadedRollText({ roll }: { roll: LoadedRoll }) {
+  const { t } = useLingui();
+  const colourNames = useColourNames();
+  const width = roll.widthMm;
+  const parts = [
+    width !== null ? t`${width} mm` : null,
+    roll.mediaKind === "continuous" ? t`continuous` : roll.mediaKind === "die_cut" ? t`die-cut` : null,
+    roll.colour === null ? t`colour not given` : isTapeColour(roll.colour) ? colourNames[roll.colour] : roll.colour,
+  ].filter((p): p is string => p !== null);
+  return (
+    <>
+      {parts.join(" · ")}
+      {roll.mediaRaw && (
+        <>
+          {" "}
+          <span className="code text-small text-ink-2">({roll.mediaRaw})</span>
+        </>
+      )}
     </>
   );
 }
@@ -137,6 +160,7 @@ function JobDetail({ job }: { job: Job }) {
               <Row label={t`Source`}>{summary.source ?? "—"}</Row>
               <Row label={t`Layout`}>{summary.contentType ? <span className="code">{summary.contentType}</span> : "—"}</Row>
               <Row label={t`Tape`}>{tapeMm !== null ? t`${tapeMm} mm` : "—"}</Row>
+              <Row label={t`Loaded roll`}>{summary.loadedRoll ? <LoadedRollText roll={summary.loadedRoll} /> : "—"}</Row>
               <Row label={t`Copies`}>
                 {copyTotal !== null && copyNo !== null ? t`${copyNo} of ${copyTotal}` : (summary.copies ?? "—")}
               </Row>

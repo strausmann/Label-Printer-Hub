@@ -15,6 +15,10 @@ export function useJobErrorText(): (code: string | null) => string {
     switch (code) {
       case "tape_mismatch":
         return t`The loaded tape does not match the label. Put in the right tape and retry.`;
+      case "media_type_mismatch":
+        return t`The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll and retry.`;
+      case "printer_error":
+        return t`The printer reported an error after the label was sent. Check the printer's display, fix it and retry.`;
       case "tape_empty":
         return t`The tape is empty. Put in a new tape and retry.`;
       case "printer_cover_open":

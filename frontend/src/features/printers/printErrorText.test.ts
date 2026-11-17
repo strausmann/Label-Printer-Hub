@@ -22,6 +22,8 @@ describe("printErrorText", () => {
     ["tape_empty", null, "The tape is empty. Put in a new tape and try again."],
     ["tape_mismatch", { expected_mm: 12, loaded_mm: 24 }, "The loaded tape (24 mm) does not match this label (12 mm)."],
     ["tape_mismatch", { expected_mm: 12, loaded_mm: null }, "The loaded tape does not match this label."],
+    ["media_type_mismatch", { loaded_kind: "die_cut", media_raw: "29mm x 90mm" }, "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."],
+    ["media-type-mismatch", null, "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."],
     ["content_type_data_mismatch", { missing_fields: ["title"] }, "The label is missing data this layout needs."],
     ["printer_offline", null, UNREACHABLE],
     ["snmp_query_failed", null, UNREACHABLE],
