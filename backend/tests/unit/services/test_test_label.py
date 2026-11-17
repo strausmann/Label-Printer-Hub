@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import itertools
+import unicodedata
 from typing import Any
 
 import pytest
@@ -258,7 +259,8 @@ def test_a_link_too_long_never_raises() -> None:
             band = band_of(backend, model, mm)
             image = render_test_label(mm, _text(mm, link=link), band)
             assert image.height == band.px
-            assert plan_test_label(mm, _text(mm, link=link), band).qr_module_px == 0 or not link
+            if link:
+                assert plan_test_label(mm, _text(mm, link=link), band).qr_module_px == 0
 
 
 @pytest.mark.parametrize(
@@ -293,3 +295,29 @@ def test_does_not_use_the_layout_engine(monkeypatch: pytest.MonkeyPatch) -> None
 def test_text_round_trips_through_the_payload() -> None:
     text = _text(29)
     assert TapeTestText.from_payload({**text.to_payload(), "px": 306, "dpi": 300}) == text
+
+
+@pytest.mark.parametrize(
+    ("backend", "model", "mm"), BANDS, ids=[f"{m}-{mm}" for _b, m, mm in BANDS]
+)
+def test_first_line_is_not_clipped(backend: str, model: str, mm: int) -> None:
+    """The tops of the first line (ascenders: k, d, l, b) stay inside the band."""
+    image, _band = _render(backend, model, mm, printer="Workshop Kldb")
+    rows = _black(image)
+    first = next(y for y, row in enumerate(rows) if any(row))
+    assert first >= 1
+
+
+def test_shortening_keeps_combining_and_zwj_sequences_whole() -> None:
+    """Every width budget: the cut never separates a mark or a ZWJ from its neighbours."""
+    for unit in ("We\u0301", "W\U0001f468\u200d\U0001f469"):
+        name = unit * 20
+        for budget in range(40, 400, 7):
+            first = tl._shorten(name, "", 700, 40, 300, budget)
+            if not first.endswith("…"):
+                continue
+            kept = first[:-1].rstrip()
+            assert name.startswith(kept)
+            following = name[len(kept)]
+            assert not unicodedata.combining(following) and following != "\u200d", budget
+            assert not kept.endswith("\u200d"), budget

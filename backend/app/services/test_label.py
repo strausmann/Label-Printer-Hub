@@ -21,6 +21,7 @@ never does.
 from __future__ import annotations
 
 import math
+import unicodedata
 from dataclasses import asdict, dataclass, fields
 from typing import Any, Final, NamedTuple
 
@@ -158,10 +159,26 @@ def _shorten(text: str, suffix: str, weight: Weight, cap_px: int, dpi: int, max_
     if _text_px(text + suffix, weight, cap_px, dpi) <= max_px:
         return text + suffix
     for end in range(len(text) - 1, -1, -1):
+        if not _is_cut_point(text, end):
+            continue
         candidate = text[:end].rstrip() + _ELLIPSIS + suffix
         if _text_px(candidate, weight, cap_px, dpi) <= max_px:
             return candidate
     return _ELLIPSIS + suffix
+
+
+_JOINERS: Final = frozenset({"\u200d", "\ufe0e", "\ufe0f"})
+
+
+def _is_cut_point(text: str, end: int) -> bool:
+    """Whether ``text[:end]`` ends between two characters, not inside a combining or ZWJ
+    sequence (a cheap approximation of a grapheme boundary)."""
+    if end == 0:
+        return True
+    following, previous = text[end], text[end - 1]
+    if unicodedata.combining(following) or following in _JOINERS:
+        return False
+    return previous != "\u200d"
 
 
 def _weight(index: int, lines: int) -> Weight:
@@ -255,7 +272,8 @@ def render_test_label(tape_mm: int, text: TapeTestText, band: TapeBand) -> Image
     margin = _px(_MARGIN_MM, dpi)
 
     pitch = round(plan.cap_px * _LINE_PITCH)
-    top = max(0, (area - len(plan.lines) * pitch) // 2)
+    # Centre what is drawn: the last line ends at its baseline, not one pitch below it.
+    top = max(0, (area - ((len(plan.lines) - 1) * pitch + plan.cap_px)) // 2)
     text_width = 0
     for i, line in enumerate(plan.lines):
         weight = _weight(i, len(plan.lines))
