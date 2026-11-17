@@ -118,7 +118,11 @@ export function ActivateBackSide({
   // Each step starts at its top: the dialog may still be scrolled to where the form's button was (phones).
   const top = useRef<HTMLDivElement>(null);
   const stepKey = requested === "print" && phase === "done" ? "confirm" : requested;
-  useEffect(() => top.current?.scrollIntoView?.({ block: "start" }), [stepKey]);
+  // Braces, not an arrow expression: a newer browser's scrollIntoView returns a Promise, and React would
+  // call whatever the effect returns as its cleanup.
+  useEffect(() => {
+    void top.current?.scrollIntoView?.({ block: "start" });
+  }, [stepKey]);
   // The page came out: the person checks it. "Print again" queues a new job, which is not done yet.
   const step: Step = requested === "print" && phase === "done" ? "confirm" : requested;
 

@@ -195,6 +195,23 @@ describe("activating a sheet with its code on the back", () => {
     expect(vi.mocked(watchPrint)).toHaveBeenCalledTimes(1);
   });
 
+  it("survives a scrollIntoView that returns a Promise, as newer browsers do", async () => {
+    // React calls an effect's return value as its cleanup; a Promise there crashed the dialog on the step change.
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = vi.fn(() => Promise.resolve()) as unknown as typeof original;
+    try {
+      mockApi(routes());
+      show({ kind: "existing", code: "A3490-0001" });
+      await screen.findByText("Load it into Main tray, liner side down");
+      await userEvent.click(screen.getByRole("button", { name: "Print sheet code" }));
+      await waitFor(() => expect(current()).toHaveTextContent("Print"));
+      setLive(JOB2, "done");
+      expect(await screen.findByRole("heading", { name: "Did it print?" })).toBeVisible();
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("Use a reserved cell instead switches the dialog to the reserved cell option", async () => {
     mockApi(routes());
     const onUseCell = vi.fn();

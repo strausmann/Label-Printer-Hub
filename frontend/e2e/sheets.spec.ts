@@ -294,7 +294,7 @@ test.describe.serial("sheets", () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/sheets/${DISCARDED}`);
-    await expect(page.getByText(/^Discarded on .+, this ID is not used again\.$/)).toBeVisible();
+    await expect(page.getByText(/^Discarded on .+, this code is not used again\.$/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Mark cells as used" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Discard sheet" })).toHaveCount(0);
     await page.goto("/sheet/L4736-9999");
