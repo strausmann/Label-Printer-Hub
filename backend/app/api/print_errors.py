@@ -142,4 +142,11 @@ def print_error_responses(
             listed = ", ".join(f"`{c}`" for c in codes[status])
             parts.append(f"Known printer or render errors: {listed}. {_SHAPE_TEXT[shape]}")
         responses[status] = {"description": " ".join(p for p in parts if p)}
+    if 422 in responses:
+        # A documented 422 replaces FastAPI's own entry, schema included: keep the schema of the
+        # validation error the route still answers (a webhook's is replaced by the envelope in
+        # ``app.main._declare_sheet_error_envelope``).
+        responses[422]["content"] = {
+            "application/json": {"schema": {"$ref": "#/components/schemas/HTTPValidationError"}}
+        }
     return responses

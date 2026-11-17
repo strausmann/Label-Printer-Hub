@@ -5771,7 +5771,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
             /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             502: {
@@ -5840,7 +5842,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
             /** @description `too-many-queued-runs` or `rate_limit_exceeded`, with Retry-After. */
             429: {
@@ -6729,7 +6733,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
             /** @description Known printer or render errors: `integration-lookup-failed`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             502: {

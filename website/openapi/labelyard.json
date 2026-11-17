@@ -9157,6 +9157,13 @@
             "description": "Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
           },
           "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
             "description": "Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
           },
           "502": {
@@ -9225,6 +9232,13 @@
             "description": "`media_kind_mismatch`: a page printer (IPP). Known printer or render errors: `printer_disabled`, `tape_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `unsupported_tape`. Body: `{detail: {error_code, error_message, error_detail?}}`."
           },
           "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
             "description": "`conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`."
           },
           "429": {
@@ -10598,6 +10612,13 @@
             "description": "`printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape`: the printer model does not take the loaded tape; it carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
           },
           "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
             "description": "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
           },
           "502": {

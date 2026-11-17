@@ -383,6 +383,19 @@ async def test_printing_routes_document_every_known_code(
     assert not missing, f"{case.route} does not document: {missing}"
 
 
+@pytest.mark.parametrize("case", [c for c in MATRIX if c.name in DOCUMENTED], ids=lambda c: c.name)
+async def test_documented_422_keeps_a_body_schema(app_with_fake_auth: Any, case: Case) -> None:
+    """Documenting the known 422 codes must not drop the schema of the 422 body (a generated
+    client needs it): FastAPI's validation error, or the envelope on a webhook route."""
+    schema = app_with_fake_auth._app.openapi()
+    content = schema["paths"][case.route]["post"]["responses"]["422"]["content"]
+    ref = content["application/json"]["schema"]["$ref"]
+    name = ref.rsplit("/", 1)[-1]
+    expected = "SheetApiErrorResponse" if case.name.startswith("webhook") else "HTTPValidationError"
+    assert name == expected
+    assert name in schema["components"]["schemas"]
+
+
 @pytest.mark.parametrize("cls", (LookupFailedError, PrinterOfflineError, SnmpQueryError))
 async def test_the_net_repeats_no_secret(
     hub: Hub, monkeypatch: pytest.MonkeyPatch, cls: type[Exception]
