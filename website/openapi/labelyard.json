@@ -2313,6 +2313,16 @@
             ],
             "title": "Corner"
           },
+          "default_placement": {
+            "description": "Where the sheet code of a new sheet of the type goes on this printer: the type's setting, `auto` resolved by `printable`.",
+            "enum": [
+              "margin",
+              "back_side",
+              "cell"
+            ],
+            "title": "Default Placement",
+            "type": "string"
+          },
           "feed_mark": {
             "description": "Whether the feed-direction mark prints, in the hub's current language.",
             "title": "Feed Mark",
@@ -2361,7 +2371,8 @@
           "qr",
           "printable",
           "reason",
-          "feed_mark"
+          "feed_mark",
+          "default_placement"
         ],
         "title": "MarginCheckRead",
         "type": "object"
@@ -2533,16 +2544,37 @@
       "NewSheetModel": {
         "additionalProperties": false,
         "properties": {
-          "id_placement": {
-            "default": "margin",
-            "description": "Where the sheet ID is printed; `margin` if left out.",
-            "enum": [
-              "cell",
-              "margin",
-              "manual"
+          "id_cell": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Id Placement",
-            "type": "string"
+            "description": "The preferred cell of a `cell` sheet's code; left out: the sheet type's. A cell that is taken or outside the sheet falls back to the first free one.",
+            "title": "Id Cell"
+          },
+          "id_placement": {
+            "anyOf": [
+              {
+                "enum": [
+                  "cell",
+                  "margin",
+                  "manual",
+                  "back_side"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the sheet code goes. Left out: as the sheet type says (`auto` resolves to `margin` or `back_side` by the type's geometry). `back_side` prints no ID on the front; the code goes on the back of the liner in a pass of its own.",
+            "title": "Id Placement"
           },
           "type": {
             "description": "Sheet type key.",
@@ -2604,6 +2636,20 @@
           "job_id"
         ],
         "title": "PageJobAccepted",
+        "type": "object"
+      },
+      "PageJobQueued": {
+        "properties": {
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "PageJobQueued",
         "type": "object"
       },
       "PageMedia": {
@@ -3164,6 +3210,12 @@
       "PrintedPage": {
         "description": "One page job of a sheet print (the counterpart of ``PreviewPage``).",
         "properties": {
+          "back_side_pending": {
+            "default": false,
+            "description": "The sheet's code goes on the back of the liner and is not confirmed yet: offer `POST /api/v1/sheets/{code}/back-side`.",
+            "title": "Back Side Pending",
+            "type": "boolean"
+          },
           "cells": {
             "description": "The cells the request's items take, in item order.",
             "items": {
@@ -4891,15 +4943,62 @@
         ],
         "type": "object"
       },
+      "SheetBackPrint": {
+        "additionalProperties": false,
+        "description": "The printer and tray of a back-side job.",
+        "properties": {
+          "printer": {
+            "description": "Printer slug or UUID (a page printer).",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Printer",
+            "type": "string"
+          },
+          "tray": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tray of the job; left out: the printer's default.",
+            "title": "Tray"
+          }
+        },
+        "required": [
+          "printer"
+        ],
+        "title": "SheetBackPrint",
+        "type": "object"
+      },
       "SheetCreate": {
         "additionalProperties": false,
         "properties": {
+          "id_cell": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`cell` only: the preferred cell of the ID label; left out, the sheet type's. A cell that is taken or outside the sheet falls back to the first free one.",
+            "title": "Id Cell"
+          },
           "id_placement": {
-            "description": "Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves the first free cell for the ID label and queues an ID-only job (`job_id` in the response).",
+            "description": "Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves a cell for the ID label (`id_cell`, else the type's, while it is free; otherwise the first free one) and queues an ID-only job (`job_id` in the response). `back_side` needs a page printer too: it queues the job that prints the code on the back of the liner; the code counts as printed only after `POST /api/v1/sheets/{code}/back-side/confirm`.",
             "enum": [
               "cell",
               "margin",
-              "manual"
+              "manual",
+              "back_side"
             ],
             "title": "Id Placement",
             "type": "string"
@@ -4927,7 +5026,7 @@
                 "type": "null"
               }
             ],
-            "description": "Printer slug or UUID. Required for `cell`, ignored otherwise.",
+            "description": "Printer slug or UUID. Required for `cell` and `back_side`, ignored otherwise.",
             "title": "Printer"
           },
           "tray": {
@@ -5023,7 +5122,8 @@
             "enum": [
               "cell",
               "margin",
-              "manual"
+              "manual",
+              "back_side"
             ],
             "title": "Id Placement",
             "type": "string"
@@ -5479,7 +5579,8 @@
             "enum": [
               "cell",
               "margin",
-              "manual"
+              "manual",
+              "back_side"
             ],
             "title": "Id Placement",
             "type": "string"
@@ -7083,6 +7184,17 @@
             ],
             "title": "Load Hint"
           },
+          "loading": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrayLoadingRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How the tray takes paper; None while nobody has set it."
+          },
           "media": {
             "anyOf": [
               {
@@ -7151,6 +7263,62 @@
           "label"
         ],
         "title": "TrayIn",
+        "type": "object"
+      },
+      "TrayLoadingPut": {
+        "additionalProperties": false,
+        "properties": {
+          "leading_edge": {
+            "enum": [
+              "top",
+              "bottom"
+            ],
+            "title": "Leading Edge",
+            "type": "string"
+          },
+          "print_side": {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Print Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "print_side",
+          "leading_edge"
+        ],
+        "title": "TrayLoadingPut",
+        "type": "object"
+      },
+      "TrayLoadingRead": {
+        "description": "How the tray takes paper (#350): set once by the guided test, changed by an admin.",
+        "properties": {
+          "leading_edge": {
+            "description": "The edge of the printed image that lands at the sheet edge put in first.",
+            "enum": [
+              "top",
+              "bottom"
+            ],
+            "title": "Leading Edge",
+            "type": "string"
+          },
+          "print_side": {
+            "description": "The face that gets printed, as the sheet lies in the tray.",
+            "enum": [
+              "up",
+              "down"
+            ],
+            "title": "Print Side",
+            "type": "string"
+          }
+        },
+        "required": [
+          "print_side",
+          "leading_edge"
+        ],
+        "title": "TrayLoadingRead",
         "type": "object"
       },
       "TrayRead": {
@@ -9480,7 +9648,7 @@
     },
     "/api/v1/jobs/{job_id}/retry": {
       "post": {
-        "description": "Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  A Grocy label job that failed before its render (printer offline, no tape) is accepted again on its printer and completes in the background, like the webhook; a Grocy label that could not be built answers 422 and creates no row.  A Grocy label for a sheet that ended before it reached the printer is accepted again the same way: a new job takes a free cell of the sheet type, chosen like a new label; it answers 409 ``printer_disabled``, ``media_kind_mismatch`` or ``sheet_type_archived``, 409 ``printer-identity-mismatch`` for a held printer, and 409 ``job_not_retryable`` when the sheet type was deleted, without creating a row.  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.  The new job's payload carries ``retry_of``, the id of the job it repeats; that job may have been cleaned up since, so the id may no longer resolve.",
+        "description": "Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  A Grocy label job that failed before its render (printer offline, no tape) is accepted again on its printer and completes in the background, like the webhook; a Grocy label that could not be built answers 422 and creates no row.  A Grocy label for a sheet that ended before it reached the printer is accepted again the same way: a new job takes a free cell of the sheet type, chosen like a new label; it answers 409 ``printer_disabled``, ``media_kind_mismatch`` or ``sheet_type_archived``, 409 ``printer-identity-mismatch`` for a held printer, and 409 ``job_not_retryable`` when the sheet type was deleted, without creating a row.  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.  A page with the sheet code on the back is re-sent from its payload (same strip, date and turn) while its sheet is active and still has its code on the back, else 409 ``sheet_discarded`` or ``id_placement_mismatch``; the job never marks the code as printed.  A tray loading test page is re-sent like a test page.  The new job's payload carries ``retry_of``, the id of the job it repeats; that job may have been cleaned up since, so the id may no longer resolve.",
         "operationId": "retry_job_api_v1_jobs__job_id__retry_post",
         "parameters": [
           {
@@ -11218,6 +11386,145 @@
         ]
       }
     },
+    "/api/v1/printers/{printer_id}/trays/{tray}/loading": {
+      "put": {
+        "description": "`print_side`: the face that gets printed as the sheet lies in the tray; `leading_edge`: the edge of the printed image at the sheet edge put in first. A `print` key may set it only while it is unset; an `admin` key may change it.",
+        "operationId": "put_tray_loading_api_v1_printers__printer_id__trays__tray__loading_put",
+        "parameters": [
+          {
+            "description": "Printer id (a page printer).",
+            "in": "path",
+            "name": "printer_id",
+            "required": true,
+            "schema": {
+              "description": "Printer id (a page printer).",
+              "format": "uuid",
+              "title": "Printer Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Tray key.",
+            "in": "path",
+            "name": "tray",
+            "required": true,
+            "schema": {
+              "description": "Tray key.",
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Tray",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrayLoadingPut"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrayLoadingRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "These credentials may not use this printer."
+          },
+          "409": {
+            "description": "Already set and the key is not admin (`tray_loading_already_set`)."
+          },
+          "422": {
+            "description": "Invalid request or an unknown tray (`tray_unknown`)."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Set how a tray takes paper",
+        "tags": [
+          "printers"
+        ]
+      }
+    },
+    "/api/v1/printers/{printer_id}/trays/{tray}/loading/test-page": {
+      "post": {
+        "description": "A page with a big \"TOP ↑\" at the top edge of the printed image and \"PRINTED SIDE\" in the middle, in the hub's language. Mark a cross on the face-up side next to the edge that goes in first, print, then answer where the print and \"TOP\" landed.",
+        "operationId": "print_tray_loading_page_api_v1_printers__printer_id__trays__tray__loading_test_page_post",
+        "parameters": [
+          {
+            "description": "Printer id (a page printer).",
+            "in": "path",
+            "name": "printer_id",
+            "required": true,
+            "schema": {
+              "description": "Printer id (a page printer).",
+              "format": "uuid",
+              "title": "Printer Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Tray key.",
+            "in": "path",
+            "name": "tray",
+            "required": true,
+            "schema": {
+              "description": "Tray key.",
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Tray",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageJobQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "These credentials may not use this printer."
+          },
+          "404": {
+            "description": "Unknown printer (`printer_not_found`)."
+          },
+          "409": {
+            "description": "A tape printer (`media_kind_mismatch`) or unknown to the print queue (`printer-unavailable`)."
+          },
+          "422": {
+            "description": "An unknown or disabled tray (`tray_unknown`)."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Print the tray loading test page",
+        "tags": [
+          "printers"
+        ]
+      }
+    },
     "/api/v1/render/check": {
       "post": {
         "description": "Looks up every distinct item once (at most eight lookups at a time), draws it for ``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one verdict per item in request order.  A failing item does not fail the request: its result carries ``error_code`` (``qr_payload_too_long``, ``content_type_data_mismatch``, ``integration_item_not_found``, ``integration_unknown_app``, ``integration_lookup_failed``, ``integration_not_configured``) and, where it helps, ``error_detail``.  Returns 409 (``unsupported_tape``) before any lookup when the tape width or the orientation is not available.  Rate limit: the request's own token pays for the first distinct lookup, each further one takes another token from the key's bucket (never more than a full bucket); a request the remaining budget cannot cover is refused with 429 ``rate_limit_exceeded`` before any lookup.  Nothing is printed and no job is created.",
@@ -12490,7 +12797,7 @@
         ]
       },
       "post": {
-        "description": "`id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves the first free cell for the sheet ID label and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job's first free cell; the error names the sheet in `error_detail.sheet_code`.",
+        "description": "`id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves a cell for the sheet ID label (`id_cell` or the type's while it is free, else the first free one) and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job; the error names the sheet in `error_detail.sheet_code`. `back_side` creates the sheet and queues the job that prints its code on the back of the liner (`job_id`); the code counts as printed only after `POST /api/v1/sheets/{code}/back-side/confirm`. If that job cannot be queued, the sheet stays and the error names it the same way.",
         "operationId": "create_sheet_api_v1_sheets_post",
         "requestBody": {
           "content": {
@@ -12541,7 +12848,7 @@
                 }
               }
             },
-            "description": "Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`) or unknown to the queue."
+            "description": "Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`), a tape printer (`media_kind_mismatch`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`)."
           },
           "422": {
             "content": {
@@ -12551,7 +12858,7 @@
                 }
               }
             },
-            "description": "A cell number is outside the sheet, or `cell` without a printer."
+            "description": "A cell number is outside the sheet, `cell` or `back_side` without a printer, or the code does not fit a free strip on the back (`back_strip_does_not_fit`)."
           },
           "502": {
             "content": {
@@ -12803,6 +13110,170 @@
           }
         ],
         "summary": "One sheet with all cells that are not free (discarded sheets too)",
+        "tags": [
+          "sheets"
+        ]
+      }
+    },
+    "/api/v1/sheets/{code}/back-side": {
+      "post": {
+        "description": "Queues the job that prints the code strip on the back of the sheet: \"Print again\" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` or `manual` sheet switches to `back_side` in the same call. The job never sets `id_printed`; `POST /api/v1/sheets/{code}/back-side/confirm` does.",
+        "operationId": "print_back_side_api_v1_sheets__code__back_side_post",
+        "parameters": [
+          {
+            "description": "Sheet code, e.g. `L4736-0002`.",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "Sheet code, e.g. `L4736-0002`.",
+              "maxLength": 24,
+              "pattern": "^[A-Z][A-Z0-9]{1,9}-[0-9]{4,}$",
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SheetBackPrint"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageJobQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "These credentials may not use the printer."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Sheet not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "The sheet is discarded (`sheet_discarded`), its code does not go on the back (`id_placement_mismatch`: printed, a `cell` sheet, or its margin ID is in flight), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request, an unknown tray (`tray_unknown`), or the code does not fit a free strip on the back (`back_strip_does_not_fit`)."
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Print the sheet code on the back of the liner",
+        "tags": [
+          "sheets"
+        ]
+      }
+    },
+    "/api/v1/sheets/{code}/back-side/confirm": {
+      "post": {
+        "description": "The person checked the code on the back (toner dry, QR not smeared). Only this marks the code of a `back_side` sheet as printed; a second confirmation changes nothing.",
+        "operationId": "confirm_back_side_api_v1_sheets__code__back_side_confirm_post",
+        "parameters": [
+          {
+            "description": "Sheet code, e.g. `L4736-0002`.",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "Sheet code, e.g. `L4736-0002`.",
+              "maxLength": 24,
+              "pattern": "^[A-Z][A-Z0-9]{1,9}-[0-9]{4,}$",
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Sheet not found."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "The sheet is discarded (`sheet_discarded`) or its code does not go on the back (`id_placement_mismatch`)."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SheetApiErrorResponse"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ],
+        "summary": "Confirm that the sheet code on the back is printed",
         "tags": [
           "sheets"
         ]

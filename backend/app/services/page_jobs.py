@@ -10,7 +10,8 @@ as ``jobs.payload``; a payload without ``kind`` is a tape job (no data migration
 Two small registries keyed by payload ``kind`` keep the runner generic:
 
 * the **renderer** turns a payload into PDF bytes (Plan 2 registers ``calibration_page``,
-  Plan 3 ``sheet_page``, the test print ``test_page``);
+  Plan 3 ``sheet_page``, the test print ``test_page``, #350 ``sheet_back_page`` and
+  ``tray_loading_page``);
 * the **outcome handler** is told how the job ended (``on_started``, ``on_completed``,
   ``on_ended``, ``on_unknown``); the default handler does nothing.
 
@@ -38,16 +39,26 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger(__name__)
 
-PageKind = Literal["sheet_page", "calibration_page", "test_page"]
-PAGE_KINDS: tuple[PageKind, ...] = ("sheet_page", "calibration_page", "test_page")
+PageKind = Literal[
+    "sheet_page", "calibration_page", "test_page", "sheet_back_page", "tray_loading_page"
+]
+PAGE_KINDS: tuple[PageKind, ...] = (
+    "sheet_page",
+    "calibration_page",
+    "test_page",
+    "sheet_back_page",
+    "tray_loading_page",
+)
 
 
 IDENTITY_MISMATCH_CODE = "printer-identity-mismatch"
 """Error code and problem type of a job refused or failed because the device behind its printer
 changed (#231)."""
-IDENTITY_HELD_KINDS: frozenset[str] = frozenset({"sheet_page", "calibration_page"})
+IDENTITY_HELD_KINDS: frozenset[str] = frozenset(
+    {"sheet_page", "calibration_page", "sheet_back_page"}
+)
 """Page job kinds held while the device behind the printer is flagged as swapped. The test page
-is not: it is how an operator checks the printer."""
+and the tray loading page are not: they are how an operator checks the printer (R-350-10)."""
 
 
 class CalibrationSnapshot(BaseModel):

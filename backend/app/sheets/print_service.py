@@ -33,7 +33,8 @@ from collections import OrderedDict
 from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC
 from typing import Any, Final, Literal, Protocol
 from uuid import UUID, uuid4
 
@@ -119,6 +120,11 @@ from app.sheets.errors import (
 )
 from app.sheets.exchange import geometry_to_doc
 from app.sheets.geometry import Geometry, cell_count, hmm_to_mm
+from app.sheets.id_placement import (
+    ResolvedPlacement,
+    resolve_default_placement,
+    resolve_type_placement,
+)
 from app.sheets.planner import (
     MARGIN_TEXT_GAP_HMM,
     FeedMarkPlacement,
@@ -146,6 +152,7 @@ from app.sheets.reservation import (
     ReservedPage,
     expected_of,
     load_sheet_view,
+    margin_id_in_flight,
     release,
     reserve,
     reserve_exact,
@@ -162,7 +169,7 @@ from app.sheets.sheet_page import (
 )
 from app.sheets.sheet_service import ID_CELL_PURPOSE
 from app.sheets.text import sanitise_text
-from app.sheets.type_service import version_geometry
+from app.sheets.type_service import version_geometry, write_transaction
 
 __all__ = [
     "LOOKUP_CONCURRENCY",
@@ -174,6 +181,7 @@ __all__ = [
     "RenderUnavailableApiError",
     "ResolvedItem",
     "TooManyPreviewsError",
+    "create_sheet_with_back_label",
     "create_sheet_with_id_label",
     "downscale_to_preview",
     "id_cell_label",
@@ -183,6 +191,7 @@ __all__ = [
     "page_margin_id_payload",
     "preview",
     "preview_slot",
+    "print_sheet_back",
     "print_sheets",
     "reserved_margin_id_payload",
     "resolve_items",
@@ -451,6 +460,9 @@ class _SheetInfo:
     type_label: str
     hint: str | None  # the probable code of a sheet that does not exist yet
     id_title: str  # the title line of the ID cell: the product code first
+    # A new sheet: the placement and preferred ID cell it gets, resolved once (R-350-9).
+    id_placement: Literal["cell", "margin", "manual", "back_side"] | None = None
+    id_cell: int | None = None
 
 
 async def _info_of_existing(session: AsyncSession, view: SheetView) -> _SheetInfo:
@@ -478,17 +490,25 @@ async def _new_view(
     """The view of a sheet this request would create, without creating it."""
     new = placement.new_sheet
     assert new is not None
-    return await _new_view_of(session, new.type, new.version, new.id_placement, ahead)
+    return await _new_view_of(
+        session, new.type, new.version, new.id_placement, ahead, id_cell=new.id_cell
+    )
 
 
 async def _new_view_of(
     session: AsyncSession,
     type_key: str,
     version: int | None,
-    id_placement: Literal["cell", "margin", "manual"],
+    id_placement: Literal["cell", "margin", "manual", "back_side"] | None,
     ahead: dict[str, int],
+    *,
+    id_cell: int | None = None,
 ) -> tuple[SheetView, _SheetInfo]:
-    """The view of a sheet of ``type_key`` that would be created, without creating it."""
+    """The view of a sheet of ``type_key`` that would be created, without creating it.
+
+    ``id_placement=None``: the type's placement, resolved without a printer (R-350-9); a ``cell``
+    sheet then also takes the type's preferred ID cell unless ``id_cell`` names one.
+    """
     t: SheetType | None = await repo.get_type_by_key(session, type_key)
     if t is None:
         raise SheetTypeNotFoundError()
@@ -504,19 +524,26 @@ async def _new_view_of(
     # Two new sheets of one type get consecutive hints (pre-flight C35).
     hint = _next_hint(await ss.peek_next_code(session, t.key), ahead.get(t.key, 0))
     ahead[t.key] = ahead.get(t.key, 0) + 1
+    geometry = version_geometry(v)
+    placement = (
+        resolve_type_placement(t.id_placement, geometry) if id_placement is None else id_placement
+    )
+    if placement == "cell" and id_cell is None:
+        id_cell = t.id_cell
     view = SheetView(
         code=None,
         type_key=t.key,
         type_version_id=v.id,
-        geometry=version_geometry(v),
+        geometry=geometry,
         allow_qr=t.allow_qr,
         non_free={},
-        id_placement=id_placement,
+        id_placement=placement,
         id_printed=False,
         has_hub_cell=False,
         margin_id_in_flight=False,
         state="active",
         code_hint=hint,
+        id_cell_no=id_cell if placement == "cell" else None,
     )
     return view, _SheetInfo(
         t.key,
@@ -524,6 +551,8 @@ async def _new_view_of(
         sheet_type_label(t.vendor, t.product_codes, t.key),
         hint,
         id_cell_title(t.vendor, t.product_codes, t.key),
+        placement,
+        view.id_cell_no,
     )
 
 
@@ -1316,11 +1345,17 @@ def _check_plan_items(
             index += 1
 
 
-def _placement_request(p: PlacementInModel, version: int | None = None) -> PlacementRequest:
+def _placement_request(
+    p: PlacementInModel, version: int | None = None, info: _SheetInfo | None = None
+) -> PlacementRequest:
     """The reservation's placement. ``version``: the concrete version of a new sheet, resolved
     and checked by the caller; a request that left it out is not allowed to get whatever is
-    current when the reservation runs."""
+    current when the reservation runs. ``info``: the view's info, which carries the placement
+    and ID cell resolved for a new sheet (R-350-9), so the dry plan and the reservation agree."""
     new = p.new_sheet
+    placement = new.id_placement if new is not None else None
+    if info is not None and info.id_placement is not None:
+        placement = info.id_placement
     return PlacementRequest(
         sheet_code=p.sheet,
         new_sheet=None
@@ -1328,7 +1363,8 @@ def _placement_request(p: PlacementInModel, version: int | None = None) -> Place
         else NewSheetIn(
             type_key=new.type,
             version=new.version if version is None else version,
-            id_placement=new.id_placement,
+            id_placement=placement or "margin",
+            id_cell=info.id_cell if info is not None else new.id_cell,
         ),
         cells=p.cells if isinstance(p.cells, str) else list(p.cells),
         skip=list(p.skip),
@@ -1559,6 +1595,7 @@ def _printed_page(page: ReservedPage) -> PrintedPage:
         margin_band=page.margin_placement.band if page.margin_placement else None,
         id_not_printed=page.id_not_printed,
         feed_mark=page.feed_mark is not None,
+        back_side_pending=page.back_side_pending,
     )
 
 
@@ -1711,6 +1748,7 @@ async def print_sheets(
         # The version of each new sheet, resolved once here: the fit check below and the
         # reservation then use the same geometry, whatever an admin adds meanwhile.
         pinned = [infos[id(v.sheet)].version for v in views]
+        resolved = [infos[id(v.sheet)] for v in views]
         dry, placed = await asyncio.to_thread(
             plan_one_sheet, views, total, hw_margins_hmm=facts.margins_hmm, margin=margin
         )
@@ -1729,7 +1767,8 @@ async def print_sheets(
         reserved = await reserve(
             session,
             placements=[
-                _placement_request(p, v) for p, v in zip(request.placements, pinned, strict=True)
+                _placement_request(p, v, i)
+                for p, v, i in zip(request.placements, pinned, resolved, strict=True)
             ],
             items=[i.meta for i in items],
             expected=expected,
@@ -1804,8 +1843,12 @@ async def create_sheet_with_id_label(
             language=language,
         )
         # The ID cell is checked on the geometry the sheet would get, before anything exists.
-        view, info = await _new_view_of(session, new.type_key, new.version, "cell", {})
+        view, info = await _new_view_of(
+            session, new.type_key, new.version, "cell", {}, id_cell=new.id_cell
+        )
         await session.commit()  # no read transaction stays open into the reservation
+        # R-350-7: a request without a preferred cell takes the type's.
+        new = replace(new, id_cell=info.id_cell)
         assert info.hint is not None
         await asyncio.to_thread(
             check_id_cell_fits,
@@ -1854,6 +1897,194 @@ async def create_sheet_with_id_label(
     return page.sheet_code, page.job_id
 
 
+# ---------------------------------------------------------------------------- back side
+
+
+async def _back_payload(
+    session: AsyncSession, sheet: Any, *, tray_key: str, printer_id: UUID, scan: Any
+) -> PagePayload:
+    """The ``sheet_back_page`` payload of a sheet (R-350-3): everything is read here once and
+    stored, so a retry or "Print again" prints the same strip, date and turn."""
+    from app.models.backing_design import BackingDesign
+    from app.models.sheet import Sheet
+    from app.services import tray_loading_service
+    from app.sheets.back_side import RENDER_DPI, SheetBackDetail, StripHmm, place_strip
+
+    assert isinstance(sheet, Sheet)
+    t = await session.get(SheetType, sheet.type_id)
+    v = await session.get(SheetTypeVersion, sheet.type_version_id)
+    if t is None or v is None:  # foreign keys make this unreachable
+        raise SheetTypeNotFoundError()
+    design = (
+        None
+        if t.backing_design_id is None
+        else await session.get(BackingDesign, t.backing_design_id)
+    )
+    # A design for another page size than the sheet's pinned version does not describe it.
+    strips = (
+        [StripHmm(int(r["x"]), int(r["y"]), int(r["w"]), int(r["h"])) for r in design.strips]
+        if design is not None and design.page_size == v.page_size
+        else []
+    )
+    strip = place_strip(v.page_w, v.page_h, strips)
+    loading = await tray_loading_service.get(session, printer_id, tray_key)
+    created = sheet.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    detail = SheetBackDetail(
+        sheet_id=sheet.id,
+        sheet_code=sheet.code,
+        type_text=t.product_codes[0] if t.product_codes else t.key,
+        date=created.astimezone(UTC).date().isoformat(),
+        scan_payload=scan(sheet.code),
+        strip=strip,
+        rotate_180=loading is not None and loading.leading_edge == "bottom",
+    )
+    return PagePayload(
+        kind="sheet_back_page",
+        media=v.page_size,  # type: ignore[arg-type]
+        tray=tray_key,
+        render_dpi=RENDER_DPI,
+        job_name=f"Sheet {sheet.code} · back",
+        calibration=None,
+        detail=detail.model_dump(mode="json"),
+    )
+
+
+async def _submit_back(
+    queue: PageQueue,
+    printer: Printer,
+    payload: PagePayload,
+    *,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+) -> UUID:
+    try:
+        return await queue.submit_page_job(
+            printer.id, payload, api_key_id=api_key_id, source_ip=source_ip
+        )
+    except KeyError:
+        raise PrinterUnavailableError() from None
+
+
+async def create_sheet_with_back_label(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    printer: Printer,
+    tray: str | None,
+    new: NewSheetIn,
+    queue: PageQueue,
+    actor: str,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+    bus: Any = None,
+) -> tuple[str, UUID]:
+    """Create a ``back_side`` sheet and queue the job that prints its code on the back.
+
+    Everything that can refuse without the sheet (the printer's kind, the tray, a design no
+    strip of which takes the code) comes first, so a refusal creates nothing. The sheet is then
+    created and committed (``create_sheet``; nothing is reserved: the back has no cells), and
+    the job is submitted. A failure after the commit keeps the sheet: the error names it in
+    ``error_detail.sheet_code``, and "Print back side" on the sheet page tries again. The job
+    never sets ``id_printed``; the person confirms (R-350-6).
+    """
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError()
+    scan = scan_payload_builder(str(get_settings().public_url))
+    async with session_factory() as session:
+        tray_key = await calibration_service.resolve_tray(session, printer.id, tray)
+        view, _info = await _new_view_of(session, new.type_key, new.version, "back_side", {})
+        await _check_back_strip(session, new.type_key, view.geometry)
+        await session.commit()
+        sheet = await ss.create_sheet(
+            session,
+            type_key=new.type_key,
+            version=new.version,
+            id_placement="back_side",
+            used_cells=new.used_cells,
+            note=new.note,
+            actor=actor,
+            bus=bus,
+        )
+        code = sheet.code
+        try:
+            payload = await _back_payload(
+                session, sheet, tray_key=tray_key, printer_id=printer.id, scan=scan
+            )
+            await session.commit()
+            job_id = await _submit_back(
+                queue, printer, payload, api_key_id=api_key_id, source_ip=source_ip
+            )
+        except SheetApiError as exc:
+            exc.detail = {**(exc.detail or {}), "sheet_code": code}
+            raise
+        except Exception as exc:
+            logger.exception("back-side job of sheet %s failed unexpectedly", code)
+            raise SheetIdJobFailedError(code) from exc
+    return code, job_id
+
+
+async def _check_back_strip(session: AsyncSession, type_key: str, g: Geometry) -> None:
+    """Refuse a type whose backing design has no strip that takes the code (before creating)."""
+    from app.models.backing_design import BackingDesign
+    from app.sheets.back_side import StripHmm, place_strip
+
+    t = await repo.get_type_by_key(session, type_key)
+    if t is None or t.backing_design_id is None:
+        return
+    design = await session.get(BackingDesign, t.backing_design_id)
+    if design is None or design.page_size != g.page_size:
+        return
+    place_strip(
+        g.page_w,
+        g.page_h,
+        [StripHmm(int(r["x"]), int(r["y"]), int(r["w"]), int(r["h"])) for r in design.strips],
+    )
+
+
+async def print_sheet_back(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    code: str,
+    printer: Printer,
+    tray: str | None,
+    queue: PageQueue,
+    actor: str,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+    bus: Any = None,
+) -> UUID:
+    """Queue the code on the back of an existing sheet ("Print again", "Print back side").
+
+    The sheet must be ``active`` and ``back_side``; an unprinted ``margin`` or ``manual`` sheet
+    (a 3490 from 1.6) switches to ``back_side`` in the same call, recorded as a sheet event
+    (R-350-11). The strip, the date and the turn are read again: a second job prints the same.
+    """
+    del actor  # the job records the key; the sheet is not changed beyond its placement
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError()
+    scan = scan_payload_builder(str(get_settings().public_url))
+    async with session_factory() as session:
+        tray_key = await calibration_service.resolve_tray(session, printer.id, tray)
+        async with write_transaction(session):
+            found = await repo.get_by_code(session, code)
+            in_flight = found is not None and await margin_id_in_flight(session, found.id)
+            sheet, switched = await ss.back_side_sheet_locked(
+                session, code, margin_in_flight=in_flight
+            )
+            payload = await _back_payload(
+                session, sheet, tray_key=tray_key, printer_id=printer.id, scan=scan
+            )
+            await session.commit()
+        if switched:
+            logger.info("sheet %s switched to the code on the back", code)
+            await ss.publish_detail(session, sheet, bus)
+            await session.commit()
+        return await _submit_back(
+            queue, printer, payload, api_key_id=api_key_id, source_ip=source_ip
+        )
+
+
 # ---------------------------------------------------------------------------- margin check
 
 
@@ -1873,6 +2104,7 @@ class MarginCheck:
     printable: bool
     reason: str | None
     feed_mark: bool
+    default_placement: ResolvedPlacement = "margin"
 
 
 NO_MARGIN_BAND_REASON: Final = "no margin band is 4 mm deep on this printer"
@@ -1931,6 +2163,10 @@ async def margin_check(
         printable=placement is not None,
         reason=NO_MARGIN_BAND_REASON if placement is None else None,
         feed_mark=mark is not None,
+        default_placement=resolve_default_placement(
+            sheet_type.id_placement,  # type: ignore[arg-type]
+            margin_printable=placement is not None,
+        ),
     )
 
 

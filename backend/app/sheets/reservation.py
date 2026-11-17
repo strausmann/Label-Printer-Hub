@@ -98,9 +98,11 @@ class NewSheetIn:
 
     type_key: str
     version: int | None
-    id_placement: Literal["cell", "margin", "manual"]
+    id_placement: Literal["cell", "margin", "manual", "back_side"]
     used_cells: list[MarkedCell] = field(default_factory=list)
     note: str | None = None
+    # The preferred ID cell of a ``cell`` sheet (R-350-7); stored on the sheet.
+    id_cell: int | None = None
 
 
 @dataclass
@@ -143,6 +145,8 @@ class ReservedPage:
     margin_placement: MarginPlacement | None = None
     id_not_printed: bool = False
     feed_mark: FeedMarkPlacement | None = None
+    # The sheet's code goes on the back and is not confirmed yet (#350).
+    back_side_pending: bool = False
 
 
 @dataclass
@@ -268,6 +272,7 @@ async def load_sheet_views(session: AsyncSession, codes: Sequence[str]) -> dict[
             sheet_id=sheet.id,
             feed_mark_printed=sheet.feed_mark_printed,
             feed_mark_in_flight=mark_in_flight,  # every placement
+            id_cell_no=sheet.id_cell_no,
         )
     return views
 
@@ -294,6 +299,7 @@ async def _create_sheet_view(batch: NewSheetBatch, new: NewSheetIn, actor: str) 
         marks=marks,
         note=note,
         actor=actor,
+        id_cell_no=new.id_cell,
     )
     return SheetView(
         code=sheet.code,
@@ -310,6 +316,7 @@ async def _create_sheet_view(batch: NewSheetBatch, new: NewSheetIn, actor: str) 
         sheet_id=sheet.id,
         feed_mark_printed=False,
         feed_mark_in_flight=False,
+        id_cell_no=new.id_cell,
     )
 
 
@@ -452,6 +459,9 @@ async def _attempt(
                     margin_placement=page.margin_placement,
                     id_not_printed=page.id_not_printed,
                     feed_mark=page.feed_mark,
+                    back_side_pending=(
+                        page.sheet.id_placement == "back_side" and not page.sheet.id_printed
+                    ),
                 )
             )
             t = touched.setdefault(
@@ -629,6 +639,7 @@ async def reserve_exact(
         margin_placement=decision.placement,
         id_not_printed=decision.id_not_printed,
         feed_mark=decision.feed_mark,
+        back_side_pending=view.id_placement == "back_side" and not view.id_printed,
     )
 
 

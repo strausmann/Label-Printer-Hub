@@ -39,6 +39,7 @@ from app.models.printer import Printer, PrinterAudit
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
+from app.models.printer_tray_loading import PrinterTrayLoading
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
 from app.printer_backends.ipp.client import IppClient, to_http_url
 from app.printer_backends.ipp.errors import (
@@ -508,6 +509,13 @@ class PrinterAdminService:
                 col(PrinterCalibration.tray_key).not_in([t.key for t in trays]),
             )
         )
+        # The tray's loading (#350, R-350-5) goes the same way as its calibration.
+        await self._session.execute(
+            delete(PrinterTrayLoading).where(
+                col(PrinterTrayLoading.printer_id) == printer_id,
+                col(PrinterTrayLoading.tray_key).not_in([t.key for t in trays]),
+            )
+        )
         self._session.add_all(_tray_rows(printer_id, trays))
 
     async def get_printer(self, slug: str) -> Printer | None:
@@ -796,6 +804,12 @@ class PrinterAdminService:
                 for row in list(rows):
                     await self._session.delete(row)
                     removed += 1
+                # Another device takes paper its own way: the loading goes too (R-350-5).
+                await self._session.execute(
+                    delete(PrinterTrayLoading).where(
+                        col(PrinterTrayLoading.printer_id) == printer_id
+                    )
+                )
                 await self._session.flush()
             await self._record_audit(
                 printer_id=printer_id,

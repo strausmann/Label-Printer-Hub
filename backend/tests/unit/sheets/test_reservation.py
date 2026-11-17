@@ -87,10 +87,22 @@ def existing(code: str, **kw: Any) -> PlacementRequest:
     return PlacementRequest(sheet_code=code, new_sheet=None, **kw)
 
 
-def new(placement: str = "manual", **kw: Any) -> PlacementRequest:
+def new(
+    placement: str = "manual",
+    *,
+    id_cell: int | None = None,
+    used: list[int] | None = None,
+    **kw: Any,
+) -> PlacementRequest:
     return PlacementRequest(
         sheet_code=None,
-        new_sheet=NewSheetIn(type_key=KEY, version=None, id_placement=placement),  # type: ignore[arg-type]
+        new_sheet=NewSheetIn(
+            type_key=KEY,
+            version=None,
+            id_placement=placement,  # type: ignore[arg-type]
+            used_cells=[MarkedCell(n) for n in used or []],
+            id_cell=id_cell,
+        ),
         **kw,
     )
 
@@ -821,3 +833,44 @@ async def test_deferred_reservation_counts_as_unattached(session: AsyncSession) 
     row.state = JobState.DONE.value
     await session.commit()
     assert await margin_id_in_flight(session, sheet_id) is False
+
+
+# ---------------------------------------------------------------- preferred ID cell (#350)
+
+
+async def _sheet_row(session: AsyncSession, code: str) -> Sheet:
+    return (await session.execute(select(Sheet).where(col(Sheet.code) == code))).scalar_one()
+
+
+async def test_preferred_id_cell_is_used(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("cell", id_cell=5)], 0)
+
+    assert page.id_cell == 5
+    assert [(a.cell, a.item_index) for a in page.assignments] == [(5, None)]
+    assert (await _sheet_row(session, page.sheet_code)).id_cell_no == 5
+
+
+async def test_preferred_id_cell_taken_falls_back_to_first_free(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("cell", id_cell=5, used=[5])], 0)
+
+    assert page.id_cell == 1
+    by_cell = {c.cell_no: c for c in await cells(session)}
+    assert by_cell[5].state == "used" and by_cell[5].marked_by_hand is True
+    assert by_cell[1].source == "hub"
+
+
+async def test_preferred_id_cell_beyond_geometry_falls_back(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("cell", id_cell=99)], 0)
+    assert page.id_cell == 1
+
+
+async def test_reserved_cell_is_skipped_by_first_free(session: AsyncSession) -> None:
+    first = (await do_reserve(session, [new("cell", id_cell=2)], 0))[0]
+    # The ID-only job did not come out: its cell is free again, the preference stays.
+    await release(session, first.job_id)
+
+    (page,) = await do_reserve(session, [existing(first.sheet_code)], 3)
+
+    assert page.id_cell == 2
+    items = sorted(a.cell for a in page.assignments if a.item_index is not None)
+    assert items == [1, 3, 4]

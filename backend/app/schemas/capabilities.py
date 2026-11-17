@@ -52,6 +52,17 @@ class PageMedia(BaseModel):
     hardware_margins_mm: HardwareMargins | None
 
 
+class TrayLoadingRead(BaseModel):
+    """How the tray takes paper (#350): set once by the guided test, changed by an admin."""
+
+    print_side: Literal["up", "down"] = Field(
+        description="The face that gets printed, as the sheet lies in the tray."
+    )
+    leading_edge: Literal["top", "bottom"] = Field(
+        description="The edge of the printed image that lands at the sheet edge put in first."
+    )
+
+
 class TrayCapability(BaseModel):
     key: str
     label: str
@@ -61,6 +72,9 @@ class TrayCapability(BaseModel):
     media: str | None = Field(description="Media the printer reports in this tray, if any.")
     calibration: CalibrationRead | None = Field(
         description="Stored calibration; None while the tray has none or is disabled."
+    )
+    loading: TrayLoadingRead | None = Field(
+        default=None, description="How the tray takes paper; None while nobody has set it."
     )
 
 

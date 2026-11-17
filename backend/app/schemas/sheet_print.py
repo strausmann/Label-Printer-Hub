@@ -115,8 +115,22 @@ class NewSheetModel(_Body):
         le=MAX_TYPE_VERSION,
         description="Defaults to the current version.",
     )
-    id_placement: Literal["cell", "margin", "manual"] = Field(
-        default="margin", description="Where the sheet ID is printed; `margin` if left out."
+    id_placement: Literal["cell", "margin", "manual", "back_side"] | None = Field(
+        default=None,
+        description=(
+            "Where the sheet code goes. Left out: as the sheet type says (`auto` resolves to "
+            "`margin` or `back_side` by the type's geometry). `back_side` prints no ID on the "
+            "front; the code goes on the back of the liner in a pass of its own."
+        ),
+    )
+    id_cell: int | None = Field(
+        default=None,
+        ge=1,
+        le=10000,
+        description=(
+            "The preferred cell of a `cell` sheet's code; left out: the sheet type's. A cell "
+            "that is taken or outside the sheet falls back to the first free one."
+        ),
     )
 
 
@@ -259,6 +273,13 @@ class PrintedPage(BaseModel):
     )
     id_not_printed: bool = Field(description="No margin band is deep enough: no ID on this page.")
     feed_mark: bool = Field(description="The feed-direction mark is printed on this page.")
+    back_side_pending: bool = Field(
+        default=False,
+        description=(
+            "The sheet's code goes on the back of the liner and is not confirmed yet: offer "
+            "`POST /api/v1/sheets/{code}/back-side`."
+        ),
+    )
 
 
 class SheetPrintResponse(BaseModel):

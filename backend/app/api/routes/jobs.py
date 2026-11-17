@@ -72,9 +72,11 @@ from app.services.print_queue import UnrenderableJobError
 from app.services.producers.print_queue_producer import publish_job_state_changed
 from app.sheets import print_service
 from app.sheets.errors import (
+    IdPlacementMismatchError,
     MediaKindMismatchError,
     PageJobNotRetryableError,
     SheetApiError,
+    SheetDiscardedError,
     SheetPrinterDisabledError,
     SheetTypeArchivedError,
 )
@@ -456,7 +458,11 @@ async def resume_job(
         "``printer_disabled`` for a disabled printer (a calibration page too), 422 "
         "``tray_unknown`` when the tray was removed or disabled since, and 409 "
         "``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of "
-        "these cases.  The new job's payload carries ``retry_of``, the id of the job it "
+        "these cases.  A page with the sheet code on the back is re-sent from its payload "
+        "(same strip, date and turn) while its sheet is active and still has its code on the "
+        "back, else 409 ``sheet_discarded`` or ``id_placement_mismatch``; the job never marks "
+        "the code as printed.  A tray loading test page is re-sent like a test page.  The new "
+        "job's payload carries ``retry_of``, the id of the job it "
         "repeats; that job may have been cleaned up since, so the id may no longer resolve."
     ),
 )
@@ -684,8 +690,10 @@ async def _retry_page_job(
         ensure_not_held(queue, job.printer_id)  # #231 (a test page is never held)
     if kind == "sheet_page":
         return await _retry_sheet_page(request, session, queue, job, auth)
-    if kind not in ("calibration_page", "test_page"):
+    if kind not in ("calibration_page", "test_page", "sheet_back_page", "tray_loading_page"):
         raise PageJobNotRetryableError().to_http()
+    if kind == "sheet_back_page":
+        await _ensure_back_side_sheet(session, job.payload)  # R-350-6
     try:
         payload = PagePayload.model_validate(job.payload).model_copy(update={"retry_of": job.id})
     except ValueError as exc:
@@ -733,6 +741,24 @@ async def _retry_sheet_page(
     except ValueError as exc:  # the stored payload does not describe a sheet page
         raise _stored_page_invalid() from exc
     return await _read_new_job(session, new_id, job.printer_id)
+
+
+async def _ensure_back_side_sheet(session: AsyncSession, payload: dict[str, Any]) -> None:
+    """A back-side page prints again only onto a sheet that is still active and ``back_side``
+    (R-350-6): a discarded code never prints again."""
+    from app.models.sheet import Sheet
+
+    detail = payload.get("detail")
+    raw_id = detail.get("sheet_id") if isinstance(detail, dict) else None
+    try:
+        sheet_id = UUID(str(raw_id))
+    except ValueError:
+        raise _stored_page_invalid() from None
+    sheet = await session.get(Sheet, sheet_id)
+    if sheet is None or sheet.state == "discarded":
+        raise SheetDiscardedError().to_http()
+    if sheet.id_placement != "back_side":
+        raise IdPlacementMismatchError().to_http()
 
 
 def _stored_page_invalid() -> HTTPException:

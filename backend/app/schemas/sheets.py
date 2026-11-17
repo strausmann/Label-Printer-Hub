@@ -33,7 +33,9 @@ __all__ = [
     "MarkRequest",
     "MarkedCellIn",
     "NextCode",
+    "PageJobQueued",
     "ResolveRequest",
+    "SheetBackPrint",
     "SheetCreate",
     "SheetCreated",
     "SheetRead",
@@ -267,7 +269,7 @@ class SheetCreate(_Body):
     version: int | None = Field(
         default=None, ge=1, le=1_000_000, description="Left out: the current version."
     )
-    id_placement: Literal["cell", "margin", "manual"] = Field(
+    id_placement: Literal["cell", "margin", "manual", "back_side"] = Field(
         default="margin",
         # Optional in the generated client (266-06): openapi-typescript makes a field with a
         # default required, so the default is stated in the description instead of the schema.
@@ -275,13 +277,23 @@ class SheetCreate(_Body):
         description=(
             "Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; "
             "the margin ID is printed by the first job that prints onto it. `cell` needs a page "
-            "printer: it reserves the first free cell for the ID label and queues an ID-only job "
-            "(`job_id` in the response)."
+            "printer: it reserves a cell for the ID label (`id_cell`, else the type's, while it "
+            "is free; otherwise the first free one) and queues an ID-only job (`job_id` in the "
+            "response). `back_side` needs a page printer too: it queues the job that prints the "
+            "code on the back of the liner; the code counts as printed only after "
+            "`POST /api/v1/sheets/{code}/back-side/confirm`."
+        ),
+    )
+    id_cell: Annotated[int, Field(ge=1, le=10000)] | None = Field(
+        default=None,
+        description=(
+            "`cell` only: the preferred cell of the ID label; left out, the sheet type's. A "
+            "cell that is taken or outside the sheet falls back to the first free one."
         ),
     )
     printer: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
         default=None,
-        description="Printer slug or UUID. Required for `cell`, ignored otherwise.",
+        description="Printer slug or UUID. Required for `cell` and `back_side`, ignored otherwise.",
     )
     tray: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
         default=None, description="Tray of the ID-only job; left out: the printer's default."
@@ -332,7 +344,7 @@ class SheetSummary(BaseModel):
 
 
 class SheetRead(SheetSummary):
-    id_placement: Literal["cell", "margin", "manual"]
+    id_placement: Literal["cell", "margin", "manual", "back_side"]
     id_printed: bool
     feed_mark_printed: bool = Field(
         description="Whether the feed-direction mark has been printed on this sheet."
@@ -345,6 +357,21 @@ class SheetRead(SheetSummary):
     @field_serializer("discarded_at")
     def _ser_discarded(self, dt: datetime | None, info: Any) -> str | None:
         return _utc(dt, info)
+
+
+class SheetBackPrint(_Body):
+    """The printer and tray of a back-side job."""
+
+    printer: Annotated[str, Field(min_length=1, max_length=100)] = Field(
+        description="Printer slug or UUID (a page printer)."
+    )
+    tray: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
+        default=None, description="Tray of the job; left out: the printer's default."
+    )
+
+
+class PageJobQueued(BaseModel):
+    job_id: UUID
 
 
 class SheetCreated(SheetRead):
@@ -378,6 +405,12 @@ class MarginCheckRead(BaseModel):
     reason: str | None = Field(description="Why not, when `printable` is false.")
     feed_mark: bool = Field(
         description="Whether the feed-direction mark prints, in the hub's current language."
+    )
+    default_placement: Literal["margin", "back_side", "cell"] = Field(
+        description=(
+            "Where the sheet code of a new sheet of the type goes on this printer: the type's "
+            "setting, `auto` resolved by `printable`."
+        )
     )
 
 

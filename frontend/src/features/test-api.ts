@@ -404,6 +404,7 @@ export const PRINTED_PAGE: Schemas["PrintedPage"] = {
   margin_band: null,
   margin_id: false,
   feed_mark: false,
+  back_side_pending: false,
 };
 
 /** The envelope the API answers errors with; `detail` carries the structured data of the code. */

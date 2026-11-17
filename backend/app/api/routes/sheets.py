@@ -35,8 +35,10 @@ from app.schemas.sheets import (
     MarginCheckRead,
     MarkRequest,
     NextCode,
+    PageJobQueued,
     ResolveAllRequest,
     ResolveRequest,
+    SheetBackPrint,
     SheetCreate,
     SheetCreated,
     SheetRead,
@@ -95,10 +97,11 @@ _SHEET_STATES: dict[str, Literal["active", "discarded"]] = {
     "active": "active",
     "discarded": "discarded",
 }
-_PLACEMENTS: dict[str, Literal["cell", "margin", "manual"]] = {
+_PLACEMENTS: dict[str, Literal["cell", "margin", "manual", "back_side"]] = {
     "cell": "cell",
     "margin": "margin",
     "manual": "manual",
+    "back_side": "back_side",
 }
 
 
@@ -246,6 +249,7 @@ async def margin_check(
         printable=check.printable,
         reason=check.reason,
         feed_mark=check.feed_mark,
+        default_placement=check.default_placement,
     )
 
 
@@ -267,10 +271,14 @@ async def get_sheet(code: CodePath, session: SessionDep, _auth: ReadDep) -> Shee
     summary="Create a sheet, with the cells already used marked by hand",
     description=(
         "`id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also "
-        "reserves the first free cell for the sheet ID label and queues an ID-only job on the "
-        "named page printer; `job_id` names it. If the job cannot be queued, the sheet stays "
-        "without a reservation and the ID goes onto the next job's first free cell; the error "
-        "names the sheet in `error_detail.sheet_code`."
+        "reserves a cell for the sheet ID label (`id_cell` or the type's while it is free, "
+        "else the first free one) and queues an ID-only job on the named page printer; "
+        "`job_id` names it. If the job cannot be queued, the sheet stays without a reservation "
+        "and the ID goes onto the next job; the error names the sheet in "
+        "`error_detail.sheet_code`. `back_side` creates the sheet and queues the job that "
+        "prints its code on the back of the liner (`job_id`); the code counts as printed only "
+        "after `POST /api/v1/sheets/{code}/back-side/confirm`. If that job cannot be queued, "
+        "the sheet stays and the error names it the same way."
     ),
     responses={
         403: {"description": "These credentials may not use the printer."},
@@ -278,10 +286,17 @@ async def get_sheet(code: CodePath, session: SessionDep, _auth: ReadDep) -> Shee
         409: {
             "description": (
                 "Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the "
-                "printer is disabled (`printer_disabled`) or unknown to the queue."
+                "printer is disabled (`printer_disabled`), a tape printer "
+                "(`media_kind_mismatch`), unknown to the queue (`printer-unavailable`) or its "
+                "device changed (`printer-identity-mismatch`)."
             )
         },
-        422: {"description": "A cell number is outside the sheet, or `cell` without a printer."},
+        422: {
+            "description": (
+                "A cell number is outside the sheet, `cell` or `back_side` without a printer, "
+                "or the code does not fit a free strip on the back (`back_strip_does_not_fit`)."
+            )
+        },
         502: {"description": "The ID-only job was queued only partly (`print_interrupted`)."},
     },
 )
@@ -290,6 +305,8 @@ async def create_sheet(
 ) -> SheetCreated:
     if body.id_placement == "cell":
         return await _create_with_id_cell(body, request, session, auth)
+    if body.id_placement == "back_side":
+        return await _create_with_back_side(body, request, session, auth)
     with mapped():
         sheet = await ss.create_sheet(
             session,
@@ -304,10 +321,7 @@ async def create_sheet(
         return _created(await ss.get_sheet(session, sheet.code), None)
 
 
-async def _create_with_id_cell(
-    body: SheetCreate, request: Request, session: AsyncSession, auth: AuthContext
-) -> SheetCreated:
-    """``cell``: create the sheet, reserve the ID cell and queue the ID-only job in one go."""
+def _printer_required(body: SheetCreate) -> str:
     if body.printer is None:  # field paths only, like every other validation error
         raise RequestValidationError(
             [
@@ -319,8 +333,45 @@ async def _create_with_id_cell(
                 }
             ]
         )
+    return body.printer
+
+
+async def _create_with_back_side(
+    body: SheetCreate, request: Request, session: AsyncSession, auth: AuthContext
+) -> SheetCreated:
+    """``back_side``: create the sheet and queue the job that prints its code on the back."""
+    printer_key = _printer_required(body)
     with mapped():
-        printer = await _usable_printer(session, auth, body.printer)
+        printer = await _usable_printer(session, auth, printer_key)
+        ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)
+        await session.commit()  # the service opens its own sessions (the R10-1 class)
+        code, job_id = await print_service.create_sheet_with_back_label(
+            db_engine.async_session,
+            printer=printer,
+            tray=body.tray,
+            new=NewSheetIn(
+                type_key=body.type,
+                version=body.version,
+                id_placement="back_side",
+                used_cells=[MarkedCell(m.cell, m.purpose) for m in body.used_cells],
+                note=body.note,
+            ),
+            queue=request.app.state.print_queue,
+            actor=actor(auth),
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
+            bus=_bus(request),
+        )
+        return _created(await ss.get_sheet(session, code), job_id)
+
+
+async def _create_with_id_cell(
+    body: SheetCreate, request: Request, session: AsyncSession, auth: AuthContext
+) -> SheetCreated:
+    """``cell``: create the sheet, reserve the ID cell and queue the ID-only job in one go."""
+    body_printer = _printer_required(body)
+    with mapped():
+        printer = await _usable_printer(session, auth, body_printer)
         ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)  # #231
         # Give the connection back: the service opens its own sessions, and a request holding
         # one while it waits for another can use up the pool (the R10-1 class). The printer row
@@ -336,6 +387,7 @@ async def _create_with_id_cell(
                 id_placement="cell",
                 used_cells=[MarkedCell(m.cell, m.purpose) for m in body.used_cells],
                 note=body.note,
+                id_cell=body.id_cell,
             ),
             queue=request.app.state.print_queue,
             actor=actor(auth),
@@ -345,6 +397,84 @@ async def _create_with_id_cell(
             bus=_bus(request),
         )
         return _created(await ss.get_sheet(session, code), job_id)
+
+
+@router.post(
+    "/api/v1/sheets/{code}/back-side",
+    response_model=PageJobQueued,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Print the sheet code on the back of the liner",
+    description=(
+        'Queues the job that prints the code strip on the back of the sheet: "Print again" '
+        "on the same sheet, or the activation of a sheet whose code goes on the back. An "
+        "unprinted `margin` or `manual` sheet switches to `back_side` in the same call. The job "
+        "never sets `id_printed`; `POST /api/v1/sheets/{code}/back-side/confirm` does."
+    ),
+    responses={
+        **_NOT_FOUND,
+        403: {"description": "These credentials may not use the printer."},
+        409: {
+            "description": (
+                "The sheet is discarded (`sheet_discarded`), its code does not go on the back "
+                "(`id_placement_mismatch`: printed, a `cell` sheet, or its margin ID is in "
+                "flight), the printer is a tape printer (`media_kind_mismatch`), disabled "
+                "(`printer_disabled`), unknown to the queue (`printer-unavailable`) or its "
+                "device changed (`printer-identity-mismatch`)."
+            )
+        },
+        422: {
+            "description": (
+                "Invalid request, an unknown tray (`tray_unknown`), or the code does not fit a "
+                "free strip on the back (`back_strip_does_not_fit`)."
+            )
+        },
+    },
+)
+async def print_back_side(
+    code: CodePath, body: SheetBackPrint, request: Request, session: SessionDep, auth: PrintDep
+) -> PageJobQueued:
+    with mapped():
+        printer = await _usable_printer(session, auth, body.printer)
+        ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)
+        await session.commit()  # the service opens its own sessions (the R10-1 class)
+        job_id = await print_service.print_sheet_back(
+            db_engine.async_session,
+            code=code,
+            printer=printer,
+            tray=body.tray,
+            queue=request.app.state.print_queue,
+            actor=actor(auth),
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
+            bus=_bus(request),
+        )
+    return PageJobQueued(job_id=job_id)
+
+
+@router.post(
+    "/api/v1/sheets/{code}/back-side/confirm",
+    response_model=SheetRead,
+    summary="Confirm that the sheet code on the back is printed",
+    description=(
+        "The person checked the code on the back (toner dry, QR not smeared). Only this marks "
+        "the code of a `back_side` sheet as printed; a second confirmation changes nothing."
+    ),
+    responses={
+        **_NOT_FOUND,
+        409: {
+            "description": (
+                "The sheet is discarded (`sheet_discarded`) or its code does not go on the back "
+                "(`id_placement_mismatch`)."
+            )
+        },
+    },
+)
+async def confirm_back_side(
+    code: CodePath, request: Request, session: SessionDep, auth: PrintDep
+) -> SheetRead:
+    with mapped():
+        detail = await ss.confirm_back_side(session, code, actor=actor(auth), bus=_bus(request))
+    return _read(detail)
 
 
 @router.post(

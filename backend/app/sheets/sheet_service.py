@@ -32,6 +32,7 @@ from app.sheets.errors import (
     CellsNotMarkedByHandError,
     CellsNotUnconfirmedError,
     CellsTakenError,
+    IdPlacementMismatchError,
     InvalidFieldError,
     NoUnconfirmedCellsError,
     SheetBusyError,
@@ -54,7 +55,9 @@ NOTE_MAX = 500
 DEFAULT_HAND_PURPOSE = "marked by hand"
 HUB_SOURCE = "hub"  # the source of the cell the hub fills itself: the sheet ID label
 ID_CELL_PURPOSE = "Sheet ID"
-_ID_PLACEMENTS = ("margin", "manual")  # "cell" is created by create_sheet_with_id_label
+# "cell" is created by create_sheet_with_id_label; "back_side" by create_sheet_with_back_label,
+# which queues the back-side job after this function committed the sheet (#350).
+_ID_PLACEMENTS = ("margin", "manual", "back_side")
 _STATE_FILTERS = ("active", "full", "discarded", "all")
 
 
@@ -305,6 +308,7 @@ class NewSheetBatch:
         marks: dict[int, str],
         note: str | None,
         actor: str,
+        id_cell_no: int | None = None,
     ) -> tuple[Sheet, SheetType, SheetTypeVersion]:
         """Add one sheet pinned to a version (C8); ``marks`` and ``note`` are already sanitised."""
         t = await self._type(type_key)
@@ -315,6 +319,7 @@ class NewSheetBatch:
             type_id=t.id,
             type_version_id=v.id,
             id_placement=id_placement,
+            id_cell_no=id_cell_no,
             note=note,
             created_by=actor,
             last_used_at=_now() if marks else None,
@@ -336,6 +341,7 @@ async def create_sheet_locked(
     marks: dict[int, str],
     note: str | None,
     actor: str,
+    id_cell_no: int | None = None,
 ) -> tuple[Sheet, SheetType, SheetTypeVersion]:
     """Create a sheet pinned to a version in the caller's write transaction (C8).
 
@@ -350,6 +356,7 @@ async def create_sheet_locked(
         marks=marks,
         note=note,
         actor=actor,
+        id_cell_no=id_cell_no,
     )
     await batch.flush()
     return created
@@ -360,11 +367,12 @@ async def create_sheet(
     *,
     type_key: str,
     version: int | None,
-    id_placement: Literal["margin", "manual"] = "margin",
+    id_placement: Literal["margin", "manual", "back_side"] = "margin",
     used_cells: list[MarkedCell],
     note: str | None,
     actor: str,
     bus: EventBus | None = None,
+    id_cell_no: int | None = None,
 ) -> Sheet:
     """Create a sheet pinned to a version, with the cells already used marked by hand."""
     if id_placement not in _ID_PLACEMENTS:
@@ -379,6 +387,7 @@ async def create_sheet(
             marks=marks,
             note=clean_note,
             actor=actor,
+            id_cell_no=id_cell_no,
         )
         detail = await _detail(session, sheet)
         await session.commit()
@@ -639,3 +648,59 @@ async def find_cells(session: AsyncSession, *, source: str, ref: str) -> list[Ce
         )
         for code, c in await repo.cells_by_ref(session, source=source, ref=ref)
     ]
+
+
+# ---------------------------------------------------------------- the code on the back (#350)
+
+_SWITCHABLE = ("margin", "manual")
+
+
+async def confirm_back_side(
+    session: AsyncSession, code: str, *, actor: str, bus: EventBus | None = None
+) -> SheetDetail:
+    """The person saw the code on the back and says it is printed (R-350-6).
+
+    Only this sets ``id_printed`` of a ``back_side`` sheet: a finished job says nothing about
+    smeared toner. A second confirmation changes nothing and is not an error.
+    """
+    del actor  # not logged (CodeQL treats it as sensitive); kept for the call contract
+    async with write_transaction(session):
+        before = await _writable(session, code)
+        if before.sheet.id_placement != "back_side":
+            raise IdPlacementMismatchError()
+        changed = not before.sheet.id_printed
+        before.sheet.id_printed = True
+        await session.flush()
+        detail = await _detail(session, before.sheet)
+        await session.commit()
+    if changed:
+        logger.info("sheet %s: code on the back confirmed", log_value(code))
+        _publish(bus, detail, [])
+    return detail
+
+
+async def back_side_sheet_locked(
+    session: AsyncSession, code: str, *, margin_in_flight: bool
+) -> tuple[Sheet, bool]:
+    """The sheet a back-side job prints onto, read under the caller's write lock.
+
+    An ``active`` ``back_side`` sheet is returned as it is. An unprinted ``margin`` or ``manual``
+    sheet whose margin ID is not in flight switches to ``back_side`` (R-350-11; the caller
+    commits and publishes); every other sheet is refused. Returns the sheet and whether it
+    switched.
+    """
+    sheet = await _sheet(session, code)
+    if sheet.state == "discarded":
+        raise SheetDiscardedError()
+    if sheet.id_placement == "back_side":
+        return sheet, False
+    if sheet.id_placement not in _SWITCHABLE or sheet.id_printed or margin_in_flight:
+        raise IdPlacementMismatchError()
+    sheet.id_placement = "back_side"
+    await session.flush()
+    return sheet, True
+
+
+async def publish_detail(session: AsyncSession, sheet: Sheet, bus: EventBus | None) -> None:
+    """Publish ``sheet.updated`` for a committed change that touched no cell."""
+    _publish(bus, await _detail(session, sheet), [])

@@ -123,6 +123,7 @@ from app.api.routes.print import router as print_router
 from app.api.routes.settings_api import router as settings_api_router
 from app.api.routes.sheet_types import router as sheet_types_router
 from app.api.routes.sheets import router as sheets_router
+from app.api.routes.tray_loading import router as tray_loading_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.auth.sessions import purge_expired as purge_expired_sessions
@@ -165,6 +166,7 @@ from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
 from app.services.readiness import build_readiness_response
 from app.settings_store import SettingsStore
+from app.sheets.back_side import render_sheet_back_page, render_tray_loading_page
 from app.sheets.grocy_sheet import GrocySheetLabels
 from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
@@ -603,6 +605,8 @@ class _LifespanManager:
 register_page_renderer("calibration_page", render_calibration_page)
 register_page_renderer("sheet_page", render_sheet_page)
 register_page_renderer("test_page", render_test_page)
+register_page_renderer("sheet_back_page", render_sheet_back_page)
+register_page_renderer("tray_loading_page", render_tray_loading_page)
 
 
 def _may_name_default_printer(auth: AuthContext | None, state: Any) -> bool:
@@ -725,6 +729,7 @@ def create_app() -> _LifespanManager:
     app.include_router(sheets_router)
     app.include_router(sheet_print_routes.router)
     app.include_router(calibration_router)
+    app.include_router(tray_loading_router)
     app.include_router(test_print_routes.router)
     app.include_router(capabilities_router)
     app.include_router(info_routes.router)

@@ -106,7 +106,7 @@ class SheetView:
     geometry: Geometry
     allow_qr: bool
     non_free: dict[int, str]
-    id_placement: Literal["cell", "margin", "manual"]
+    id_placement: Literal["cell", "margin", "manual", "back_side"]
     id_printed: bool
     has_hub_cell: bool
     margin_id_in_flight: bool
@@ -118,6 +118,8 @@ class SheetView:
     # The feed-direction mark (spec 10.2a): its own flag, and whether another job carries it.
     feed_mark_printed: bool = False
     feed_mark_in_flight: bool = False
+    # The preferred ID cell of a ``cell`` sheet (#350, R-350-7), taken while it is free.
+    id_cell_no: int | None = None
 
 
 @dataclass
@@ -520,7 +522,17 @@ def _draft(
 
     id_cell: int | None = None
     if needs_id_cell:
-        id_cell = next((n for n in free if n not in skip and n not in explicit), None)
+        preferred = view.id_cell_no
+        if (
+            preferred is not None
+            and 1 <= preferred <= total
+            and preferred not in busy
+            and preferred not in skip
+            and preferred not in explicit
+        ):
+            id_cell = preferred  # R-350-7: the type's reserved cell while it is free
+        else:
+            id_cell = next((n for n in free if n not in skip and n not in explicit), None)
     id_missing = needs_id_cell and id_cell is None
 
     decision = decide_margin_and_mark(

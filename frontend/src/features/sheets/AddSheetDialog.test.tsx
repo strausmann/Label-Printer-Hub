@@ -30,6 +30,7 @@ const MARGIN_OK: Schemas["MarginCheckRead"] = {
   printable: true,
   qr: true,
   reason: null,
+  default_placement: "margin",
   usable_mm: 8,
 };
 const TWO_TYPES = [SHEET_TYPE, { ...SHEET_TYPE, key: "my-small", description: "Tiny", allow_qr: false }];

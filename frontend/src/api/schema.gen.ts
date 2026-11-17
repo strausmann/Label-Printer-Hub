@@ -502,7 +502,7 @@ export interface paths {
         put?: never;
         /**
          * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  A Grocy label job that failed before its render (printer offline, no tape) is accepted again on its printer and completes in the background, like the webhook; a Grocy label that could not be built answers 422 and creates no row.  A Grocy label for a sheet that ended before it reached the printer is accepted again the same way: a new job takes a free cell of the sheet type, chosen like a new label; it answers 409 ``printer_disabled``, ``media_kind_mismatch`` or ``sheet_type_archived``, 409 ``printer-identity-mismatch`` for a held printer, and 409 ``job_not_retryable`` when the sheet type was deleted, without creating a row.  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.  The new job's payload carries ``retry_of``, the id of the job it repeats; that job may have been cleaned up since, so the id may no longer resolve.
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  A Grocy label job that failed before its render (printer offline, no tape) is accepted again on its printer and completes in the background, like the webhook; a Grocy label that could not be built answers 422 and creates no row.  A Grocy label for a sheet that ended before it reached the printer is accepted again the same way: a new job takes a free cell of the sheet type, chosen like a new label; it answers 409 ``printer_disabled``, ``media_kind_mismatch`` or ``sheet_type_archived``, 409 ``printer-identity-mismatch`` for a held printer, and 409 ``job_not_retryable`` when the sheet type was deleted, without creating a row.  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.  A page with the sheet code on the back is re-sent from its payload (same strip, date and turn) while its sheet is active and still has its code on the back, else 409 ``sheet_discarded`` or ``id_placement_mismatch``; the job never marks the code as printed.  A tray loading test page is re-sent like a test page.  The new job's payload carries ``retry_of``, the id of the job it repeats; that job may have been cleaned up since, so the id may no longer resolve.
          */
         post: operations["retry_job_api_v1_jobs__job_id__retry_post"];
         delete?: never;
@@ -1018,6 +1018,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/printers/{printer_id}/trays/{tray}/loading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set how a tray takes paper
+         * @description `print_side`: the face that gets printed as the sheet lies in the tray; `leading_edge`: the edge of the printed image at the sheet edge put in first. A `print` key may set it only while it is unset; an `admin` key may change it.
+         */
+        put: operations["put_tray_loading_api_v1_printers__printer_id__trays__tray__loading_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/trays/{tray}/loading/test-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print the tray loading test page
+         * @description A page with a big "TOP ↑" at the top edge of the printed image and "PRINTED SIDE" in the middle, in the hub's language. Mark a cross on the face-up side next to the edge that goes in first, print, then answer where the print and "TOP" landed.
+         */
+        post: operations["print_tray_loading_page_api_v1_printers__printer_id__trays__tray__loading_test_page_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/render/check": {
         parameters: {
             query?: never;
@@ -1281,7 +1321,7 @@ export interface paths {
         put?: never;
         /**
          * Create a sheet, with the cells already used marked by hand
-         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves the first free cell for the sheet ID label and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job's first free cell; the error names the sheet in `error_detail.sheet_code`.
+         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves a cell for the sheet ID label (`id_cell` or the type's while it is free, else the first free one) and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job; the error names the sheet in `error_detail.sheet_code`. `back_side` creates the sheet and queues the job that prints its code on the back of the liner (`job_id`); the code counts as printed only after `POST /api/v1/sheets/{code}/back-side/confirm`. If that job cannot be queued, the sheet stays and the error names it the same way.
          */
         post: operations["create_sheet_api_v1_sheets_post"];
         delete?: never;
@@ -1338,6 +1378,46 @@ export interface paths {
         get: operations["get_sheet_api_v1_sheets__code__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/back-side": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print the sheet code on the back of the liner
+         * @description Queues the job that prints the code strip on the back of the sheet: "Print again" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` or `manual` sheet switches to `back_side` in the same call. The job never sets `id_printed`; `POST /api/v1/sheets/{code}/back-side/confirm` does.
+         */
+        post: operations["print_back_side_api_v1_sheets__code__back_side_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/back-side/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm that the sheet code on the back is printed
+         * @description The person checked the code on the back (toner dry, QR not smeared). Only this marks the code of a `back_side` sheet as printed; a second confirmation changes nothing.
+         */
+        post: operations["confirm_back_side_api_v1_sheets__code__back_side_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2546,6 +2626,12 @@ export interface components {
             /** Corner */
             corner: ("top_left" | "top_right" | "bottom_left") | null;
             /**
+             * Default Placement
+             * @description Where the sheet code of a new sheet of the type goes on this printer: the type's setting, `auto` resolved by `printable`.
+             * @enum {string}
+             */
+            default_placement: "margin" | "back_side" | "cell";
+            /**
              * Feed Mark
              * @description Whether the feed-direction mark prints, in the hub's current language.
              */
@@ -2630,12 +2716,15 @@ export interface components {
         /** NewSheetModel */
         NewSheetModel: {
             /**
-             * Id Placement
-             * @description Where the sheet ID is printed; `margin` if left out.
-             * @default margin
-             * @enum {string}
+             * Id Cell
+             * @description The preferred cell of a `cell` sheet's code; left out: the sheet type's. A cell that is taken or outside the sheet falls back to the first free one.
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_cell?: number | null;
+            /**
+             * Id Placement
+             * @description Where the sheet code goes. Left out: as the sheet type says (`auto` resolves to `margin` or `back_side` by the type's geometry). `back_side` prints no ID on the front; the code goes on the back of the liner in a pass of its own.
+             */
+            id_placement?: ("cell" | "margin" | "manual" | "back_side") | null;
             /**
              * Type
              * @description Sheet type key.
@@ -2660,6 +2749,14 @@ export interface components {
         };
         /** PageJobAccepted */
         PageJobAccepted: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** PageJobQueued */
+        PageJobQueued: {
             /**
              * Job Id
              * Format: uuid
@@ -2927,6 +3024,12 @@ export interface components {
          * @description One page job of a sheet print (the counterpart of ``PreviewPage``).
          */
         PrintedPage: {
+            /**
+             * Back Side Pending
+             * @description The sheet's code goes on the back of the liner and is not confirmed yet: offer `POST /api/v1/sheets/{code}/back-side`.
+             * @default false
+             */
+            back_side_pending: boolean;
             /**
              * Cells
              * @description The cells the request's items take, in item order.
@@ -3681,19 +3784,40 @@ export interface components {
                 error_message: string;
             };
         };
+        /**
+         * SheetBackPrint
+         * @description The printer and tray of a back-side job.
+         */
+        SheetBackPrint: {
+            /**
+             * Printer
+             * @description Printer slug or UUID (a page printer).
+             */
+            printer: string;
+            /**
+             * Tray
+             * @description Tray of the job; left out: the printer's default.
+             */
+            tray?: string | null;
+        };
         /** SheetCreate */
         SheetCreate: {
             /**
+             * Id Cell
+             * @description `cell` only: the preferred cell of the ID label; left out, the sheet type's. A cell that is taken or outside the sheet falls back to the first free one.
+             */
+            id_cell?: number | null;
+            /**
              * Id Placement
-             * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves the first free cell for the ID label and queues an ID-only job (`job_id` in the response).
+             * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves a cell for the ID label (`id_cell`, else the type's, while it is free; otherwise the first free one) and queues an ID-only job (`job_id` in the response). `back_side` needs a page printer too: it queues the job that prints the code on the back of the liner; the code counts as printed only after `POST /api/v1/sheets/{code}/back-side/confirm`.
              * @enum {string}
              */
-            id_placement?: "cell" | "margin" | "manual";
+            id_placement?: "cell" | "margin" | "manual" | "back_side";
             /** Note */
             note?: string | null;
             /**
              * Printer
-             * @description Printer slug or UUID. Required for `cell`, ignored otherwise.
+             * @description Printer slug or UUID. Required for `cell` and `back_side`, ignored otherwise.
              */
             printer?: string | null;
             /**
@@ -3741,7 +3865,7 @@ export interface components {
              * Id Placement
              * @enum {string}
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_placement: "cell" | "margin" | "manual" | "back_side";
             /** Id Printed */
             id_printed: boolean;
             /**
@@ -3918,7 +4042,7 @@ export interface components {
              * Id Placement
              * @enum {string}
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_placement: "cell" | "margin" | "manual" | "back_side";
             /** Id Printed */
             id_printed: boolean;
             /** Label H */
@@ -4491,6 +4615,8 @@ export interface components {
             label: string;
             /** Load Hint */
             load_hint: string | null;
+            /** @description How the tray takes paper; None while nobody has set it. */
+            loading?: components["schemas"]["TrayLoadingRead"] | null;
             /**
              * Media
              * @description Media the printer reports in this tray, if any.
@@ -4518,6 +4644,37 @@ export interface components {
             label: string;
             /** Load Hint */
             load_hint?: string | null;
+        };
+        /** TrayLoadingPut */
+        TrayLoadingPut: {
+            /**
+             * Leading Edge
+             * @enum {string}
+             */
+            leading_edge: "top" | "bottom";
+            /**
+             * Print Side
+             * @enum {string}
+             */
+            print_side: "up" | "down";
+        };
+        /**
+         * TrayLoadingRead
+         * @description How the tray takes paper (#350): set once by the guided test, changed by an admin.
+         */
+        TrayLoadingRead: {
+            /**
+             * Leading Edge
+             * @description The edge of the printed image that lands at the sheet edge put in first.
+             * @enum {string}
+             */
+            leading_edge: "top" | "bottom";
+            /**
+             * Print Side
+             * @description The face that gets printed, as the sheet lies in the tray.
+             * @enum {string}
+             */
+            print_side: "up" | "down";
         };
         /**
          * TrayRead
@@ -7088,6 +7245,109 @@ export interface operations {
             };
         };
     };
+    put_tray_loading_api_v1_printers__printer_id__trays__tray__loading_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrayLoadingPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrayLoadingRead"];
+                };
+            };
+            /** @description These credentials may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already set and the key is not admin (`tray_loading_already_set`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request or an unknown tray (`tray_unknown`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    print_tray_loading_page_api_v1_printers__printer_id__trays__tray__loading_test_page_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobQueued"];
+                };
+            };
+            /** @description These credentials may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown printer (`printer_not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A tape printer (`media_kind_mismatch`) or unknown to the print queue (`printer-unavailable`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An unknown or disabled tray (`tray_unknown`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     render_check_api_v1_render_check_post: {
         parameters: {
             query?: never;
@@ -7875,7 +8135,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`) or unknown to the queue. */
+            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`), a tape printer (`media_kind_mismatch`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -7884,7 +8144,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description A cell number is outside the sheet, or `cell` without a printer. */
+            /** @description A cell number is outside the sheet, `cell` or `back_side` without a printer, or the code does not fit a free strip on the back (`back_strip_does_not_fit`). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -8030,6 +8290,119 @@ export interface operations {
             };
             /** @description Sheet not found. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    print_back_side_api_v1_sheets__code__back_side_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetBackPrint"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobQueued"];
+                };
+            };
+            /** @description These credentials may not use the printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The sheet is discarded (`sheet_discarded`), its code does not go on the back (`id_placement_mismatch`: printed, a `cell` sheet, or its margin ID is in flight), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request, an unknown tray (`tray_unknown`), or the code does not fit a free strip on the back (`back_strip_does_not_fit`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    confirm_back_side_api_v1_sheets__code__back_side_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The sheet is discarded (`sheet_discarded`) or its code does not go on the back (`id_placement_mismatch`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

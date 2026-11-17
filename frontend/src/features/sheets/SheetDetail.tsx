@@ -178,7 +178,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
 
   const idNotPrinted = !discarded && sheet.id_placement !== "manual" && !sheet.id_printed;
   const sizeLine = `${formatMm(sheet.label_w, i18n.locale).replace(/ mm$/, "")} × ${formatMm(sheet.label_h, i18n.locale)}`;
-  const placementWord = { cell: t`in a cell`, margin: t`in the margin`, manual: t`added by hand` }[sheet.id_placement];
+  const placementWord = { cell: t`in a cell`, margin: t`in the margin`, manual: t`added by hand`, back_side: t`on the back of the liner` }[sheet.id_placement];
   const writing = mode === "mark" ? mark : unmark;
   const inspectedCell = inspected === null ? null : byNumber.get(inspected);
   // What the grid draws wins: a cell chosen to mark shows as used, one chosen to un-mark as free.

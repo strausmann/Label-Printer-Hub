@@ -747,3 +747,49 @@ async def test_the_key_reads_its_own_sheet_batch_and_another_key_gets_404() -> N
         other = {"X-Label-Hub-Key": await _insert_key(["print"])}
         foreign = await rig.client.get(url, headers=other)
         assert (foreign.status_code, foreign.content) == (404, b'{"detail":"Batch not found"}')
+
+
+# ---------------------------------------------------------------------------- #350 inline sheets
+
+
+async def test_inline_new_sheet_uses_type_cell_and_id_cell() -> None:
+    async with running() as rig:
+        async with _factory()() as s:
+            await ts.patch_type(s, "acme-t1", {"id_placement": "cell", "id_cell": 2}, actor="t")
+        body = {
+            "items": [_item(i) for i in range(3)],
+            "placements": [{"new_sheet": {"type": "acme-t1"}}],
+        }
+        resp = await rig.print(body)
+        assert resp.status_code == 202, resp.text
+        (page,) = resp.json()["pages"]
+        assert page["id_cell"] == 2 and page["cells"] == [1, 3, 4]
+        assert (await rig.sheet(page["sheet_code"]))["id_placement"] == "cell"
+
+
+async def test_inline_new_sheet_follows_type_back_side() -> None:
+    async with running() as rig:
+        body = {
+            "items": [_item(0)],
+            "placements": [{"new_sheet": {"type": "avery-zweckform-3490"}}],
+        }
+        preview = await rig.client.post(f"{rig.url()}/preview", json=body, headers=rig.key)
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["pages"][0]["id_not_printed"] is False
+        resp = await rig.print(body)
+        assert resp.status_code == 202, resp.text
+        (page,) = resp.json()["pages"]
+        assert page["back_side_pending"] is True
+        assert (await rig.sheet(page["sheet_code"]))["id_placement"] == "back_side"
+        detail = (await rig.job_payload(page["job_id"]))["detail"]
+        assert detail["margin_id"] is None and detail["id_cell"] is None
+
+
+async def test_inline_explicit_placement_still_wins() -> None:
+    async with running() as rig:
+        new = {"type": "avery-zweckform-3490", "id_placement": "margin"}
+        body = {"items": [_item(0)], "placements": [{"new_sheet": new}]}
+        resp = await rig.print(body)
+        assert resp.status_code == 202, resp.text
+        code = resp.json()["pages"][0]["sheet_code"]
+        assert (await rig.sheet(code))["id_placement"] == "margin"

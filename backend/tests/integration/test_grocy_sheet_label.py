@@ -291,6 +291,20 @@ async def test_full_sheet_opens_a_new_sheet(_tape_backend: MockPrinterBackend) -
     assert (await _sheet_row(new)).id_placement == "margin"
 
 
+async def test_grocy_new_sheet_follows_type_placement(_tape_backend: MockPrinterBackend) -> None:
+    """#350, R-350-9: a sheet a Grocy label starts follows its type (3490 resolves to the back
+    side), so its front carries no sheet ID."""
+    seeded = await _seed_base()
+    settings = {"integrations.grocy.label.battery.sheet_type": "avery-zweckform-3490"}
+    async with running(_tape_backend, settings, seeded=seeded) as rig:
+        resp = await rig.post()
+        assert resp.status_code == 202, resp.text
+        row = await _ends(resp.json()["job_id"], "done")
+    (code,) = await _sheet_codes()
+    assert (await _sheet_row(code)).id_placement == "back_side"
+    assert row.payload["detail"]["margin_id"] is None
+
+
 async def test_response_does_not_wait_for_the_reservation(
     _tape_backend: MockPrinterBackend, monkeypatch: pytest.MonkeyPatch
 ) -> None:

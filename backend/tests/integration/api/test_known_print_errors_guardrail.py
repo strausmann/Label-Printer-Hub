@@ -58,7 +58,10 @@ pytestmark = pytest.mark.asyncio
 
 PRINTING = re.compile(
     r"^/api/v1/(print(/|$)|render/|printers/\{printer_id\}/(test-print|calibration/)|webhook/"
-    r"|batches/\{batch_id\}/(continue|reprint)|jobs/\{job_id\}/retry)"
+    r"|batches/\{batch_id\}/(continue|reprint)|jobs/\{job_id\}/retry"
+    # #350: a new sheet's ID-only or back-side job, the code on the back, the loading test page
+    r"|sheets$|sheets/\{code\}/back-side$"
+    r"|printers/\{printer_id\}/trays/\{tray\}/loading/test-page$)"
 )
 NOT_PRINTING = {
     ("POST", "/api/v1/printers/{printer_id}/calibration/{tray}/fit"): (
@@ -126,6 +129,8 @@ class Hub:
     printer_id: UUID
     batch_id: UUID
     job_id: UUID
+    sheet_code: str = ""
+    """A ``back_side`` 3490 sheet (#350): the ``{code}`` of the sheet routes."""
 
 
 @pytest_asyncio.fixture
@@ -183,7 +188,19 @@ async def hub(app_with_fake_auth: Any) -> AsyncIterator[Hub]:
     ):
         async with eng.async_session() as s:
             await inner.state.settings_store.set_many(s, {"integrations.grocy.label.enabled": True})
-        yield Hub(client, inner, *ids)
+        from app.sheets import sheet_service
+
+        async with eng.async_session() as s:  # the types are seeded by the lifespan
+            sheet = await sheet_service.create_sheet(
+                s,
+                type_key="avery-zweckform-3490",
+                version=None,
+                id_placement="back_side",
+                used_cells=[],
+                note=None,
+                actor="guard",
+            )
+        yield Hub(client, inner, *ids, sheet_code=sheet.code)
     _rate_limiter.clear()
     verifier_cache.clear()
     get_settings.cache_clear()
@@ -213,6 +230,7 @@ class Case:
             .replace("{batch_id}", str(hub.batch_id))
             .replace("{job_id}", str(hub.job_id))
             .replace("{tray}", "auto")
+            .replace("{code}", hub.sheet_code)
         )
 
 
@@ -237,6 +255,14 @@ MATRIX = [
          "c", {"items": [_LABEL]}),
     Case("test-print", "/api/v1/printers/{printer_id}/test-print",
          "app.services.print_service.PrintService.submit_test_label", "d"),
+    # #350: the routes the global handlers answer (top-level problem).
+    Case("sheet-create", "/api/v1/sheets",
+         "app.sheets.print_service.create_sheet_with_id_label", "dt",
+         {"type": "avery-zweckform-3490", "id_placement": "cell", "printer": SLUG}),
+    Case("sheet-back-side", "/api/v1/sheets/{code}/back-side",
+         "app.sheets.print_service.print_sheet_back", "dt", {"printer": SLUG}),
+    Case("tray-loading-page", "/api/v1/printers/{printer_id}/trays/{tray}/loading/test-page",
+         "app.services.tray_loading_service.build_test_page", "dt"),
 ]  # fmt: skip
 
 NET = [
