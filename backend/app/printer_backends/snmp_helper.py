@@ -32,7 +32,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Final, Literal
 
 from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData,
@@ -137,7 +137,18 @@ def _strip_control_characters(text: str) -> str:
     return _CONTROL_CHARACTERS_RE.sub("", text)
 
 
-_TAPE_MM_RE = re.compile(r"^\s*(\d+)\s*mm", re.IGNORECASE)
+MEDIA_RAW_MAX: Final = 64
+"""The longest media name kept (R25-1). A real one is ``62mm x 100mm`` or ``12mm(0.47")``; the text
+comes from the network, and an overlong one must not make the parsers below (or ``int()``, which
+refuses more than 4300 digits) fail the status route."""
+
+
+def _cap(text: str) -> str:
+    return text[:MEDIA_RAW_MAX]
+
+
+# The digit groups are bounded (R25-1): no roll is wider or longer than 9999 mm.
+_TAPE_MM_RE = re.compile(r"^\s*(\d{1,4})\s*mm", re.IGNORECASE)
 
 
 def parse_loaded_tape_mm(text: str) -> int | None:
@@ -147,7 +158,7 @@ def parse_loaded_tape_mm(text: str) -> int | None:
     """
     if not text:
         return None
-    match = _TAPE_MM_RE.match(text)
+    match = _TAPE_MM_RE.match(_cap(text))
     if not match:
         return None
     return int(match.group(1))
@@ -170,6 +181,7 @@ def parse_media_kind(text: str | None) -> MediaKind | None:
     """
     if not text:
         return None
+    text = _cap(text)
     if _DIE_CUT_RE.match(text):
         return "die_cut"
     if _TAPE_MM_RE.match(text):
@@ -187,7 +199,7 @@ def parse_label_length_mm(text: str | None) -> int | None:
     """
     if not text:
         return None
-    match = _LABEL_LENGTH_RE.match(text)
+    match = _LABEL_LENGTH_RE.match(_cap(text))
     return int(match.group(1)) if match else None
 
 
@@ -325,7 +337,7 @@ async def query_preflight(
 
     raw_status = int(var_binds[0][1])
     raw_error_blob = bytes(var_binds[1][1])
-    raw_media_text = _strip_control_characters(str(var_binds[2][1]))
+    raw_media_text = _cap(_strip_control_characters(str(var_binds[2][1])))
 
     return PreflightStatus(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
