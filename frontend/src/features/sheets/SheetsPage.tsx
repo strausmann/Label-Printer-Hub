@@ -299,20 +299,24 @@ export function SheetsPage() {
           role="search"
           aria-label={t`Filter the sheets`}
           onSubmit={(e) => e.preventDefault()}
-          className={`${PANEL} ${filtersOpen ? "grid" : "hidden"} gap-4 md:grid md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] lg:items-end`}
+          className={`${PANEL} ${filtersOpen ? "flex" : "hidden"} flex-col gap-4 md:flex`}
         >
-          <TextInput label={t`Search by code`} value={q} onChange={setQ} placeholder="L4736-0004" mono maxLength={MAX_CODE_SEARCH} />
-          <SheetTypeCombobox
-            label={t`Sheet type`}
-            types={types.data ?? []}
-            value={search.type ?? ANY}
-            noneOption={{ id: ANY, label: t`Any sheet type` }}
-            labelFor={typeLabelWithKey}
-            onChange={(id) => commit({ type: id === ANY ? undefined : id })}
-          />
-          <SwitchField label={t`Hide used-up sheets`} isSelected={hideUsedUp} onChange={(on) => commit({ full: on ? undefined : true })} />
-          <SwitchField label={t`Show discarded sheets`} isSelected={search.discarded === true} onChange={(on) => commit({ discarded: on ? true : undefined })} />
-          <SwitchField label={t`Back side missing`} isSelected={search.back_missing === true} onChange={(on) => commit({ back_missing: on ? true : undefined })} />
+          <div className="grid min-w-0 gap-4 md:grid-cols-2">
+            <TextInput label={t`Search by code`} value={q} onChange={setQ} placeholder="L4736-0004" mono maxLength={MAX_CODE_SEARCH} />
+            <SheetTypeCombobox
+              label={t`Sheet type`}
+              types={types.data ?? []}
+              value={search.type ?? ANY}
+              noneOption={{ id: ANY, label: t`Any sheet type` }}
+              labelFor={typeLabelWithKey}
+              onChange={(id) => commit({ type: id === ANY ? undefined : id })}
+            />
+          </div>
+          <div className="flex flex-wrap gap-x-8 gap-y-2">
+            <SwitchField label={t`Hide used-up sheets`} isSelected={hideUsedUp} onChange={(on) => commit({ full: on ? undefined : true })} />
+            <SwitchField label={t`Show discarded sheets`} isSelected={search.discarded === true} onChange={(on) => commit({ discarded: on ? true : undefined })} />
+            <SwitchField label={t`Back side missing`} isSelected={search.back_missing === true} onChange={(on) => commit({ back_missing: on ? true : undefined })} />
+          </div>
         </form>
       </div>
 

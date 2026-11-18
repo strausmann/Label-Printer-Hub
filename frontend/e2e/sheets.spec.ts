@@ -340,6 +340,80 @@ test.describe.serial("sheets", () => {
     await expect(page.getByText("48 of 48 used")).toBeVisible();
   });
 
+  test("sheet filter switches stay tappable on a narrow tablet", async ({ browser }) => {
+    // A portrait tablet with larger text: the content column is narrow, and the old five-column filter row let the
+    // code search and the type combobox paint over the switch tracks (a tap then landed in the combobox).
+    const context = await browser.newContext({
+      baseURL: MAIN.url,
+      viewport: { width: 1232, height: 1970 },
+      hasTouch: true,
+      isMobile: true,
+      storageState: await page.context().storageState(),
+    });
+    try {
+      const tablet = await context.newPage();
+      await tablet.addInitScript(() => localStorage.setItem("lph.lang", "en"));
+      await tablet.goto("/sheets");
+      await expect(tablet.getByRole("heading", { level: 1, name: "Sheets" })).toBeVisible();
+      await tablet.evaluate(() => {
+        document.documentElement.style.zoom = "1.5";
+      });
+      for (const name of ["Hide used-up sheets", "Show discarded sheets", "Back side missing"]) {
+        const input = tablet.getByRole("switch", { name });
+        const label = tablet.locator("label").filter({ has: input });
+        const track = label.locator("span[aria-hidden='true']").first();
+        await track.scrollIntoViewIfNeeded();
+        // Measured in the page, in the same coordinate space `elementFromPoint` and a tap use (the zoom skews `boundingBox`).
+        // Three points along the track: the left end is where a wide neighbour reaches first.
+        const { x, y, insideLabel } = await track.evaluate((el, text) => {
+          const r = el.getBoundingClientRect();
+          const py = r.top + r.height / 2;
+          const xs = [r.left + 6, r.left + r.width / 2, r.right - 6];
+          const inside = xs.every((px) => {
+            const owner = document.elementFromPoint(px, py)?.closest("label");
+            return !!owner && (owner.textContent ?? "").includes(text);
+          });
+          return { x: xs[1]!, y: py, insideLabel: inside };
+        }, name);
+        expect(insideLabel, `${name}: the point on its track belongs to its own label`).toBe(true);
+        const before = await input.isChecked();
+        await tablet.touchscreen.tap(x, y);
+        await expect.poll(() => input.isChecked(), { message: `${name} toggles on tap` }).toBe(!before);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("the sheet filter controls do not overlap at 1440 px", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/sheets");
+    await expect(page.getByRole("heading", { level: 1, name: "Sheets" })).toBeVisible();
+    const boxes = await page.evaluate(() => {
+      const form = document.querySelector("#sheet-filters");
+      if (!form) return [];
+      const controls = [
+        form.querySelector("input[type='text'], input:not([role])"),
+        form.querySelector("[role='combobox']"),
+        ...Array.from(form.querySelectorAll("label")),
+      ];
+      return controls.filter(Boolean).map((el) => {
+        const r = (el as Element).getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      });
+    });
+    expect(boxes.length).toBeGreaterThanOrEqual(5);
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        const apart = a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
+        expect(apart, `filter controls ${i} and ${j} do not intersect`).toBe(true);
+      }
+    }
+  });
+
   test("says that a discarded sheet is discarded, and that an unknown code does not exist", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
