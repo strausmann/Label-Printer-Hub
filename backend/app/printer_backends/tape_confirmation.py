@@ -1,0 +1,337 @@
+# SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+"""How a tape printer confirms that the labels it was sent are printed (#393).
+
+Two channels, both measured on a QL-820NWB and a PT-P750W:
+
+- **IPP.** The printer takes the unchanged Brother raster bytes as an IPP Print-Job with
+  ``document-format: application/octet-stream`` and reports the job's state: ``9`` completed,
+  ``8`` aborted, ``7`` canceled, with ``job-impressions-completed`` as the printed count.
+- **Label counter.** ``prtMarkerLifeCount`` (SNMP, unit sheets) counts single labels. Read before
+  sending and polled after it, it says how many labels came out.
+
+Which channel works for a printer is decided by a test print and stored with the printer
+(``ConfirmationRecord``); a printer without a record is probed once per backend instance.
+TCP 9100 (``raw``) stays the transport of every printer without IPP: the counter confirms it.
+
+``TapeIppTransport`` is the IPP side, ``TapeSendState`` the bookkeeping a backend keeps between
+sending and the check after sending (``post_send.check_after_send``).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Final, Literal
+
+import httpx
+
+from app.printer_backends.exceptions import PrintFailedError
+from app.printer_backends.ipp.client import IppClient
+from app.printer_backends.ipp.codec import Attr, Tag
+from app.printer_backends.ipp.errors import (
+    IppError,
+    IppStatusError,
+    IppUnreachableError,
+)
+
+_logger = logging.getLogger(__name__)
+
+CONFIRM_BASE_S: Final = 15.0
+"""First value: seconds every confirmation may take on top of the labels (a printer that wakes
+up, the first cut). The timeout is ``CONFIRM_BASE_S + labels * CONFIRM_PER_LABEL_S``."""
+
+CONFIRM_PER_LABEL_S: Final = 8.0
+"""First value: seconds per label sent. Measured: a QL-820NWB prints a 62 mm x 17 mm label in
+about 3 s, a PT-P750W a 12 mm label in about 7 s; 8 s covers both."""
+
+CONFIRM_POLL_S: Final = 1.0
+"""Seconds between two reads of the IPP job state or the label counter."""
+
+COUNTER_JUMP_SLACK: Final = 50
+"""A counter that rose by more than the labels sent plus this is not ours to interpret (another
+sender, a replaced printer): it is accepted as printed with a warning."""
+
+IPP_PORT: Final = 631
+IPP_PATH: Final = "/ipp/print"
+OCTET_STREAM: Final = "application/octet-stream"
+_PROBE_ATTRIBUTES = ("ipp-versions-supported", "document-format-supported", "printer-state")
+_IPP_STATE_COMPLETED = 9
+_IPP_STATE_FINAL = 7
+
+ConfirmTransport = Literal["ipp", "raw"]
+
+
+def confirm_timeout_s(labels: int) -> float:
+    """How long the printer has to confirm *labels* labels."""
+    return CONFIRM_BASE_S + max(0, labels) * CONFIRM_PER_LABEL_S
+
+
+# ---------------------------------------------------------------------------- the record
+
+
+@dataclass(frozen=True)
+class ConfirmationRecord:
+    """What a test print found out about a tape printer (#393), stored with the printer.
+
+    ``confirm_transport``: ``ipp`` only when the test label went out as an IPP Print-Job and
+    reached job state 9, else ``raw`` (TCP 9100). ``label_counter``: the label counter rose by
+    exactly the labels sent. ``confirmed_at``: when the test print found it.
+    """
+
+    confirm_transport: ConfirmTransport
+    label_counter: bool
+    confirmed_at: datetime
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "confirm_transport": self.confirm_transport,
+            "label_counter": self.label_counter,
+            "confirmed_at": self.confirmed_at.isoformat(),
+        }
+
+    @classmethod
+    def from_json(cls, data: object) -> ConfirmationRecord | None:
+        """The record stored in *data*; ``None`` for no record or one this code cannot read."""
+        if not isinstance(data, Mapping):
+            return None
+        transport = data.get("confirm_transport")
+        counter = data.get("label_counter")
+        at = data.get("confirmed_at")
+        if transport not in ("ipp", "raw") or not isinstance(counter, bool):
+            return None
+        if not isinstance(at, str):
+            return None
+        try:
+            confirmed_at = datetime.fromisoformat(at)
+        except ValueError:
+            return None
+        if confirmed_at.tzinfo is None:
+            confirmed_at = confirmed_at.replace(tzinfo=UTC)
+        return cls(confirm_transport=transport, label_counter=counter, confirmed_at=confirmed_at)
+
+    @property
+    def channel(self) -> Literal["ipp", "label_counter", "none"]:
+        """How this printer's prints are confirmed: IPP job state, label counter, or not at all."""
+        if self.confirm_transport == "ipp":
+            return "ipp"
+        return "label_counter" if self.label_counter else "none"
+
+
+RecordSink = Callable[[ConfirmationRecord], Awaitable[None]]
+
+
+# ---------------------------------------------------------------------------- IPP
+
+
+@dataclass(frozen=True)
+class IppOutcome:
+    """How the IPP jobs of one send ended: ``completed`` all of them, else ``printed`` labels."""
+
+    completed: bool
+    printed: int
+
+
+class TapeIppTransport:
+    """IPP Print-Job of Brother raster bytes to ``ipp://<host>:631/ipp/print`` (#393).
+
+    Plain ``ipp://`` is HTTP, so there is no TLS to verify; the client is built with its
+    defaults like every other IPP client of the hub. One client per request (the client keeps
+    no connection alive anyway).
+    """
+
+    def __init__(
+        self,
+        host: str,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        query_timeout_s: float = 5.0,
+        upload_timeout_s: float = 30.0,
+    ) -> None:
+        bracketed = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        self.uri = f"ipp://{bracketed}:{IPP_PORT}{IPP_PATH}"
+        self._transport = transport
+        self._query_timeout_s = query_timeout_s
+        self._upload_timeout_s = upload_timeout_s
+
+    def _client(self) -> IppClient:
+        return IppClient(
+            self.uri,
+            transport=self._transport,
+            query_timeout_s=self._query_timeout_s,
+            upload_timeout_s=self._upload_timeout_s,
+        )
+
+    async def offers_raster(self) -> bool:
+        """Get-Printer-Attributes answers and lists ``application/octet-stream``.
+
+        Raises ``IppError`` when the printer does not answer as an IPP printer.
+        """
+        async with self._client() as client:
+            attrs = await client.get_printer_attributes(_PROBE_ATTRIBUTES)
+        formats = attrs.get("document-format-supported") or []
+        return any(isinstance(f, str) and f.lower() == OCTET_STREAM for f in formats)
+
+    async def submit(self, data: bytes) -> int:
+        """Send *data* as one Print-Job; returns the printer's job id.
+
+        ``job-name`` is unique per send. Raises the client's ``IppError``s.
+        """
+        job_name = f"labelyard-tape-{uuid.uuid4().hex[:16]}"
+        op_attrs = [
+            Attr("job-name", Tag.NAME, [job_name]),
+            Attr("document-format", Tag.MIME, [OCTET_STREAM]),
+        ]
+        async with self._client() as client:
+            accepted = await client.print_job(data, [], op_attrs)
+        return accepted.job_id
+
+    async def wait(
+        self, jobs: list[tuple[int, int]], *, timeout_s: float, poll_s: float = CONFIRM_POLL_S
+    ) -> IppOutcome:
+        """Poll each ``(job_id, labels)`` until a final state (``>= 7``) or the timeout.
+
+        ``9`` counts the job's labels as printed. ``7``/``8``, a timeout or a job the printer no
+        longer answers for stop the wait: ``printed`` is the labels of the completed jobs plus
+        the failed job's last ``job-impressions-completed``. Never raises.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_s
+        printed = 0
+        async with self._client() as client:
+            for job_id, labels in jobs:
+                impressions = 0
+                while True:
+                    try:
+                        info = await client.get_job(job_id)
+                    except IppError as exc:
+                        _logger.warning("IPP job state not readable (%s)", type(exc).__name__)
+                        info = None
+                    if info is not None:
+                        impressions = info.impressions_completed or impressions
+                        if info.state >= _IPP_STATE_FINAL:
+                            if info.state == _IPP_STATE_COMPLETED:
+                                printed += labels
+                                break
+                            return IppOutcome(False, printed + min(impressions, labels))
+                    if loop.time() >= deadline:
+                        return IppOutcome(False, printed + min(impressions, labels))
+                    await asyncio.sleep(poll_s)
+        return IppOutcome(True, printed)
+
+
+# ---------------------------------------------------------------------------- per backend
+
+
+@dataclass
+class TapeSendState:
+    """What a tape backend keeps from sending to the check after sending (#393).
+
+    ``record`` is the stored detection (``None``: none yet; the probe decides). ``sink`` stores a
+    new record (the runtime writes it to the printer row). ``labels_sent`` counts the labels sent
+    since the read before sending; ``ipp_jobs`` the IPP jobs of those sends. ``detecting``: the
+    current send is a test print that decides the record.
+    """
+
+    host: str
+    ipp: TapeIppTransport
+    record: ConfirmationRecord | None = None
+    sink: RecordSink | None = None
+    labels_sent: int = 0
+    ipp_jobs: list[tuple[int, int]] = field(default_factory=list)
+    detecting: bool = False
+    detect_ipp_failed: bool = False
+    last_raw: tuple[Callable[[], Awaitable[None]], int] | None = None
+    _probed: bool | None = None
+    _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+    def begin(self, *, detect: bool = False) -> None:
+        """A new send starts (right after the read before sending)."""
+        self.labels_sent = 0
+        self.ipp_jobs = []
+        self.detecting = detect
+        self.detect_ipp_failed = False
+        self.last_raw = None
+
+    async def use_ipp(self) -> bool:
+        """Whether this send goes out over IPP.
+
+        A test print always tries IPP. Otherwise the stored record decides; a stored ``raw`` is
+        never overridden. Without a record the probe decides once per backend instance (cached);
+        a failing probe means 9100 and is logged once.
+        """
+        if self.detecting:
+            return True
+        if self.record is not None:
+            return self.record.confirm_transport == "ipp"
+        if self._probed is None:
+            async with self._probe_lock:
+                if self._probed is None:
+                    try:
+                        self._probed = await self.ipp.offers_raster()
+                    except IppError as exc:
+                        _logger.info(
+                            "Tape printer has no usable IPP (%s); sending over TCP 9100",
+                            type(exc).__name__,
+                        )
+                        self._probed = False
+                    except (OSError, httpx.HTTPError) as exc:
+                        _logger.info(
+                            "Tape printer has no usable IPP (%s); sending over TCP 9100",
+                            type(exc).__name__,
+                        )
+                        self._probed = False
+        return bool(self._probed)
+
+    async def send(
+        self,
+        data: bytes,
+        labels: int,
+        raw: Callable[[], Awaitable[None]],
+    ) -> None:
+        """Send *labels* labels of raster *data*: over IPP when it is the transport, else *raw*.
+
+        An IPP Print-Job the printer did not take (unreachable, a refusal status) sent nothing,
+        so the same bytes go out over *raw*; in a test print that records IPP as not working.
+        Any other IPP failure (the upload had begun, an unusable answer) may have printed: it
+        raises ``PrintFailedError``. *raw* is the backend's 9100 send, kept so a test print can
+        repeat it.
+        """
+        self.last_raw = (raw, labels)
+        if await self.use_ipp():
+            try:
+                job_id = await self.ipp.submit(data)
+            except (IppUnreachableError, IppStatusError) as exc:
+                _logger.warning(
+                    "IPP Print-Job not taken (%s); sending over TCP 9100", type(exc).__name__
+                )
+                if self.detecting:
+                    self.detect_ipp_failed = True
+            except IppError as exc:
+                # The upload had begun or the answer is unusable: the label may have printed.
+                raise PrintFailedError(f"IPP print interrupted ({type(exc).__name__})") from exc
+            else:
+                self.ipp_jobs.append((job_id, labels))
+                self.labels_sent += labels
+                return
+        await raw()
+        self.labels_sent += labels
+
+    async def store(self, record: ConfirmationRecord) -> None:
+        """Keep *record* and hand it to the sink; a failing sink is logged, never raised."""
+        self.record = record
+        if self.sink is None:
+            return
+        try:
+            await self.sink(record)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _logger.warning(
+                "The print confirmation of a printer could not be stored", exc_info=True
+            )

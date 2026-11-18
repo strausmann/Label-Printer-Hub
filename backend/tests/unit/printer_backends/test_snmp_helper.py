@@ -349,3 +349,58 @@ def test_media_parsers_bound_their_digits() -> None:
     assert parse_loaded_tape_mm("9" * 5000 + "mm") is None
     assert parse_label_length_mm("29mm x 90mm") == 90
     assert parse_loaded_tape_mm('12mm(0.47")') == 12
+
+
+async def test_query_preflight_reads_the_label_counter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#393: ``prtMarkerLifeCount`` comes in the same round trip; a missing one is ``None``."""
+    from pysnmp.proto import rfc1902, rfc1905
+
+    counter: list[object] = [rfc1902.Counter32(257)]
+
+    async def fake_get_cmd(*args, **_kwargs):
+        return (
+            None,
+            None,
+            0,
+            [
+                (args[4], rfc1902.Integer(3)),
+                (args[5], rfc1902.OctetString(b"\x00\x00")),
+                (args[6], rfc1902.OctetString("62mm")),
+                (args[7], counter[0]),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    assert (await query_preflight("192.0.2.10")).marker_count == 257
+    counter[0] = rfc1905.noSuchInstance
+    assert (await query_preflight("192.0.2.10")).marker_count is None
+    counter[0] = rfc1905.noSuchObject
+    assert (await query_preflight("192.0.2.10")).marker_count is None
+
+
+async def test_query_preflight_asks_again_without_the_counter_on_an_error_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pysnmp.proto import rfc1902
+
+    asked: list[int] = []
+
+    async def fake_get_cmd(*args, **_kwargs):
+        asked.append(len(args) - 4)
+        if len(args) - 4 == 4:
+            return (None, rfc1902.Integer(2), 4, [])  # noSuchName for the whole request
+        return (
+            None,
+            None,
+            0,
+            [
+                (args[4], rfc1902.Integer(3)),
+                (args[5], rfc1902.OctetString(b"\x00\x00")),
+                (args[6], rfc1902.OctetString("62mm")),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    status = await query_preflight("192.0.2.10")
+    assert asked == [4, 3]
+    assert status.loaded_tape_mm == 62 and status.marker_count is None

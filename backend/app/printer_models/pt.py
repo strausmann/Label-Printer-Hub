@@ -263,13 +263,17 @@ class _PTPQueuePrinter:
         # Phase 1k.2 Bug-Fix: half_cut + last_page wurden vorher NICHT forwarded.
         # PR #100 Fix (last_page→feed) landete in PTouchBackend, aber der Adapter
         # hat beide Kwargs still aus options.pop() geworfen ohne sie weiterzureichen.
-        await self._backend.print_image(
+        # #393: the test print decides how this printer confirms its prints.
+        detect = bool(options.pop("detect_confirmation", False))
+        backend: Any = self._backend  # the protocol has no ``detect_confirmation``
+        await backend.print_image(
             image,
             tape_spec,
             auto_cut=bool(options.pop("auto_cut", True)),
             high_resolution=bool(options.pop("high_resolution", False)),
             half_cut=bool(options.pop("half_cut", False)),
             last_page=bool(options.pop("last_page", True)),
+            **({"detect_confirmation": True} if detect else {}),
         )
 
     async def print_images(

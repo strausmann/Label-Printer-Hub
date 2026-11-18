@@ -13,6 +13,7 @@ __init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
 from __future__ import annotations
 
 __all__ = [
+    "PRT_MARKER_LIFE_COUNT_OID",
     "ObservedIdentity",
     "PreflightStatus",
     "SnmpQueryError",
@@ -32,7 +33,7 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData,
@@ -90,6 +91,11 @@ HR_PRINTER_DETECTED_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
 PRT_INPUT_MEDIA_TYPE_OID = "1.3.6.1.2.1.43.8.2.1.12.1.1"
 PRT_GENERAL_SERIAL_NUMBER_OID = "1.3.6.1.2.1.43.5.1.1.17.1"
 IF_PHYS_ADDRESS_OID = "1.3.6.1.2.1.2.2.1.6.1"
+PRT_MARKER_LIFE_COUNT_OID = "1.3.6.1.2.1.43.10.2.1.4.1.1"
+"""``prtMarkerLifeCount.1.1`` (RFC 3805): the printer's life counter of printed units (#393).
+
+Measured on a QL-820NWB and a PT-P750W: unit ``8`` (sheets), one count per printed label. Optional:
+a printer without it answers ``noSuchInstance``/``noSuchObject``, read as ``None``."""
 
 _PRINTER_STATUS_MAP: dict[int, Literal["other", "unknown", "idle", "printing", "warmup"]] = {
     1: "other",
@@ -212,6 +218,9 @@ class PreflightStatus:
     error_flags: list[str] = field(default_factory=list)
     # Trimmed ``prtInputMediaName`` text as the printer reported it; ``None`` when blank.
     media_raw: str | None = None
+    # ``prtMarkerLifeCount`` (#393): printed labels over the printer's life; ``None`` when the
+    # printer does not report it.
+    marker_count: int | None = None
 
     @property
     def media_kind(self) -> MediaKind | None:
@@ -311,23 +320,51 @@ async def query_loaded_tape_mm(
     return parse_loaded_tape_mm(str(var_binds[0][1]))
 
 
-async def query_preflight(
-    host: str, *, community: str = "public", timeout_s: float = 3.0
-) -> PreflightStatus:
-    """Single round-trip: status + error-state + loaded tape.
+def _counter(value: object) -> int | None:
+    """An SNMP counter as ``int``; ``None`` for ``noSuchInstance``/``noSuchObject``, a text or any
+    other value that is not a non-negative integer (#393)."""
+    if isinstance(value, (bool, str, bytes, rfc1902.OctetString)):
+        return None
+    try:
+        count = int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError):  # noSuchInstance, noSuchObject, endOfMibView
+        return None
+    return count if count >= 0 else None
 
-    Used by PTouchBackend.preflight_check() to validate before sending a
-    print job. Raises SnmpQueryError on transport failure.
-    """
+
+async def _preflight_request(
+    host: str, community: str, timeout_s: float, *, with_counter: bool
+) -> tuple[object, object, list[object]]:
+    oids = [HR_PRINTER_STATUS_OID, HR_PRINTER_DETECTED_ERROR_STATE_OID, PRT_INPUT_MEDIA_TYPE_OID]
+    if with_counter:
+        oids.append(PRT_MARKER_LIFE_COUNT_OID)
     error_indication, error_status, _, var_binds = await get_cmd(
         _get_engine(),
         CommunityData(community, mpModel=1),
         await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
         ContextData(),
-        ObjectType(ObjectIdentity(HR_PRINTER_STATUS_OID)),
-        ObjectType(ObjectIdentity(HR_PRINTER_DETECTED_ERROR_STATE_OID)),
-        ObjectType(ObjectIdentity(PRT_INPUT_MEDIA_TYPE_OID)),
+        *(ObjectType(ObjectIdentity(oid)) for oid in oids),
     )
+    return error_indication, error_status, list(var_binds)
+
+
+async def query_preflight(
+    host: str, *, community: str = "public", timeout_s: float = 3.0
+) -> PreflightStatus:
+    """Single round-trip: status + error-state + loaded tape + label counter (#393).
+
+    Used by every tape backend's preflight right before sending a print job. The counter
+    (``prtMarkerLifeCount``) is optional: a missing one is ``marker_count=None``. An agent that
+    answers the whole request with an error status because of the counter is asked once more
+    without it. Raises SnmpQueryError on transport failure.
+    """
+    error_indication, error_status, var_binds = await _preflight_request(
+        host, community, timeout_s, with_counter=True
+    )
+    if not error_indication and error_status:
+        error_indication, error_status, var_binds = await _preflight_request(
+            host, community, timeout_s, with_counter=False
+        )
     if error_indication:
         raise SnmpQueryError(f"preflight SNMP failed: {error_indication}")
     if error_status:
@@ -335,15 +372,18 @@ async def query_preflight(
     if len(var_binds) < 3:
         raise SnmpQueryError("incomplete preflight reply")
 
-    raw_status = int(var_binds[0][1])
-    raw_error_blob = bytes(var_binds[1][1])
-    raw_media_text = _cap(_strip_control_characters(str(var_binds[2][1])))
+    binds: list[Any] = var_binds
+    raw_status = int(binds[0][1])
+    raw_error_blob = bytes(binds[1][1])
+    raw_media_text = _cap(_strip_control_characters(str(binds[2][1])))
+    marker_count = _counter(binds[3][1]) if len(binds) > 3 else None
 
     return PreflightStatus(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
         loaded_tape_mm=parse_loaded_tape_mm(raw_media_text),
         error_flags=decode_error_flags(raw_error_blob),
         media_raw=raw_media_text.strip() or None,
+        marker_count=marker_count,
     )
 
 

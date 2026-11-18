@@ -82,6 +82,22 @@ class PrinterReportedError(PrinterError):
         super().__init__(f"The printer reports an error: {', '.join(self.flags)}")
 
 
+class LabelsNotConfirmedError(PrinterError):
+    """The printer did not confirm every label that was sent (#393): "x of y labels printed".
+
+    Raised when the IPP job of a tape print ends ``aborted``/``canceled`` or does not finish in
+    time, or when the label counter (``prtMarkerLifeCount``) did not rise by the labels sent
+    before the timeout. ``printed`` is what the printer confirmed (the first labels of the send),
+    ``expected`` the labels sent. Not a pause reason of its own: a blocking error bit the printer
+    reports at the same time raises that error instead.
+    """
+
+    def __init__(self, printed: int, expected: int) -> None:
+        self.printed = max(0, min(int(printed), int(expected)))
+        self.expected = int(expected)
+        super().__init__(f"{self.printed} of {self.expected} labels printed")
+
+
 class StatusQueryFailedError(PrinterError):
     """The 32-byte ESC i S reply could not be parsed."""
 

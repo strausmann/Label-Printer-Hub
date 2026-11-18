@@ -106,3 +106,21 @@ async def async_session_factory(tmp_path: pathlib.Path):
 # printer_config_loader_fixture entfernt — PrinterConfigLoader wurde in
 # Phase 5 (#124) zusammen mit printer_config.py gelöscht.
 # Drucker-Konfiguration erfolgt ausschließlich über die Admin-API (DB).
+
+
+@pytest.fixture(autouse=True)
+def _no_tape_ipp_probe_over_the_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#393: a tape backend probes ``ipp://<host>:631`` before its first send. A test that does
+    not hand the backend an IPP transport of its own gets "no IPP" at once instead of a network
+    connect (the tape tests use TEST-NET hosts, a connect there only waits for the timeout)."""
+    from app.printer_backends.ipp.errors import IppUnreachableError
+    from app.printer_backends.tape_confirmation import TapeIppTransport
+
+    real = TapeIppTransport.offers_raster
+
+    async def offers_raster(self: TapeIppTransport) -> bool:
+        if self._transport is None:
+            raise IppUnreachableError("no network in tests")
+        return await real(self)
+
+    monkeypatch.setattr(TapeIppTransport, "offers_raster", offers_raster)

@@ -12,11 +12,16 @@ caught and rewrapped as our PrinterError subtypes.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from typing import Any
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any
 
 import ptouch
 from PIL import Image
+
+if TYPE_CHECKING:
+    import httpx
 
 from app.models.tape import TapeSpec
 from app.printer_backends.exceptions import (
@@ -30,6 +35,7 @@ from app.printer_backends.exceptions import (
 from app.printer_backends.post_send import raise_for_error_flags
 from app.printer_backends.snmp_helper import PreflightStatus, query_preflight, roll_record
 from app.printer_backends.status_query import query_status_over_socket
+from app.printer_backends.tape_confirmation import TapeIppTransport, TapeSendState
 from app.services.status_block import StatusBlock
 
 _logger = logging.getLogger(__name__)
@@ -67,8 +73,12 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
     high_resolution: bool,
     half_cut: bool = False,
     last_page: bool = True,
+    connection: Any = None,
 ) -> None:
     """Synchronous helper — module-level so tests can monkeypatch it.
+
+    *connection* (#393): where the bytes go; ``None`` is TCP to *host*:*port*. The IPP path
+    passes a ``_CaptureConnection`` and sends what it collected.
 
     Model-aware: uses _PTOUCH_PRINTER_CLASSES[model_id] so the same code
     serves PT-P750W, PT-P900, PT-E550W, etc.
@@ -92,7 +102,8 @@ def _ptouch_print(  # pragma: no cover - real-hardware-only, tests monkeypatch t
         printer_cls = _PTOUCH_PRINTER_CLASSES[model_id]
     except KeyError as exc:
         raise PrintFailedError(f"No ptouch printer class for model {model_id!r}") from exc
-    connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
+    if connection is None:
+        connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
     printer = printer_cls(connection=connection, high_resolution=high_resolution)
     label = ptouch.Label(image=image, tape=tape_cls)
     try:
@@ -122,8 +133,11 @@ def _ptouch_print_multi(  # pragma: no cover - real-hardware-only, tests monkeyp
     auto_cut: bool,
     high_resolution: bool,
     half_cut: bool,
+    connection: Any = None,
 ) -> None:
     """Synchronous helper for batch printing via ptouch.LabelPrinter.print_multi.
+
+    *connection* (#393): as in ``_ptouch_print``.
 
     ptouch-py 1.1.0: LabelPrinter.print_multi(labels, margin_mm=None,
     high_resolution=None, half_cut=True) — 1 Connection, 1 Init (=1 Pre-Roll),
@@ -141,7 +155,8 @@ def _ptouch_print_multi(  # pragma: no cover - real-hardware-only, tests monkeyp
     except KeyError as exc:
         raise PrintFailedError(f"No ptouch printer class for model {model_id!r}") from exc
 
-    connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
+    if connection is None:
+        connection = ptouch.ConnectionNetwork(host, port=port, timeout=10.0)
     printer = printer_cls(connection=connection, high_resolution=high_resolution)
     labels = [ptouch.Label(image=img, tape=tape_cls) for img in images]
     try:
@@ -167,6 +182,74 @@ def _ptouch_print_multi(  # pragma: no cover - real-hardware-only, tests monkeyp
                 printer.print(label, auto_cut=auto_cut, high_resolution=high_resolution)
 
 
+# The helpers as written, for ``_ptouch_render``: a test that replaces the network helpers keeps
+# the real byte building of the IPP path.
+_WRITE_ONE = _ptouch_print
+_WRITE_MULTI = _ptouch_print_multi
+
+
+class _CaptureConnection(ptouch.Connection):  # type: ignore[misc]
+    """A ptouch connection that sends nothing and keeps every byte written (#393).
+
+    ``ptouch`` builds the raster stream by writing to its connection (the initialisation in the
+    printer's constructor, then each label). Collected here, the same bytes the 9100 path sends
+    go out as one IPP Print-Job.
+    """
+
+    def __init__(self) -> None:
+        self.buf = bytearray()
+
+    def connect(self, printer: Any) -> None:  # noqa: ARG002
+        return None
+
+    def write(self, payload: bytes) -> None:
+        self.buf += payload
+
+    def close(self) -> None:
+        return None
+
+
+def _ptouch_render(
+    images: list[Image.Image],
+    tape_mm: int,
+    *,
+    model_id: str,
+    auto_cut: bool,
+    high_resolution: bool,
+    half_cut: bool,
+    last_page: bool = True,
+    multi: bool,
+) -> bytes:
+    """The raster bytes ``_ptouch_print`` (one image) or ``_ptouch_print_multi`` would send."""
+    capture = _CaptureConnection()
+    if multi:
+        _WRITE_MULTI(
+            "",
+            0,
+            images,
+            tape_mm,
+            model_id=model_id,
+            auto_cut=auto_cut,
+            high_resolution=high_resolution,
+            half_cut=half_cut,
+            connection=capture,
+        )
+    else:
+        _WRITE_ONE(
+            "",
+            0,
+            images[0],
+            tape_mm,
+            model_id=model_id,
+            auto_cut=auto_cut,
+            high_resolution=high_resolution,
+            half_cut=half_cut,
+            last_page=last_page,
+            connection=capture,
+        )
+    return bytes(capture.buf)
+
+
 def _require_tape_class(tape_mm: int) -> None:
     """The check ``_ptouch_print_multi`` would fail on, made before anything is sent (#277)."""
     if tape_mm not in _PTOUCH_TAPE_CLASSES:
@@ -186,6 +269,7 @@ class PTouchBackend:
         port: int = 9100,
         model_id: str = "PT-P750W",
         community: str = "public",
+        ipp_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not host:
             raise ValueError("PTouchBackend requires a non-empty host")
@@ -200,6 +284,8 @@ class PTouchBackend:
         self._community = community
         # #389: the status read right before the last send (``None``: none was read for it).
         self.last_send_status: PreflightStatus | None = None
+        # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
+        self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
 
     @classmethod
     def from_settings(cls, settings: Any) -> PTouchBackend:
@@ -304,8 +390,13 @@ class PTouchBackend:
         high_resolution: bool = False,
         half_cut: bool = False,
         last_page: bool = True,
+        detect_confirmation: bool = False,
     ) -> None:
         """Pre-print validation via SNMP, then dispatch ptouch.print.
+
+        #393: the raster bytes go out as an IPP Print-Job when the printer takes them that way
+        (``TapeSendState``), else over TCP 9100 as before; ``detect_confirmation`` (the test
+        print) tries IPP and lets the check after sending store what works.
 
         Uses preflight_check() (SNMP-based, reliable on PT-P750W in idle)
         instead of the broken ESC i S query_status() path. preflight_check
@@ -329,29 +420,63 @@ class PTouchBackend:
             refused_before_sending(exc)  # #277: the preflight refused, nothing was sent
             raise
 
-        try:
-            await asyncio.to_thread(
-                _ptouch_print,
-                self.host,
-                self._port,
-                image,
+        self.send_state.begin(detect=detect_confirmation)
+
+        async def raw() -> None:
+            with _ptouch_errors():
+                await asyncio.to_thread(
+                    _ptouch_print,
+                    self.host,
+                    self._port,
+                    image,
+                    tape_spec.width_mm,
+                    model_id=self._model_id,
+                    auto_cut=auto_cut,
+                    high_resolution=high_resolution,
+                    half_cut=half_cut,
+                    last_page=last_page,
+                )
+
+        data = b""
+        if await self.send_state.use_ipp():
+            data = await self._render(
+                [image],
                 tape_spec.width_mm,
+                auto_cut=auto_cut,
+                high_resolution=high_resolution,
+                half_cut=half_cut,
+                last_page=last_page,
+                multi=False,
+            )
+        await self.send_state.send(data, 1, raw)
+
+    async def _render(
+        self,
+        images: list[Image.Image],
+        tape_mm: int,
+        *,
+        auto_cut: bool,
+        high_resolution: bool,
+        half_cut: bool,
+        last_page: bool = True,
+        multi: bool,
+    ) -> bytes:
+        """#393: the raster bytes of the IPP path, built by ``ptouch`` without sending."""
+        try:
+            return await asyncio.to_thread(
+                _ptouch_render,
+                images,
+                tape_mm,
                 model_id=self._model_id,
                 auto_cut=auto_cut,
                 high_resolution=high_resolution,
                 half_cut=half_cut,
                 last_page=last_page,
+                multi=multi,
             )
-        except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
-            # These are subclasses of PrinterConnectionError — must be caught first.
-            raise PrintFailedError(str(exc)) from exc
-        except (
-            ptouch.PrinterNetworkError,
-            ptouch.PrinterTimeoutError,
-            ptouch.PrinterNotFoundError,
-            ptouch.PrinterConnectionError,
-        ) as exc:
-            raise PrinterOfflineError(str(exc)) from exc
+        except PrinterError as exc:
+            refused_before_sending(exc)  # nothing was sent
+            raise
 
     async def print_images(
         self,
@@ -383,24 +508,47 @@ class PTouchBackend:
             refused_before_sending(exc)
             raise
 
-        try:
-            await asyncio.to_thread(
-                _ptouch_print_multi,
-                self.host,
-                self._port,
+        self.send_state.begin()
+
+        async def raw() -> None:
+            with _ptouch_errors():
+                await asyncio.to_thread(
+                    _ptouch_print_multi,
+                    self.host,
+                    self._port,
+                    images,
+                    tape_spec.width_mm,
+                    model_id=self._model_id,
+                    auto_cut=auto_cut,
+                    high_resolution=high_resolution,
+                    half_cut=half_cut,
+                )
+
+        data = b""
+        if await self.send_state.use_ipp():
+            data = await self._render(
                 images,
                 tape_spec.width_mm,
-                model_id=self._model_id,
                 auto_cut=auto_cut,
                 high_resolution=high_resolution,
                 half_cut=half_cut,
+                multi=True,
             )
-        except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
-            raise PrintFailedError(str(exc)) from exc
-        except (
-            ptouch.PrinterNetworkError,
-            ptouch.PrinterTimeoutError,
-            ptouch.PrinterNotFoundError,
-            ptouch.PrinterConnectionError,
-        ) as exc:
-            raise PrinterOfflineError(str(exc)) from exc
+        await self.send_state.send(data, len(images), raw)
+
+
+@contextlib.contextmanager
+def _ptouch_errors() -> Iterator[None]:
+    """The ptouch connection errors as the hub's printer errors."""
+    try:
+        yield
+    except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
+        # These are subclasses of PrinterConnectionError — must be caught first.
+        raise PrintFailedError(str(exc)) from exc
+    except (
+        ptouch.PrinterNetworkError,
+        ptouch.PrinterTimeoutError,
+        ptouch.PrinterNotFoundError,
+        ptouch.PrinterConnectionError,
+    ) as exc:
+        raise PrinterOfflineError(str(exc)) from exc

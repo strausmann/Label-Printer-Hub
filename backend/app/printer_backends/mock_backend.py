@@ -94,6 +94,7 @@ class MockPrinterBackend:
         cover_open: bool = False,
         offline: bool = False,
         tape_runs_out_after: int | None = None,
+        label_counter: int | None = 0,
     ) -> None:
         self.host = host
         self._loaded_tape_mm = loaded_tape_mm
@@ -108,6 +109,12 @@ class MockPrinterBackend:
         self.printed_orientations: list[LabelOrientation | None] = []
         """The ``orientation`` the queue passed for each printed image (#346)."""
         self.status_query_count: int = 0
+        # #393: a fake ``prtMarkerLifeCount`` that rises with every printed label (``None``: the
+        # printer reports no counter), the read before the last send and the labels sent since.
+        self.label_counter: int | None = label_counter
+        self.last_send_status: PreflightStatus | None = None
+        self.labels_sent: int = 0
+        self._in_batch = False
 
     @classmethod
     def from_settings(cls, settings: Any) -> MockPrinterBackend:  # noqa: ARG003
@@ -141,6 +148,7 @@ class MockPrinterBackend:
             hr_printer_status="idle",
             loaded_tape_mm=self._loaded_tape_mm,
             error_flags=error_flags,
+            marker_count=self.label_counter,
         )
 
     async def preflight_check(self) -> PreflightStatus:
@@ -162,8 +170,11 @@ class MockPrinterBackend:
         half_cut: bool = False,  # noqa: ARG002
         last_page: bool = True,  # noqa: ARG002
         orientation: LabelOrientation | None = None,
+        detect_confirmation: bool = False,  # noqa: ARG002 - the mock has nothing to detect
     ) -> None:
         # Like the PT backend's preflight: a refusal here means nothing was sent (#277).
+        if not self._in_batch:
+            await self._begin_send()
         status = await self.query_status()
         if status.tape_empty:
             raise refused_before_sending(TapeEmptyError())
@@ -178,6 +189,9 @@ class MockPrinterBackend:
             )
         self.printed_images.append(image.copy())
         self.printed_orientations.append(orientation)
+        self.labels_sent += 1
+        if self.label_counter is not None:
+            self.label_counter += 1
         if (
             self.tape_runs_out_after is not None
             and len(self.printed_images) >= self.tape_runs_out_after
@@ -200,12 +214,25 @@ class MockPrinterBackend:
         Mock recording method). Phase 1k.2 Task 5: replaces NotImplementedError
         stub from Task 2 fix-up commit.
         """
-        await default_print_images_loop(
-            self,
-            images,
-            tape_spec,
-            auto_cut=auto_cut,
-            high_resolution=high_resolution,
-            half_cut=half_cut,
-            orientation=orientation,
-        )
+        await self._begin_send()
+        self._in_batch = True
+        try:
+            await default_print_images_loop(
+                self,
+                images,
+                tape_spec,
+                auto_cut=auto_cut,
+                high_resolution=high_resolution,
+                half_cut=half_cut,
+                orientation=orientation,
+            )
+        finally:
+            self._in_batch = False
+
+    async def _begin_send(self) -> None:
+        """#393: the read before sending (with the counter) and a fresh label count."""
+        self.labels_sent = 0
+        try:
+            self.last_send_status = await self.read_status()
+        except PrinterOfflineError:
+            self.last_send_status = None

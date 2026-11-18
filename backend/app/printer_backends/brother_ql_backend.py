@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 # Must run before brother_ql is used: restores Image.ANTIALIAS (removed in Pillow 10),
 # which brother_ql 0.9.x calls in its resize branch. See _pillow_compat and issue #254.
@@ -24,6 +25,9 @@ from brother_ql.conversion import convert
 from brother_ql.labels import ALL_LABELS
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
+
+if TYPE_CHECKING:
+    import httpx
 
 from app.models.tape import TapeSpec
 from app.printer_backends.batch_helper import default_print_images_loop
@@ -43,6 +47,7 @@ from app.printer_backends.snmp_helper import (
     query_preflight,
     roll_record,
 )
+from app.printer_backends.tape_confirmation import TapeIppTransport, TapeSendState
 from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import StatusBlock
 
@@ -145,6 +150,7 @@ class BrotherQLBackend:
         port: int = 9100,
         model_id: str = "QL-820NWB",
         community: str = "public",
+        ipp_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not host:
             raise ValueError("BrotherQLBackend requires a non-empty host")
@@ -156,6 +162,8 @@ class BrotherQLBackend:
         self._identifier = f"tcp://{host}:{port}"
         # #389: the status read right before the last send (``None``: none was read for it).
         self.last_send_status: PreflightStatus | None = None
+        # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
+        self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
 
     async def print_image(
         self,
@@ -168,6 +176,7 @@ class BrotherQLBackend:
         last_page: bool = True,  # noqa: ARG002
         orientation: LabelOrientation | None = None,
         media_checked: bool = False,
+        detect_confirmation: bool = False,
     ) -> None:
         """Check the loaded roll, convert *image* to QL raster data and send it to the printer.
 
@@ -184,6 +193,10 @@ class BrotherQLBackend:
         ``convert``).
         ``orientation`` (#258) decides the rotation: ``along`` rotates, ``across`` never
         does, ``None`` falls back to the 1.4.1 size heuristic.
+
+        #393: the raster bytes go out as an IPP Print-Job when the printer takes them that way
+        (``TapeSendState``), else over TCP 9100 as before. ``detect_confirmation`` (the test
+        print) tries IPP and lets the check after sending store what works.
         """
         if half_cut:
             _logger.warning(
@@ -197,6 +210,7 @@ class BrotherQLBackend:
         ql_label = _ql_label_of(tape_spec)
         if not media_checked:
             await self._check_loaded_media(tape_spec)
+            self.send_state.begin(detect=detect_confirmation)
 
         # Build raster instructions. convert() populates qlr.data.
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
@@ -214,11 +228,15 @@ class BrotherQLBackend:
             dpi_600=high_resolution,
         )
 
+        await self.send_state.send(qlr.data, 1, lambda: self._send_raw(qlr.data))
+
+    async def _send_raw(self, data: bytes) -> None:
+        """Send *data* over TCP 9100 (``brother_ql.backends.helpers.send``), as before #393."""
         # _helpers_send is synchronous and performs blocking I/O.
         # Wrap in to_thread to avoid blocking the event loop.
         result = await asyncio.to_thread(
             _helpers_send,
-            qlr.data,
+            data,
             self._identifier,
             blocking=True,
         )
@@ -281,8 +299,25 @@ class BrotherQLBackend:
         """
         # #389: one media check for the whole batch, not one per label (no probe storm).
         self.last_send_status = None
-        _ql_label_of(tape_spec)
+        ql_label = _ql_label_of(tape_spec)
         await self._check_loaded_media(tape_spec)
+        self.send_state.begin()
+        if images and await self.send_state.use_ipp():
+            # #393: one IPP job for the whole batch; the printer reports its impressions.
+            qlr = BrotherQLRaster(self._model_id)
+            fitted = [
+                _fit_to_printable_width(
+                    image, ql_label, dpi_600=high_resolution, orientation=orientation
+                )
+                for image in images
+            ]
+            convert(qlr, fitted, ql_label, cut=auto_cut, red=False, dpi_600=high_resolution)
+            try:
+                await self.send_state.send(qlr.data, len(images), lambda: self._send_raw(qlr.data))
+            except PrinterError as exc:
+                exc.nothing_sent = False
+                raise
+            return
         # QL-Series: half_cut existiert nicht. Backend-Capability-Flag erzwingt False.
         await default_print_images_loop(
             self,

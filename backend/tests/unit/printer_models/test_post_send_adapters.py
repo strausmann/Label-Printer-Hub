@@ -72,3 +72,41 @@ async def test_the_mock_backend_is_not_waited_for(
     await printer.check_after_send()
 
     assert waited == []
+
+
+@pytest.mark.parametrize(("driver", "tape_mm"), [(QL820NWBDriver, 62), (PTP750WDriver, 24)])
+async def test_the_test_print_flag_reaches_the_backend(driver: type, tape_mm: int) -> None:
+    """#393: ``detect_confirmation`` (the test print) is handed to the backend's send, never an
+    ordinary print's."""
+    backend = MockPrinterBackend(loaded_tape_mm=tape_mm)
+    seen: list[bool] = []
+    real = backend.print_image
+
+    async def spy(*args: object, detect_confirmation: bool = False, **kw: object) -> None:
+        seen.append(detect_confirmation)
+        await real(*args, **kw)  # type: ignore[arg-type]
+
+    backend.print_image = spy  # type: ignore[method-assign]
+    printer = driver(backend=backend).make_queue_printer(TapeRegistry())
+    from PIL import Image
+
+    image = Image.new("1", (120, 40), color=1)
+    await printer.print_image(image, tape_mm=tape_mm, detect_confirmation=True)
+    await printer.print_image(image, tape_mm=tape_mm)
+    assert seen == [True, False]
+
+
+async def test_the_mock_counts_its_labels() -> None:
+    """#393: the mock's fake label counter rises by the labels it prints, so the check after
+    sending confirms them at once."""
+    from PIL import Image
+
+    backend = MockPrinterBackend(loaded_tape_mm=62)
+    printer = QL820NWBDriver(backend=backend).make_queue_printer(TapeRegistry())
+    images = [Image.new("1", (120, 40), color=1)] * 3
+    await printer.print_images(images, tape_mm=62)
+    assert backend.labels_sent == 3
+    assert backend.last_send_status is not None
+    assert backend.last_send_status.marker_count == 0
+    assert backend.label_counter == 3
+    await printer.check_status()

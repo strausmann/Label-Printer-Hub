@@ -224,12 +224,15 @@ class _QLQueuePrinter:
         tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
         # The PrinterBackend protocol has no ``orientation``; the QL backend does.
         backend: Any = self._backend
+        # #393: the test print decides how this printer confirms its prints.
+        detect = bool(options.pop("detect_confirmation", False))
         await backend.print_image(
             image,
             tape_spec,
             auto_cut=bool(options.pop("auto_cut", True)),
             high_resolution=bool(options.pop("high_resolution", False)),
             orientation=_orientation(options.pop("orientation", None)),
+            **({"detect_confirmation": True} if detect else {}),
         )
 
     async def print_images(

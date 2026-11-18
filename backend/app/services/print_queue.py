@@ -45,6 +45,7 @@ from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.models.printer_state import PrinterState
 from app.printer_backends.exceptions import (
+    LabelsNotConfirmedError,
     MediaTypeMismatchError,
     PrinterCoverOpenError,
     PrinterError,
@@ -185,6 +186,7 @@ _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
     PrintFailedError: "print_failed",
     MediaTypeMismatchError: "media_type_mismatch",
     PrinterReportedError: "printer_error",
+    LabelsNotConfirmedError: "labels_not_confirmed",
 }
 
 
@@ -198,6 +200,8 @@ def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any
         detail = {"loaded_kind": exc.loaded_kind, "media_raw": exc.media_raw}
     elif isinstance(exc, PrinterReportedError):
         detail = {"flags": exc.flags}
+    elif isinstance(exc, LabelsNotConfirmedError):
+        detail = {"printed": exc.printed, "expected": exc.expected}
     return code, str(exc) or code, detail
 
 
@@ -3002,6 +3006,11 @@ class PrintQueue:
                         await check()
                     except asyncio.CancelledError:
                         raise
+                    except LabelsNotConfirmedError as exc:
+                        # #393: the printer confirmed the first ``printed`` labels of the group
+                        # (in print order); they are done, the rest failed and the run stops.
+                        await self._stop_unconfirmed(printer_id, batch, run, active, later, exc)
+                        return
                     except Exception as exc:  # the group was sent: its outcome is unknown
                         await self._stop_run(
                             printer_id, batch, run, active, later, exc, nothing_sent=False
@@ -3155,6 +3164,37 @@ class PrintQueue:
                 await asyncio.shield(write())
             raise
 
+    async def _stop_unconfirmed(
+        self,
+        printer_id: UUID,
+        batch: BatchJob,
+        run: TapeRun | None,
+        active: list[Job],
+        later: list[str],
+        exc: LabelsNotConfirmedError,
+    ) -> None:
+        """#393: the first ``exc.printed`` labels of the group printed, the rest did not.
+
+        The printed ones are completed like a group that passed; the others fail with
+        ``labels_not_confirmed``, every label after the group is not started, and the run stops
+        so that ``reprint_from`` starts at the first label the printer did not confirm. The
+        printer is not paused: a blocking error bit would have raised its own error.
+        """
+        printed = active[: exc.printed]
+        if printed:
+            await self._complete_group(printer_id, batch, printed)
+            self._drop_pictures(run, [job.id for job in printed])
+        await self._stop_run(
+            printer_id,
+            batch,
+            run,
+            active[exc.printed :],
+            later,
+            exc,
+            nothing_sent=False,
+            not_confirmed=True,
+        )
+
     async def _stop_run(
         self,
         printer_id: UUID,
@@ -3165,8 +3205,13 @@ class PrintQueue:
         exc: Exception,
         *,
         nothing_sent: bool,
+        not_confirmed: bool = False,
     ) -> None:
         """A group failed and the run stops; every label after the group is not started.
+
+        *not_confirmed* (#393, ``LabelsNotConfirmedError``): *active* are the labels the printer
+        did not confirm. They fail with ``labels_not_confirmed`` (a reprint starts at the first
+        of them, as after a refusal: ``stop_kind`` ``refused``) and the printer is not paused.
 
         *nothing_sent* (the backend refused before sending, ``PrinterError.nothing_sent``): the
         group's labels did not print; they fail with the real error code. Otherwise the group's
@@ -3180,14 +3225,21 @@ class PrintQueue:
             cause, cause_msg, cause_detail = _printer_error_to_record(exc)
         else:
             cause, cause_msg, cause_detail = "batch_failed", f"batch print failed: {exc}", None
-        if isinstance(exc, PrinterError) and printer_id in self._worker_states:
+        if (
+            isinstance(exc, PrinterError)
+            and not not_confirmed
+            and printer_id in self._worker_states
+        ):
             await self.pause_printer(printer_id, reason=cause)
         if run is not None:
             later = [*later, *run.job_ids[run.sub_jobs[run.current][1] :]]
         group_failed: list[Job] = []  # jobs that took FAILED here (M8: only these are stored)
-        if nothing_sent:
+        if not_confirmed:
             code, message = cause, cause_msg
-            detail: dict[str, Any] = {**(cause_detail or {}), "nothing_sent": True}
+            detail: dict[str, Any] = dict(cause_detail or {})
+        elif nothing_sent:
+            code, message = cause, cause_msg
+            detail = {**(cause_detail or {}), "nothing_sent": True}
         else:
             code = "outcome_unknown"
             message = f"The labels of this group may or may not have printed: {cause_msg}"
@@ -3214,11 +3266,12 @@ class PrintQueue:
             waiting.error_msg = waiting.error_message
             waiting.error_detail = {"cause": cause}
             not_started.append(waiting)
+        not_printed = nothing_sent or not_confirmed
         if run is not None and active:
             first = run.job_ids.index(active[0].id)
             last = run.job_ids.index(active[-1].id)
-            run.unknown = (first, first if nothing_sent else last + 1)
-            run.stop_kind = "refused" if nothing_sent else "unknown"
+            run.unknown = (first, first if not_printed else last + 1)
+            run.stop_kind = "refused" if not_printed else "unknown"
             run.reprintable = {j.id for j in (*group_failed, *not_started)}
             run.state = "stopped"
             run.stop_code = cause
@@ -3231,7 +3284,7 @@ class PrintQueue:
             depth = self._queue_depth(printer_id)
             self._notify_state_change(job, JobState.QUEUED, JobState.FAILED, queue_depth=depth)
         for job in group_failed:
-            if nothing_sent:
+            if not_printed:
                 await self._store.mark_failed(UUID(job.id), f"{cause}: {cause_msg}")
             else:
                 await self._store.mark_failed_restart(UUID(job.id), f"outcome_unknown: {cause}")
@@ -3242,7 +3295,9 @@ class PrintQueue:
             batch.batch_id,
             printer_id,
             cause,
-            "nothing sent" if nothing_sent else "outcome unknown",
+            "not confirmed"
+            if not_confirmed
+            else ("nothing sent" if nothing_sent else "outcome unknown"),
             len(group_failed),
             len(not_started),
             exc_info=exc,
