@@ -1395,7 +1395,7 @@ export interface paths {
         put?: never;
         /**
          * Print the sheet code on the back of the liner
-         * @description Queues the job that prints the code strip on the back of the sheet: "Print again" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` or `manual` sheet switches to `back_side` in the same call. The job never sets `id_printed`; `POST /api/v1/sheets/{code}/back-side/confirm` does.
+         * @description Queues the job that prints the code strip on the back of the sheet: "Print again" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` or `manual` sheet switches to `back_side` in the same call. A sheet whose code is printed elsewhere (`margin`, `manual`, `cell`) keeps its placement and gets an extra code on the back: `back_side_state` becomes `pending`. The job never sets `id_printed` or confirms the extra code; `POST /api/v1/sheets/{code}/back-side/confirm` does.
          */
         post: operations["print_back_side_api_v1_sheets__code__back_side_post"];
         delete?: never;
@@ -1415,7 +1415,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm that the sheet code on the back is printed
-         * @description The person checked the code on the back (toner dry, QR not smeared). Only this marks the code of a `back_side` sheet as printed; a second confirmation changes nothing.
+         * @description The person checked the code on the back (toner dry, QR not smeared). Only this marks the code of a `back_side` sheet as printed, and an extra code on the back of another sheet as `confirmed` (`back_side_state`); a second confirmation changes nothing.
          */
         post: operations["confirm_back_side_api_v1_sheets__code__back_side_confirm_post"];
         delete?: never;
@@ -1506,6 +1506,26 @@ export interface paths {
          * @description Needs the `admin` scope (a `print` key gets 403 `insufficient_scope`): a discard cannot be undone and the code is never issued again. Marking and resolving cells stay with `print`.
          */
         post: operations["discard_sheet_api_v1_sheets__code__discard_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/margin-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print the margin code of a sheet again
+         * @description Queues a page that prints only the sheet code in the margin of a `margin` sheet whose code is printed: no cell is reserved and no label is printed. The band is chosen again for this printer and tray. `id_printed` stays as it is.
+         */
+        post: operations["print_margin_id_api_v1_sheets__code__margin_id_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3845,9 +3865,14 @@ export interface components {
         SheetCreated: {
             /**
              * Back Side Missing
-             * @description An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).
+             * @description An active sheet whose wanted code on the back of the liner is not confirmed yet: `id_placement` `back_side` with `id_printed` false, or an extra code on the back that is `pending` (`back_side_state`). A sheet that never asked for a code on the back misses nothing.
              */
             back_side_missing: boolean;
+            /**
+             * Back Side State
+             * @description An extra code on the back of a sheet whose code is printed elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
+             */
+            back_side_state: ("pending" | "confirmed") | null;
             /**
              * Cells
              * @description Every cell that is not free, by cell number.
@@ -4027,9 +4052,14 @@ export interface components {
         SheetRead: {
             /**
              * Back Side Missing
-             * @description An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).
+             * @description An active sheet whose wanted code on the back of the liner is not confirmed yet: `id_placement` `back_side` with `id_printed` false, or an extra code on the back that is `pending` (`back_side_state`). A sheet that never asked for a code on the back misses nothing.
              */
             back_side_missing: boolean;
+            /**
+             * Back Side State
+             * @description An extra code on the back of a sheet whose code is printed elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
+             */
+            back_side_state: ("pending" | "confirmed") | null;
             /**
              * Cells
              * @description Every cell that is not free, by cell number.
@@ -4087,7 +4117,7 @@ export interface components {
         SheetSummary: {
             /**
              * Back Side Missing
-             * @description An active sheet whose code goes on the back of the liner and is not confirmed printed yet (`id_placement` `back_side`, `id_printed` false).
+             * @description An active sheet whose wanted code on the back of the liner is not confirmed yet: `id_placement` `back_side` with `id_printed` false, or an extra code on the back that is `pending` (`back_side_state`). A sheet that never asked for a code on the back misses nothing.
              */
             back_side_missing: boolean;
             /** Code */
@@ -8378,7 +8408,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description The sheet is discarded (`sheet_discarded`), its code does not go on the back (`id_placement_mismatch`: printed, a `cell` sheet, or its margin ID is in flight), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
+            /** @description The sheet is discarded (`sheet_discarded`), its code cannot go on the back (`id_placement_mismatch`: an unprinted `cell` sheet, or an unprinted margin sheet whose margin ID is in flight), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8428,7 +8458,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description The sheet is discarded (`sheet_discarded`) or its code does not go on the back (`id_placement_mismatch`). */
+            /** @description The sheet is discarded (`sheet_discarded`), or its code does not go on the back and no extra code on the back was printed (`id_placement_mismatch`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -8713,6 +8743,69 @@ export interface operations {
                 };
             };
             /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    print_margin_id_api_v1_sheets__code__margin_id_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetBackPrint"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobQueued"];
+                };
+            };
+            /** @description These credentials may not use the printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The sheet is discarded (`sheet_discarded`), it is not a printed `margin` sheet or its margin code is in flight (`id_placement_mismatch`), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request, an unknown tray (`tray_unknown`), or no margin band is deep enough on this printer (`margin_id_does_not_fit`). */
             422: {
                 headers: {
                     [name: string]: unknown;

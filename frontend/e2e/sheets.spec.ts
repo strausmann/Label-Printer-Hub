@@ -111,10 +111,59 @@ test.describe.serial("sheets", () => {
     await expect(steps).toHaveCount(0);
 
     await page.goto(`/sheets/${code}`);
-    await expect(page.getByText("The sheet code is on the back of the liner.")).toBeVisible();
+    await expect(page.getByTestId("sheet-code-state")).toHaveText("On the back of the liner · printed");
     // Leave the hub as it was found: the tray unset, the sheet retired.
     await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
     expect((await page.request.post(`/api/v1/sheets/${code}/discard`, { headers: KEY() })).ok()).toBe(true);
+  });
+
+  // 1.7.0 acceptance: a printed margin sheet gets an extra code on the back; "Back side missing" until confirmed.
+  test("a printed margin sheet gets a back side from the sheet code panel", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    // One label onto a new L4736 sheet: its page carries the margin code, so the code counts as printed.
+    const items = [{ content_type: "text_two_lines", data: { title: "E2E panel", primary_id: "P-1" } }];
+    const printed = await page.request.post("/api/v1/print/office-page/sheet", { data: { items, placements: [{ new_sheet: { type: TYPE_48 } }] }, headers: KEY() });
+    expect(printed.ok()).toBe(true);
+    const code = ((await printed.json()) as { pages: { sheet_code: string }[] }).pages[0]!.sheet_code;
+    await expect
+      .poll(async () => ((await (await page.request.get(`/api/v1/sheets/${code}`, { headers: KEY() })).json()) as { id_printed: boolean }).id_printed, { timeout: 20_000 })
+      .toBe(true);
+
+    await page.goto(`/sheets/${code}`);
+    const panel = page.getByRole("region", { name: "Sheet code" });
+    await expect(panel.getByTestId("sheet-code-state")).toHaveText("In the margin · printed");
+    await expect(panel.getByTestId("sheet-code-back")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Reprint margin code" })).toBeVisible();
+    await panel.getByRole("button", { name: "Print back side" }).click();
+
+    const steps = page.getByRole("dialog", { name: "Activate new sheet" });
+    await steps.getByRole("button", { name: "Print test page" }).click();
+    await steps.getByRole("radiogroup", { name: "Is the print on the side with the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("radiogroup", { name: "Is “TOP” next to the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("button", { name: "Save for this tray" }).click();
+    await steps.getByRole("button", { name: "Print sheet code" }).click();
+    await expect(steps.getByRole("heading", { name: "Did it print?" })).toBeVisible({ timeout: 20_000 });
+    // Left without confirming: the back side stays missing.
+    await page.goto(`/sheets/${code}`);
+    await expect(panel.getByTestId("sheet-code-state")).toHaveText("In the margin · printed");
+    await expect(panel.getByTestId("sheet-code-back")).toContainText("missing");
+
+    await page.goto("/sheets?back_missing=true");
+    await expect(page.getByRole("link", { name: code })).toBeVisible();
+
+    await page.goto(`/sheets/${code}`);
+    await panel.getByRole("button", { name: "Yes, the back side is printed" }).click();
+    await expect(panel.getByTestId("sheet-code-back")).toContainText("confirmed");
+    await page.goto("/sheets?back_missing=true");
+    await expect(page.getByRole("heading", { level: 1, name: "Sheets" })).toBeVisible();
+    await expect(page.getByRole("link", { name: code })).toHaveCount(0);
+
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    await expect
+      .poll(async () => (await page.request.post(`/api/v1/sheets/${code}/discard`, { headers: KEY() })).status(), { timeout: 20_000 })
+      .toBe(200);
   });
 
   test("a reserved cell is left out of a print", async () => {

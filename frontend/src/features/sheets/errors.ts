@@ -44,6 +44,10 @@ export function useSheetErrorText(): (error: unknown, fallback?: string) => stri
           return t`No cell is waiting for confirmation any more.`;
         case "cell_out_of_range":
           return t`A marked cell is outside the sheet.`;
+        case "id_placement_mismatch":
+          return t`The sheet code cannot be printed this way right now. The sheet shows the current state.`;
+        case "margin_id_does_not_fit":
+          return t`The sheet code does not fit the margin of this sheet on this printer.`;
         case "ipp_unreachable":
           return t`The printer could not be reached.`;
         case "ipp_rejected":

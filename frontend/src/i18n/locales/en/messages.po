@@ -691,9 +691,10 @@ msgstr "Add to cart"
 msgid "Add to print queue"
 msgstr "Add to print queue"
 
-#: src/features/sheets/SheetDetail.tsx
-msgid "added by hand"
-msgstr "added by hand"
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "sheet code placement"
+msgid "Added by hand"
+msgstr "Added by hand"
 
 #: src/features/integrations/IntegrationPage.tsx
 msgid "Added to the cart: {added}"
@@ -880,6 +881,10 @@ msgstr "Back side"
 msgid "Back side missing"
 msgstr "Back side missing"
 
+#: src/features/sheets/SheetCodePanel.tsx
+msgid "Back side:"
+msgstr "Back side:"
+
 #: src/features/jobs/JobDetail.tsx
 msgid "Back to the jobs"
 msgstr "Back to the jobs"
@@ -1020,6 +1025,7 @@ msgstr "Can't be read with the current secret key — enter it again"
 #: src/features/settings/PrinterForm.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/backSide/ActivateBackSide.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
 msgid "Cancel"
@@ -1312,6 +1318,11 @@ msgstr "Confirm the dimensions"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Confirm the reset"
 msgstr "Confirm the reset"
+
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "back side"
+msgid "confirmed"
+msgstr "confirmed"
 
 #: src/features/settings/Integrations.tsx
 msgid "Connect the apps that labels are made from. A secret belongs to the URL it was saved with: change the URL and you enter the secret again."
@@ -2128,9 +2139,10 @@ msgstr "Import with the new key"
 msgid "imported"
 msgstr "imported"
 
-#: src/features/sheets/SheetDetail.tsx
-msgid "in a cell"
-msgstr "in a cell"
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "sheet code placement"
+msgid "In a cell"
+msgstr "In a cell"
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "In a reserved cell"
@@ -2144,11 +2156,12 @@ msgstr "In Grocy's config.php"
 msgid "In the first free cell"
 msgstr "In the first free cell"
 
-#: src/features/sheets/SheetDetail.tsx
-msgid "in the margin"
-msgstr "in the margin"
-
 #: src/features/sheets/AddSheetDialog.tsx
+msgid "In the margin"
+msgstr "In the margin"
+
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "sheet code placement"
 msgid "In the margin"
 msgstr "In the margin"
 
@@ -2653,6 +2666,11 @@ msgstr "Menu"
 msgid "Message"
 msgstr "Message"
 
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "back side"
+msgid "missing"
+msgstr "missing"
+
 #: src/features/printers/PrinterDetail.tsx
 #: src/features/settings/PrinterForm.tsx
 msgid "Model"
@@ -2830,6 +2848,7 @@ msgid "No package matches the filter."
 msgstr "No package matches the filter."
 
 #: src/features/sheets/backSide/ActivateBackSide.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "No page printer is set up."
 msgstr "No page printer is set up."
 
@@ -2928,6 +2947,11 @@ msgstr "Not calibrated"
 msgid "Not configured"
 msgstr "Not configured"
 
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "sheet code"
+msgid "not confirmed"
+msgstr "not confirmed"
+
 #: src/features/jobs/PageJobInfo.tsx
 msgid "Not confirmed"
 msgstr "Not confirmed"
@@ -2953,7 +2977,7 @@ msgctxt "resolve an unconfirmed cell"
 msgid "Not printed"
 msgstr "Not printed"
 
-#: src/features/sheets/SheetDetail.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "not printed yet"
 msgstr "not printed yet"
 
@@ -3149,11 +3173,12 @@ msgstr "On"
 msgid "on {printerName}"
 msgstr "on {printerName}"
 
-#: src/features/sheets/SheetDetail.tsx
-msgid "on the back of the liner"
-msgstr "on the back of the liner"
-
 #: src/features/sheets/AddSheetDialog.tsx
+msgid "On the back of the liner"
+msgstr "On the back of the liner"
+
+#: src/features/sheets/SheetCodePanel.tsx
+msgctxt "sheet code placement"
 msgid "On the back of the liner"
 msgstr "On the back of the liner"
 
@@ -3449,7 +3474,7 @@ msgid "Print again"
 msgstr "Print again"
 
 #: src/features/sheets/print/PrintResult.tsx
-#: src/features/sheets/SheetDetail.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "Print back side"
 msgstr "Print back side"
 
@@ -3464,6 +3489,10 @@ msgstr "Print it onto a real sheet of labels (the sheet is used up). The page is
 #: src/features/jobs/RunControls.tsx
 msgid "Print labels {from} to {total} again"
 msgstr "Print labels {from} to {total} again"
+
+#: src/features/sheets/SheetCodePanel.tsx
+msgid "Print margin code"
+msgstr "Print margin code"
 
 #: src/features/lookup/ItemView.tsx
 msgid "Print now"
@@ -3530,7 +3559,7 @@ msgstr "Print with the new plan"
 msgid "Print without correction?"
 msgstr "Print without correction?"
 
-#: src/features/sheets/SheetDetail.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "printed"
 msgstr "printed"
 
@@ -3555,6 +3584,7 @@ msgstr "Printed, cell {n}"
 #: src/features/settings/GrocyLabelSettings.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/backSide/ActivateBackSide.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "Printer"
 msgstr "Printer"
 
@@ -3693,6 +3723,10 @@ msgstr "Purpose (optional)"
 #: src/features/sheets/backSide/TrayLoadingTest.tsx
 msgid "Put it into {trayLabel} and print the test page."
 msgstr "Put it into {trayLabel} and print the test page."
+
+#: src/features/sheets/SheetCodePanel.tsx
+msgid "Put the sheet back in the printer the way it went in the first time. Only the code in the margin is printed, no label."
+msgstr "Put the sheet back in the printer the way it went in the first time. Only the code in the margin is printed, no label."
 
 #: src/features/sheets/backSide/ActivateBackSide.tsx
 msgid "Put the sheet in the other way round"
@@ -3900,6 +3934,10 @@ msgstr "Report a problem with the dimensions"
 msgid "Reprint from label {choice}"
 msgstr "Reprint from label {choice}"
 
+#: src/features/sheets/SheetCodePanel.tsx
+msgid "Reprint margin code"
+msgstr "Reprint margin code"
+
 #: src/features/sheets/cellState.ts
 msgctxt "sheet cell state"
 msgid "reserved"
@@ -3941,7 +3979,7 @@ msgstr "Resolve as not printed"
 msgid "Resolve as printed"
 msgstr "Resolve as printed"
 
-#: src/features/sheets/SheetDetail.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "Resolve the unconfirmed cells first; the sheet code waits for them"
 msgstr "Resolve the unconfirmed cells first; the sheet code waits for them"
 
@@ -4281,7 +4319,7 @@ msgstr "Sheet archive"
 msgid "sheet code"
 msgstr "sheet code"
 
-#: src/features/sheets/SheetDetail.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "Sheet code"
 msgstr "Sheet code"
 
@@ -4314,10 +4352,6 @@ msgstr "Sheet code in the right margin"
 msgid "Sheet code in the top margin"
 msgstr "Sheet code in the top margin"
 
-#: src/features/sheets/SheetDetail.tsx
-msgid "Sheet code not printed yet"
-msgstr "Sheet code not printed yet"
-
 #: src/features/sheets/print/PrintResult.tsx
 #: src/features/sheets/print/SheetPreview.tsx
 msgid "Sheet code not printed, add it by hand"
@@ -4331,10 +4365,6 @@ msgstr "Sheet code on the back"
 #: src/features/jobs/model.ts
 msgid "Sheet code on the back · {code}"
 msgstr "Sheet code on the back · {code}"
-
-#: src/features/sheets/SheetDetail.tsx
-msgid "Sheet code on the back not confirmed"
-msgstr "Sheet code on the back not confirmed"
 
 #: src/features/jobs/model.ts
 #: src/features/jobs/PageJobInfo.tsx
@@ -5274,6 +5304,10 @@ msgstr "The loaded tape does not match this label."
 msgid "The log could not be loaded."
 msgstr "The log could not be loaded."
 
+#: src/features/sheets/SheetCodePanel.tsx
+msgid "The margin code could not be printed."
+msgstr "The margin code could not be printed."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The margin could not be checked on this printer."
 msgstr "The margin could not be checked on this printer."
@@ -5620,9 +5654,17 @@ msgstr "The server refused the file: it is larger than 64 KB."
 msgid "The settings could not be loaded."
 msgstr "The settings could not be loaded."
 
+#: src/features/sheets/errors.ts
+msgid "The sheet code cannot be printed this way right now. The sheet shows the current state."
+msgstr "The sheet code cannot be printed this way right now. The sheet shows the current state."
+
 #: src/features/sheets/backSide/ActivateBackSide.tsx
 msgid "The sheet code could not be printed."
 msgstr "The sheet code could not be printed."
+
+#: src/features/sheets/errors.ts
+msgid "The sheet code does not fit the margin of this sheet on this printer."
+msgstr "The sheet code does not fit the margin of this sheet on this printer."
 
 #: src/features/sheets/print/PrintResult.tsx
 msgid "The sheet code goes on the back of this sheet."
@@ -5635,10 +5677,6 @@ msgstr "The sheet code identifies a sheet when you scan it. Choose where the hub
 #: src/features/sheets/backSide/ActivateBackSide.tsx
 msgid "The sheet code is in the print queue."
 msgstr "The sheet code is in the print queue."
-
-#: src/features/sheets/SheetDetail.tsx
-msgid "The sheet code is on the back of the liner."
-msgstr "The sheet code is on the back of the liner."
 
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The sheet could not be added."
@@ -6085,6 +6123,7 @@ msgstr "Top-edge mark"
 #: src/features/sheets/AddSheetDialog.tsx
 #: src/features/sheets/backSide/ActivateBackSide.tsx
 #: src/features/sheets/print/SheetSection.tsx
+#: src/features/sheets/SheetCodePanel.tsx
 msgid "Tray"
 msgstr "Tray"
 
@@ -6433,6 +6472,10 @@ msgstr "Yes, it is printed"
 #: src/features/calibration/CalibrationPage.tsx
 msgid "Yes, reset"
 msgstr "Yes, reset"
+
+#: src/features/sheets/SheetCodePanel.tsx
+msgid "Yes, the back side is printed"
+msgstr "Yes, the back side is printed"
 
 #: src/features/printers/RollColourPrompt.tsx
 msgid "You can set the colour later on this page."

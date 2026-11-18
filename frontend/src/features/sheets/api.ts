@@ -222,6 +222,20 @@ export function useConfirmBackSide() {
   });
 }
 
+/** "Reprint margin code": queues a page with only the margin code of a printed margin sheet, and watches it. */
+export function usePrintMarginId() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, body }: { code: string; body: SheetBackPrint }) => post<PageJobQueued>(`/api/v1/sheets/${encode(code)}/margin-id`, body),
+    onSuccess: (queued, { body }) => void watchPrint({ kind: "sheet", printerId: body.printer, jobIds: [queued.job_id] }),
+    onSettled: (_d, _e, { code, body }) => {
+      void client.invalidateQueries({ queryKey: sheetKey(code) });
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+      void client.invalidateQueries({ queryKey: ["printers", body.printer, "queue"] });
+    },
+  });
+}
+
 const loadingPath = (printerId: string, tray: string) => `/api/v1/printers/${encode(printerId)}/trays/${encode(tray)}/loading`;
 
 /** Stores how a tray takes paper; the capabilities carry it from then on. */

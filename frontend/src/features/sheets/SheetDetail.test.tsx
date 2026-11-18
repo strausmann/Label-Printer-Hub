@@ -78,18 +78,18 @@ describe("the sheet detail page", () => {
     expect(screen.queryByRole("button", { name: /^Printed/ })).toBeNull();
   });
 
-  it("says 'Sheet code not printed yet' for a margin sheet whose ID is not printed, and not for a manual one", async () => {
+  it("says 'not printed yet' for a margin sheet whose ID is not printed, and not for a manual one", async () => {
     const { unmount } = await open(sheetRead(CODE, { used: [1] }, { id_placement: "margin", id_printed: false }));
-    expect(screen.getByText("Sheet code not printed yet")).toBeVisible();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("In the margin · not printed yet");
     expect(screen.queryByText(/Resolve the unconfirmed cells first/)).toBeNull();
     unmount();
     await open(sheetRead(CODE, { used: [1] }, { id_placement: "manual", id_printed: false }));
-    expect(screen.queryByText("Sheet code not printed yet")).toBeNull();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent(/^Added by hand$/);
   });
 
   it("adds that the ID waits for the unconfirmed cells when there are some", async () => {
     await open(sheetRead(CODE, { unconfirmed: [2, 3] }, { id_placement: "cell", id_printed: false }));
-    expect(screen.getByText("Sheet code not printed yet")).toBeVisible();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("In a cell · not printed yet");
     expect(screen.getByText("Resolve the unconfirmed cells first; the sheet code waits for them")).toBeVisible();
   });
 
@@ -561,7 +561,7 @@ describe("the code on the back (#350)", () => {
       "GET /api/v1/printers": [PAGE_PRINTER],
       [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: PAGE_CAPABILITIES,
     });
-    expect(screen.getByText("Sheet code on the back not confirmed")).toBeVisible();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("On the back of the liner · not confirmed");
     await userEvent.click(screen.getByRole("button", { name: "Print back side" }));
     const dialog = await screen.findByRole("dialog", { name: "Activate new sheet" });
     expect(await within(dialog).findByRole("listitem", { current: "step" })).toHaveTextContent("Turn over");
@@ -588,18 +588,20 @@ describe("the code on the back (#350)", () => {
 
   it("a margin type, or a printed margin sheet, does not offer it", async () => {
     await open(margin(false), typeOf("margin"));
-    await screen.findByText("Sheet code not printed yet");
+    await screen.findByTestId("sheet-code-state");
     await waitFor(() => expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull());
   });
 
-  it("a printed margin sheet does not offer it", async () => {
-    await open(margin(true), typeOf("back_side"));
-    expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull();
+  it("a printed margin sheet offers an extra back side without switching (1.7.0)", async () => {
+    await open(margin(true), typeOf("margin"));
+    expect(screen.getByRole("button", { name: "Print back side" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reprint margin code" })).toBeVisible();
   });
 
   it("a confirmed back side says where the code is", async () => {
     await open(back(true));
-    expect(screen.getByText("The sheet code is on the back of the liner.")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("On the back of the liner · printed");
+    expect(screen.getByTestId("sheet-code-back")).toHaveTextContent(/Back side:\s*confirmed/);
+    expect(screen.getByRole("button", { name: "Print back side" })).toBeVisible();
   });
 });

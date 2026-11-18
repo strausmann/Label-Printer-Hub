@@ -337,6 +337,7 @@ export function sheetRead(
     note: null,
     cells: rows,
     back_side_missing: false,
+    back_side_state: null,
     ...over,
   };
 }

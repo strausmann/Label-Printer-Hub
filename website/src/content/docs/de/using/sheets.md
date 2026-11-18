@@ -39,6 +39,11 @@ Ein neuer Bogentyp wählt automatisch: den Rand, wenn auf dem Drucker ein Rand v
 
 Ein Bogen, den du im Druckdialog anfängst oder den ein Grocy-Etikett öffnet, folgt seinem Typ genauso. Ein Bogen mit dem Code im Rand oder von Hand angelegt, dessen Code nie gedruckt wurde, etwa ein 3490-Bogen von vor 1.7.0, kann auf die Rückseite wechseln, wenn sein Typ den Code dorthin legt: Öffne ihn und wähle **Rückseite drucken**.
 
+**Das Feld Bogencode.** Die Seite jedes Bogens hat neben dem Raster ein Feld **Bogencode**. Es nennt, wo der Code ist (in einer Zelle, im Rand, von Hand aufgebracht, auf der Rückseite des Trägerpapiers) und ob er gedruckt ist. Hat ein Bogen einen Code auf der Rückseite oder ist einer gewünscht, zeigt das Feld **Rückseite: fehlt**. Nach deiner Bestätigung steht dort **Rückseite: bestätigt**. Ein Bogen, der nie einen Code auf der Rückseite wollte, hat diese Zeile nicht und gilt nicht als **Rückseite fehlt**. Mit einem Schlüssel, der drucken darf, siehst du die Knöpfe:
+
+- **Randcode erneut drucken** druckt den Code noch einmal in den Rand eines Bogens mit Randcode, etwa wenn der erste verschmiert oder abgeschnitten ist. Leg den Bogen so ein, wie er beim ersten Mal hineinging, und wähle Drucker und Fach. Gedruckt wird nur der Code: Keine Zelle wird belegt, kein Etikett gedruckt. Ist noch ein Randcode auf dem Weg zum Drucker, wird ein zweiter abgelehnt.
+- **Rückseite drucken** geht auch bei einem Bogen, dessen Code schon in einer Zelle, im Rand oder von Hand aufgebracht ist. Der Code bleibt, wo er ist, und kommt zusätzlich auf die Rückseite. Bis du mit **Ja, die Rückseite ist gedruckt** bestätigst, markiert die Liste den Bogen mit **Rückseite fehlt**.
+
 ## Auf einen Bogen drucken
 
 Wähle **Auf einen Bogen drucken**, nimm den Bogen (oder scanne seinen Code) und die Felder. Die Vorschau zeigt, wohin jedes Etikett kommt. Passt nicht alles drauf, bleibt der Rest für den nächsten Bogen im [Warenkorb](/de/using/cart/), oder die Vorschau plant ihn auf dem nächsten.

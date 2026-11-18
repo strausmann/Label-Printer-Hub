@@ -39,6 +39,11 @@ A new sheet type chooses automatically: the margin when a band of 4 mm fits on t
 
 A sheet that you start from the print dialog, or that a Grocy label opens, follows its type in the same way. A sheet in the margin or added by hand whose code was never printed, such as a 3490 sheet from before 1.7.0, can switch to the back side when its type puts the code there: open it and choose **Print back side**.
 
+**The Sheet code panel.** The page of every sheet has a panel **Sheet code** next to the grid. It names where the code is (in a cell, in the margin, added by hand, on the back of the liner) and whether it is printed. When a sheet has a code on the back, or one is asked for, the panel adds **Back side: missing** until you confirm it, then **Back side: confirmed**. A sheet that never asked for a code on the back has no such line and is not marked **Back side missing**. A key that may print sees the buttons:
+
+- **Reprint margin code** prints the code into the margin of a margin sheet again, for example when the first one smeared or was cut off. Put the sheet back the way it went in the first time and choose the printer and tray. Only the code is printed: no cell is used and no label is printed. While a margin code is still on its way to the printer, a second one is refused.
+- **Print back side** also works on a sheet whose code is already printed in a cell, in the margin or by hand. The sheet keeps its code where it is and gets the same code on the back as well. Until you confirm it with **Yes, the back side is printed**, the list marks the sheet **Back side missing**.
+
 ## Printing onto a sheet
 
 Choose **Print onto a sheet**, pick the sheet (or scan its code) and the cells. The preview shows where every label goes. When not everything fits, the rest stays in the [cart](/using/cart/) for the next sheet, or the preview plans it on the next one.
