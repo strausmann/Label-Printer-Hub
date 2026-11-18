@@ -39,6 +39,7 @@ from app.schemas.capabilities import (
     TrayCapability,
     TrayLoadingRead,
 )
+from app.schemas.printer import PrintConfirmationRead
 from app.schemas.tape_geometry import TAPE_GEOMETRY
 from app.services import tray_loading_service
 from app.services.printer_runtime import PrinterRuntime
@@ -147,6 +148,7 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
         kind="tape",
         resolution_dpi=TapeResolution(x=dpi_x, y=dpi_y),
         media=media,
+        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
         trays=None,
         document_formats=None,
         captured_at=captured,

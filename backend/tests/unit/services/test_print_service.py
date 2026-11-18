@@ -692,6 +692,14 @@ class TestTestLabel:
         assert job.payload["label_data"]["title"] == f"{mm} mm · 2026-11-17 14:03"
         assert backend.preflight_check.await_count == 1
 
+    async def test_the_test_label_asks_the_backend_to_detect_the_confirmation(
+        self, make_service
+    ) -> None:
+        """#393: the test print decides how the printer confirms a print."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=24)
+        await svc.submit_test_label(_test_text, lambda width: band_of("ptouch", "PT-E550W", width))
+        assert queue.submit_with_id.await_args.kwargs["detect_confirmation"] is True
+
     async def test_test_label_payload_names_no_connection(self, make_service) -> None:
         svc, _queue, store, _backend = make_service(loaded_tape_mm=24)
         await svc.submit_test_label(_test_text, lambda width: band_of("ptouch", "PT-E550W", width))

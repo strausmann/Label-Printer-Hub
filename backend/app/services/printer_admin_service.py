@@ -402,6 +402,12 @@ def _apply_update_patch(
     return changes
 
 
+def _address(connection: Mapping[str, Any] | None) -> tuple[object, object]:
+    """Host and port of a tape printer's connection."""
+    conn = connection or {}
+    return conn.get("host"), conn.get("port", 9100)
+
+
 def _layout_json(defaults: Mapping[int, LayoutDefault]) -> dict[str, Any]:
     """``{62: LayoutDefault}`` as the JSON column stores it: ``{"62": {...}}``."""
     return {str(width): d.model_dump(mode="json") for width, d in sorted(defaults.items())}
@@ -628,6 +634,11 @@ class PrinterAdminService:
             changes.pop("cut_defaults_half_cut", None)  # does not apply to page printers
             changes.pop("layout_defaults", None)  # nor do tape layouts (#258)
             changes.update(await self._ipp_update_checks(printer, patch, stored_trays))
+        elif "connection" in changes and _address(changes["connection"]) != _address(
+            printer.connection
+        ):
+            # #393: another address may be another printer; its next test print decides again.
+            changes["print_confirmation"] = None
 
         for key, value in changes.items():
             setattr(printer, key, value)

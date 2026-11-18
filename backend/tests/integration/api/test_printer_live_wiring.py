@@ -581,3 +581,62 @@ async def test_admin_response_reports_the_row_when_the_wiring_fails(live: Live) 
     async with _factory()() as s:
         rows = (await s.execute(select(Printer.slug))).scalars().all()
     assert list(rows) == ["office-laser"]
+
+
+async def test_a_tape_printers_print_confirmation_is_stored_and_shown(live: Live) -> None:
+    """#393: what a test print found is written to the printer row, read back by a new wiring,
+    shown on the printer and its capabilities, and cleared when the address changes."""
+    from datetime import UTC, datetime
+
+    from app.printer_backends.tape_confirmation import ConfirmationRecord
+    from app.printer_models.ql import QL820NWBDriver
+    from app.printer_models.registry import ModelRegistry
+
+    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
+    body = {
+        "name": "Shelf QL",
+        "slug": "shelf-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.12", "port": 9100},
+    }
+    resolve = patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    )
+    with resolve:
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+        pid = UUID(resp.json()["id"])
+        detail = await live.client.get(f"/api/v1/printers/{pid}")
+        assert detail.json()["print_confirmation"] is None
+
+        # The sink a tape backend's test print calls (the hub's test backend is the mock,
+        # which has none; ``test_tape_ipp_transport`` covers the call itself).
+        record = ConfirmationRecord("ipp", True, datetime(2026, 11, 18, 9, 0, tzinfo=UTC))
+        await live.runtime._store_confirmation(pid, record)
+
+        detail = await live.client.get(f"/api/v1/printers/{pid}")
+        shown = detail.json()["print_confirmation"]
+        assert shown["channel"] == "ipp"
+        assert shown["confirm_transport"] == "ipp" and shown["label_counter"] is True
+        caps = await live.client.get(f"/api/v1/printers/{pid}/capabilities")
+        assert caps.json()["print_confirmation"]["channel"] == "ipp"
+        async with _factory()() as session:
+            row = await session.get(Printer, pid)
+        assert row is not None
+        assert ConfirmationRecord.from_json(row.print_confirmation) == record
+
+        moved = await live.client.put(
+            f"{ADMIN}/shelf-ql",
+            json={
+                "connection": {
+                    "host": "192.0.2.13",
+                    "port": 9100,
+                    "snmp": {"discover": False, "community": "public"},
+                }
+            },
+        )
+        assert moved.status_code == 200, moved.text
+    detail = await live.client.get(f"/api/v1/printers/{pid}")
+    assert detail.json()["print_confirmation"] is None

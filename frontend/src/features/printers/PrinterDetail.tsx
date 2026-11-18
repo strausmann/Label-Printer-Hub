@@ -22,6 +22,7 @@ import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeW
 import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
+import { printConfirmationText } from "./printConfirmation";
 import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
 import { unsupportedRoll } from "./roll";
 import { TapeSwatch } from "./TapeSwatch";
@@ -193,6 +194,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                 <>
                   <Row label={t`Host`} value={textOf(connection.host)} mono />
                   <Row label={t`Port`} value={textOf(connection.port)} mono />
+                  <Row label={t`Print confirmation`} value={printConfirmationText(printer.print_confirmation, i18n._.bind(i18n))} />
                 </>
               )}
               {admin && printer.hardware_id && <Row label={identityKind(printer.hardware_id_kind)} value={printer.hardware_id} mono />}

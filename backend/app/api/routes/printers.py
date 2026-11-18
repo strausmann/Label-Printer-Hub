@@ -59,6 +59,7 @@ from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer import (
     CalibrationPrintRead,
     MarkerRead,
+    PrintConfirmationRead,
     PrinterRead,
     PrinterStatus,
     ReasonRead,
@@ -233,6 +234,7 @@ async def list_printers(
                 created_at=p.created_at,
                 updated_at=p.updated_at,
                 layout_defaults=_layout_defaults_view(p),
+                print_confirmation=PrintConfirmationRead.from_stored(p.print_confirmation),
                 **_identity_fields(identities.get(p.id)),
             )
         )
@@ -278,6 +280,7 @@ async def get_printer(
         created_at=printer.created_at,
         updated_at=printer.updated_at,
         layout_defaults=_layout_defaults_view(printer),
+        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
         **await _identity_view(session, printer_id, _auth),
     )
 

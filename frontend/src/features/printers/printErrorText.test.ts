@@ -20,6 +20,8 @@ describe("printErrorText", () => {
     ["printer_cover_open", null, "The printer cover is open. Close it and try again."],
     ["no_tape_loaded", null, "No tape is loaded. Put in a tape and try again."],
     ["tape_empty", null, "The tape is empty. Put in a new tape and try again."],
+    ["labels_not_confirmed", { printed: 3, expected: 5 }, "The printer confirmed 3 of 5 labels. Reprint the rest."],
+    ["labels_not_confirmed", null, "The printer did not confirm every label. Reprint the rest."],
     ["tape_mismatch", { expected_mm: 12, loaded_mm: 24 }, "The loaded tape (24 mm) does not match this label (12 mm)."],
     ["tape_mismatch", { expected_mm: 12, loaded_mm: null }, "The loaded tape does not match this label."],
     ["media_type_mismatch", { loaded_kind: "die_cut", media_raw: "29mm x 90mm" }, "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."],

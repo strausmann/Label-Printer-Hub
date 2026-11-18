@@ -58,6 +58,14 @@ export function printErrorText(code: string | null | undefined, detail: Record<s
       const words = flags.map((f) => flagText(f, t).headline).join(" · ");
       return t(msg`The printer reports: ${words}. Fix it on the printer and try again.`);
     }
+    case "labels_not_confirmed": {
+      // #393: the printer confirmed fewer labels than were sent.
+      const printed = Number(detail?.printed);
+      const expected = Number(detail?.expected);
+      return Number.isFinite(printed) && Number.isFinite(expected)
+        ? t(msg`The printer confirmed ${printed} of ${expected} labels. Reprint the rest.`)
+        : t(msg`The printer did not confirm every label. Reprint the rest.`);
+    }
     case "media_type_mismatch":
       return t(msg`The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll.`);
     case "content_type_data_mismatch":

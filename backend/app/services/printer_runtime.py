@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import hashlib
 import json
 import logging
@@ -55,6 +56,7 @@ from app.models.printer_tray import PrinterTray
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
+from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printer_identity as identity_repo
 from app.schemas.label_layout import parse_layout_defaults
@@ -475,6 +477,7 @@ class PrinterRuntime:
             self._router.register(cfg)
             registered = True
             backend = self._router.get(cfg.slug)
+            self._wire_confirmation(backend, printer)
             driver: Any = driver_cls(backend=backend)
             queue_printer = driver.make_queue_printer(self._tape_registry, printer_id=printer.id)
             service = PrintService(
@@ -695,6 +698,31 @@ class PrinterRuntime:
             else:
                 del self._lock_users[printer_id]
                 self._locks.pop(printer_id, None)
+
+    def _wire_confirmation(self, backend: object, printer: Printer) -> None:
+        """#393: the backend sends the way the printer's last test print found to work, and a
+        new test print stores what it finds on the printer row."""
+        state = getattr(backend, "send_state", None)
+        if not isinstance(state, TapeSendState):
+            return
+        state.record = ConfirmationRecord.from_json(printer.print_confirmation)
+        state.sink = functools.partial(self._store_confirmation, printer.id)
+
+    async def _store_confirmation(self, printer_id: UUID, record: ConfirmationRecord) -> None:
+        """Write *record* to the printer row (#393). A gone row is left alone."""
+        async with self._sessions()() as session:
+            row = await session.get(Printer, printer_id)
+            if row is None:
+                return
+            row.print_confirmation = record.to_json()
+            session.add(row)
+            await session.commit()
+        _log.info(
+            "Printer %s: print confirmation %s (label counter %s)",
+            printer_id,
+            record.confirm_transport,
+            record.label_counter,
+        )
 
     async def _identity_sink(self, printer_id: UUID, observed: ObservedIdentity) -> IdentityOutcome:
         """The sink both status producers call after a successful probe (#231).

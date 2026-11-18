@@ -18,6 +18,8 @@ Jeder Druck, ob aus der Weboberfläche, einem Plugin, einem Webhook oder der API
 | Wartende abbrechen | Bricht alle wartenden Aufträge eines Druckers auf einmal ab |
 | Wiederholen | Reiht einen fehlgeschlagenen Auftrag erneut ein |
 
+Ein Bandauftrag ist erst **fertig**, wenn der Drucker ihn bestätigt hat: Entweder meldet der Drucker den Auftragsstatus über IPP, oder sein Etikettenzähler ist um die gesendeten Etiketten gestiegen. Der Testdruck auf der Druckerseite findet heraus, was dein Drucker kann, und zeigt es unter **Druckbestätigung**. Bestätigt der Drucker weniger Etiketten, als gesendet wurden, schlägt der Auftrag mit „Der Drucker hat x von y Etiketten bestätigt“ fehl: Die bestätigten Etiketten sind fertig, und Wiederholen oder **Neu drucken** druckt nur den Rest. Ein Drucker, der beides nicht kann, behält die alte Regel: Ein gesendetes Etikett gilt als gedruckt.
+
 Abgeschlossene Aufträge (fertig, fehlgeschlagen, abgebrochen) werden nach `LABELYARD_JOB_RETENTION_DAYS` gelöscht, standardmäßig nach 30 Tagen.
 
 ## Lange Bandaufträge

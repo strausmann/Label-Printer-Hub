@@ -2062,6 +2062,8 @@ export interface components {
              * @description None while nothing is known (page printer that never answered), when no tape is loaded, or when the loaded tape width has no geometry entry (tape).
              */
             media: components["schemas"]["TapeMedia"] | components["schemas"]["PageMedia"] | null;
+            /** @description Tape printers only: Tape printers (#393): how the printer confirms a print, found by its last test print; null when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends) */
+            print_confirmation?: components["schemas"]["PrintConfirmationRead"] | null;
             /** Resolution Dpi */
             resolution_dpi: components["schemas"]["TapeResolution"] | components["schemas"]["PageResolution"];
             /**
@@ -2960,6 +2962,34 @@ export interface components {
             type_key: string;
             /** Version */
             version: number;
+        };
+        /**
+         * PrintConfirmationRead
+         * @description How a tape printer confirms that a label printed (#393), found by its last test print.
+         */
+        PrintConfirmationRead: {
+            /**
+             * Channel
+             * @description ``ipp``: the printer reports the job state; ``label_counter``: its label counter is read before and after; ``none``: neither works, a sent label counts as printed
+             * @enum {string}
+             */
+            channel: "ipp" | "label_counter" | "none";
+            /**
+             * Confirm Transport
+             * @description ``ipp``: labels go out as an IPP job; ``raw``: over TCP port 9100
+             * @enum {string}
+             */
+            confirm_transport: "ipp" | "raw";
+            /**
+             * Confirmed At
+             * @description When the test print found it
+             */
+            confirmed_at: string;
+            /**
+             * Label Counter
+             * @description The label counter rose by exactly the labels sent
+             */
+            label_counter: boolean;
         };
         /**
          * PrintJobResponse
@@ -5033,6 +5063,8 @@ export interface components {
             pause?: components["schemas"]["PauseRead"] | null;
             /** Paused */
             paused: boolean;
+            /** @description Tape printers (#393): how the printer confirms a print, found by its last test print; null when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends) */
+            print_confirmation?: components["schemas"]["PrintConfirmationRead"] | null;
             /**
              * Slug
              * @default

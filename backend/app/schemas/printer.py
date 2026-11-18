@@ -16,6 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
+from app.printer_backends.tape_confirmation import ConfirmationRecord
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault
 from app.schemas.tape import TapeColourName
@@ -24,6 +25,45 @@ CONNECTION_READ_DOC = (
     "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and "
     "``community_set`` (true when a community is stored); the SNMP community itself is never "
     "returned (#296)."
+)
+
+
+class PrintConfirmationRead(BaseModel):
+    """How a tape printer confirms that a label printed (#393), found by its last test print."""
+
+    channel: Literal["ipp", "label_counter", "none"] = Field(
+        description=(
+            "``ipp``: the printer reports the job state; ``label_counter``: its label counter "
+            "is read before and after; ``none``: neither works, a sent label counts as printed"
+        )
+    )
+    confirm_transport: Literal["ipp", "raw"] = Field(
+        description="``ipp``: labels go out as an IPP job; ``raw``: over TCP port 9100"
+    )
+    label_counter: bool = Field(description="The label counter rose by exactly the labels sent")
+    confirmed_at: datetime = Field(description="When the test print found it")
+
+    @field_serializer("confirmed_at")
+    def _serialise_confirmed_at(self, dt: datetime, _info: object) -> str:
+        return serialize_datetime_utc(dt, _info)
+
+    @classmethod
+    def from_stored(cls, stored: object) -> PrintConfirmationRead | None:
+        """The read view of a stored record; ``None`` for none (never test-printed)."""
+        record = ConfirmationRecord.from_json(stored)
+        if record is None:
+            return None
+        return cls(
+            channel=record.channel,
+            confirm_transport=record.confirm_transport,
+            label_counter=record.label_counter,
+            confirmed_at=record.confirmed_at,
+        )
+
+
+PRINT_CONFIRMATION_DOC = (
+    "Tape printers (#393): how the printer confirms a print, found by its last test print; null "
+    "when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends)"
 )
 
 
@@ -85,6 +125,9 @@ class PrinterRead(BaseModel):
             "the print dialog preselects it. A missing width uses the tape default "
             "(62 mm across/compact, else along)"
         ),
+    )
+    print_confirmation: PrintConfirmationRead | None = Field(
+        default=None, description=PRINT_CONFIRMATION_DOC
     )
 
     @field_serializer("created_at", "updated_at")

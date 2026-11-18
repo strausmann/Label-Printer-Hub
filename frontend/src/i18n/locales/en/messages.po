@@ -2292,6 +2292,10 @@ msgstr "Keys of the extra fields in your Spoolman."
 msgid "Label"
 msgstr "Label"
 
+#: src/features/printers/printConfirmation.ts
+msgid "Label counter"
+msgstr "Label counter"
+
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Label fields"
 msgstr "Label fields"
@@ -2953,6 +2957,7 @@ msgid "not confirmed"
 msgstr "not confirmed"
 
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/printers/printConfirmation.ts
 msgid "Not confirmed"
 msgstr "Not confirmed"
 
@@ -3010,6 +3015,10 @@ msgstr "Not set"
 #: src/features/settings/Integrations.tsx
 msgid "Not set up"
 msgstr "Not set up"
+
+#: src/features/printers/printConfirmation.ts
+msgid "Not tested yet — a test print finds out"
+msgstr "Not tested yet — a test print finds out"
 
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -3479,6 +3488,10 @@ msgstr "Print again"
 msgid "Print back side"
 msgstr "Print back side"
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Print confirmation"
+msgstr "Print confirmation"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Print Grocy's labels"
 msgstr "Print Grocy's labels"
@@ -3621,6 +3634,10 @@ msgstr "Printer is stopped"
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer is stopped: {reasons}"
 msgstr "Printer is stopped: {reasons}"
+
+#: src/features/printers/printConfirmation.ts
+msgid "Printer reports the job state (IPP)"
+msgstr "Printer reports the job state (IPP)"
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
@@ -5443,6 +5460,10 @@ msgstr "The printer cannot be reached at that address."
 msgid "The printer chooses the tray itself."
 msgstr "The printer chooses the tray itself."
 
+#: src/features/printers/printErrorText.ts
+msgid "The printer confirmed {printed} of {expected} labels. Reprint the rest."
+msgstr "The printer confirmed {printed} of {expected} labels. Reprint the rest."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The printer could not be asked for its trays. Try again in a moment."
 msgstr "The printer could not be asked for its trays. Try again in a moment."
@@ -5482,6 +5503,10 @@ msgstr "The printer did not accept the ID label."
 #: src/features/jobs/jobErrorText.ts
 msgid "The printer did not answer its status request."
 msgstr "The printer did not answer its status request."
+
+#: src/features/printers/printErrorText.ts
+msgid "The printer did not confirm every label. Reprint the rest."
+msgstr "The printer did not confirm every label. Reprint the rest."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "The printer did not say whether these labels came out. Look at the sheet and settle each cell."

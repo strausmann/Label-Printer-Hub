@@ -45,6 +45,13 @@ class Printer(SQLModel, table=True):
         description="Stored label layout per tape width (#258): "
         '{"62": {"orientation": "across", "preset": "compact"}}; empty = tape default.',
     )
+    print_confirmation: dict[str, Any] | None = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="How a tape printer confirms its prints (#393), found by its last test "
+        'print: {"confirm_transport": "ipp"|"raw", "label_counter": bool, "confirmed_at": iso}. '
+        "NULL: never test-printed since 1.7.0; the hub then probes IPP at runtime.",
+    )
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), nullable=False),

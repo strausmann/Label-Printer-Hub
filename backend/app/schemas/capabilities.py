@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.calibration.model import CalibrationRead
+from app.schemas.printer import PRINT_CONFIRMATION_DOC, PrintConfirmationRead
 
 
 class TapeResolution(BaseModel):
@@ -96,6 +97,10 @@ class Capabilities(BaseModel):
             "When the values were read. A page printer that went offline keeps the time of "
             "its last successful reading."
         )
+    )
+    print_confirmation: PrintConfirmationRead | None = Field(
+        default=None,
+        description="Tape printers only: " + PRINT_CONFIRMATION_DOC,
     )
     stale: bool = Field(
         default=False,

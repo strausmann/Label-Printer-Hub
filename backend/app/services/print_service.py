@@ -231,6 +231,7 @@ class PrintService:
             template_key="test_label",
             api_key_id=api_key_id,
             source_ip=source_ip,
+            detect_confirmation=True,
         )
 
     async def _loaded_tape_mm(self) -> tuple[int, dict[str, Any]]:
@@ -282,8 +283,13 @@ class PrintService:
         template_key: str | None,
         api_key_id: UUID | None,
         source_ip: str | None,
+        detect_confirmation: bool = False,
     ) -> UUID:
-        """Persist the job, then hand its image to the queue."""
+        """Persist the job, then hand its image to the queue.
+
+        *detect_confirmation* (#393, the test print): the backend finds out how the printer
+        confirms a print and stores it with the printer.
+        """
         job_id = uuid4()
         job = Job(
             id=job_id,
@@ -305,6 +311,7 @@ class PrintService:
             last_page=options.last_page,
             # The QL backend rotates on this flag only (#258); PT adapters ignore it.
             orientation=str(orientation),
+            **({"detect_confirmation": True} if detect_confirmation else {}),
         )
         return job_id
 

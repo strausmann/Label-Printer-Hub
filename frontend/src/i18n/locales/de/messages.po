@@ -2292,6 +2292,10 @@ msgstr "Schlüssel der Zusatzfelder in deinem Spoolman."
 msgid "Label"
 msgstr "Etikett"
 
+#: src/features/printers/printConfirmation.ts
+msgid "Label counter"
+msgstr "Etikettenzähler"
+
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Label fields"
 msgstr "Etikettenfelder"
@@ -2953,6 +2957,7 @@ msgid "not confirmed"
 msgstr "nicht bestätigt"
 
 #: src/features/jobs/PageJobInfo.tsx
+#: src/features/printers/printConfirmation.ts
 msgid "Not confirmed"
 msgstr "Nicht bestätigt"
 
@@ -3010,6 +3015,10 @@ msgstr "Nicht gesetzt"
 #: src/features/settings/Integrations.tsx
 msgid "Not set up"
 msgstr "Nicht eingerichtet"
+
+#: src/features/printers/printConfirmation.ts
+msgid "Not tested yet — a test print finds out"
+msgstr "Noch nicht getestet – ein Testdruck findet es heraus"
 
 #: src/features/sheets/SheetDetail.tsx
 #: src/features/sheets/SheetsPage.tsx
@@ -3479,6 +3488,10 @@ msgstr "Noch einmal drucken"
 msgid "Print back side"
 msgstr "Rückseite drucken"
 
+#: src/features/printers/PrinterDetail.tsx
+msgid "Print confirmation"
+msgstr "Druckbestätigung"
+
 #: src/features/settings/GrocyLabelSettings.tsx
 msgid "Print Grocy's labels"
 msgstr "Grocys Etiketten drucken"
@@ -3621,6 +3634,10 @@ msgstr "Drucker ist angehalten"
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer is stopped: {reasons}"
 msgstr "Drucker ist angehalten: {reasons}"
+
+#: src/features/printers/printConfirmation.ts
+msgid "Printer reports the job state (IPP)"
+msgstr "Drucker meldet den Auftragsstatus (IPP)"
 
 #: src/features/printers/TestPrintButton.tsx
 msgid "Printer status unknown"
@@ -5443,6 +5460,10 @@ msgstr "Der Drucker ist unter dieser Adresse nicht erreichbar."
 msgid "The printer chooses the tray itself."
 msgstr "Der Drucker wählt das Fach selbst."
 
+#: src/features/printers/printErrorText.ts
+msgid "The printer confirmed {printed} of {expected} labels. Reprint the rest."
+msgstr "Der Drucker hat {printed} von {expected} Etiketten bestätigt. Druck den Rest neu."
+
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "The printer could not be asked for its trays. Try again in a moment."
 msgstr "Die Fächer des Druckers konnten nicht abgefragt werden. Versuche es gleich noch einmal."
@@ -5482,6 +5503,10 @@ msgstr "Der Drucker hat das ID-Etikett nicht angenommen."
 #: src/features/jobs/jobErrorText.ts
 msgid "The printer did not answer its status request."
 msgstr "Der Drucker hat die Statusabfrage nicht beantwortet."
+
+#: src/features/printers/printErrorText.ts
+msgid "The printer did not confirm every label. Reprint the rest."
+msgstr "Der Drucker hat nicht jedes Etikett bestätigt. Druck den Rest neu."
 
 #: src/features/jobs/PageJobInfo.tsx
 msgid "The printer did not say whether these labels came out. Look at the sheet and settle each cell."

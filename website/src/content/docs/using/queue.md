@@ -18,6 +18,8 @@ Every print, from the web UI, a plugin, a webhook or the API, becomes a **job** 
 | Cancel queued | Cancels every waiting job of a printer at once |
 | Retry | Queues a failed job again |
 
+A tape job is **done** only when the printer confirmed it: either the printer reports the job state over IPP, or its label counter rose by the labels sent. The test print on the printer page finds out which of the two your printer offers and shows it under **Print confirmation**. When the printer confirms fewer labels than were sent, the job fails with "The printer confirmed x of y labels": the confirmed labels are done, and a retry or **Reprint** prints only the rest. A printer that offers neither keeps the old rule: a label that was sent counts as printed.
+
 Finished jobs (done, failed, cancelled) are deleted after `LABELYARD_JOB_RETENTION_DAYS`, 30 days by default.
 
 ## Long tape jobs
