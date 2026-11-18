@@ -20,7 +20,6 @@ import {
   Popover,
   Select,
   SelectValue,
-  Switch,
   Text,
   TextField,
 } from "react-aria-components";
@@ -102,7 +101,13 @@ export function TextInput({
   );
 }
 
-/** A switch with its label on the right; the track is the only decoration. */
+/**
+ * A switch with its label on the right; the track is the only decoration.
+ *
+ * A native checkbox (role "switch") inside a label, not React Aria's `Switch`: that one toggles in its press handler,
+ * which ignores a touch it takes for virtual (no Android user agent and a zero-sized contact area, as Chrome's
+ * "Desktop site" mode on a tablet sends). The browser's own label activation handles every input source.
+ */
 export function SwitchField({
   label,
   isSelected,
@@ -118,20 +123,23 @@ export function SwitchField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <Switch
-        isSelected={isSelected}
-        onChange={onChange}
-        isDisabled={isDisabled}
-        className={`group flex min-h-11 items-center gap-3 data-[disabled]:opacity-60 ${FOCUS} rounded-r2`}
-      >
+      <label className="group relative flex min-h-11 items-center gap-3 has-[:disabled]:opacity-60">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={isSelected}
+          disabled={isDisabled}
+          onChange={(event) => onChange?.(event.target.checked)}
+          className="peer sr-only"
+        />
         <span
           aria-hidden="true"
-          className="flex h-6 w-11 shrink-0 items-center rounded-full bg-line-strong px-0.5 transition-colors duration-150 group-data-[selected]:bg-accent"
+          className="flex h-6 w-11 shrink-0 items-center rounded-full bg-line-strong px-0.5 transition-colors duration-150 peer-checked:bg-accent peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-link"
         >
-          <span className="size-5 rounded-full bg-surface transition-transform duration-150 ease-out group-data-[selected]:translate-x-5" />
+          <span className="size-5 rounded-full bg-surface transition-transform duration-150 ease-out group-has-[:checked]:translate-x-5" />
         </span>
         <span className="font-bold text-ink">{label}</span>
-      </Switch>
+      </label>
       {description ? <p className={`${HINT} pl-14`}>{description}</p> : null}
     </div>
   );
