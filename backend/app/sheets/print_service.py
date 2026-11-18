@@ -111,6 +111,7 @@ from app.sheets.errors import (
     ItemLookupFailedError,
     MarginIdDoesNotFitError,
     MediaKindMismatchError,
+    PageJobNotRetryableError,
     PreviewTooLargeError,
     PrinterUnavailableError,
     PrintInterruptedError,
@@ -2061,12 +2062,12 @@ async def print_sheet_back(
 ) -> UUID:
     """Queue the code on the back of an existing sheet ("Print again", "Print back side").
 
-    A ``back_side`` sheet prints as it is; an unprinted ``margin`` or ``manual`` sheet (a 3490
-    from 1.6) switches to ``back_side`` in the same call, recorded as a sheet event (R-350-11).
-    A sheet whose code is printed elsewhere keeps its placement and gets an extra code on the
-    back: ``back_side_state`` is ``pending`` in the transaction before the job is queued, and put
-    back if the job cannot be queued. The strip, the date and the turn are read again: a second
-    job prints the same.
+    A ``back_side`` sheet prints as it is; an unprinted ``margin`` sheet (a 3490 from 1.6)
+    switches to ``back_side`` in the same call, recorded as a sheet event (R-350-11). A
+    ``manual`` sheet and a sheet whose code is printed keep their placement and get an extra
+    code on the back: ``back_side_state`` is ``pending`` in the transaction before the job is
+    queued, and put back if the job cannot be queued. The strip, the date and the turn are read
+    again: a second job prints the same.
     """
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
@@ -2375,6 +2376,13 @@ async def retry_sheet_page(
     detail = SheetPageDetail.model_validate(payload.detail)
     if detail.sheet_code is None:
         raise ValueError("the stored page names no sheet")
+    if not detail.cells and detail.id_cell is None and detail.margin_id is not None:
+        # A margin-code reprint (``print_margin_id``): the sheet page's "Reprint margin code"
+        # is its retry, with the in-flight guard and the band chosen again (review M3).
+        raise PageJobNotRetryableError(
+            "This page printed only the margin code; reprint it from the sheet page.",
+            detail={"reason": "margin_code_only", "sheet_code": detail.sheet_code},
+        )
     scan = scan_payload_builder(str(get_settings().public_url))
     language = settings_store.get("general.language")
     new_id = uuid4()

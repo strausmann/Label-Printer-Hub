@@ -12,13 +12,26 @@ import { ActivateBackSide } from "./ActivateBackSide";
  * "Print back side" for a sheet that exists (#350): the sheet page, and the print result of a sheet the
  * print dialog started. Reads the sheet and its type for the strip, then runs the activation steps.
  */
-export function BackSideDialog({ code, isOpen, onClose, printerId }: { code: string; isOpen: boolean; onClose: () => void; printerId?: string }) {
+export function BackSideDialog({
+  code,
+  isOpen,
+  onClose,
+  printerId,
+  title,
+}: {
+  code: string;
+  isOpen: boolean;
+  onClose: () => void;
+  printerId?: string;
+  /** The dialog's title; left out: "Activate new sheet" (the print result of a sheet the print dialog started). */
+  title?: string;
+}) {
   const { t } = useLingui();
   const sheet = useSheet(code);
   const type = useSheetType(sheet.data?.type_key ?? "", isOpen && !!sheet.data);
   const ready = sheet.data && type.data;
   return (
-    <ModalDialog title={t`Activate new sheet`} isOpen={isOpen} onClose={onClose} wide>
+    <ModalDialog title={title ?? t`Activate new sheet`} isOpen={isOpen} onClose={onClose} wide>
       {ready ? (
         <ActivateBackSide
           target={{ kind: "existing", code }}

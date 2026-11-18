@@ -229,6 +229,21 @@ async def active_job_payloads(
     )
 
 
+async def back_side_job_active(session: AsyncSession, sheet_id: UUID) -> bool:
+    """Whether a ``sheet_back_page`` job of the sheet is queued or printing."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Job)
+        .where(
+            literal_column(json_at("$.kind")) == "sheet_back_page",
+            _of_sheets([sheet_id]),
+            col(Job.state).in_((JobState.QUEUED.value, JobState.PRINTING.value)),
+        )
+        .execution_options(**_FRESH)
+    )
+    return int(result.scalar_one()) > 0
+
+
 async def unconfirmed_job_payloads(
     session: AsyncSession, sheet_ids: Sequence[UUID]
 ) -> list[dict[str, Any]]:

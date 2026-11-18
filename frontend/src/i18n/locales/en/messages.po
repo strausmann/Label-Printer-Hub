@@ -3243,6 +3243,7 @@ msgstr "Open {0} in {name}"
 msgid "Open {appName}"
 msgstr "Open {appName}"
 
+#: src/features/jobs/RetryError.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Open {code}"
 msgstr "Open {code}"
@@ -5917,6 +5918,10 @@ msgstr "This job cannot be retried: nothing is left to print."
 #: src/features/jobs/JobDetail.tsx
 msgid "This job does not exist."
 msgstr "This job does not exist."
+
+#: src/features/jobs/RetryError.tsx
+msgid "This job printed only the sheet code in the margin. Print it again with Reprint margin code on the sheet page."
+msgstr "This job printed only the sheet code in the margin. Print it again with Reprint margin code on the sheet page."
 
 #: src/shell/SignIn.tsx
 msgid "This key can only read. Sign in with a key that has print or admin scope."

@@ -563,7 +563,7 @@ describe("the code on the back (#350)", () => {
     });
     expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("On the back of the liner · not confirmed");
     await userEvent.click(screen.getByRole("button", { name: "Print back side" }));
-    const dialog = await screen.findByRole("dialog", { name: "Activate new sheet" });
+    const dialog = await screen.findByRole("dialog", { name: "Print back side" });
     expect(await within(dialog).findByRole("listitem", { current: "step" })).toHaveTextContent("Turn over");
     expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sheets")).toHaveLength(0);
   });

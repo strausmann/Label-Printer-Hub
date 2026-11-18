@@ -3243,6 +3243,7 @@ msgstr "{0} in {name} öffnen"
 msgid "Open {appName}"
 msgstr "{appName} öffnen"
 
+#: src/features/jobs/RetryError.tsx
 #: src/features/sheets/AddSheetDialog.tsx
 msgid "Open {code}"
 msgstr "{code} öffnen"
@@ -5917,6 +5918,10 @@ msgstr "Dieser Auftrag lässt sich nicht wiederholen: Es ist nichts mehr zu druc
 #: src/features/jobs/JobDetail.tsx
 msgid "This job does not exist."
 msgstr "Diesen Auftrag gibt es nicht."
+
+#: src/features/jobs/RetryError.tsx
+msgid "This job printed only the sheet code in the margin. Print it again with Reprint margin code on the sheet page."
+msgstr "Dieser Auftrag hat nur den Bogencode im Rand gedruckt. Auf der Seite des Bogens druckt ihn „Randcode erneut drucken“ noch einmal."
 
 #: src/shell/SignIn.tsx
 msgid "This key can only read. Sign in with a key that has print or admin scope."

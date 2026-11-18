@@ -652,7 +652,10 @@ async def find_cells(session: AsyncSession, *, source: str, ref: str) -> list[Ce
 
 # ---------------------------------------------------------------- the code on the back (#350)
 
-_SWITCHABLE = ("margin", "manual")
+_SWITCHABLE = ("margin",)
+"""Placements whose unprinted code moves to the back (R-350-11). A ``manual`` sheet is not one of
+them since 1.7.0 (fix round 1 of the sheet code panel): its code was stuck on by hand, so it
+counts as present and gets an extra code on the back instead."""
 _BACK_SIDE_STATES = ("pending", "confirmed")
 
 
@@ -691,10 +694,11 @@ async def confirm_back_side(
 class BackSideTarget:
     """The sheet a back-side job prints onto and what the request changed on it.
 
-    ``change``: ``switched`` (an unprinted margin or manual sheet now has its code on the back,
-    R-350-11), ``extra`` (a printed sheet gets its code on the back as well; ``back_side_state``
-    is ``pending``) or ``None`` (a ``back_side`` sheet, nothing changed). ``previous_state`` is
-    the ``back_side_state`` before an ``extra`` change, for ``undo_extra_back_side``.
+    ``change``: ``switched`` (an unprinted margin sheet now has its code on the back, R-350-11),
+    ``extra`` (a printed or ``manual`` sheet gets its code on the back as well;
+    ``back_side_state`` is ``pending``) or ``None`` (a ``back_side`` sheet, nothing changed).
+    ``previous_state`` is the ``back_side_state`` before an ``extra`` change, for
+    ``undo_extra_back_side``.
     """
 
     sheet: Sheet
@@ -707,12 +711,13 @@ async def back_side_sheet_locked(
 ) -> BackSideTarget:
     """The sheet a back-side job prints onto, read under the caller's write lock.
 
-    An ``active`` ``back_side`` sheet is returned as it is. An unprinted ``margin`` or ``manual``
-    sheet whose margin ID is not in flight switches to ``back_side`` (R-350-11; the caller
-    commits and publishes) and records who switched it. A sheet whose code is printed elsewhere
-    (``margin``, ``manual``, ``cell``) keeps its placement and gets ``back_side_state``
-    ``pending``: an extra code on the back that the person confirms. Every other sheet is
-    refused.
+    An ``active`` ``back_side`` sheet is returned as it is. An unprinted ``margin`` sheet whose
+    margin ID is not in flight switches to ``back_side`` (R-350-11; the caller commits and
+    publishes) and records who switched it. A ``manual`` sheet (its code was stuck on by hand)
+    and a sheet whose code is printed (``margin``, ``cell``) keep their placement and get
+    ``back_side_state`` ``pending``: an extra code on the back that the person confirms. Every
+    other sheet (an unprinted ``cell`` sheet, an unprinted ``margin`` sheet whose margin ID is in
+    flight) is refused.
     """
     sheet = await _sheet(session, code)
     if sheet.state == "discarded":
@@ -725,7 +730,7 @@ async def back_side_sheet_locked(
         sheet.placement_changed_by = actor  # stored like created_by/discarded_by, never logged
         await session.flush()
         return BackSideTarget(sheet, "switched")
-    if sheet.id_printed:
+    if sheet.id_printed or sheet.id_placement == "manual":
         previous = sheet.back_side_state
         sheet.back_side_state = "pending"
         await session.flush()
@@ -738,11 +743,14 @@ async def undo_extra_back_side(
 ) -> None:
     """Put ``back_side_state`` back after the extra back-side job could not be queued.
 
-    Only a ``pending`` state is put back: a confirmation that came in meanwhile stays.
+    Only a ``pending`` state is put back: a confirmation that came in meanwhile stays, and so does
+    the ``pending`` of a second request whose back-side job is queued or printing (review M2).
     """
     async with write_transaction(session):
         sheet = await repo.get_by_code(session, code)
         if sheet is None or sheet.back_side_state != "pending":
+            return
+        if await repo.back_side_job_active(session, sheet.id):
             return
         sheet.back_side_state = previous
         await session.flush()
@@ -754,8 +762,8 @@ async def undo_extra_back_side(
 def back_side_missing(sheet: Sheet) -> bool:
     """Whether a wanted code on the back is not confirmed yet (1.7.0 acceptance, decision 2).
 
-    A ``back_side`` sheet whose code is not confirmed, or an extra code on the back of a sheet
-    whose code is printed elsewhere that is still ``pending``. A margin sheet that never asked
+    A ``back_side`` sheet whose code is not confirmed, or an extra code on the back of another
+    sheet that is still ``pending``. A margin sheet that never asked
     for a code on the back is complete. A discarded sheet misses nothing.
     """
     if sheet.state != "active":

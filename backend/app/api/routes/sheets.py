@@ -414,9 +414,9 @@ async def _create_with_id_cell(
     description=(
         'Queues the job that prints the code strip on the back of the sheet: "Print again" '
         "on the same sheet, or the activation of a sheet whose code goes on the back. An "
-        "unprinted `margin` or `manual` sheet switches to `back_side` in the same call. A sheet "
-        "whose code is printed elsewhere (`margin`, `manual`, `cell`) keeps its placement and "
-        "gets an extra code on the back: `back_side_state` becomes `pending`. The job never "
+        "unprinted `margin` sheet switches to `back_side` in the same call. A `manual` sheet and "
+        "a sheet whose code is printed (`margin`, `cell`) keep their placement and get an "
+        "extra code on the back: `back_side_state` becomes `pending`. The job never "
         "sets `id_printed` or confirms the extra code; "
         "`POST /api/v1/sheets/{code}/back-side/confirm` does."
     ),

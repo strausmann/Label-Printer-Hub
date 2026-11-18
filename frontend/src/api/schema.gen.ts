@@ -1395,7 +1395,7 @@ export interface paths {
         put?: never;
         /**
          * Print the sheet code on the back of the liner
-         * @description Queues the job that prints the code strip on the back of the sheet: "Print again" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` or `manual` sheet switches to `back_side` in the same call. A sheet whose code is printed elsewhere (`margin`, `manual`, `cell`) keeps its placement and gets an extra code on the back: `back_side_state` becomes `pending`. The job never sets `id_printed` or confirms the extra code; `POST /api/v1/sheets/{code}/back-side/confirm` does.
+         * @description Queues the job that prints the code strip on the back of the sheet: "Print again" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` sheet switches to `back_side` in the same call. A `manual` sheet and a sheet whose code is printed (`margin`, `cell`) keep their placement and get an extra code on the back: `back_side_state` becomes `pending`. The job never sets `id_printed` or confirms the extra code; `POST /api/v1/sheets/{code}/back-side/confirm` does.
          */
         post: operations["print_back_side_api_v1_sheets__code__back_side_post"];
         delete?: never;
@@ -3870,7 +3870,7 @@ export interface components {
             back_side_missing: boolean;
             /**
              * Back Side State
-             * @description An extra code on the back of a sheet whose code is printed elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
+             * @description An extra code on the back of a sheet whose code is elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
              */
             back_side_state: ("pending" | "confirmed") | null;
             /**
@@ -4057,7 +4057,7 @@ export interface components {
             back_side_missing: boolean;
             /**
              * Back Side State
-             * @description An extra code on the back of a sheet whose code is printed elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
+             * @description An extra code on the back of a sheet whose code is elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
              */
             back_side_state: ("pending" | "confirmed") | null;
             /**

@@ -89,12 +89,16 @@ export function SheetCodePanel({ sheet, canWrite }: { sheet: SheetRead; canWrite
   const canEdit = canWrite && !discarded;
   const placement = sheet.id_placement;
 
-  // R-350-11: an unprinted margin or manual sheet switches to the back only when its type puts the code there.
-  const switchable = canEdit && !sheet.id_printed && (placement === "margin" || placement === "manual");
+  // R-350-11: an unprinted margin sheet switches to the back only when its type puts the code there. A manual
+  // sheet's code was stuck on by hand: like a printed one, it gets an extra code on the back and keeps its place.
+  const switchable = canEdit && !sheet.id_printed && placement === "margin";
   const sheetType = useSheetType(sheet.type_key, switchable);
   const offerBack =
     canEdit &&
-    (placement === "back_side" || sheet.id_printed || (switchable && sheetType.data?.id_placement_resolved === "back_side"));
+    (placement === "back_side" ||
+      placement === "manual" ||
+      sheet.id_printed ||
+      (switchable && sheetType.data?.id_placement_resolved === "back_side"));
   const offerMargin = canEdit && placement === "margin" && sheet.id_printed;
 
   const placementWord = {
@@ -166,7 +170,7 @@ export function SheetCodePanel({ sheet, canWrite }: { sheet: SheetRead; canWrite
         </p>
       ) : null}
 
-      {dialog === "back" ? <BackSideDialog code={sheet.code} isOpen onClose={() => setDialog(null)} /> : null}
+      {dialog === "back" ? <BackSideDialog code={sheet.code} isOpen onClose={() => setDialog(null)} title={t`Print back side`} /> : null}
       {dialog === "margin" ? <MarginReprintDialog code={sheet.code} onClose={() => setDialog(null)} /> : null}
     </section>
   );

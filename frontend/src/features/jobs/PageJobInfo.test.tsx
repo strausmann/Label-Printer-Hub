@@ -242,6 +242,13 @@ describe("retry and cancel of page jobs", () => {
     expect(await retryRefused(409, "job_not_retryable")).toHaveTextContent("This job cannot be retried: nothing is left to print.");
   });
 
+  it("409 job_not_retryable of a margin-code reprint points to Reprint margin code (review M3)", async () => {
+    const alert = await retryRefused(409, "job_not_retryable", { reason: "margin_code_only", sheet_code: CODE });
+    expect(alert).toHaveTextContent("This job printed only the sheet code in the margin. Print it again with Reprint margin code on the sheet page.");
+    expect(alert).not.toHaveTextContent("nothing is left to print");
+    expect(within(alert).getByRole("link", { name: `Open ${CODE}` })).toHaveAttribute("href", `/sheets/${CODE}`);
+  });
+
   it("409 printer_disabled", async () => {
     expect(await retryRefused(409, "printer_disabled")).toHaveTextContent("The printer is switched off.");
   });

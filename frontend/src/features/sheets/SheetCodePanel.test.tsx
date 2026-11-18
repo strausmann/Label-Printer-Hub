@@ -71,6 +71,24 @@ describe("the sheet code panel", () => {
     expect(within(panel()).queryByRole("button", { name: "Reprint margin code" })).toBeNull();
   });
 
+  it("a manual sheet of a margin type offers Print back side and no margin reprint (fix round 1, I1)", async () => {
+    const manual = sheetRead(CODE, { used: [] }, { id_placement: "manual", id_printed: false });
+    await open(manual, {
+      [`GET /api/v1/sheet-types/${SHEET_TYPE.key}`]: { ...SHEET_TYPE, id_placement: "auto", id_placement_resolved: "margin", versions: [] },
+    });
+    expect(within(panel()).getByTestId("sheet-code-state")).toHaveTextContent(/^Added by hand$/);
+    expect(within(panel()).getByRole("button", { name: "Print back side" })).toBeVisible();
+    expect(within(panel()).queryByRole("button", { name: "Reprint margin code" })).toBeNull();
+    await userEvent.click(within(panel()).getByRole("button", { name: "Print back side" }));
+    expect(await screen.findByRole("dialog", { name: "Print back side" })).toBeVisible();
+  });
+
+  it("a pending extra back side on a manual sheet says missing", async () => {
+    await open(sheetRead(CODE, { used: [] }, { id_placement: "manual", id_printed: false, back_side_state: "pending", back_side_missing: true }));
+    expect(within(panel()).getByTestId("sheet-code-back")).toHaveTextContent(/Back side:\s*missing/);
+    expect(within(panel()).getByRole("button", { name: "Yes, the back side is printed" })).toBeVisible();
+  });
+
   it("an unprinted cell sheet offers no back side (its ID cell is still due)", async () => {
     await open(sheetRead(CODE, { used: [] }, { id_placement: "cell", id_printed: false }));
     expect(within(panel()).getByTestId("sheet-code-state")).toHaveTextContent("In a cell · not printed yet");

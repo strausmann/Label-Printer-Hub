@@ -362,7 +362,7 @@ class SheetRead(SheetSummary):
     id_printed: bool
     back_side_state: Literal["pending", "confirmed"] | None = Field(
         description=(
-            "An extra code on the back of a sheet whose code is printed elsewhere: `pending` "
+            "An extra code on the back of a sheet whose code is elsewhere: `pending` "
             "(queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` "
             "for a `back_side` sheet, which uses `id_printed`."
         ),

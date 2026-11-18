@@ -138,7 +138,7 @@ test.describe.serial("sheets", () => {
     await expect(panel.getByRole("button", { name: "Reprint margin code" })).toBeVisible();
     await panel.getByRole("button", { name: "Print back side" }).click();
 
-    const steps = page.getByRole("dialog", { name: "Activate new sheet" });
+    const steps = page.getByRole("dialog", { name: "Print back side" });
     await steps.getByRole("button", { name: "Print test page" }).click();
     await steps.getByRole("radiogroup", { name: "Is the print on the side with the cross?" }).getByText("Yes", { exact: true }).click();
     await steps.getByRole("radiogroup", { name: "Is “TOP” next to the cross?" }).getByText("Yes", { exact: true }).click();
