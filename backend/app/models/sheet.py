@@ -138,7 +138,8 @@ class Sheet(SQLModel, table=True):
     state: str = Field(default="active", sa_column=Column(String, nullable=False))
     discarded_at: datetime | None = Field(default=None, sa_column=_dt(nullable=True))
     discarded_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
-    # #350 review M5: who switched an unprinted margin/manual sheet to the code on the back.
+    # #350 review M5: who switched an unprinted margin sheet to the code on the back. A manual sheet keeps
+    # its placement and gets an extra back side instead (``back_side_state``).
     placement_changed_at: datetime | None = Field(default=None, sa_column=_dt(nullable=True))
     placement_changed_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     id_placement: str = Field(sa_column=Column(String, nullable=False))
