@@ -143,6 +143,10 @@ class Sheet(SQLModel, table=True):
     placement_changed_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     id_placement: str = Field(sa_column=Column(String, nullable=False))
     id_printed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
+    # An extra code on the back of a sheet whose code is printed elsewhere (1.7.0 acceptance):
+    # ``None`` (never asked for), ``pending`` (queued, not confirmed) or ``confirmed``. A
+    # ``back_side`` sheet keeps using ``id_printed``.
+    back_side_state: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     # The preferred ID cell of a ``cell`` sheet (R-350-7); taken when it is free.
     id_cell_no: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     # The feed-direction mark (spec 10.2a) has its own flag, independent of ``id_printed``.

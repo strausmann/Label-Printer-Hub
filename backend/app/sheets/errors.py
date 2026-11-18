@@ -558,6 +558,14 @@ class BackStripDoesNotFitError(SheetApiError):
     message = "The sheet code does not fit any free strip on the back of this sheet."
 
 
+class MarginIdDoesNotFitError(SheetApiError):
+    """No margin band of the sheet is deep enough for the margin ID on this printer (OC-46)."""
+
+    status = 422
+    error_code = "margin_id_does_not_fit"
+    message = "The sheet code does not fit the margin of this sheet on this printer."
+
+
 class IdPlacementMismatchError(SheetApiError):
     """The sheet's code does not go on the back side (R-350-6, R-350-11)."""
 

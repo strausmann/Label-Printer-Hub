@@ -241,3 +241,31 @@ def test_placement_changed_columns_keep_existing_sheets(tmp_path):
         kept = dict(c.execute(text("SELECT code, id_placement FROM sheets")).all())
     eng.dispose()
     assert kept == {"AT1-0001": "margin", "AT1-0002": "back_side"}
+
+
+# ---------------------------------------------------- 20261118a1 an extra code on the back
+
+_BACK_STATE_REV = "20261118a1"
+
+
+def test_back_side_state_is_null_for_existing_sheets(tmp_path):
+    db = tmp_path / "back_state.db"
+    cfg = _cfg(db)
+    command.upgrade(cfg, _CHANGED_REV)
+    _insert_type_and_sheets(db, {"AT1-0001": "margin", "AT1-0002": "back_side"})
+
+    command.upgrade(cfg, _BACK_STATE_REV)
+
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.connect() as c:
+        rows = c.execute(text("SELECT code, back_side_state FROM sheets")).all()
+    eng.dispose()
+    assert sorted(tuple(r) for r in rows) == [("AT1-0001", None), ("AT1-0002", None)]
+
+    command.downgrade(cfg, _CHANGED_REV)
+    assert "back_side_state" not in _sheet_columns(db)
+    eng = create_engine(f"sqlite:///{db}")
+    with eng.connect() as c:
+        kept = dict(c.execute(text("SELECT code, id_placement FROM sheets")).all())
+    eng.dispose()
+    assert kept == {"AT1-0001": "margin", "AT1-0002": "back_side"}

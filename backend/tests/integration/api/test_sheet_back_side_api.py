@@ -218,8 +218,8 @@ async def test_print_again_queues_a_second_job() -> None:
 
 
 async def test_back_side_route_on_margin_sheet() -> None:
-    """A sheet whose code goes elsewhere for good (a ``cell`` sheet; a printed margin sheet is
-    ``test_printed_margin_sheet_cannot_switch``) is refused."""
+    """An unprinted ``cell`` sheet is refused: its ID cell is still due. A printed sheet gets an
+    extra code on the back instead (``test_printed_margin_sheet_does_not_switch``)."""
     async with running() as rig:
         code = await _new_sheet("margin", KEY_6121)
         async with _factory()() as s:
@@ -290,7 +290,9 @@ async def test_back_side_sheet_print_records_no_switch() -> None:
             assert row.placement_changed_by is None and row.placement_changed_at is None
 
 
-async def test_printed_margin_sheet_cannot_switch() -> None:
+async def test_printed_margin_sheet_does_not_switch() -> None:
+    """A printed margin sheet gets an extra code on the back and keeps its placement (1.7.0
+    acceptance; ``test_sheet_code_panel_api`` covers the extra code)."""
     async with running() as rig:
         code = await _new_sheet("margin")
         async with _factory()() as s:
@@ -298,9 +300,9 @@ async def test_printed_margin_sheet_cannot_switch() -> None:
             row.id_printed = True
             await s.commit()
         resp = await _back(rig, code)
-        assert resp.status_code == 409, resp.text
-        assert _err(resp)["error_code"] == "id_placement_mismatch"
-        assert (await rig.sheet(code))["id_placement"] == "margin"
+        assert resp.status_code == 202, resp.text
+        sheet = await rig.sheet(code)
+        assert sheet["id_placement"] == "margin" and sheet["back_side_state"] == "pending"
 
 
 async def test_back_side_queue_unavailable_is_409() -> None:

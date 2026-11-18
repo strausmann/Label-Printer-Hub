@@ -104,6 +104,11 @@ _PLACEMENTS: dict[str, Literal["cell", "margin", "manual", "back_side"]] = {
     "back_side": "back_side",
 }
 
+_BACK_SIDE_STATES: dict[str, Literal["pending", "confirmed"]] = {
+    "pending": "pending",
+    "confirmed": "confirmed",
+}
+
 
 def _cell_state(value: str) -> _CellState:
     """A stored cell state as the API type; an unknown value is a bug, not a 200."""
@@ -125,11 +130,7 @@ def _summary(row: ss.SheetListRow | ss.SheetDetail) -> SheetSummary:
         free=row.free,
         state=_SHEET_STATES[row.sheet.state],
         last_used_at=row.sheet.last_used_at,
-        back_side_missing=(
-            row.sheet.state == "active"
-            and row.sheet.id_placement == "back_side"
-            and not row.sheet.id_printed
-        ),
+        back_side_missing=ss.back_side_missing(row.sheet),
     )
 
 
@@ -152,6 +153,7 @@ def _read(detail: ss.SheetDetail) -> SheetRead:
         **dict(_summary(detail)),  # the raw field values, not a serialised dump
         id_placement=_PLACEMENTS[detail.sheet.id_placement],
         id_printed=detail.sheet.id_printed,
+        back_side_state=_BACK_SIDE_STATES.get(detail.sheet.back_side_state or ""),
         feed_mark_printed=detail.sheet.feed_mark_printed,
         note=detail.sheet.note,
         geometry=exchange.geometry_to_doc(ts.version_geometry(detail.version)),
@@ -412,19 +414,22 @@ async def _create_with_id_cell(
     description=(
         'Queues the job that prints the code strip on the back of the sheet: "Print again" '
         "on the same sheet, or the activation of a sheet whose code goes on the back. An "
-        "unprinted `margin` or `manual` sheet switches to `back_side` in the same call. The job "
-        "never sets `id_printed`; `POST /api/v1/sheets/{code}/back-side/confirm` does."
+        "unprinted `margin` or `manual` sheet switches to `back_side` in the same call. A sheet "
+        "whose code is printed elsewhere (`margin`, `manual`, `cell`) keeps its placement and "
+        "gets an extra code on the back: `back_side_state` becomes `pending`. The job never "
+        "sets `id_printed` or confirms the extra code; "
+        "`POST /api/v1/sheets/{code}/back-side/confirm` does."
     ),
     responses={
         **_NOT_FOUND,
         403: {"description": "These credentials may not use the printer."},
         409: {
             "description": (
-                "The sheet is discarded (`sheet_discarded`), its code does not go on the back "
-                "(`id_placement_mismatch`: printed, a `cell` sheet, or its margin ID is in "
-                "flight), the printer is a tape printer (`media_kind_mismatch`), disabled "
-                "(`printer_disabled`), unknown to the queue (`printer-unavailable`) or its "
-                "device changed (`printer-identity-mismatch`)."
+                "The sheet is discarded (`sheet_discarded`), its code cannot go on the back "
+                "(`id_placement_mismatch`: an unprinted `cell` sheet, or an unprinted margin "
+                "sheet whose margin ID is in flight), the printer is a tape printer "
+                "(`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue "
+                "(`printer-unavailable`) or its device changed (`printer-identity-mismatch`)."
             )
         },
         422: {
@@ -462,14 +467,15 @@ async def print_back_side(
     summary="Confirm that the sheet code on the back is printed",
     description=(
         "The person checked the code on the back (toner dry, QR not smeared). Only this marks "
-        "the code of a `back_side` sheet as printed; a second confirmation changes nothing."
+        "the code of a `back_side` sheet as printed, and an extra code on the back of another "
+        "sheet as `confirmed` (`back_side_state`); a second confirmation changes nothing."
     ),
     responses={
         **_NOT_FOUND,
         409: {
             "description": (
-                "The sheet is discarded (`sheet_discarded`) or its code does not go on the back "
-                "(`id_placement_mismatch`)."
+                "The sheet is discarded (`sheet_discarded`), or its code does not go on the back "
+                "and no extra code on the back was printed (`id_placement_mismatch`)."
             )
         },
     },
@@ -480,6 +486,56 @@ async def confirm_back_side(
     with mapped():
         detail = await ss.confirm_back_side(session, code, actor=actor(auth), bus=_bus(request))
     return _read(detail)
+
+
+@router.post(
+    "/api/v1/sheets/{code}/margin-id",
+    response_model=PageJobQueued,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Print the margin code of a sheet again",
+    description=(
+        "Queues a page that prints only the sheet code in the margin of a `margin` sheet whose "
+        "code is printed: no cell is reserved and no label is printed. The band is chosen again "
+        "for this printer and tray. `id_printed` stays as it is."
+    ),
+    responses={
+        **_NOT_FOUND,
+        403: {"description": "These credentials may not use the printer."},
+        409: {
+            "description": (
+                "The sheet is discarded (`sheet_discarded`), it is not a printed `margin` sheet "
+                "or its margin code is in flight (`id_placement_mismatch`), the printer is a tape "
+                "printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the "
+                "queue (`printer-unavailable`) or its device changed "
+                "(`printer-identity-mismatch`)."
+            )
+        },
+        422: {
+            "description": (
+                "Invalid request, an unknown tray (`tray_unknown`), or no margin band is deep "
+                "enough on this printer (`margin_id_does_not_fit`)."
+            )
+        },
+    },
+)
+async def print_margin_id(
+    code: CodePath, body: SheetBackPrint, request: Request, session: SessionDep, auth: PrintDep
+) -> PageJobQueued:
+    with mapped():
+        printer = await _usable_printer(session, auth, body.printer)
+        ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)
+        await session.commit()  # the service opens its own sessions (the R10-1 class)
+        job_id = await print_service.print_margin_id(
+            db_engine.async_session,
+            code=code,
+            printer=printer,
+            tray=body.tray,
+            queue=request.app.state.print_queue,
+            api_key_id=auth.api_key_id,
+            source_ip=auth.ip,
+            language=_language(request),
+        )
+    return PageJobQueued(job_id=job_id)
 
 
 @router.post(

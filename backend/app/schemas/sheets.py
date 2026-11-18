@@ -345,8 +345,10 @@ class SheetSummary(BaseModel):
     last_used_at: datetime | None
     back_side_missing: bool = Field(
         description=(
-            "An active sheet whose code goes on the back of the liner and is not confirmed "
-            "printed yet (`id_placement` `back_side`, `id_printed` false)."
+            "An active sheet whose wanted code on the back of the liner is not confirmed yet: "
+            "`id_placement` `back_side` with `id_printed` false, or an extra code on the back "
+            "that is `pending` (`back_side_state`). A sheet that never asked for a code on the "
+            "back misses nothing."
         ),
     )
 
@@ -358,6 +360,13 @@ class SheetSummary(BaseModel):
 class SheetRead(SheetSummary):
     id_placement: Literal["cell", "margin", "manual", "back_side"]
     id_printed: bool
+    back_side_state: Literal["pending", "confirmed"] | None = Field(
+        description=(
+            "An extra code on the back of a sheet whose code is printed elsewhere: `pending` "
+            "(queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` "
+            "for a `back_side` sheet, which uses `id_printed`."
+        ),
+    )
     feed_mark_printed: bool = Field(
         description="Whether the feed-direction mark has been printed on this sheet."
     )

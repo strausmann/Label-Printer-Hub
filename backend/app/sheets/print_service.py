@@ -105,15 +105,19 @@ from app.sheets.cell_render import (
 from app.sheets.errors import (
     CellsUnconfirmedError,
     IdCellContentMismatchError,
+    IdPlacementMismatchError,
     InsufficientCellsError,
     ItemContentMismatchError,
     ItemLookupFailedError,
+    MarginIdDoesNotFitError,
     MediaKindMismatchError,
     PreviewTooLargeError,
     PrinterUnavailableError,
     PrintInterruptedError,
     SheetApiError,
+    SheetDiscardedError,
     SheetIdJobFailedError,
+    SheetNotFoundError,
     SheetTypeArchivedError,
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
@@ -168,7 +172,7 @@ from app.sheets.sheet_page import (
     render_preview_png,
 )
 from app.sheets.sheet_service import ID_CELL_PURPOSE
-from app.sheets.text import sanitise_text
+from app.sheets.text import log_value, sanitise_text
 from app.sheets.type_service import version_geometry, write_transaction
 
 __all__ = [
@@ -191,6 +195,7 @@ __all__ = [
     "page_margin_id_payload",
     "preview",
     "preview_slot",
+    "print_margin_id",
     "print_sheet_back",
     "print_sheets",
     "reserved_margin_id_payload",
@@ -2056,9 +2061,12 @@ async def print_sheet_back(
 ) -> UUID:
     """Queue the code on the back of an existing sheet ("Print again", "Print back side").
 
-    The sheet must be ``active`` and ``back_side``; an unprinted ``margin`` or ``manual`` sheet
-    (a 3490 from 1.6) switches to ``back_side`` in the same call, recorded as a sheet event
-    (R-350-11). The strip, the date and the turn are read again: a second job prints the same.
+    A ``back_side`` sheet prints as it is; an unprinted ``margin`` or ``manual`` sheet (a 3490
+    from 1.6) switches to ``back_side`` in the same call, recorded as a sheet event (R-350-11).
+    A sheet whose code is printed elsewhere keeps its placement and gets an extra code on the
+    back: ``back_side_state`` is ``pending`` in the transaction before the job is queued, and put
+    back if the job cannot be queued. The strip, the date and the turn are read again: a second
+    job prints the same.
     """
     if printer.backend != "ipp":
         raise MediaKindMismatchError()
@@ -2068,20 +2076,136 @@ async def print_sheet_back(
         async with write_transaction(session):
             found = await repo.get_by_code(session, code)
             in_flight = found is not None and await margin_id_in_flight(session, found.id)
-            sheet, switched = await ss.back_side_sheet_locked(
+            target = await ss.back_side_sheet_locked(
                 session, code, margin_in_flight=in_flight, actor=actor
             )
+            sheet = target.sheet
             payload = await _back_payload(
                 session, sheet, tray_key=tray_key, printer_id=printer.id, scan=scan
             )
             await session.commit()
-        if switched:
+        if target.change == "switched":
             logger.info("sheet %s switched to the code on the back", code)
+        if target.change is not None:
             await ss.publish_detail(session, sheet, bus)
             await session.commit()
-        return await _submit_back(
-            queue, printer, payload, api_key_id=api_key_id, source_ip=source_ip
-        )
+        try:
+            return await _submit_back(
+                queue, printer, payload, api_key_id=api_key_id, source_ip=source_ip
+            )
+        except Exception:
+            # Not on a cancellation: the job row may be stored by then and print (T7-1).
+            if target.change == "extra":
+                await ss.undo_extra_back_side(session, code, target.previous_state, bus)
+            raise
+
+
+# ---------------------------------------------------------------------------- margin reprint
+
+_margin_reprint_lock = asyncio.Lock()
+"""Serialises "Reprint margin code" from the in-flight check to the stored job: the page has no
+cells, so no reservation keeps a second request out between the check and the job row (the
+margin ID would print twice onto the same sheet). The hub runs in one process."""
+
+
+async def print_margin_id(
+    session_factory: async_sessionmaker[AsyncSession],
+    *,
+    code: str,
+    printer: Printer,
+    tray: str | None,
+    queue: PageQueue,
+    api_key_id: UUID | None,
+    source_ip: str | None,
+    language: str | None,
+) -> UUID:
+    """Queue a ``sheet_page`` that prints only the margin ID of a printed ``margin`` sheet.
+
+    No cell is reserved and no feed mark is drawn: the page carries ``margin_id`` alone, chosen
+    by the rule a first job uses (``choose_margin_placement`` with the feed mark's room kept
+    free, ``_margin_payload``) for this printer, tray and calibration. The stored page counts
+    as "margin ID in flight" while it is queued or printing, and a request meanwhile is refused.
+    ``id_printed`` is not touched: the code already counts as printed. Refused: a discarded sheet,
+    another placement, an unprinted margin sheet (the next print onto it draws the margin ID) and
+    a margin ID in flight (``id_placement_mismatch``); no band deep enough on this printer
+    (``margin_id_does_not_fit``).
+    """
+    if printer.backend != "ipp":
+        raise MediaKindMismatchError()
+    scan = scan_payload_builder(str(get_settings().public_url))
+    async with session_factory() as session:
+        tray_key = await calibration_service.resolve_tray(session, printer.id, tray)
+        snapshot = await calibration_service.snapshot(session, printer.id, tray_key)
+        facts = await load_printer_facts(session, printer.id)
+        deviation = snapshot_to_deviation(snapshot)
+        await session.commit()
+        async with _margin_reprint_lock:
+            async with write_transaction(session):
+                sheet = await repo.get_by_code(session, code)
+                if sheet is None:
+                    raise SheetNotFoundError()
+                if sheet.state == "discarded":
+                    raise SheetDiscardedError()
+                if (
+                    sheet.id_placement != "margin"
+                    or not sheet.id_printed
+                    or await margin_id_in_flight(session, sheet.id)
+                ):
+                    raise IdPlacementMismatchError()
+                info = await _type_info(session, sheet.type_version_id, {})
+                geometry = info.geometry
+                mark = choose_feed_mark(
+                    geometry, hw=facts.margins_hmm, dev=deviation, text=feed_mark_text(language)
+                )
+                placement = choose_margin_placement(
+                    geometry,
+                    hw=facts.margins_hmm,
+                    dev=deviation,
+                    payload=scan(sheet.code),
+                    dpi=facts.render_dpi,
+                    top_taken_hmm=0 if mark is None else feed_mark_top_taken_hmm(geometry, mark),
+                )
+                margin = _margin_payload(
+                    code=sheet.code,
+                    margin_id=True,
+                    placement=placement,
+                    feed_mark=mark,
+                    type_label=info.label,
+                    scan=scan,
+                )
+                if margin is None:
+                    raise MarginIdDoesNotFitError()
+                detail = SheetPageDetail(
+                    sheet_id=sheet.id,
+                    sheet_code=sheet.code,
+                    type_key=info.key,
+                    type_version_id=sheet.type_version_id,
+                    geometry=asdict(geometry),
+                    allow_qr=info.allow_qr,
+                    cells=[],
+                    id_cell=None,
+                    margin_id=margin,
+                    feed_mark=None,
+                    job_summary={"sheet_code": sheet.code, "cell_count": 0},
+                )
+                payload = PagePayload(
+                    kind="sheet_page",
+                    media=geometry.page_size,
+                    tray=tray_key,
+                    render_dpi=facts.render_dpi,
+                    job_name=f"Sheet {sheet.code} · margin code",
+                    calibration=snapshot,
+                    detail=detail.model_dump(mode="json"),
+                )
+                await session.commit()
+            try:
+                job_id = await queue.submit_page_job(
+                    printer.id, payload, api_key_id=api_key_id, source_ip=source_ip
+                )
+            except KeyError:
+                raise PrinterUnavailableError() from None
+    logger.info("sheet %s: margin code queued again", log_value(code))
+    return job_id
 
 
 # ---------------------------------------------------------------------------- margin check

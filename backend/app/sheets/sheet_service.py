@@ -653,6 +653,7 @@ async def find_cells(session: AsyncSession, *, source: str, ref: str) -> list[Ce
 # ---------------------------------------------------------------- the code on the back (#350)
 
 _SWITCHABLE = ("margin", "manual")
+_BACK_SIDE_STATES = ("pending", "confirmed")
 
 
 async def confirm_back_side(
@@ -661,17 +662,24 @@ async def confirm_back_side(
     """The person saw the code on the back and says it is printed (R-350-6).
 
     Only this sets ``id_printed`` of a ``back_side`` sheet: a finished job says nothing about
-    smeared toner. A second confirmation changes nothing and is not an error.
+    smeared toner. On a sheet whose code is printed elsewhere it confirms the extra code on the
+    back (``back_side_state`` ``pending`` -> ``confirmed``); such a sheet without one asked for is
+    refused. A second confirmation changes nothing and is not an error.
     """
     del actor  # not logged (CodeQL treats it as sensitive); kept for the call contract
     async with write_transaction(session):
         before = await _writable(session, code)
-        if before.sheet.id_placement != "back_side":
+        sheet = before.sheet
+        if sheet.id_placement == "back_side":
+            changed = not sheet.id_printed
+            sheet.id_printed = True
+        elif sheet.back_side_state in _BACK_SIDE_STATES:
+            changed = sheet.back_side_state != "confirmed"
+            sheet.back_side_state = "confirmed"
+        else:
             raise IdPlacementMismatchError()
-        changed = not before.sheet.id_printed
-        before.sheet.id_printed = True
         await session.flush()
-        detail = await _detail(session, before.sheet)
+        detail = await _detail(session, sheet)
         await session.commit()
     if changed:
         logger.info("sheet %s: code on the back confirmed", log_value(code))
@@ -679,28 +687,82 @@ async def confirm_back_side(
     return detail
 
 
+@dataclass(frozen=True)
+class BackSideTarget:
+    """The sheet a back-side job prints onto and what the request changed on it.
+
+    ``change``: ``switched`` (an unprinted margin or manual sheet now has its code on the back,
+    R-350-11), ``extra`` (a printed sheet gets its code on the back as well; ``back_side_state``
+    is ``pending``) or ``None`` (a ``back_side`` sheet, nothing changed). ``previous_state`` is
+    the ``back_side_state`` before an ``extra`` change, for ``undo_extra_back_side``.
+    """
+
+    sheet: Sheet
+    change: Literal["switched", "extra"] | None
+    previous_state: str | None = None
+
+
 async def back_side_sheet_locked(
     session: AsyncSession, code: str, *, margin_in_flight: bool, actor: str
-) -> tuple[Sheet, bool]:
+) -> BackSideTarget:
     """The sheet a back-side job prints onto, read under the caller's write lock.
 
     An ``active`` ``back_side`` sheet is returned as it is. An unprinted ``margin`` or ``manual``
     sheet whose margin ID is not in flight switches to ``back_side`` (R-350-11; the caller
-    commits and publishes) and records who switched it; every other sheet is refused. Returns
-    the sheet and whether it switched.
+    commits and publishes) and records who switched it. A sheet whose code is printed elsewhere
+    (``margin``, ``manual``, ``cell``) keeps its placement and gets ``back_side_state``
+    ``pending``: an extra code on the back that the person confirms. Every other sheet is
+    refused.
     """
     sheet = await _sheet(session, code)
     if sheet.state == "discarded":
         raise SheetDiscardedError()
     if sheet.id_placement == "back_side":
-        return sheet, False
-    if sheet.id_placement not in _SWITCHABLE or sheet.id_printed or margin_in_flight:
-        raise IdPlacementMismatchError()
-    sheet.id_placement = "back_side"
-    sheet.placement_changed_at = datetime.now(UTC)
-    sheet.placement_changed_by = actor  # stored like created_by/discarded_by, never logged
-    await session.flush()
-    return sheet, True
+        return BackSideTarget(sheet, None)
+    if sheet.id_placement in _SWITCHABLE and not sheet.id_printed and not margin_in_flight:
+        sheet.id_placement = "back_side"
+        sheet.placement_changed_at = datetime.now(UTC)
+        sheet.placement_changed_by = actor  # stored like created_by/discarded_by, never logged
+        await session.flush()
+        return BackSideTarget(sheet, "switched")
+    if sheet.id_printed:
+        previous = sheet.back_side_state
+        sheet.back_side_state = "pending"
+        await session.flush()
+        return BackSideTarget(sheet, "extra", previous)
+    raise IdPlacementMismatchError()
+
+
+async def undo_extra_back_side(
+    session: AsyncSession, code: str, previous: str | None, bus: EventBus | None = None
+) -> None:
+    """Put ``back_side_state`` back after the extra back-side job could not be queued.
+
+    Only a ``pending`` state is put back: a confirmation that came in meanwhile stays.
+    """
+    async with write_transaction(session):
+        sheet = await repo.get_by_code(session, code)
+        if sheet is None or sheet.back_side_state != "pending":
+            return
+        sheet.back_side_state = previous
+        await session.flush()
+        detail = await _detail(session, sheet)
+        await session.commit()
+    _publish(bus, detail, [])
+
+
+def back_side_missing(sheet: Sheet) -> bool:
+    """Whether a wanted code on the back is not confirmed yet (1.7.0 acceptance, decision 2).
+
+    A ``back_side`` sheet whose code is not confirmed, or an extra code on the back of a sheet
+    whose code is printed elsewhere that is still ``pending``. A margin sheet that never asked
+    for a code on the back is complete. A discarded sheet misses nothing.
+    """
+    if sheet.state != "active":
+        return False
+    if sheet.id_placement == "back_side":
+        return not sheet.id_printed
+    return sheet.back_side_state == "pending"
 
 
 async def publish_detail(session: AsyncSession, sheet: Sheet, bus: EventBus | None) -> None:
