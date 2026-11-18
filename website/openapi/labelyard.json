@@ -962,6 +962,17 @@
             "description": "None while nothing is known (page printer that never answered), when no tape is loaded, or when the loaded tape width has no geometry entry (tape).",
             "title": "Media"
           },
+          "print_confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrintConfirmationRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tape printers only: Tape printers (#393): how the printer confirms a print, found by its last test print; null when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends)"
+          },
           "resolution_dpi": {
             "anyOf": [
               {
@@ -3066,6 +3077,48 @@
           "load_hint"
         ],
         "title": "PreviewPage",
+        "type": "object"
+      },
+      "PrintConfirmationRead": {
+        "description": "How a tape printer confirms that a label printed (#393), found by its last test print.",
+        "properties": {
+          "channel": {
+            "description": "``ipp``: the printer reports the job state; ``label_counter``: its label counter is read before and after; ``none``: neither works, a sent label counts as printed",
+            "enum": [
+              "ipp",
+              "label_counter",
+              "none"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "confirm_transport": {
+            "description": "``ipp``: labels go out as an IPP job; ``raw``: over TCP port 9100",
+            "enum": [
+              "ipp",
+              "raw"
+            ],
+            "title": "Confirm Transport",
+            "type": "string"
+          },
+          "confirmed_at": {
+            "description": "When the test print found it",
+            "title": "Confirmed At",
+            "type": "string"
+          },
+          "label_counter": {
+            "description": "The label counter rose by exactly the labels sent",
+            "title": "Label Counter",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "channel",
+          "confirm_transport",
+          "label_counter",
+          "confirmed_at"
+        ],
+        "title": "PrintConfirmationRead",
         "type": "object"
       },
       "PrintJobResponse": {
@@ -7083,7 +7136,7 @@
             "title": "Reprint To"
           },
           "state": {
-            "description": "`awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed; the labels after it were not started. With `stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a QL-820NWB reports a DK roll end is not verified); with `refused` the printer refused before anything was sent (wrong tape, no tape, cover open, unreachable). `POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), and a stopped run cannot be reprinted after it.",
+            "description": "`awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed; the labels after it were not started. With `stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a QL-820NWB reports a DK roll end is not verified); with `refused` the labels from `reprint_from` on did not print: the printer refused before anything was sent (wrong tape, no tape, cover open, unreachable), or it confirmed only the labels before them (#393: `labels_not_confirmed`, or a blocking bit such as `tape_empty` with a known count; the confirmed labels are done). `POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), and a stopped run cannot be reprinted after it.",
             "enum": [
               "printing",
               "awaiting_confirmation",
@@ -7117,7 +7170,7 @@
                 "type": "null"
               }
             ],
-            "description": "After a stop: the group's outcome is unknown, or nothing of it was sent.",
+            "description": "After a stop: `unknown`, the group's outcome is unknown; `refused`, the labels from `reprint_from` on did not print (nothing was sent, or the printer confirmed only the labels before them).",
             "title": "Stop Kind"
           },
           "sub_job_size": {
@@ -8108,6 +8161,17 @@
           "paused": {
             "title": "Paused",
             "type": "boolean"
+          },
+          "print_confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrintConfirmationRead"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tape printers (#393): how the printer confirms a print, found by its last test print; null when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends)"
           },
           "slug": {
             "default": "",
@@ -9254,7 +9318,7 @@
     },
     "/api/v1/batches/{batch_id}/reprint": {
       "post": {
-        "description": "A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.",
+        "description": "A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` the labels from `reprint_from` on did not print (nothing of the group was sent, or the printer confirmed only the labels before them, #393): reprint from that label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.",
         "operationId": "reprint_batch_api_v1_batches__batch_id__reprint_post",
         "parameters": [
           {
