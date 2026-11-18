@@ -252,7 +252,9 @@ async def continue_batch(
         "count what printed, fix the tape, and reprint from the first label that is missing "
         "(`reprint_from` to `reprint_to`); that label to the end of the group, and every label "
         "that was not started, are queued again as new jobs, and the labels before it count as "
-        "printed. With `refused` nothing of the group was sent: reprint from its first label. "
+        "printed. With `refused` the labels from `reprint_from` on did not print (nothing of the "
+        "group was sent, or the printer confirmed only the labels before them, #393): reprint "
+        "from that label. "
         "A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed "
         "in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). "
         "`from_label` outside the range answers 422 `label_out_of_range`." + _HELD_NOTE

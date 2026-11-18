@@ -17,9 +17,14 @@ class PrinterError(Exception):
     ``nothing_sent`` (#277): the backend refused before any byte of the job reached the
     printer (its own preflight said no). The print queue then knows the labels did not print;
     without the flag a failure may have happened while sending, and the outcome is unknown.
+
+    ``printed`` (#393): raised after sending, the first labels of the send the printer confirmed
+    before the error (label counter or IPP impressions); ``None`` when that is not known. A run
+    then keeps those labels done and fails only the rest.
     """
 
     nothing_sent: bool = False
+    printed: int | None = None
 
 
 def refused_before_sending[E: PrinterError](exc: E) -> E:
@@ -96,6 +101,17 @@ class LabelsNotConfirmedError(PrinterError):
         self.printed = max(0, min(int(printed), int(expected)))
         self.expected = int(expected)
         super().__init__(f"{self.printed} of {self.expected} labels printed")
+
+
+class ConfirmationUnknownError(PrinterError):
+    """The printer did not confirm the labels in time, and its IPP job could not be cancelled
+    (#393): the labels may still print. The job's outcome is unknown, never "x of y"."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "The printer did not confirm the labels in time and may still print them; check the "
+            "printer before you reprint"
+        )
 
 
 class StatusQueryFailedError(PrinterError):

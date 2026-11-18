@@ -312,23 +312,6 @@ async def test_a_test_print_whose_ipp_is_refused_stores_raw(
     assert [(r.confirm_transport, r.label_counter) for r in sink.records] == [("raw", True)]
 
 
-async def test_a_test_print_whose_ipp_job_aborts_is_sent_over_9100_and_stores_raw(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    snmp = _Snmp(monkeypatch)
-    fake = FakeIppPrinter(formats=RASTER, job_script=[8], impressions_script=[0])
-    backend = _backend(fake)
-    sink = _Sink()
-    backend.send_state.sink = sink
-
-    await backend.print_image(_image(), _spec(), detect_confirmation=True)
-    snmp.count_raw = True
-    await _confirm(backend)
-
-    assert len(snmp.raw_sent) == 1
-    assert [(r.confirm_transport, r.label_counter) for r in sink.records] == [("raw", True)]
-
-
 async def test_a_test_print_without_a_counter_stores_no_counter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

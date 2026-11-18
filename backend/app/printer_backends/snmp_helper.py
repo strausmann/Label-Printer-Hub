@@ -221,6 +221,9 @@ class PreflightStatus:
     # ``prtMarkerLifeCount`` (#393): printed labels over the printer's life; ``None`` when the
     # printer does not report it.
     marker_count: int | None = None
+    # True when the agent refused the whole request because of the counter (an SNMPv1-style
+    # ``noSuchName``) and was asked again without it: the caller stops asking for it (#393).
+    counter_refused: bool = False
 
     @property
     def media_kind(self) -> MediaKind | None:
@@ -349,19 +352,26 @@ async def _preflight_request(
 
 
 async def query_preflight(
-    host: str, *, community: str = "public", timeout_s: float = 3.0
+    host: str,
+    *,
+    community: str = "public",
+    timeout_s: float = 3.0,
+    ask_counter: bool = True,
 ) -> PreflightStatus:
     """Single round-trip: status + error-state + loaded tape + label counter (#393).
 
     Used by every tape backend's preflight right before sending a print job. The counter
     (``prtMarkerLifeCount``) is optional: a missing one is ``marker_count=None``. An agent that
     answers the whole request with an error status because of the counter is asked once more
-    without it. Raises SnmpQueryError on transport failure.
+    without it (``counter_refused``); ``ask_counter=False`` leaves the counter out from the
+    start. Raises SnmpQueryError on transport failure.
     """
     error_indication, error_status, var_binds = await _preflight_request(
-        host, community, timeout_s, with_counter=True
+        host, community, timeout_s, with_counter=ask_counter
     )
-    if not error_indication and error_status:
+    refused = False
+    if ask_counter and not error_indication and error_status:
+        refused = True
         error_indication, error_status, var_binds = await _preflight_request(
             host, community, timeout_s, with_counter=False
         )
@@ -384,6 +394,7 @@ async def query_preflight(
         error_flags=decode_error_flags(raw_error_blob),
         media_raw=raw_media_text.strip() or None,
         marker_count=marker_count,
+        counter_refused=refused and not error_status,
     )
 
 

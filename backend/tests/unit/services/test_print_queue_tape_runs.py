@@ -1069,12 +1069,18 @@ async def test_a_printer_without_a_status_check_still_prints_in_groups() -> None
 
 
 @pytest.mark.parametrize(
-    ("k", "done", "unknown"),
-    [(15, 10, (10, 20)), (20, 10, (10, 20)), (45, 40, (40, 50))],
+    ("k", "done", "unknown", "code"),
+    [
+        (15, 10, (10, 20), "outcome_unknown"),
+        # #393: the counter shows all ten labels of the second group: they printed, and the
+        # third group is refused before anything is sent.
+        (20, 20, (20, 30), "tape_empty"),
+        (45, 40, (40, 50), "outcome_unknown"),
+    ],
     ids=["inside a group", "at a group boundary", "in the last group of the sub-job"],
 )
 async def test_the_mock_backend_runs_out_of_tape_through_the_pt_adapter(
-    k: int, done: int, unknown: tuple[int, int]
+    k: int, done: int, unknown: tuple[int, int], code: str
 ) -> None:
     """The real PT queue adapter over ``MockPrinterBackend(tape_runs_out_after=k)``."""
     from app.printer_backends.mock_backend import MockPrinterBackend
@@ -1097,7 +1103,7 @@ async def test_the_mock_backend_runs_out_of_tape_through_the_pt_adapter(
         await _until(_stopped(queue, run_id))
         codes = await _codes(queue, ids)
         assert await _states(queue, ids[:done]) == [JobState.COMPLETED] * done
-        assert codes[unknown[0] : unknown[1]] == ["outcome_unknown"] * (unknown[1] - unknown[0])
+        assert codes[unknown[0] : unknown[1]] == [code] * (unknown[1] - unknown[0])
         assert codes[unknown[1] :] == ["not_started"] * (60 - unknown[1])
         assert len(backend.printed_images) == k
         info = queue.pause_info(printer.id)

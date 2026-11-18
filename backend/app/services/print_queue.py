@@ -45,6 +45,7 @@ from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.models.printer_state import PrinterState
 from app.printer_backends.exceptions import (
+    ConfirmationUnknownError,
     LabelsNotConfirmedError,
     MediaTypeMismatchError,
     PrinterCoverOpenError,
@@ -187,6 +188,7 @@ _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
     MediaTypeMismatchError: "media_type_mismatch",
     PrinterReportedError: "printer_error",
     LabelsNotConfirmedError: "labels_not_confirmed",
+    ConfirmationUnknownError: "outcome_unknown",
 }
 
 
@@ -3006,7 +3008,12 @@ class PrintQueue:
                         await check()
                     except asyncio.CancelledError:
                         raise
-                    except LabelsNotConfirmedError as exc:
+                    except PrinterError as exc:
+                        if exc.printed is None:  # the group was sent: its outcome is unknown
+                            await self._stop_run(
+                                printer_id, batch, run, active, later, exc, nothing_sent=False
+                            )
+                            return
                         # #393: the printer confirmed the first ``printed`` labels of the group
                         # (in print order); they are done, the rest failed and the run stops.
                         await self._stop_unconfirmed(printer_id, batch, run, active, later, exc)
@@ -3171,16 +3178,18 @@ class PrintQueue:
         run: TapeRun | None,
         active: list[Job],
         later: list[str],
-        exc: LabelsNotConfirmedError,
+        exc: PrinterError,
     ) -> None:
         """#393: the first ``exc.printed`` labels of the group printed, the rest did not.
 
-        The printed ones are completed like a group that passed; the others fail with
-        ``labels_not_confirmed``, every label after the group is not started, and the run stops
-        so that ``reprint_from`` starts at the first label the printer did not confirm. The
-        printer is not paused: a blocking error bit would have raised its own error.
+        The printed ones are completed like a group that passed; the others fail with the
+        error's code (``labels_not_confirmed``, or the blocking bit's, e.g. ``tape_empty``),
+        every label after the group is not started, and the run stops so that ``reprint_from``
+        starts at the first label that did not print. A blocking bit pauses the printer as
+        always; a plain shortfall does not.
         """
-        printed = active[: exc.printed]
+        count = max(0, min(exc.printed or 0, len(active)))
+        printed = active[:count]
         if printed:
             await self._complete_group(printer_id, batch, printed)
             self._drop_pictures(run, [job.id for job in printed])
@@ -3188,11 +3197,11 @@ class PrintQueue:
             printer_id,
             batch,
             run,
-            active[exc.printed :],
+            active[count:],
             later,
             exc,
             nothing_sent=False,
-            not_confirmed=True,
+            not_printed=True,
         )
 
     async def _stop_run(
@@ -3205,13 +3214,14 @@ class PrintQueue:
         exc: Exception,
         *,
         nothing_sent: bool,
-        not_confirmed: bool = False,
+        not_printed: bool = False,
     ) -> None:
         """A group failed and the run stops; every label after the group is not started.
 
-        *not_confirmed* (#393, ``LabelsNotConfirmedError``): *active* are the labels the printer
-        did not confirm. They fail with ``labels_not_confirmed`` (a reprint starts at the first
-        of them, as after a refusal: ``stop_kind`` ``refused``) and the printer is not paused.
+        *not_printed* (#393, an error with a known printed count): *active* are the labels the
+        printer did not print. They fail with the error's code (a reprint starts at the first of
+        them, as after a refusal: ``stop_kind`` ``refused``). A plain shortfall
+        (``LabelsNotConfirmedError``) does not pause the printer.
 
         *nothing_sent* (the backend refused before sending, ``PrinterError.nothing_sent``): the
         group's labels did not print; they fail with the real error code. Otherwise the group's
@@ -3227,14 +3237,14 @@ class PrintQueue:
             cause, cause_msg, cause_detail = "batch_failed", f"batch print failed: {exc}", None
         if (
             isinstance(exc, PrinterError)
-            and not not_confirmed
+            and not isinstance(exc, LabelsNotConfirmedError)
             and printer_id in self._worker_states
         ):
             await self.pause_printer(printer_id, reason=cause)
         if run is not None:
             later = [*later, *run.job_ids[run.sub_jobs[run.current][1] :]]
         group_failed: list[Job] = []  # jobs that took FAILED here (M8: only these are stored)
-        if not_confirmed:
+        if not_printed:
             code, message = cause, cause_msg
             detail: dict[str, Any] = dict(cause_detail or {})
         elif nothing_sent:
@@ -3266,7 +3276,7 @@ class PrintQueue:
             waiting.error_msg = waiting.error_message
             waiting.error_detail = {"cause": cause}
             not_started.append(waiting)
-        not_printed = nothing_sent or not_confirmed
+        not_printed = nothing_sent or not_printed
         if run is not None and active:
             first = run.job_ids.index(active[0].id)
             last = run.job_ids.index(active[-1].id)
@@ -3295,8 +3305,8 @@ class PrintQueue:
             batch.batch_id,
             printer_id,
             cause,
-            "not confirmed"
-            if not_confirmed
+            "not printed"
+            if not_printed and not nothing_sent
             else ("nothing sent" if nothing_sent else "outcome unknown"),
             len(group_failed),
             len(not_started),

@@ -36,6 +36,7 @@ from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.ipp.codec import Attr, Tag
 from app.printer_backends.ipp.errors import (
     IppError,
+    IppNotFoundError,
     IppStatusError,
     IppUnreachableError,
 )
@@ -131,10 +132,17 @@ RecordSink = Callable[[ConfirmationRecord], Awaitable[None]]
 
 @dataclass(frozen=True)
 class IppOutcome:
-    """How the IPP jobs of one send ended: ``completed`` all of them, else ``printed`` labels."""
+    """How the IPP jobs of one send ended: ``completed`` all of them, else ``printed`` labels.
+
+    ``pending``: the job that had no final state at the timeout (it may still print; the caller
+    cancels it). ``vanished``: the printer no longer knew a job it had answered for before (some
+    printers drop finished jobs quickly), so the label counter decides.
+    """
 
     completed: bool
     printed: int
+    pending: int | None = None
+    vanished: bool = False
 
 
 class TapeIppTransport:
@@ -159,12 +167,14 @@ class TapeIppTransport:
         self._query_timeout_s = query_timeout_s
         self._upload_timeout_s = upload_timeout_s
 
-    def _client(self) -> IppClient:
+    def _client(self, upload_timeout_s: float | None = None) -> IppClient:
         return IppClient(
             self.uri,
             transport=self._transport,
             query_timeout_s=self._query_timeout_s,
-            upload_timeout_s=self._upload_timeout_s,
+            upload_timeout_s=self._upload_timeout_s
+            if upload_timeout_s is None
+            else upload_timeout_s,
         )
 
     async def offers_raster(self) -> bool:
@@ -177,28 +187,46 @@ class TapeIppTransport:
         formats = attrs.get("document-format-supported") or []
         return any(isinstance(f, str) and f.lower() == OCTET_STREAM for f in formats)
 
-    async def submit(self, data: bytes) -> int:
-        """Send *data* as one Print-Job; returns the printer's job id.
+    async def submit(self, data: bytes, labels: int = 1) -> int:
+        """Send *data* (*labels* labels) as one Print-Job; returns the printer's job id.
 
-        ``job-name`` is unique per send. Raises the client's ``IppError``s.
+        ``job-name`` is unique per send. The upload may take as long as the labels may take to
+        print (an embedded server can throttle the upload while it prints), at least the
+        default. Raises the client's ``IppError``s.
         """
         job_name = f"labelyard-tape-{uuid.uuid4().hex[:16]}"
         op_attrs = [
             Attr("job-name", Tag.NAME, [job_name]),
             Attr("document-format", Tag.MIME, [OCTET_STREAM]),
         ]
-        async with self._client() as client:
+        upload_s = max(self._upload_timeout_s, confirm_timeout_s(labels))
+        async with self._client(upload_s) as client:
             accepted = await client.print_job(data, [], op_attrs)
         return accepted.job_id
+
+    async def cancel(self, job_id: int) -> bool:
+        """Best-effort Cancel-Job; ``True`` when the printer took it (or no longer has the job)."""
+        try:
+            async with self._client() as client:
+                await client.cancel_job(job_id)
+        except IppNotFoundError:
+            return True
+        except IppError as exc:
+            _logger.warning("IPP job could not be cancelled (%s)", type(exc).__name__)
+            return False
+        _logger.info("IPP job that was not confirmed in time cancelled")
+        return True
 
     async def wait(
         self, jobs: list[tuple[int, int]], *, timeout_s: float, poll_s: float = CONFIRM_POLL_S
     ) -> IppOutcome:
         """Poll each ``(job_id, labels)`` until a final state (``>= 7``) or the timeout.
 
-        ``9`` counts the job's labels as printed. ``7``/``8``, a timeout or a job the printer no
-        longer answers for stop the wait: ``printed`` is the labels of the completed jobs plus
-        the failed job's last ``job-impressions-completed``. Never raises.
+        ``9`` counts the job's labels as printed. ``7``/``8`` stop the wait with the labels of
+        the completed jobs plus the failed job's last ``job-impressions-completed``. At the
+        timeout the job still open is ``pending``. A job the printer answers ``not found`` for
+        after it was seen once is ``vanished`` (the counter decides). Other errors are retried
+        until the timeout. Never raises.
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
@@ -206,13 +234,20 @@ class TapeIppTransport:
         async with self._client() as client:
             for job_id, labels in jobs:
                 impressions = 0
+                seen = False
                 while True:
                     try:
                         info = await client.get_job(job_id)
+                    except IppNotFoundError:
+                        if seen:
+                            _logger.info("IPP job no longer known; the label counter decides")
+                            return IppOutcome(False, printed, vanished=True)
+                        info = None
                     except IppError as exc:
                         _logger.warning("IPP job state not readable (%s)", type(exc).__name__)
                         info = None
                     if info is not None:
+                        seen = True
                         impressions = info.impressions_completed or impressions
                         if info.state >= _IPP_STATE_FINAL:
                             if info.state == _IPP_STATE_COMPLETED:
@@ -220,7 +255,7 @@ class TapeIppTransport:
                                 break
                             return IppOutcome(False, printed + min(impressions, labels))
                     if loop.time() >= deadline:
-                        return IppOutcome(False, printed + min(impressions, labels))
+                        return IppOutcome(False, printed + min(impressions, labels), pending=job_id)
                     await asyncio.sleep(poll_s)
         return IppOutcome(True, printed)
 
@@ -246,7 +281,6 @@ class TapeSendState:
     ipp_jobs: list[tuple[int, int]] = field(default_factory=list)
     detecting: bool = False
     detect_ipp_failed: bool = False
-    last_raw: tuple[Callable[[], Awaitable[None]], int] | None = None
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -256,7 +290,6 @@ class TapeSendState:
         self.ipp_jobs = []
         self.detecting = detect
         self.detect_ipp_failed = False
-        self.last_raw = None
 
     async def use_ipp(self) -> bool:
         """Whether this send goes out over IPP.
@@ -299,13 +332,12 @@ class TapeSendState:
         An IPP Print-Job the printer did not take (unreachable, a refusal status) sent nothing,
         so the same bytes go out over *raw*; in a test print that records IPP as not working.
         Any other IPP failure (the upload had begun, an unusable answer) may have printed: it
-        raises ``PrintFailedError``. *raw* is the backend's 9100 send, kept so a test print can
-        repeat it.
+        raises ``PrintFailedError``. *raw* is the backend's 9100 send. An accepted job is never
+        sent again over 9100.
         """
-        self.last_raw = (raw, labels)
         if await self.use_ipp():
             try:
-                job_id = await self.ipp.submit(data)
+                job_id = await self.ipp.submit(data, labels)
             except (IppUnreachableError, IppStatusError) as exc:
                 _logger.warning(
                     "IPP Print-Job not taken (%s); sending over TCP 9100", type(exc).__name__

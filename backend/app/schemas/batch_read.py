@@ -54,15 +54,22 @@ class TapeRunRead(BaseModel):
             "`stopped`: a group failed; the labels after it were not started. With "
             "`stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the "
             "status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a "
-            "QL-820NWB reports a DK roll end is not verified); with `refused` the printer refused "
-            "before anything was sent (wrong tape, no tape, cover open, unreachable). "
+            "QL-820NWB reports a DK roll end is not verified); with `refused` the labels from "
+            "`reprint_from` on did not print: the printer refused before anything was sent "
+            "(wrong tape, no tape, cover open, unreachable), or it confirmed only the labels "
+            "before them (#393: `labels_not_confirmed`, or a blocking bit such as `tape_empty` "
+            "with a known count; the confirmed labels are done). "
             "`POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept "
             "in memory: a hub restart fails every label that waited for a confirmation "
             "(`tape_run_interrupted`), and a stopped run cannot be reprinted after it."
         )
     )
     stop_kind: Literal["unknown", "refused"] | None = Field(
-        description="After a stop: the group's outcome is unknown, or nothing of it was sent."
+        description=(
+            "After a stop: `unknown`, the group's outcome is unknown; `refused`, the labels "
+            "from `reprint_from` on did not print (nothing was sent, or the printer confirmed "
+            "only the labels before them)."
+        )
     )
     reprint_from: int | None = Field(description="Lowest `from_label` a reprint accepts.")
     reprint_to: int | None = Field(
