@@ -243,6 +243,10 @@ class TapeIppTransport:
             except IppError as exc:
                 _logger.warning("IPP job could not be cancelled (%s)", type(exc).__name__)
                 return CancelOutcome("failed")
+            # The deadline is checked after each Get-Job, so the real limit is CANCEL_STOP_S plus
+            # one Get-Job timeout (``query_timeout_s``). A Get-Job error other than not-found is
+            # retried until then and ends "failed", i.e. outcome_unknown: on purpose, a job we
+            # cannot see stop may still print.
             deadline = loop.time() + CANCEL_STOP_S
             while True:
                 try:

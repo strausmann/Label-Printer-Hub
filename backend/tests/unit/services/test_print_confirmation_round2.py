@@ -316,3 +316,22 @@ async def test_a_test_print_after_a_stored_raw_goes_over_9100(
         assert [(r.confirm_transport, r.label_counter) for r in stored] == [("raw", True)]
     finally:
         await queue.stop()
+
+
+# ---------------------------------------------------------------------------- F1 (round 3)
+
+
+async def test_the_last_group_fully_printed_with_a_bit_finishes_the_run_and_pauses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = FakeIppPrinter(formats=RASTER, job_script=[8], impressions_script=[3])
+    printer = _Printer(monkeypatch, _asgi(fake), tape_mm=12)
+    printer.flags_after = ["noPaper"]
+    queue, run_id, ids, _ = await _run(printer.queue_printer, 3)
+    try:
+        await _until(lambda: queue.run_info(run_id) is None)  # finished, not held as stopped
+        assert await _states(queue, ids) == [JobState.COMPLETED] * 3
+        assert queue.is_paused(printer.queue_printer.id)
+        assert queue.held_runs(printer.queue_printer.id) == []
+    finally:
+        await queue.stop(timeout_s=2.0)

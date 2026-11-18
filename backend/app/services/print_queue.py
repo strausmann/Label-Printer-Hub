@@ -3025,16 +3025,27 @@ class PrintQueue:
                                 printer_id, batch, run, active, later, exc, nothing_sent=False
                             )
                             return
-                        if not (
-                            exc.printed >= len(active) and isinstance(exc, LabelsNotConfirmedError)
+                        all_printed = exc.printed >= len(active)
+                        if (
+                            all_printed
+                            and not isinstance(exc, LabelsNotConfirmedError)
+                            and not self._run_has_queued_after(batch, run, group.stop)
                         ):
+                            # #393 F1: the run's last labels all printed, the bit came with the
+                            # last one (the roll is used up): the run finishes, the printer
+                            # pauses. A run is "stopped" only with labels left to start.
+                            if isinstance(exc, _RECOVERABLE_PRINTER_ERRORS):
+                                code = _printer_error_to_record(exc)[0]
+                                await self.pause_printer(printer_id, reason=code)
+                        elif not (all_printed and isinstance(exc, LabelsNotConfirmedError)):
                             # #393: the printer confirmed the first ``printed`` labels of the
                             # group (in print order); they are done, the rest failed (or, with
                             # all of them printed, the run stops after the group) and the run
                             # stops.
                             await self._stop_unconfirmed(printer_id, batch, run, active, later, exc)
                             return
-                        # Every label confirmed and no error state: the group passed.
+                        # Every label confirmed (no error state, or nothing left to start): the
+                        # group passed.
                     except Exception as exc:  # the group was sent: its outcome is unknown
                         await self._stop_run(
                             printer_id, batch, run, active, later, exc, nothing_sent=False
@@ -3187,6 +3198,16 @@ class PrintQueue:
             with contextlib.suppress(Exception):
                 await asyncio.shield(write())
             raise
+
+    def _run_has_queued_after(self, batch: BatchJob, run: TapeRun | None, stop: int) -> bool:
+        """A label after the group (this sub-job's or a later one's) is still queued."""
+        keys = [str(j) for j in batch.job_ids[stop:]]
+        if run is not None and run.current < len(run.sub_jobs):
+            keys += run.job_ids[run.sub_jobs[run.current][1] :]
+        return any(
+            (job := self._jobs.get(key)) is not None and job.state == JobState.QUEUED
+            for key in keys
+        )
 
     async def _stop_unconfirmed(
         self,

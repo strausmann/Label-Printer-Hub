@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any, Final, Literal
@@ -119,6 +120,11 @@ def _labels_sent(backend: Any, state: TapeSendState | None) -> int:
     return sent if isinstance(sent, int) and not isinstance(sent, bool) else 0
 
 
+def _now() -> float:
+    """The clock of the confirmation deadline (a test replaces it)."""
+    return time.monotonic()
+
+
 UNANSWERED_POLLS_LIMIT: Final = 5
 """Consecutive status reads without an SNMP answer after which the wait ends early (#393): the
 labels are then counted as printed with a warning (``PrinterOfflineError``, as before #393),
@@ -189,6 +195,9 @@ async def check_after_send(
     limit = confirm_timeout_s(expected) if timeout_s is None else timeout_s
     before = _count_of(getattr(backend, "last_send_status", None))
 
+    # One budget for the whole confirmation (#393 F3): a counter wait after an IPP job that
+    # vanished gets what is left of it, not a fresh timeout (plus the cancel's stop poll).
+    deadline = _now() + limit
     ipp_completed = False
     if state is not None and state.ipp_jobs:
         outcome = await state.ipp.wait(state.ipp_jobs, timeout_s=limit, poll_s=poll)
@@ -209,8 +218,6 @@ async def check_after_send(
         _raise_new_bits(await _read(backend), before_flags, None)
         return
 
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + limit
     unanswered = 0
     while True:
         try:
@@ -221,7 +228,7 @@ async def check_after_send(
                 _logger.warning("Status after a confirmed IPP job not readable")
                 await _finish(state, True, False)
                 return
-            if loop.time() >= deadline or unanswered >= UNANSWERED_POLLS_LIMIT:
+            if _now() >= deadline or unanswered >= UNANSWERED_POLLS_LIMIT:
                 await _finish(state, False, False)
                 raise
             await asyncio.sleep(poll)
@@ -265,7 +272,7 @@ async def check_after_send(
         if printed >= expected and status.hr_printer_status == "idle":
             await _finish(state, False, printed == expected)
             return
-        if loop.time() >= deadline:
+        if _now() >= deadline:
             if printed >= expected:
                 # Counted, but the printer never reported idle: the labels are out.
                 _logger.warning("Labels counted but the printer did not turn idle in time")
