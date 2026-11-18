@@ -54,6 +54,10 @@ about 3 s, a PT-P750W a 12 mm label in about 7 s; 8 s covers both."""
 CONFIRM_POLL_S: Final = 1.0
 """Seconds between two reads of the IPP job state or the label counter."""
 
+CANCEL_STOP_S: Final = 10.0
+"""First value: seconds a cancelled IPP job may take to reach its stop point (Cancel-Job is
+asynchronous: the printer reports ``processing-to-stop-point`` first)."""
+
 COUNTER_JUMP_SLACK: Final = 50
 """A counter that rose by more than the labels sent plus this is not ours to interpret (another
 sender, a replaced printer): it is accepted as printed with a warning."""
@@ -143,6 +147,24 @@ class IppOutcome:
     printed: int
     pending: int | None = None
     vanished: bool = False
+    # For a ``pending`` job: its labels, and the labels of the completed jobs before it.
+    pending_labels: int = 0
+    printed_before: int = 0
+
+
+@dataclass(frozen=True)
+class CancelOutcome:
+    """How a Cancel-Job of a job without a final state ended (#393).
+
+    ``cancelled``: the job reached a final state after the cancel; ``impressions`` is its last
+    ``job-impressions-completed`` (a label finished on the way to the stop point counts).
+    ``vanished``: the printer no longer knows the job (it may have finished and been purged),
+    so the label counter decides. ``failed``: the cancel was not taken or the job did not stop
+    within ``CANCEL_STOP_S``: the labels may still print.
+    """
+
+    result: Literal["cancelled", "vanished", "failed"]
+    impressions: int | None = None
 
 
 class TapeIppTransport:
@@ -204,18 +226,43 @@ class TapeIppTransport:
             accepted = await client.print_job(data, [], op_attrs)
         return accepted.job_id
 
-    async def cancel(self, job_id: int) -> bool:
-        """Best-effort Cancel-Job; ``True`` when the printer took it (or no longer has the job)."""
-        try:
-            async with self._client() as client:
+    async def cancel(self, job_id: int, *, poll_s: float | None = None) -> CancelOutcome:
+        """Best-effort Cancel-Job, then poll the job until it reached a final state.
+
+        Logged, never raises. See ``CancelOutcome`` for what each result means.
+        """
+        poll = CONFIRM_POLL_S if poll_s is None else poll_s
+        loop = asyncio.get_running_loop()
+        impressions: int | None = None
+        async with self._client() as client:
+            try:
                 await client.cancel_job(job_id)
-        except IppNotFoundError:
-            return True
-        except IppError as exc:
-            _logger.warning("IPP job could not be cancelled (%s)", type(exc).__name__)
-            return False
-        _logger.info("IPP job that was not confirmed in time cancelled")
-        return True
+            except IppNotFoundError:
+                _logger.warning("IPP job gone before its cancel; the label counter decides")
+                return CancelOutcome("vanished")
+            except IppError as exc:
+                _logger.warning("IPP job could not be cancelled (%s)", type(exc).__name__)
+                return CancelOutcome("failed")
+            deadline = loop.time() + CANCEL_STOP_S
+            while True:
+                try:
+                    info = await client.get_job(job_id)
+                except IppNotFoundError:
+                    _logger.warning("Cancelled IPP job gone; the label counter decides")
+                    return CancelOutcome("vanished")
+                except IppError as exc:
+                    _logger.warning("Cancelled IPP job not readable (%s)", type(exc).__name__)
+                    info = None
+                if info is not None:
+                    if info.impressions_completed is not None:
+                        impressions = info.impressions_completed
+                    if info.state >= _IPP_STATE_FINAL:
+                        _logger.info("IPP job that was not confirmed in time cancelled")
+                        return CancelOutcome("cancelled", impressions)
+                if loop.time() >= deadline:
+                    _logger.warning("Cancelled IPP job did not reach its stop point in time")
+                    return CancelOutcome("failed", impressions)
+                await asyncio.sleep(poll)
 
     async def wait(
         self, jobs: list[tuple[int, int]], *, timeout_s: float, poll_s: float = CONFIRM_POLL_S
@@ -255,7 +302,13 @@ class TapeIppTransport:
                                 break
                             return IppOutcome(False, printed + min(impressions, labels))
                     if loop.time() >= deadline:
-                        return IppOutcome(False, printed + min(impressions, labels), pending=job_id)
+                        return IppOutcome(
+                            False,
+                            printed + min(impressions, labels),
+                            pending=job_id,
+                            pending_labels=labels,
+                            printed_before=printed,
+                        )
                     await asyncio.sleep(poll_s)
         return IppOutcome(True, printed)
 
@@ -294,12 +347,13 @@ class TapeSendState:
     async def use_ipp(self) -> bool:
         """Whether this send goes out over IPP.
 
-        A test print always tries IPP. Otherwise the stored record decides; a stored ``raw`` is
-        never overridden. Without a record the probe decides once per backend instance (cached);
-        a failing probe means 9100 and is logged once.
+        A test print tries IPP, unless an earlier test print already stored ``raw`` (its IPP job
+        did not complete): then it goes over 9100 and the counter confirms it. Otherwise the
+        stored record decides; a stored ``raw`` is never overridden. Without a record the probe
+        decides once per backend instance (cached); a failing probe means 9100, logged once.
         """
         if self.detecting:
-            return True
+            return self.record is None or self.record.confirm_transport == "ipp"
         if self.record is not None:
             return self.record.confirm_transport == "ipp"
         if self._probed is None:

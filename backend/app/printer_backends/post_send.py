@@ -32,7 +32,7 @@ import asyncio
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from app.printer_backends.exceptions import (
     ConfirmationUnknownError,
@@ -168,8 +168,8 @@ async def check_after_send(
       is logged and accepted: a job never fails on a counter that cannot be interpreted.
       ``UNANSWERED_POLLS_LIMIT`` reads in a row without an answer end the wait early.
     - **Blocking bits** carry the printed count when it is known (``PrinterError.printed``);
-      a counter that reached all labels with a bit set (the last label used up the roll)
-      counts them as printed, and the next preflight refuses.
+      with every label counted (the last label used up the roll) it is the labels sent, and the
+      queue keeps all of them done and pauses.
     - No label count (a backend that does not report one): one read, as before #393.
 
     A test print (``send_state.detecting``) also decides and stores the ``ConfirmationRecord``.
@@ -198,7 +198,12 @@ async def check_after_send(
             _logger.warning("The printer forgot the IPP job; the label counter decides")
             state.ipp_jobs = []
         else:
-            await _ipp_not_completed(backend, state, outcome, expected, before, before_flags)
+            decided = await _ipp_not_completed(
+                backend, state, outcome, expected, before, before_flags, poll
+            )
+            if decided == "printed":
+                return
+            state.ipp_jobs = []  # "counter": the label counter decides
 
     if expected <= 0:
         _raise_new_bits(await _read(backend), before_flags, None)
@@ -239,9 +244,10 @@ async def check_after_send(
         interpretable = printed is not None and 0 <= printed <= expected + COUNTER_JUMP_SLACK
         if _has_new_bits(status, before_flags):
             if interpretable and printed is not None and printed >= expected:
-                _logger.warning("Error bits with every label counted; counted as printed")
+                # Every label came out (the last one used up the roll): all are printed, and
+                # the bit pauses the printer.
                 await _finish(state, False, printed == expected)
-                return
+                _raise_new_bits(status, before_flags, expected)
             _raise_new_bits(status, before_flags, printed if interpretable else None)
         if printed is None:
             _logger.warning("No label counter before or after sending; counted as printed")
@@ -277,31 +283,55 @@ async def _ipp_not_completed(
     expected: int,
     before: int | None,
     before_flags: frozenset[str],
-) -> None:
-    """An IPP job of the send did not complete: always raises (#393).
+    poll: float,
+) -> Literal["printed", "counter"]:
+    """An IPP job of the send did not complete (#393).
 
-    A job still open is cancelled first. The status is read once: a blocking bit raises its
-    error with the printed count; a failed read changes nothing. A failed cancel means the
-    labels may still print (``ConfirmationUnknownError``), else ``LabelsNotConfirmedError``.
+    A job still open is cancelled and polled until it stopped (``TapeIppTransport.cancel``):
+
+    - the cancel failed or the job did not stop: the labels may still print, so
+      ``ConfirmationUnknownError``, whatever bits the printer reports;
+    - the job is gone: ``"counter"``, the label counter decides;
+    - it stopped: its last impressions count.
+
+    Then the status is read once (a failed read changes nothing). Every label printed:
+    ``"printed"``, or the blocking bit's error carrying ``printed = expected``. Otherwise the
+    bit's error carrying the printed count, else ``LabelsNotConfirmedError``.
     """
-    cancelled = True
+    printed = outcome.printed
     if outcome.pending is not None:
-        cancelled = await state.ipp.cancel(outcome.pending)
-    status: PreflightStatus | None
+        cancel = await state.ipp.cancel(outcome.pending, poll_s=poll)
+        if cancel.result == "vanished":
+            return "counter"
+        if cancel.result == "failed":
+            status = await _read_or_none(backend)
+            await _finish(state, False, _exact(before, status, expected))
+            raise ConfirmationUnknownError()
+        if cancel.impressions is not None:
+            printed = outcome.printed_before + min(cancel.impressions, outcome.pending_labels)
+    status = await _read_or_none(backend)
+    await _finish(state, False, _exact(before, status, expected))
+    if printed >= expected:
+        if status is not None and _has_new_bits(status, before_flags):
+            _raise_new_bits(status, before_flags, expected)
+        _logger.warning("IPP job did not complete but reports every label printed")
+        return "printed"
+    if status is not None:
+        _raise_new_bits(status, before_flags, printed)
+    raise LabelsNotConfirmedError(printed, expected)
+
+
+async def _read_or_none(backend: Any) -> PreflightStatus | None:
     try:
-        status = await _read(backend)
+        return await _read(backend)
     except (PrinterOfflineError, SnmpQueryError):
         _logger.warning("Status after an IPP job that did not complete not readable")
-        status = None
+        return None
+
+
+def _exact(before: int | None, status: PreflightStatus | None, expected: int) -> bool:
     after = _count_of(status) if status is not None else None
-    await _finish(
-        state, False, before is not None and after is not None and after - before == expected
-    )
-    if status is not None:
-        _raise_new_bits(status, before_flags, outcome.printed)
-    if not cancelled:
-        raise ConfirmationUnknownError()
-    raise LabelsNotConfirmedError(outcome.printed, expected)
+    return before is not None and after is not None and after - before == expected
 
 
 async def _finish(state: TapeSendState | None, ipp_completed: bool, counter_exact: bool) -> None:

@@ -44,7 +44,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     UdpTransportTarget,
     get_cmd,
 )
-from pysnmp.proto import rfc1902
+from pysnmp.proto import rfc1902, rfc1905
 
 from app.printer_backends.exceptions import SnmpDiscoveryError, SnmpQueryError
 
@@ -221,8 +221,9 @@ class PreflightStatus:
     # ``prtMarkerLifeCount`` (#393): printed labels over the printer's life; ``None`` when the
     # printer does not report it.
     marker_count: int | None = None
-    # True when the agent refused the whole request because of the counter (an SNMPv1-style
-    # ``noSuchName``) and was asked again without it: the caller stops asking for it (#393).
+    # True when the agent said the counter does not exist: ``noSuchName`` for the whole request
+    # (asked again without it), or ``noSuchObject``/``noSuchInstance`` for the counter. The
+    # caller stops asking for it (#393). A transient error (genErr, a timeout) does not count.
     counter_refused: bool = False
 
     @property
@@ -335,6 +336,18 @@ def _counter(value: object) -> int | None:
     return count if count >= 0 else None
 
 
+_NO_SUCH_NAME: Final = 2
+"""SNMP ``error-status`` noSuchName (RFC 1157): the agent does not know an OID of the request."""
+
+
+def _error_code(error_status: object) -> int | None:
+    try:
+        code: int = int(error_status)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return None
+    return code
+
+
 async def _preflight_request(
     host: str, community: str, timeout_s: float, *, with_counter: bool
 ) -> tuple[object, object, list[object]]:
@@ -371,7 +384,9 @@ async def query_preflight(
     )
     refused = False
     if ask_counter and not error_indication and error_status:
-        refused = True
+        # Only noSuchName names the OID as unknown; genErr and the like may be transient (a
+        # printer that boots): this read goes without the counter, the next asks again.
+        refused = _error_code(error_status) == _NO_SUCH_NAME
         error_indication, error_status, var_binds = await _preflight_request(
             host, community, timeout_s, with_counter=False
         )
@@ -387,6 +402,8 @@ async def query_preflight(
     raw_error_blob = bytes(binds[1][1])
     raw_media_text = _cap(_strip_control_characters(str(binds[2][1])))
     marker_count = _counter(binds[3][1]) if len(binds) > 3 else None
+    if len(binds) > 3 and isinstance(binds[3][1], (rfc1905.NoSuchObject, rfc1905.NoSuchInstance)):
+        refused = True  # the agent says the counter does not exist
 
     return PreflightStatus(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),

@@ -283,7 +283,7 @@ async def test_a_test_print_with_working_ipp_stores_ipp_and_the_counter(
     snmp = _Snmp(monkeypatch)
     fake = FakeIppPrinter(formats=RASTER, job_script=[5, 9])
     backend = _backend(fake)
-    backend.send_state.record = ConfirmationRecord("raw", False, _AT)  # a test print re-decides
+    backend.send_state.record = ConfirmationRecord("ipp", False, _AT)  # a test print re-decides
     sink = _Sink()
     backend.send_state.sink = sink
 

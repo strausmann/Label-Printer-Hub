@@ -545,6 +545,10 @@ msgstr "ein neuer Bogen"
 msgid "A print is already on its way."
 msgstr "Ein Druck ist schon unterwegs."
 
+#: src/features/printers/PauseReason.tsx
+msgid "A print may not have finished — check the printer"
+msgstr "Ein Druck ist vielleicht nicht fertig – prüf den Drucker"
+
 #: src/features/overview/OverviewPage.tsx
 msgid "A print was refused"
 msgstr "Ein Druck wurde abgelehnt"

@@ -1073,8 +1073,8 @@ async def test_a_printer_without_a_status_check_still_prints_in_groups() -> None
     [
         (15, 10, (10, 20), "outcome_unknown"),
         # #393: the counter shows all ten labels of the second group: they printed, and the
-        # third group is refused before anything is sent.
-        (20, 20, (20, 30), "tape_empty"),
+        # run stops right after it (paused for the empty tape); the rest is not started.
+        (20, 20, (20, 20), "not_started"),
         (45, 40, (40, 50), "outcome_unknown"),
     ],
     ids=["inside a group", "at a group boundary", "in the last group of the sub-job"],

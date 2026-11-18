@@ -110,10 +110,13 @@ async def test_a_bit_with_a_counted_shortfall_carries_the_printed_count() -> Non
     assert err.value.printed == 3
 
 
-async def test_a_bit_after_all_labels_were_counted_leaves_them_printed() -> None:
-    # The last label used up the roll: all five printed, the next preflight refuses.
+async def test_a_bit_after_all_labels_were_counted_carries_all_of_them() -> None:
+    # The last label used up the roll: all five printed (round 2: the error says so, and the
+    # queue keeps them done and pauses).
     backend = _Backend(10, 5, [_status(15, "other", ["noPaper"])])
-    await _check(backend)
+    with pytest.raises(TapeEmptyError) as err:
+        await _check(backend)
+    assert err.value.printed == 5
 
 
 async def test_a_bit_without_a_counter_has_no_printed_count() -> None:

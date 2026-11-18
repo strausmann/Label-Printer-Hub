@@ -19,6 +19,12 @@ describe("PauseReason", () => {
     await initI18n("en");
   });
 
+  it("outcome_unknown reads as a sentence, not the code font (#393)", () => {
+    const { container } = render(ui("outcome_unknown"));
+    expect(screen.getByText("A print may not have finished — check the printer")).toBeVisible();
+    expect(container.querySelector("code")).toBeNull();
+  });
+
   it("a tape code keeps its sentence", () => {
     render(ui("tape_empty"));
     expect(screen.getByText("Tape is empty")).toBeVisible();
@@ -53,5 +59,16 @@ describe("PauseReason", () => {
       </I18nProvider>,
     );
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("PauseReason in German", () => {
+  beforeEach(async () => {
+    await initI18n("de");
+  });
+
+  it("outcome_unknown reads in German (#393)", () => {
+    render(ui("outcome_unknown"));
+    expect(screen.getByText("Ein Druck ist vielleicht nicht fertig – prüf den Drucker")).toBeVisible();
   });
 });

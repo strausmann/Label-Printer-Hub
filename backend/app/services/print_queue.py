@@ -2612,7 +2612,14 @@ class PrintQueue:
                     # recovered job the roll loaded now, never the original's).
                     await self._record_roll_at_send(printer, [job.id])
                 # #389: the libraries read nothing back over the network; ask the printer.
-                await self._check_after_send(printer, job)
+                pause_after: PrinterError | None = None
+                try:
+                    await self._check_after_send(printer, job)
+                except PrinterError as exc:
+                    if exc.printed is None or exc.printed < 1:
+                        raise
+                    # #393: the label printed; the error is the printer's state after it.
+                    pause_after = exc
                 _from = job.state
                 JobStateMachine.transition(job, JobState.COMPLETED)
                 # The event goes out before the write, as in ``_complete_group``: a removal
@@ -2629,6 +2636,10 @@ class PrintQueue:
                     functools.partial(self._store.mark_done, UUID(job.id))
                 )
                 logger.info("Job %s completed on %s", job.id, printer_id)
+                if pause_after is not None and isinstance(pause_after, _RECOVERABLE_PRINTER_ERRORS):
+                    await self.pause_printer(
+                        printer_id, reason=_printer_error_to_record(pause_after)[0]
+                    )
             except asyncio.CancelledError:
                 # Forcible cancel after stop() timeout — re-raise so the task exits.
                 raise
@@ -3014,10 +3025,16 @@ class PrintQueue:
                                 printer_id, batch, run, active, later, exc, nothing_sent=False
                             )
                             return
-                        # #393: the printer confirmed the first ``printed`` labels of the group
-                        # (in print order); they are done, the rest failed and the run stops.
-                        await self._stop_unconfirmed(printer_id, batch, run, active, later, exc)
-                        return
+                        if not (
+                            exc.printed >= len(active) and isinstance(exc, LabelsNotConfirmedError)
+                        ):
+                            # #393: the printer confirmed the first ``printed`` labels of the
+                            # group (in print order); they are done, the rest failed (or, with
+                            # all of them printed, the run stops after the group) and the run
+                            # stops.
+                            await self._stop_unconfirmed(printer_id, batch, run, active, later, exc)
+                            return
+                        # Every label confirmed and no error state: the group passed.
                     except Exception as exc:  # the group was sent: its outcome is unknown
                         await self._stop_run(
                             printer_id, batch, run, active, later, exc, nothing_sent=False
@@ -3190,6 +3207,13 @@ class PrintQueue:
         """
         count = max(0, min(exc.printed or 0, len(active)))
         printed = active[:count]
+        # With every label printed the run stops right after the group: nothing of it is
+        # reprinted, a reprint starts at the first label that was not started.
+        resume_at = (
+            run.job_ids.index(active[-1].id) + 1
+            if run is not None and active and count >= len(active)
+            else None
+        )
         if printed:
             await self._complete_group(printer_id, batch, printed)
             self._drop_pictures(run, [job.id for job in printed])
@@ -3202,6 +3226,7 @@ class PrintQueue:
             exc,
             nothing_sent=False,
             not_printed=True,
+            resume_at=resume_at,
         )
 
     async def _stop_run(
@@ -3215,13 +3240,15 @@ class PrintQueue:
         *,
         nothing_sent: bool,
         not_printed: bool = False,
+        resume_at: int | None = None,
     ) -> None:
         """A group failed and the run stops; every label after the group is not started.
 
         *not_printed* (#393, an error with a known printed count): *active* are the labels the
         printer did not print. They fail with the error's code (a reprint starts at the first of
         them, as after a refusal: ``stop_kind`` ``refused``). A plain shortfall
-        (``LabelsNotConfirmedError``) does not pause the printer.
+        (``LabelsNotConfirmedError``) does not pause the printer. *resume_at*: the group printed
+        completely (*active* is empty); the run stops before this index of its print order.
 
         *nothing_sent* (the backend refused before sending, ``PrinterError.nothing_sent``): the
         group's labels did not print; they fail with the real error code. Otherwise the group's
@@ -3277,10 +3304,14 @@ class PrintQueue:
             waiting.error_detail = {"cause": cause}
             not_started.append(waiting)
         not_printed = nothing_sent or not_printed
-        if run is not None and active:
-            first = run.job_ids.index(active[0].id)
-            last = run.job_ids.index(active[-1].id)
-            run.unknown = (first, first if not_printed else last + 1)
+        if run is not None and (active or resume_at is not None):
+            if active:
+                first = run.job_ids.index(active[0].id)
+                last = run.job_ids.index(active[-1].id)
+                run.unknown = (first, first if not_printed else last + 1)
+            else:
+                assert resume_at is not None
+                run.unknown = (resume_at, resume_at)
             run.stop_kind = "refused" if not_printed else "unknown"
             run.reprintable = {j.id for j in (*group_failed, *not_started)}
             run.state = "stopped"

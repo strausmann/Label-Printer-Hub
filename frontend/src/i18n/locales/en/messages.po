@@ -545,6 +545,10 @@ msgstr "a new sheet"
 msgid "A print is already on its way."
 msgstr "A print is already on its way."
 
+#: src/features/printers/PauseReason.tsx
+msgid "A print may not have finished — check the printer"
+msgstr "A print may not have finished — check the printer"
+
 #: src/features/overview/OverviewPage.tsx
 msgid "A print was refused"
 msgstr "A print was refused"
