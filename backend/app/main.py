@@ -173,6 +173,7 @@ from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
 from app.sheets.sweep import SheetReservationSweep
 from app.web.api_docs import mount_api_docs
+from app.web.no_store import add_no_store
 from app.web.spa import add_security_headers, mount_spa
 from app.web.version_header import add_version_header
 
@@ -743,6 +744,8 @@ def create_app() -> _LifespanManager:
     # catch-all only sees what no API route claimed.
     add_security_headers(app)
     add_version_header(app, HUB_VERSION)
+    # #160: an API answer is never kept by a shared cache.
+    add_no_store(app)
     mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
     # #366: last, so it is the outermost of the hub's middlewares and logs the final status.

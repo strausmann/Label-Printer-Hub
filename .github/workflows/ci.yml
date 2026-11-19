@@ -343,7 +343,7 @@ jobs:
 
       - name: Check the licence files in the image
         run: |
-          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py'
+          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py && ! /opt/venv/bin/python -c "import tests" 2>/dev/null && test -z "$(find / -name e2e_app.py -not -path "/proc/*" 2>/dev/null)"'
 
       # Informational only, never a gate: what the default catalogues find without the SBOM cataloger.
       - name: Default catalogue (informational)
