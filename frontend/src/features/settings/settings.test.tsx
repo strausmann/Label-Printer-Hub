@@ -4,7 +4,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp, SIGNED_IN } from "../../test-utils";
+import { renderApp, SIGNED_IN, widenAppWaits } from "../../test-utils";
 import { ADMIN_PRINTER, KEY_ADMIN, KEY_KEPT, mockApi, PAGE_PRINTER, PRINTER_A, respond, settingsList, SHEET_TYPE } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -13,6 +13,11 @@ const lastBody = (calls: { method: string; path: string; body: string | undefine
   const call = [...calls].reverse().find((c) => c.method === method && c.path === path);
   return call?.body ? (JSON.parse(call.body) as Record<string, unknown>) : undefined;
 };
+
+// Each test boots the whole app; on a loaded runner (load average above 10) a test passed the limit. The per-test
+// limit and the findBy window are widened for this file only, like the other whole-app test files.
+vi.setConfig({ testTimeout: 15_000 });
+widenAppWaits();
 
 describe("Settings", () => {
   it("tells a non-admin they need an admin key", async () => {

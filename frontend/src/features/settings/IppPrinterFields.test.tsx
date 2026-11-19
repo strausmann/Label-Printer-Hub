@@ -4,12 +4,15 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, widenAppWaits } from "../../test-utils";
 import { ADMIN_PRINTER, apiErrorBody, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, respond } from "../test-api";
 import { trayProblem, uriProblem, type TrayDraft } from "./IppPrinterFields";
 
 // Typing an address key by key through the form is slow under coverage instrumentation.
+// Each test boots the whole app; on a loaded runner (load average above 10) a test passed the limit. The per-test
+// limit and the findBy window are widened for this file only, like the other whole-app test files.
 vi.setConfig({ testTimeout: 20_000 });
+widenAppWaits();
 
 afterEach(() => vi.unstubAllGlobals());
 

@@ -4,7 +4,7 @@
 import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, widenAppWaits } from "../../test-utils";
 import { KEY_ADMIN, mockApi, respond, settingsList } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -27,6 +27,11 @@ const resultLine = async (card: HTMLElement) =>
   (await within(card).findByText(/^(Works|Failed|Funktioniert|Fehlgeschlagen)$/)).closest<HTMLElement>("[role=status]")!;
 
 const testButton = (card: HTMLElement, de = false) => within(card).getByRole("button", { name: de ? "Verbindung testen" : "Test connection" });
+
+// Each test boots the whole app; on a loaded runner (load average above 10) a test passed the limit. The per-test
+// limit and the findBy window are widened for this file only, like the other whole-app test files.
+vi.setConfig({ testTimeout: 15_000 });
+widenAppWaits();
 
 describe("integration card state (#176)", () => {
   it("a configured integration reads 'Configured' and never 'Set up' (en)", async () => {

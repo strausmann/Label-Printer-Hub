@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { components } from "../../api/schema.gen";
-import { renderApp, SIGNED_IN } from "../../test-utils";
+import { renderApp, SIGNED_IN, widenAppWaits } from "../../test-utils";
 import {
   apiErrorBody,
   mockApi,
@@ -36,7 +36,10 @@ const MARGIN_OK: Schemas["MarginCheckRead"] = {
 const TWO_TYPES = [SHEET_TYPE, { ...SHEET_TYPE, key: "my-small", description: "Tiny", allow_qr: false }];
 
 // Whole-app renders with a dialog and a select: under coverage and a loaded runner they need more than 5 s.
-vi.setConfig({ testTimeout: 10_000 });
+// Each test boots the whole app; on a loaded runner (load average above 10) a test passed the limit. The per-test
+// limit and the findBy window are widened for this file only, like the other whole-app test files.
+vi.setConfig({ testTimeout: 20_000 });
+widenAppWaits();
 
 afterEach(() => vi.unstubAllGlobals());
 
