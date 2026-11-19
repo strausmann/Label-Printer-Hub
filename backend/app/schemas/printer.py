@@ -41,6 +41,13 @@ class PrintConfirmationRead(BaseModel):
         description="``ipp``: labels go out as an IPP job; ``raw``: over TCP port 9100"
     )
     label_counter: bool = Field(description="The label counter rose by exactly the labels sent")
+    counter_read: bool = Field(
+        description=(
+            "``false`` while the hub does not read the label counter, because the printer "
+            "refused it several times in a row; ``channel`` is then ``none``. It is asked again "
+            "after an hour and with every test print"
+        )
+    )
     confirmed_at: datetime = Field(description="When the test print found it")
 
     @field_serializer("confirmed_at")
@@ -57,6 +64,7 @@ class PrintConfirmationRead(BaseModel):
             channel=record.channel,
             confirm_transport=record.confirm_transport,
             label_counter=record.label_counter,
+            counter_read=not record.counter_off,
             confirmed_at=record.confirmed_at,
         )
 

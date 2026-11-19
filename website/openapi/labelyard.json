@@ -3106,6 +3106,11 @@
             "title": "Confirmed At",
             "type": "string"
           },
+          "counter_read": {
+            "description": "``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour and with every test print",
+            "title": "Counter Read",
+            "type": "boolean"
+          },
           "label_counter": {
             "description": "The label counter rose by exactly the labels sent",
             "title": "Label Counter",
@@ -3116,6 +3121,7 @@
           "channel",
           "confirm_transport",
           "label_counter",
+          "counter_read",
           "confirmed_at"
         ],
         "title": "PrintConfirmationRead",

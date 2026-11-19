@@ -22,7 +22,9 @@ sending and the check after sending (``post_send.check_after_send``).
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -62,6 +64,19 @@ COUNTER_JUMP_SLACK: Final = 50
 """A counter that rose by more than the labels sent plus this is not ours to interpret (another
 sender, a replaced printer): it is accepted as printed with a warning."""
 
+COUNTER_REFUSALS_TO_STOP: Final = 3
+"""Reads in a row whose agent refused the label counter (noSuchName, noSuchObject,
+noSuchInstance) before the hub stops asking for it (R26-1). A printer without the counter refuses
+every read, so it is found within the first three reads of a print (the check after sending
+reads about once a second); a single forged or garbled answer on the network no longer switches
+the confirmation off. Asking a printer without the counter costs one extra SNMP request per read,
+three times."""
+
+COUNTER_RETRY_S: Final = 3600.0
+"""Seconds after which a counter the hub stopped asking for is asked for again (R26-1): a
+printer that answers it again, or an attacker who has left, does not keep the confirmation off
+until a restart. Every test print asks again at once."""
+
 IPP_PORT: Final = 631
 IPP_PATH: Final = "/ipp/print"
 OCTET_STREAM: Final = "application/octet-stream"
@@ -77,6 +92,11 @@ _IPP_STATE_COMPLETED = 9
 _IPP_STATE_FINAL = 7
 
 ConfirmTransport = Literal["ipp", "raw"]
+
+
+def _monotonic() -> float:
+    """The clock of the counter retry window (a test replaces it)."""
+    return time.monotonic()
 
 
 def confirm_timeout_s(labels: int) -> float:
@@ -97,12 +117,16 @@ class ConfirmationRecord:
     ``ipp_incomplete``: the printer took an IPP job of a test print but did not complete it
     (aborted, canceled, no final state, forgotten). A later test print then stays on TCP 9100;
     after a Print-Job the printer did not take (unreachable, a refusal) it tries IPP again.
+    ``counter_off``: the hub currently does not read the label counter, because the printer
+    refused it ``COUNTER_REFUSALS_TO_STOP`` times in a row since (R26-1); the channel is then
+    ``none`` until the counter answers again or a test print re-decides.
     """
 
     confirm_transport: ConfirmTransport
     label_counter: bool
     confirmed_at: datetime
     ipp_incomplete: bool = False
+    counter_off: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -110,6 +134,7 @@ class ConfirmationRecord:
             "label_counter": self.label_counter,
             "confirmed_at": self.confirmed_at.isoformat(),
             "ipp_incomplete": self.ipp_incomplete,
+            "counter_off": self.counter_off,
         }
 
     @classmethod
@@ -121,9 +146,10 @@ class ConfirmationRecord:
         counter = data.get("label_counter")
         at = data.get("confirmed_at")
         incomplete = data.get("ipp_incomplete", False)  # absent in records before the field
+        counter_off = data.get("counter_off", False)
         if transport not in ("ipp", "raw") or not isinstance(counter, bool):
             return None
-        if not isinstance(incomplete, bool):
+        if not isinstance(incomplete, bool) or not isinstance(counter_off, bool):
             return None
         if not isinstance(at, str):
             return None
@@ -138,6 +164,7 @@ class ConfirmationRecord:
             label_counter=counter,
             confirmed_at=confirmed_at,
             ipp_incomplete=incomplete,
+            counter_off=counter_off,
         )
 
     @property
@@ -145,7 +172,7 @@ class ConfirmationRecord:
         """How this printer's prints are confirmed: IPP job state, label counter, or not at all."""
         if self.confirm_transport == "ipp":
             return "ipp"
-        return "label_counter" if self.label_counter else "none"
+        return "label_counter" if self.label_counter and not self.counter_off else "none"
 
 
 RecordSink = Callable[[ConfirmationRecord], Awaitable[None]]
@@ -375,6 +402,9 @@ class TapeSendState:
     detect_ipp_failed: bool = False
     detect_ipp_taken: bool = False
     detect_ipp_skipped: bool = False
+    # R26-1: refusals of the label counter in a row, and since when it is not asked for.
+    counter_refusals: int = 0
+    counter_off_at: float | None = None
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -386,6 +416,46 @@ class TapeSendState:
         self.detect_ipp_failed = False
         self.detect_ipp_taken = False
         self.detect_ipp_skipped = False
+        if detect:
+            # A test print re-decides everything, the label counter included (R26-1).
+            self.counter_refusals = 0
+            self.counter_off_at = None
+
+    def ask_counter(self) -> bool:
+        """Whether the next status read asks for the label counter (R26-1)."""
+        return self.counter_off_at is None or _monotonic() - self.counter_off_at >= COUNTER_RETRY_S
+
+    async def note_counter(self, *, refused: bool, answered: bool) -> None:
+        """Count a read's answer for the label counter (R26-1).
+
+        *refused*: the agent refused the counter; ``COUNTER_REFUSALS_TO_STOP`` of them in a row
+        stop asking for it (a refusal after the retry window starts the window again).
+        *answered*: it returned a count, which ends the streak and turns the counter back on.
+        A change is stored in the record (``counter_off``), so the printer view shows it.
+        """
+        if refused:
+            self.counter_refusals += 1
+            if self.counter_refusals < COUNTER_REFUSALS_TO_STOP:
+                return
+            if self.counter_off_at is None:
+                _logger.warning(
+                    "Tape printer refused the label counter %d times in a row; not asked for "
+                    "%.0f s or until the next test print",
+                    self.counter_refusals,
+                    COUNTER_RETRY_S,
+                )
+            self.counter_off_at = _monotonic()
+            await self._mark_counter_off(True)
+        elif answered:
+            if self.counter_off_at is not None:
+                _logger.info("Tape printer answers the label counter again")
+            self.counter_refusals = 0
+            self.counter_off_at = None
+            await self._mark_counter_off(False)
+
+    async def _mark_counter_off(self, off: bool) -> None:
+        if self.record is not None and self.record.counter_off != off:
+            await self.store(dataclasses.replace(self.record, counter_off=off))
 
     async def use_ipp(self) -> bool:
         """Whether this send goes out over IPP.

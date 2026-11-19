@@ -50,7 +50,7 @@ class Printer(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
         description="How a tape printer confirms its prints (#393), found by its last test "
         'print: {"confirm_transport": "ipp"|"raw", "label_counter": bool, "confirmed_at": iso, '
-        '"ipp_incomplete": bool}. '
+        '"ipp_incomplete": bool, "counter_off": bool}. '
         "NULL: never test-printed since 1.7.0; the hub then probes IPP at runtime.",
     )
     created_at: datetime = Field(

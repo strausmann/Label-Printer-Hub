@@ -26,6 +26,7 @@ from app.printer_backends.exceptions import (
 from app.printer_backends.post_send import check_after_send
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.printer_backends.tape_confirmation import (
+    COUNTER_REFUSALS_TO_STOP,
     ConfirmationRecord,
     TapeIppTransport,
     confirm_timeout_s,
@@ -241,6 +242,6 @@ async def test_an_agent_that_refused_the_counter_is_not_asked_again(
         )
 
     monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", refusing)
-    await backend.read_status()
-    await backend.read_status()
-    assert snmp.asked_counter == [True, False]
+    for _ in range(COUNTER_REFUSALS_TO_STOP + 1):  # R26-1: only consecutive refusals count
+        await backend.read_status()
+    assert snmp.asked_counter == [True] * COUNTER_REFUSALS_TO_STOP + [False]

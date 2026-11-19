@@ -2969,6 +2969,10 @@ msgstr "not confirmed"
 msgid "Not confirmed"
 msgstr "Not confirmed"
 
+#: src/features/printers/printConfirmation.ts
+msgid "Not confirmed — the label counter does not answer; a test print checks again"
+msgstr "Not confirmed — the label counter does not answer; a test print checks again"
+
 #: src/features/lookup/ItemView.tsx
 msgid "Not found"
 msgstr "Not found"

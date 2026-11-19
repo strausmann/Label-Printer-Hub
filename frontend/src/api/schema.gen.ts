@@ -2986,6 +2986,11 @@ export interface components {
              */
             confirmed_at: string;
             /**
+             * Counter Read
+             * @description ``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour and with every test print
+             */
+            counter_read: boolean;
+            /**
              * Label Counter
              * @description The label counter rose by exactly the labels sent
              */

@@ -286,8 +286,6 @@ class PTouchBackend:
         self.last_send_status: PreflightStatus | None = None
         # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
         self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
-        # #393 (M4): stops asking for the label counter once the agent refused it.
-        self._ask_counter = True
 
     @classmethod
     def from_settings(cls, settings: Any) -> PTouchBackend:
@@ -334,13 +332,15 @@ class PTouchBackend:
                 community=self._community if community is None else community,
                 timeout_s=timeout_s,
                 # Only passed once it is off: older callers' fakes take no such argument.
-                **({} if self._ask_counter else {"ask_counter": False}),
+                **({} if self.send_state.ask_counter() else {"ask_counter": False}),
             )
         except SnmpQueryError as exc:
             raise PrinterOfflineError(f"preflight SNMP failed: {exc}") from exc
-        if status.counter_refused:
-            # #393: this agent refuses the counter; one request per read from now on.
-            self._ask_counter = False
+        # #393, R26-1: consecutive refusals stop asking for the label counter; an answer turns
+        # it back on.
+        await self.send_state.note_counter(
+            refused=status.counter_refused, answered=status.marker_count is not None
+        )
         return status
 
     async def preflight_check(

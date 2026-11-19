@@ -16,7 +16,10 @@ export function printConfirmationText(confirmation: Printer["print_confirmation"
     case "label_counter":
       return t(msg`Label counter`);
     case "none":
-      return t(msg`Not confirmed`);
+      // R26-1: the test print found a label counter, but the printer has stopped answering it.
+      return confirmation?.label_counter && confirmation.counter_read === false
+        ? t(msg`Not confirmed — the label counter does not answer; a test print checks again`)
+        : t(msg`Not confirmed`);
     default:
       return t(msg`Not tested yet — a test print finds out`);
   }
