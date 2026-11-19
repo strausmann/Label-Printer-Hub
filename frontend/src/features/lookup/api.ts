@@ -18,7 +18,7 @@ async function toDataUrl(blob: Blob): Promise<string> {
   return `data:${blob.type || "image/png"};base64,${btoa(binary)}`;
 }
 
-const PREVIEW_DEBOUNCE_MS = 200;
+export const PREVIEW_DEBOUNCE_MS = 200;
 
 export const lookupKey = (app: string, id: string) => ["lookup", app, id] as const;
 
@@ -28,6 +28,12 @@ export const useLookup = (app: LookupApp, id: string) =>
     queryFn: () => apiFetch<LookupResult>(`/api/v1/lookup/${app}/${encodeURIComponent(id)}`),
     retry: false,
   });
+
+/** The spool label's data from a Spoolman lookup (`extra.swatch`), sent back as `data.swatch`; else undefined. */
+export const swatchOf = (item: LookupResult): unknown | undefined => {
+  const swatch = item.extra?.swatch;
+  return swatch && typeof swatch === "object" ? swatch : undefined;
+};
 
 const secondaryOf = (item: LookupResult): string[] => {
   const s = item.extra?.secondary;
@@ -40,11 +46,13 @@ const secondaryOf = (item: LookupResult): string[] => {
  */
 export function usePreviewImage(item: LookupResult, contentType: ContentType, tapeMm: number, enabled = true, layout?: LayoutOptions) {
   // A run of clicks on the layout choice asks for one preview, not one per click.
-  const wanted = JSON.stringify(layout ?? null);
+  // The spool label is one fixed across image: no orientation or preset ever travels with it (#346).
+  const wanted = JSON.stringify(contentType === "spool_swatch" ? null : (layout ?? null));
   const settled = useDebounced(wanted, PREVIEW_DEBOUNCE_MS);
   const asked = JSON.parse(settled) as LayoutOptions | null;
+  const swatch = swatchOf(item);
   const query = useQuery({
-    queryKey: ["preview", item.app, item.id, item.name, item.url, contentType, tapeMm, settled],
+    queryKey: ["preview", item.app, item.id, item.name, item.url, contentType, tapeMm, settled, JSON.stringify(swatch ?? null)],
     queryFn: () =>
       apiFetch<Blob>("/api/v1/render/preview", {
         method: "POST",
@@ -53,7 +61,13 @@ export function usePreviewImage(item: LookupResult, contentType: ContentType, ta
           content_type: contentType,
           tape_mm: tapeMm,
           ...asked,
-          data: { title: item.name, primary_id: item.id, qr_payload: item.url, secondary: secondaryOf(item) },
+          data: {
+            title: item.name,
+            primary_id: item.id,
+            qr_payload: item.url,
+            secondary: secondaryOf(item),
+            ...(contentType === "spool_swatch" && swatch !== undefined ? { swatch } : {}),
+          },
         },
       }).then(toDataUrl),
     retry: false,

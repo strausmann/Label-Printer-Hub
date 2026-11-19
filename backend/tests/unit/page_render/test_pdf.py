@@ -407,3 +407,44 @@ def test_unrotated_text_has_no_extra_matrix() -> None:
     pdf = _render(texts=[PageText(5000, 6000, 8.0, "L4736-0001")])
     assert inspect.cm_matrices(pdf) == []
     assert inspect.text_positions(pdf)[0] == pytest.approx((141.732, 671.811), abs=1e-3)
+
+
+# --- text turned half or three quarters (code on the back of a sheet, #350) -----------------
+
+
+def _glyph_origins_hmm(pdf: bytes, text: str, size_pt: float) -> list[tuple[float, float]]:
+    """Where each glyph of the one shown string starts, in hmm from the page's top left.
+
+    The string's origin comes from the content stream; each later glyph moves along the
+    text direction (the first row of the matrix) by the advance of the glyphs before it.
+    """
+    from app.page_render.pdf import text_width_mm
+    from app.page_render.transform import PT_PER_MM
+
+    (matrix,) = inspect.cm_matrices(pdf)
+    (origin,) = inspect.text_positions(pdf)
+    page_h_pt = 297 * PT_PER_MM
+    out: list[tuple[float, float]] = []
+    for i in range(len(text)):
+        advance_pt = text_width_mm(text[:i], size_pt) * PT_PER_MM
+        x_pt = origin[0] + advance_pt * matrix[0]
+        y_pt = origin[1] + advance_pt * matrix[1]
+        out.append((x_pt / PT_PER_MM * 100, (page_h_pt - y_pt) / PT_PER_MM * 100))
+    return out
+
+
+def test_page_text_rotation_270_reads_bottom_to_top() -> None:
+    pdf = _render(texts=[PageText(5000, 6000, 8.0, "AB", rotation=270)])
+    assert inspect.texts(pdf) == ["AB"]
+    (a, b) = _glyph_origins_hmm(pdf, "AB", 8.0)
+    assert a == pytest.approx((5000, 6000), abs=1)  # the origin rule of 90 holds
+    assert b[1] < a[1]  # B sits above A: the line reads from the bottom up
+    assert b[0] == pytest.approx(a[0], abs=0.01)
+
+
+def test_page_text_rotation_180_reads_right_to_left() -> None:
+    pdf = _render(texts=[PageText(5000, 6000, 8.0, "AB", rotation=180)])
+    (a, b) = _glyph_origins_hmm(pdf, "AB", 8.0)
+    assert a == pytest.approx((5000, 6000), abs=1)
+    assert b[0] < a[0]  # upside down: B is left of A
+    assert b[1] == pytest.approx(a[1], abs=0.01)

@@ -5,20 +5,19 @@ import { i18n } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import { useLingui as useMacroLingui } from "@lingui/react/macro";
-import { useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Button } from "react-aria-components";
 import { NotFoundPage } from "../../pages/placeholders";
 import { StatusBadge } from "../../shell/StatusBadge";
 import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
-import { DEFAULT_CONTENT_TYPE, isLookupApp, safeHref, useAppName } from "../lookup/apps";
+import { defaultContentTypeFor, isLookupApp, useAppName } from "../lookup/apps";
 import { useCart, type LookupApp } from "../lookup/cart";
 import { resolveInput } from "../lookup/labelUrl";
 import { useRecent, type RecentItem, type RecentKind } from "../lookup/recent";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
 import { useIntegrationStates, useIsAdmin } from "./api";
-import { baseUrlOf } from "./baseUrl";
+import { useKnownBase } from "./useKnownBase";
 
 const integrationRoute = getRouteApi("/integrations/$app");
 
@@ -110,20 +109,6 @@ function Start({ app }: { app: LookupApp }) {
   );
 }
 
-/**
- * The app's own address, known only once an item of it was shown in this session: the hub's
- * `/api/v1/info` carries no URL on purpose, a lookup result does carry the deep link.
- */
-function useKnownBase(app: LookupApp): string | null {
-  const queryClient = useQueryClient();
-  for (const [, result] of queryClient.getQueriesData<{ url?: string | null }>({ queryKey: ["lookup", app] })) {
-    const href = safeHref(result?.url);
-    const base = href ? baseUrlOf(app, href) : null;
-    if (base) return base;
-  }
-  return null;
-}
-
 function Finder({ app, heading, hint, scan }: { app: LookupApp; heading: string; hint: string; scan: string }) {
   const navigate = useNavigate();
   const [value, setValue] = useState("");
@@ -195,7 +180,7 @@ function Recent({ app }: { app: LookupApp }) {
               kind={_(KIND_LABEL[item.kind])}
               age={ago(item.at, now)}
               onPrint={() => {
-                cart.add({ app, id: item.id, name: item.name, content_type: DEFAULT_CONTENT_TYPE, copies: 1 });
+                cart.add({ app, id: item.id, name: item.name, content_type: defaultContentTypeFor(app), copies: 1 });
                 setAdded(item.name);
               }}
             />

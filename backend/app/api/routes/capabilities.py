@@ -37,13 +37,23 @@ from app.schemas.capabilities import (
     TapeMedia,
     TapeResolution,
     TrayCapability,
+    TrayLoadingRead,
 )
+from app.schemas.printer import PrintConfirmationRead
 from app.schemas.tape_geometry import TAPE_GEOMETRY
+from app.services import tray_loading_service
 from app.services.printer_runtime import PrinterRuntime
 from app.services.status_freshness import backoff_of, is_stale
 from app.services.tape_status import read_tape_status
 from app.sheets.errors import PrinterNotFoundError
 from app.sheets.printer_facts import facts_of, read_status
+
+
+def _loading_read(loading: tray_loading_service.TrayLoading | None) -> TrayLoadingRead | None:
+    if loading is None:
+        return None
+    return TrayLoadingRead(print_side=loading.print_side, leading_edge=loading.leading_edge)
+
 
 router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 
@@ -138,6 +148,7 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
         kind="tape",
         resolution_dpi=TapeResolution(x=dpi_x, y=dpi_y),
         media=media,
+        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
         trays=None,
         document_formats=None,
         captured_at=captured,
@@ -162,6 +173,7 @@ async def _page(
         .all()
     )
     calibrations = {c.tray: c for c in await calibration_service.get_all(session, printer.id)}
+    loadings = await tray_loading_service.get_all(session, printer.id)
     if status_read.never_answered:  # the producer's placeholder: nothing is known yet
         captured = None
     loaded = {t.key: t.media for t in record.trays} if record else {}
@@ -177,6 +189,7 @@ async def _page(
                 is_default=t.is_default,
                 media=loaded.get(t.tray_key),
                 calibration=cal if cal is not None and cal.method is not None else None,
+                loading=_loading_read(loadings.get(t.tray_key)),
             )
         )
     summary = record.summary if record else None

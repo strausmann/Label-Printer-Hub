@@ -4,6 +4,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { MAIN } from "./env";
 import { expect, mainKey, signInWith, test } from "./fixtures";
+import { reportNewerHub, updateToast } from "./newerHub";
 
 // Issue #279: with the on-screen keyboard open, the field, its list and the main buttons of a dialog stay in sight.
 //
@@ -43,6 +44,20 @@ async function expectInSight(page: Page, what: Locator, name: string) {
   expect(box!.y + box!.height, `${name} ends above the keyboard`).toBeLessThanOrEqual(view.bottom + 1);
 }
 
+/** Like `expectInSight`, for a box that settles a moment after the viewport changed (a popover repositions on the resize). */
+async function expectInSightOnceSettled(page: Page, what: Locator, name: string) {
+  await expect
+    .poll(
+      async () => {
+        const box = await what.boundingBox();
+        const view = await visible(page);
+        return box !== null && box.y >= view.top - 1 && box.y + box.height <= view.bottom + 1;
+      },
+      { message: `${name} ends up inside the visible area` },
+    )
+    .toBe(true);
+}
+
 /** Opens the keyboard in the "covered" mode: only the visual viewport shrinks. */
 async function coverWithKeyboard(page: Page, visibleHeight: number) {
   await page.evaluate((h) => (window as unknown as { __keyboard(h: number | null): void }).__keyboard(h), visibleHeight);
@@ -56,6 +71,18 @@ async function expectWithin(what: Locator, top: number, bottom: number, name: st
   expect(box!.y, `${name} starts at or below ${top}`).toBeGreaterThanOrEqual(top - 1);
   expect(box!.y + box!.height, `${name} ends at or above ${bottom}`).toBeLessThanOrEqual(bottom + 1);
 }
+
+/** Fills the cart of the browser (the key and the shape are those of `features/lookup/cart.ts`) with `entries` lines. */
+const putInCart = (page: Page, entries: number) =>
+  page.evaluate((n) => {
+    const line = (id: number) => ({ app: "grocy", id: String(id), name: `Item ${id}`, content_type: "qr_two_lines", copies: 4 });
+    localStorage.setItem("lph.cart", JSON.stringify(Array.from({ length: n }, (_, i) => line(i + 1))));
+  }, entries);
+const emptyCart = (page: Page) => page.evaluate(() => localStorage.removeItem("lph.cart"));
+
+type Box = { x: number; y: number; width: number; height: number };
+const intersects = (a: Box, b: Box) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
 test.describe("short viewport (on-screen keyboard)", () => {
   let page: Page;
@@ -120,6 +147,19 @@ test.describe("short viewport (on-screen keyboard)", () => {
   const keyboard = async (mode: Mode) => {
     if (mode.visible) await coverWithKeyboard(page, mode.visible);
   };
+  /** Below 1024 px the search is a magnifier that opens a dialog (#320); from there on it is the inline field. */
+  const isPhone = (mode: Mode) => mode.width < 1024;
+  const searchField = () => page.getByRole("combobox", { name: "Search" });
+  /** Puts the focus into the search field: the inline one, or the one in the dialog the magnifier opens (the dialog covers the page until it is closed). */
+  async function focusSearch(mode: Mode) {
+    if (isPhone(mode)) {
+      await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
+      await expect(searchField()).toBeFocused();
+    } else {
+      await searchField().click();
+    }
+  }
 
   async function openAddSheet() {
     await page.goto("/sheets");
@@ -129,8 +169,79 @@ test.describe("short viewport (on-screen keyboard)", () => {
     return dialog;
   }
 
+  test("Top bar at 320 px: the cart badge overlaps no other control", async () => {
+    await prepare({ name: "narrow", width: 320, height: 640 });
+    await page.goto("/sheets");
+    // The widest badge: more than 99 entries.
+    await putInCart(page, 120);
+    await page.reload();
+    const header = page.locator("header");
+    const cart = header.getByRole("link", { name: "Cart, 120 items" });
+    await expect(cart).toBeVisible();
+    await expect(cart).toContainText("99+");
+    // Below 1024 px About, the theme and Sign out live in the menu (#319); the top bar keeps Menu, the Search magnifier, the bell and the cart.
+    const controls: Array<[string, Locator]> = [
+      ["the menu button", header.getByRole("button", { name: "Menu", exact: true })],
+      ["the search button", header.getByRole("button", { name: "Search", exact: true })],
+      ["the bell", header.getByRole("button", { name: /^Notifications/ })],
+      ["the cart", cart],
+    ];
+    for (const gone of [header.getByRole("link", { name: /^About/ }), header.getByRole("button", { name: /^Theme: / }), header.getByRole("button", { name: "Sign out" })]) {
+      await expect(gone).toBeHidden();
+    }
+    const boxes: Array<{ name: string; box: Box }> = [];
+    for (const [name, control] of controls) {
+      const box = await control.boundingBox();
+      expect(box, `${name} has a box`).not.toBeNull();
+      expect(box!.x, `${name} starts inside the screen`).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, `${name} ends inside the screen`).toBeLessThanOrEqual(320 + 1);
+      boxes.push({ name, box: box! });
+    }
+    // The badge is a child of the cart link: its own box must also stay inside the link's box.
+    const badge = (await cart.getByTestId("cart-badge").boundingBox())!;
+    const link = (await cart.boundingBox())!;
+    expect(badge.x).toBeGreaterThanOrEqual(link.x - 1);
+    expect(badge.x + badge.width).toBeLessThanOrEqual(link.x + link.width + 1);
+    boxes.forEach((first, i) => {
+      for (const second of boxes.slice(i + 1)) {
+        expect(intersects(first.box, second.box), `${first.name} and ${second.name} do not overlap`).toBe(false);
+      }
+    });
+    await emptyCart(page);
+  });
+
   for (const mode of modes) {
     test.describe(mode.name, () => {
+      // The menu button is a phone control (hidden from 1024 px up): the tablet-wide modes have no menu to test.
+      test("Phone menu: the close button and the first entry are in sight, the list scrolls inside the sheet", async () => {
+        test.skip(mode.width >= 1024, "no menu button on a wide screen");
+        await prepare(mode);
+        await page.goto("/");
+        await page.getByRole("button", { name: "Menu", exact: true }).click();
+        const menu = page.getByRole("dialog", { name: "Menu" });
+        await expect(menu).toBeVisible();
+        await keyboard(mode);
+        const sheet = menu.getByTestId("menu-scroll");
+        const close = menu.locator('button[aria-label="Close"]');
+        const first = menu.locator('nav[aria-label="Pages"] a').first();
+        await expectInSight(page, close, "the close button");
+        await expectInSight(page, first, "the first entry");
+        await expectInSight(page, menu.locator('button[aria-label="Sign out"]'), "the Sign out button");
+        await expectInSight(page, sheet, "the sheet");
+        // More entries than fit: the sheet scrolls, the page behind does not move.
+        const scroll = await sheet.evaluate((el) => ({ over: el.scrollHeight > el.clientHeight, page: window.scrollY }));
+        expect(scroll.over, "the list is taller than the visible area and scrolls inside the sheet").toBe(true);
+        const last = menu.locator('nav[aria-label="Pages"] a').last();
+        await last.scrollIntoViewIfNeeded();
+        await expectInSight(page, last, "the last entry after scrolling");
+        await expectInSight(page, close, "the close button after scrolling");
+        // The footer is pinned: reachable without scrolling the list, before and after.
+        await expectInSight(page, menu.locator('button[aria-label="Sign out"]'), "the Sign out button after scrolling");
+        expect(await page.evaluate(() => window.scrollY), "the page behind stays put").toBe(scroll.page);
+        await page.keyboard.press("Escape");
+        await expect(menu).toBeHidden();
+      });
+
       test("New sheet: typed type, first option, and both buttons are in sight", async () => {
         await prepare(mode);
         const dialog = await openAddSheet();
@@ -201,9 +312,10 @@ test.describe("short viewport (on-screen keyboard)", () => {
       });
 
       test("Global search: the field and the first result are in sight", async () => {
+        test.skip(isPhone(mode), "a phone has the search dialog, see the next case");
         await prepare(mode);
         await page.goto("/sheets");
-        const search = page.getByRole("combobox", { name: "Search" });
+        const search = searchField();
         await search.click();
         await keyboard(mode);
         await page.keyboard.type("L4736");
@@ -211,6 +323,72 @@ test.describe("short viewport (on-screen keyboard)", () => {
         const first = page.getByRole("listbox", { name: "Search results" }).getByRole("option").first();
         await expect(first).toBeVisible();
         await expectInSight(page, first, "the first result");
+      });
+
+      test("Search dialog: the field, the first result and the close button are in sight", async () => {
+        test.skip(!isPhone(mode), "a wide screen keeps the inline field, see the case above");
+        await prepare(mode);
+        await page.goto("/sheets");
+        await focusSearch(mode);
+        await keyboard(mode);
+        await page.keyboard.type("L4736");
+        const dialog = page.getByRole("dialog", { name: "Search" });
+        const first = page.getByRole("listbox", { name: "Search results" }).getByRole("option").first();
+        await expect(first).toBeVisible();
+        await expectInSight(page, searchField(), "the search field");
+        await expectInSight(page, first, "the first result");
+        await expectInSight(page, dialog.getByRole("button", { name: "Close" }), "the close button");
+        await expectInSight(page, dialog, "the dialog");
+        // The first Escape closes the results, the second the dialog; the magnifier has the focus again.
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("listbox")).toHaveCount(0);
+        await expect(dialog).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(page.locator("header").getByRole("button", { name: "Search", exact: true })).toBeFocused();
+      });
+
+      test("Notifications: the actions and the first entry are in sight", async () => {
+        await prepare(mode);
+        await page.goto("/sheets");
+        // The search field has the focus and the keyboard is up (a covered mode shrinks the visual viewport only).
+        await focusSearch(mode);
+        await keyboard(mode);
+        // On a phone the search dialog covers the bell: closing it leaves the keyboard-sized screen as it is.
+        if (isPhone(mode)) {
+          await page.keyboard.press("Escape");
+          await expect(page.getByRole("dialog")).toBeHidden();
+        }
+        await page.getByRole("button", { name: /^Notifications/ }).click();
+        const panel = dialogOf(page);
+        await expect(panel).toBeVisible();
+        // The panel settles first (it repositions on the resize); the parts are measured against that final layout.
+        await expectInSightOnceSettled(page, panel, "the panel");
+        const first = panel.getByRole("link").first();
+        await expect(first).toBeVisible();
+        await expectInSight(page, buttonIn(panel, "Mark all as read"), "the Mark all as read button");
+        await expectInSight(page, buttonIn(panel, "Clear all"), "the Clear all button");
+        await expectInSight(page, first, "the first entry");
+        await page.keyboard.press("Escape");
+        await expect(panel).toBeHidden();
+      });
+
+      test("with the search keyboard up the cart icon stays in sight", async () => {
+        await prepare(mode);
+        await page.goto("/sheets");
+        await putInCart(page, 3);
+        await page.reload();
+        await focusSearch(mode);
+        await keyboard(mode);
+        // On a phone the search dialog dims and hides the top bar: closing it leaves the keyboard-sized screen as it is.
+        if (isPhone(mode)) {
+          await page.keyboard.press("Escape");
+          await expect(page.getByRole("dialog")).toBeHidden();
+        }
+        const cart = page.locator("header").getByRole("link", { name: "Cart, 3 items" });
+        await expect(cart).toBeVisible();
+        await expectInSight(page, cart, "the cart icon");
+        await emptyCart(page);
       });
 
       test("Discard sheet (a confirmation): its buttons are in sight", async () => {
@@ -223,6 +401,158 @@ test.describe("short viewport (on-screen keyboard)", () => {
         await expectInSight(page, frameOf(dialog), "the dialog");
         await buttonIn(dialog, "Cancel").scrollIntoViewIfNeeded();
         await expectInSight(page, buttonIn(dialog, "Cancel"), "the Cancel button");
+        await page.keyboard.press("Escape");
+      });
+
+      /** #350: the add dialog with the 3490 type (its code goes on the back), handed over to the activation steps. */
+      async function openActivation() {
+        const dialog = await openAddSheet();
+        const box = dialog.locator('input[role="combobox"]').first();
+        await box.click();
+        await page.keyboard.type("3490");
+        await page.locator('[role="option"]').filter({ hasText: "3490" }).first().click();
+        await dialog.getByRole("button", { name: /Printer/ }).click();
+        await page.getByRole("option", { name: /Office page printer/ }).click();
+        await expect(dialog.getByRole("radio", { name: /On the back of the liner/ })).toBeChecked();
+        await buttonIn(dialog, "Continue").click();
+        await expect(dialog.getByTestId("activate-back-side")).toBeVisible();
+        return dialog;
+      }
+
+      test("Activate new sheet: the main button and the step text are in sight", async () => {
+        await prepare(mode);
+        const dialog = await openActivation();
+        await keyboard(mode);
+        await expectInSight(page, buttonIn(dialog, "Print sheet code"), "the Print sheet code button");
+        const step = dialog.getByRole("heading", { name: "Put the sheet in the other way round" });
+        await step.scrollIntoViewIfNeeded();
+        await expectInSight(page, step, "the step text");
+        await expectInSight(page, frameOf(dialog), "the dialog");
+        await page.keyboard.press("Escape");
+      });
+
+      test("Tray loading question: both answers and Save are reachable", async () => {
+        await prepare(mode);
+        await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+        const dialog = await openActivation();
+        await keyboard(mode);
+        const print = buttonIn(dialog, "Print test page");
+        await print.scrollIntoViewIfNeeded();
+        await print.click();
+        for (const name of ["Is the print on the side with the cross?", "Is “TOP” next to the cross?"]) {
+          const group = dialog.getByRole("radiogroup", { name });
+          await group.scrollIntoViewIfNeeded();
+          await expectInSight(page, group, name);
+        }
+        const save = buttonIn(dialog, "Save for this tray");
+        await save.scrollIntoViewIfNeeded();
+        await expectInSight(page, save, "the Save button");
+        await page.keyboard.press("Escape");
+      });
+
+      test("Resolve all (a confirmation): its buttons are in sight", async () => {
+        await prepare(mode);
+        await page.goto("/sheets/L4736-0005");
+        await page.getByRole("button", { name: "Resolve all as printed" }).click();
+        const dialog = dialogOf(page);
+        await expect(dialog).toBeVisible();
+        await keyboard(mode);
+        await expectInSight(page, frameOf(dialog), "the dialog");
+        await buttonIn(dialog, "Resolve as printed").scrollIntoViewIfNeeded();
+        await expectInSight(page, buttonIn(dialog, "Resolve as printed"), "the Resolve as printed button");
+        await buttonIn(dialog, "Cancel").scrollIntoViewIfNeeded();
+        await expectInSight(page, buttonIn(dialog, "Cancel"), "the Cancel button");
+        await page.keyboard.press("Escape");
+      });
+
+      test("Printer form: the community field and the Save button can be brought into sight (inline form, page scrolls)", async () => {
+        await prepare(mode);
+        await page.goto("/settings/printers");
+        await page.getByRole("button", { name: "Add printer" }).click();
+        const form = page.getByRole("form", { name: "Add a printer" });
+        const field = form.getByLabel("SNMP community");
+        await field.click();
+        await keyboard(mode);
+        await page.keyboard.type("bench");
+        // The browser scrolls the focused field into the visible area; the stand-in for a "covered" keyboard does not, so the
+        // test does it: the page must be able to scroll far enough for the field (and then the button) to reach the top.
+        await field.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, field, "the SNMP community field");
+        const save = form.getByRole("button", { name: "Create printer" });
+        await save.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, save, "the Create printer button");
+      });
+
+      test("Grocy labels: a printer list and the Save button can be brought into sight (inline panel, page scrolls)", async () => {
+        await prepare(mode);
+        await page.goto("/settings/integrations");
+        const panel = page.getByRole("group", { name: "Grocy labels" });
+        const recipe = panel.getByRole("group", { name: "Recipe" });
+        const printer = recipe.getByRole("button", { name: /Printer$/ });
+        await printer.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        // A select is a button: tapping it opens no keyboard (and closes one that was open), so its list is checked on
+        // the screen as it is. On a short screen the list must still fit what is visible.
+        await printer.click();
+        await expectInSight(page, page.locator('[role="option"]').first(), "the first printer option");
+        await page.keyboard.press("Escape");
+        // The keyboard opened by a field of this page (the Grocy URL above) must not hide the panel's buttons for good.
+        await keyboard(mode);
+        const save = panel.getByRole("button", { name: "Save" });
+        await save.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, save, "the Save button of the Grocy labels");
+        const copy = panel.getByRole("button", { name: "Copy lines" });
+        await copy.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        if (mode.visible) {
+          // The button is near the end of the page, which cannot scroll further: with the layout viewport left at full
+          // height, the browser pans the visual viewport down instead (a `scroll` of the visual viewport, no `resize`).
+          const box = (await copy.boundingBox())!;
+          const height = mode.visible;
+          if (box.y + box.height > height) await panTo(page, Math.min(mode.height - height, Math.ceil(box.y + box.height - height)));
+        }
+        await expectInSight(page, copy, "the Copy lines button");
+        await panTo(page, 0);
+      });
+
+      test("Grocy labels: the sheet type list of a page printer and the Save button can be brought into sight", async () => {
+        await prepare(mode);
+        await page.goto("/settings/integrations");
+        const panel = page.getByRole("group", { name: "Grocy labels" });
+        const battery = panel.getByRole("group", { name: "Battery" });
+        const printer = battery.getByRole("button", { name: /Printer$/ });
+        await printer.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await printer.click();
+        await page.getByRole("option", { name: "Office page printer" }).click();
+        const sheetType = battery.getByRole("button", { name: /Sheet type$/ });
+        await sheetType.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, sheetType, "the sheet type field");
+        // A select opens no keyboard; on a short screen its list must still fit what is visible.
+        await sheetType.click();
+        await expectInSight(page, page.locator('[role="option"]').first(), "the first sheet type");
+        await page.keyboard.press("Escape");
+        await keyboard(mode);
+        const save = panel.getByRole("button", { name: "Save" });
+        await save.evaluate((el) => el.scrollIntoView({ block: "start" }));
+        await expectInSight(page, save, "the Save button of the Grocy labels");
+        // Nothing was saved: the next test loads the page again with the stored values.
+      });
+
+      test("Select: with the keyboard up, a select near the bottom shows its trigger and first option in sight", async () => {
+        test.skip(!mode.visible, "the keyboard covers the screen only in the covered modes");
+        await prepare(mode);
+        await page.goto("/settings/integrations");
+        const panel = page.getByRole("group", { name: "Grocy labels" });
+        const printer = panel.getByRole("group", { name: "Recipe" }).getByRole("button", { name: /Printer$/ });
+        await printer.scrollIntoViewIfNeeded();
+        await coverWithKeyboard(page, mode.visible!);
+        // Place the trigger deterministically just above the keyboard, so the list has to open upwards.
+        const placed = await printer.boundingBox();
+        const view = await visible(page);
+        await page.evaluate((dy) => window.scrollBy(0, dy), placed!.y + placed!.height - (view.bottom - 10));
+        // A mispositioned run fails here, not later.
+        await expectWithin(printer, view.bottom - 60, view.bottom, "the Printer select");
+        await printer.click();
+        await expectInSight(page, printer, "the Printer select");
+        await expectInSight(page, page.locator('[role="option"]').first(), "the first printer option");
         await page.keyboard.press("Escape");
       });
 
@@ -438,8 +768,7 @@ test.describe("short viewport (on-screen keyboard)", () => {
         test.skip(mode.width > 1000, "the results hang from the top bar on a wide screen");
         await prepare(mode);
         await page.goto("/sheets");
-        const search = page.getByRole("combobox", { name: "Search" });
-        await search.click();
+        await focusSearch(mode);
         await page.evaluate(([h]) => (window as unknown as { __keyboard(h: number, t: number): void }).__keyboard(h!, 0), [PAN.height]);
         await page.keyboard.type("L4736");
         const results = page.getByRole("listbox", { name: "Search results" });
@@ -451,3 +780,29 @@ test.describe("short viewport (on-screen keyboard)", () => {
     });
   }
 });
+
+// #354: a new version found while the person types. Chromium shrinks the layout viewport with the keyboard, so the
+// heights compare equal; the toast steps aside for a focused text field on a touch device.
+test.describe("update toast on a touch device", () => {
+  test.use({ isMobile: true, hasTouch: true, viewport: { width: 390, height: 844 } });
+
+  test("Update toast: the focused field stays in sight", async ({ signedInPage: page }) => {
+    // The rule keys on a coarse pointer: on a fine one this case would pass without it.
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    await reportNewerHub(page);
+    await page.getByRole("link", { name: "Printers", exact: true }).first().click();
+    await expect(updateToast(page)).toBeVisible();
+
+    await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
+    const field = page.getByRole("combobox", { name: "Search" });
+    await expect(field).toBeFocused();
+    await expect(updateToast(page)).toHaveCount(0);
+    await expectInSight(page, field, "the search field");
+
+    // Focus leaves the field (the dialog closes): the toast is back.
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "Search" })).toHaveCount(0);
+    await expect(updateToast(page)).toBeVisible();
+  });
+});
+

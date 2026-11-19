@@ -159,6 +159,14 @@ Seconds to wait for Spoolman.
 
 Also set in the web UI; a value set here wins and locks the field there.
 
+### `LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE`
+
+Default: `material`
+
+What the black bar of the spool label shows: `material` (default) or the filament `name`. The line under the bar shows the other one.
+
+Also set in the web UI; a value set here wins and locks the field there.
+
 ### `LABELYARD_SERVER_PORT`
 
 Default: `8000`
@@ -170,6 +178,18 @@ The port the container listens on. The start command and the container healthche
 Default: `INFO`
 
 One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Any other value stops the start with an error. At `DEBUG` the hub's own loggers are verbose, but the database driver stays at `INFO`, so SQL statements and their bound values are not logged. Third-party libraries do log at `DEBUG`: read a debug log before you share it.
+
+### `LABELYARD_ACCESS_LOG`
+
+Default: `True`
+
+Writes one line per HTTP request to stdout in nginx combined format, so CrowdSec and other log tools can read it. A key shows only its public prefix. `false` turns the access log off completely. See [security](/admin/security/#access-log).
+
+### `LABELYARD_ACCESS_LOG_PROBES`
+
+Default: `False`
+
+Also writes successful health checks (`/healthz` and `/readiness` answering 2xx or 503) to the access log. Off by default, so probes do not flood it; a refused key on `/readiness` is logged either way.
 
 ### `LABELYARD_SIGN_IN_LIMIT_PER_MINUTE`
 

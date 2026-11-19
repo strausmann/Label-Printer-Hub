@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { useLingui } from "@lingui/react/macro";
-import type { NavGroup } from "./features";
+import type { NavGroup, SETTINGS_SECTIONS } from "./features";
 
 /** Translated labels of the navigation entries and group headings (sidebar and tab bar). */
 export function useNavLabels() {
@@ -25,5 +25,13 @@ export function useNavLabels() {
     integrations: t`Integrations`,
     system: t`System`,
   };
-  return { entry, group };
+  const sections: Record<(typeof SETTINGS_SECTIONS)[number]["id"], string> = {
+    general: t`General`,
+    printers: t`Printers`,
+    integrations: t`Integrations`,
+    access: t`Access and keys`,
+    jobs: t`Jobs`,
+    system: t`System`,
+  };
+  return { entry, group, sections };
 }

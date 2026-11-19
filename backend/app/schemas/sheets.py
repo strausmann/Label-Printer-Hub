@@ -15,11 +15,14 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_serializer
 
 from app.schemas._datetime import serialize_datetime_utc
-from app.sheets.exchange import GeometryMm
+from app.sheets.exchange import MAX_STRIPS, GeometryMm, StripMm
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN
 from app.sheets.text import check_http_url
 
 __all__ = [
+    "BackingDesignCreate",
+    "BackingDesignPatch",
+    "BackingDesignRead",
     "CellHitRead",
     "CellNumbers",
     "CellRead",
@@ -30,7 +33,9 @@ __all__ = [
     "MarkRequest",
     "MarkedCellIn",
     "NextCode",
+    "PageJobQueued",
     "ResolveRequest",
+    "SheetBackPrint",
     "SheetCreate",
     "SheetCreated",
     "SheetRead",
@@ -73,6 +78,40 @@ class VersionRead(BaseModel):
         return _utc(dt, info)
 
 
+class BackingDesignRead(BaseModel):
+    """A backing design: the vendor print on the back of a liner and its free strips."""
+
+    key: str
+    name: str
+    page_size: Literal["A4", "Letter"]
+    strips: list[StripMm] = Field(
+        description=(
+            "Free strips on the back of the liner in mm, viewed on the liner with the sheet's "
+            "top at the top after turning it over along the long edge."
+        )
+    )
+    origin: Literal["seed", "custom", "imported"]
+    types_in_use: int = Field(description="Sheet types that point to this design.")
+
+
+class BackingDesignCreate(_Body):
+    key: _Key
+    name: Annotated[str, Field(min_length=1, max_length=200)]
+    page_size: Literal["A4", "Letter"]
+    strips: list[StripMm] = Field(default=[], max_length=MAX_STRIPS)
+
+
+class BackingDesignPatch(_Body):
+    """Only the fields the client sends change; the page size of a design is fixed."""
+
+    name: Annotated[str, Field(min_length=1, max_length=200)] | None = None
+    strips: Annotated[list[StripMm], Field(max_length=MAX_STRIPS)] | None = None
+
+
+_TypePlacement = Literal["auto", "margin", "back_side", "cell"]
+_IdCell = Annotated[int, Field(ge=1, le=10000)]
+
+
 class SheetTypeRead(BaseModel):
     key: str
     prefix: str
@@ -95,6 +134,28 @@ class SheetTypeRead(BaseModel):
     geometry: GeometryMm = Field(description="Geometry of the current version.")
     hints: list[str] = Field(description="Advisory codes about the current geometry.")
     sheets_in_use: int = Field(description="Sheets of any state of this type.")
+    id_placement: _TypePlacement = Field(
+        description=(
+            "Where the sheet code of a new sheet goes. `auto` resolves to `margin` or "
+            "`back_side` (see `id_placement_resolved`)."
+        )
+    )
+    id_cell: int | None = Field(description="The preferred cell of a `cell` sheet's code.")
+    id_placement_resolved: Literal["margin", "back_side", "cell"] = Field(
+        description=(
+            "`id_placement` resolved without a printer: `auto` is `margin` when a margin band "
+            "of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`."
+        )
+    )
+    id_placement_auto: Literal["margin", "back_side"] = Field(
+        description=(
+            "What `auto` resolves to for this type, whatever `id_placement` is set to: `margin` "
+            "when a margin band can hold the code, otherwise `back_side`."
+        )
+    )
+    backing_design: BackingDesignRead | None = Field(
+        description="The vendor print on the back of the liner; `null` for a plain liner."
+    )
 
     @field_serializer("archived_at", "created_at", "updated_at")
     def _ser_dt(self, dt: datetime | None, info: Any) -> str | None:
@@ -121,7 +182,7 @@ class SheetTypeCreate(_Body):
     geometry: GeometryMm
 
 
-_PATCH_NOT_NULLABLE = ("prefix", "product_codes", "allow_qr", "verified")
+_PATCH_NOT_NULLABLE = ("prefix", "product_codes", "allow_qr", "verified", "id_placement")
 
 
 def _patch_schema(schema: dict[str, Any]) -> None:
@@ -146,6 +207,13 @@ class SheetTypePatch(_Body):
     source_name: Annotated[str, Field(max_length=200)] | None = None
     source_url: _Url | None = None
     notes: Annotated[str, Field(max_length=2000)] | None = None
+    id_placement: _TypePlacement | None = None
+    id_cell: _IdCell | None = Field(
+        default=None, description="Checked against the current version's cell count."
+    )
+    backing_design: _Key | None = Field(
+        default=None, description="Key of a backing design; `null` clears it (plain liner)."
+    )
 
 
 class VersionCreate(_Body):
@@ -185,6 +253,29 @@ class ResolveRequest(CellNumbers):
     outcome: Literal["printed", "not_printed"]
 
 
+class ResolveAllRequest(_Body):
+    outcome: Literal["printed", "not_printed"]
+    expected_count: int | None = Field(
+        default=None,
+        ge=1,
+        le=100_000,
+        description=(
+            "The number of unconfirmed cells the caller saw. When the sheet has a different "
+            "number now, nothing is settled (409 unconfirmed_count_changed)."
+        ),
+    )
+    expected_cells: list[_CellNo] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_CELLS,
+        description=(
+            "The unconfirmed cells the caller showed, in any order. When the sheet's unconfirmed "
+            "cells are not exactly these now, also with the same number, nothing is settled "
+            "(409 unconfirmed_count_changed)."
+        ),
+    )
+
+
 def _drop_default(schema: dict[str, Any]) -> None:
     schema.pop("default", None)
 
@@ -194,7 +285,7 @@ class SheetCreate(_Body):
     version: int | None = Field(
         default=None, ge=1, le=1_000_000, description="Left out: the current version."
     )
-    id_placement: Literal["cell", "margin", "manual"] = Field(
+    id_placement: Literal["cell", "margin", "manual", "back_side"] = Field(
         default="margin",
         # Optional in the generated client (266-06): openapi-typescript makes a field with a
         # default required, so the default is stated in the description instead of the schema.
@@ -202,13 +293,23 @@ class SheetCreate(_Body):
         description=(
             "Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; "
             "the margin ID is printed by the first job that prints onto it. `cell` needs a page "
-            "printer: it reserves the first free cell for the ID label and queues an ID-only job "
-            "(`job_id` in the response)."
+            "printer: it reserves a cell for the ID label (`id_cell`, else the type's, while it "
+            "is free; otherwise the first free one) and queues an ID-only job (`job_id` in the "
+            "response). `back_side` needs a page printer too: it queues the job that prints the "
+            "code on the back of the liner; the code counts as printed only after "
+            "`POST /api/v1/sheets/{code}/back-side/confirm`."
+        ),
+    )
+    id_cell: Annotated[int, Field(ge=1, le=10000)] | None = Field(
+        default=None,
+        description=(
+            "`cell` only: the preferred cell of the ID label; left out, the sheet type's. A "
+            "cell that is taken or outside the sheet falls back to the first free one."
         ),
     )
     printer: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
         default=None,
-        description="Printer slug or UUID. Required for `cell`, ignored otherwise.",
+        description="Printer slug or UUID. Required for `cell` and `back_side`, ignored otherwise.",
     )
     tray: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
         default=None, description="Tray of the ID-only job; left out: the printer's default."
@@ -252,6 +353,14 @@ class SheetSummary(BaseModel):
     free: int
     state: Literal["active", "discarded"]
     last_used_at: datetime | None
+    back_side_missing: bool = Field(
+        description=(
+            "An active sheet whose wanted code on the back of the liner is not confirmed yet: "
+            "`id_placement` `back_side` with `id_printed` false, or an extra code on the back "
+            "that is `pending` (`back_side_state`). A sheet that never asked for a code on the "
+            "back misses nothing."
+        ),
+    )
 
     @field_serializer("last_used_at")
     def _ser_last_used(self, dt: datetime | None, info: Any) -> str | None:
@@ -259,8 +368,15 @@ class SheetSummary(BaseModel):
 
 
 class SheetRead(SheetSummary):
-    id_placement: Literal["cell", "margin", "manual"]
+    id_placement: Literal["cell", "margin", "manual", "back_side"]
     id_printed: bool
+    back_side_state: Literal["pending", "confirmed"] | None = Field(
+        description=(
+            "An extra code on the back of a sheet whose code is elsewhere: `pending` "
+            "(queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` "
+            "for a `back_side` sheet, which uses `id_printed`."
+        ),
+    )
     feed_mark_printed: bool = Field(
         description="Whether the feed-direction mark has been printed on this sheet."
     )
@@ -272,6 +388,21 @@ class SheetRead(SheetSummary):
     @field_serializer("discarded_at")
     def _ser_discarded(self, dt: datetime | None, info: Any) -> str | None:
         return _utc(dt, info)
+
+
+class SheetBackPrint(_Body):
+    """The printer and tray of a back-side job."""
+
+    printer: Annotated[str, Field(min_length=1, max_length=100)] = Field(
+        description="Printer slug or UUID (a page printer)."
+    )
+    tray: Annotated[str, Field(min_length=1, max_length=100)] | None = Field(
+        default=None, description="Tray of the job; left out: the printer's default."
+    )
+
+
+class PageJobQueued(BaseModel):
+    job_id: UUID
 
 
 class SheetCreated(SheetRead):
@@ -305,6 +436,12 @@ class MarginCheckRead(BaseModel):
     reason: str | None = Field(description="Why not, when `printable` is false.")
     feed_mark: bool = Field(
         description="Whether the feed-direction mark prints, in the hub's current language."
+    )
+    default_placement: Literal["margin", "back_side", "cell"] = Field(
+        description=(
+            "Where the sheet code of a new sheet of the type goes on this printer: the type's "
+            "setting, `auto` resolved by `printable`."
+        )
     )
 
 

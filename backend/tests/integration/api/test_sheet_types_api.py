@@ -846,3 +846,163 @@ async def test_patch_refuses_over_long_free_text_before_the_service(
     )
     assert resp.status_code == 422, resp.text
     assert _err(resp)["error_code"] == "invalid_request"
+
+
+# ---------------------------------------------------------------------------
+# Where the sheet code goes (#350)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def printer_key() -> dict[str, str]:
+    return {"X-Label-Hub-Key": await _insert_key(["print"])}
+
+
+async def _letter_design(client, admin, key: str = "letter-liner") -> None:
+    body = {
+        "key": key,
+        "name": "Letter liner",
+        "page_size": "Letter",
+        "strips": [{"x_mm": 10, "y_mm": 10, "w_mm": 30, "h_mm": 80}],
+    }
+    resp = await client.post("/api/v1/backing-designs", json=body, headers=admin)
+    assert resp.status_code == 201, resp.text
+
+
+async def test_patch_placement_and_cell(api_client_with_seed, admin):
+    await _create(api_client_with_seed, admin)
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/acme-t1", json={"id_placement": "cell", "id_cell": 5}, headers=admin
+    )
+    assert resp.status_code == 200, resp.text
+    read = (await api_client_with_seed.get("/api/v1/sheet-types/acme-t1", headers=admin)).json()
+    assert read["id_placement"] == "cell" and read["id_cell"] == 5
+    assert read["id_placement_resolved"] == "cell"
+    # What ``auto`` would choose stays visible, so the type setting can offer going back (M7).
+    assert read["id_placement_auto"] == "margin"
+
+
+async def test_patch_id_cell_out_of_range(api_client_with_seed, admin):
+    url = "/api/v1/sheet-types/avery-zweckform-3490"
+    resp = await api_client_with_seed.patch(url, json={"id_cell": 25}, headers=admin)
+    assert resp.status_code == 422, resp.text
+    assert _err(resp)["error_code"] == "id_cell_out_of_range"
+    ok = await api_client_with_seed.patch(url, json={"id_cell": 24}, headers=admin)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["id_cell"] == 24
+
+
+async def test_patch_needs_admin(api_client_with_seed, printer_key):
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/avery-zweckform-3490",
+        json={"id_placement": "cell"},
+        headers=printer_key,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_read_has_resolved_placement(api_client_with_seed, reader):
+    by_key = {
+        t["key"]: t
+        for t in (await api_client_with_seed.get("/api/v1/sheet-types", headers=reader)).json()
+    }
+    assert by_key["avery-zweckform-3490"]["id_placement"] == "auto"
+    assert by_key["avery-zweckform-3490"]["id_placement_resolved"] == "back_side"
+    assert by_key["avery-zweckform-6121"]["id_placement_resolved"] == "margin"
+    assert by_key["avery-zweckform-3490"]["id_placement_auto"] == "back_side"
+    assert by_key["avery-zweckform-6121"]["id_placement_auto"] == "margin"
+    design = by_key["avery-zweckform-3490"]["backing_design"]
+    assert design["key"] == "avery-zweckform-ultragrip"
+    assert design["strips"][0] == {"x_mm": 33.5, "y_mm": 22.0, "w_mm": 22.0, "h_mm": 253.0}
+
+
+async def test_patch_backing_design_unknown(api_client_with_seed, admin):
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/avery-zweckform-3490",
+        json={"backing_design": "no-such-design"},
+        headers=admin,
+    )
+    assert resp.status_code == 404, resp.text
+    assert _err(resp)["error_code"] == "backing_design_not_found"
+
+
+async def test_patch_backing_design_null_clears(api_client_with_seed, admin):
+    url = "/api/v1/sheet-types/avery-zweckform-3490"
+    resp = await api_client_with_seed.patch(url, json={"backing_design": None}, headers=admin)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["backing_design"] is None
+    again = await api_client_with_seed.patch(
+        url, json={"backing_design": "avery-zweckform-ultragrip"}, headers=admin
+    )
+    assert again.json()["backing_design"]["key"] == "avery-zweckform-ultragrip"
+
+
+async def test_patch_backing_design_page_size_mismatch(api_client_with_seed, admin):
+    await _letter_design(api_client_with_seed, admin)
+    resp = await api_client_with_seed.patch(
+        "/api/v1/sheet-types/avery-zweckform-3490",
+        json={"backing_design": "letter-liner"},
+        headers=admin,
+    )
+    assert resp.status_code == 422, resp.text
+    assert _err(resp)["error_code"] == "backing_design_page_size_mismatch"
+
+
+@pytest.mark.parametrize("key", ["avery-zweckform-3490", "avery-zweckform-6121"])
+async def test_untouched_shipped_type_exports_as_version_1(api_client_with_seed, admin, key):
+    """A shipped type still on its seeded backing design exports for a 1.6 hub (I4)."""
+    resp = await api_client_with_seed.get(f"/api/v1/sheet-types/{key}/export", headers=admin)
+    assert resp.status_code == 200
+    doc = resp.json()
+    assert doc["format_version"] == 1
+    for name in ("id_placement", "id_cell", "backing_design"):
+        assert name not in doc["type"]
+
+
+async def test_shipped_type_with_a_changed_placement_exports_as_version_2(
+    api_client_with_seed, admin
+):
+    key = "avery-zweckform-3490"
+    patched = await api_client_with_seed.patch(
+        f"/api/v1/sheet-types/{key}", json={"id_placement": "cell", "id_cell": 2}, headers=admin
+    )
+    assert patched.status_code == 200
+    doc = (
+        await api_client_with_seed.get(f"/api/v1/sheet-types/{key}/export", headers=admin)
+    ).json()
+    assert doc["format_version"] == 2
+    assert doc["type"]["id_placement"] == "cell" and doc["type"]["id_cell"] == 2
+    # Once the placement is the user's, the design travels with it.
+    assert doc["type"]["backing_design"]["key"] == "avery-zweckform-ultragrip"
+
+
+async def test_changed_shipped_design_exports_v2_and_imports_back(api_client_with_seed, admin):
+    """A user-changed design makes the export version 2, and a 1.7 hub imports it (I4)."""
+    client = api_client_with_seed
+    strips = [{"x_mm": 30.0, "y_mm": 20.0, "w_mm": 25.0, "h_mm": 250.0}]
+    patched = await client.patch(
+        "/api/v1/backing-designs/avery-zweckform-ultragrip", json={"strips": strips}, headers=admin
+    )
+    assert patched.status_code == 200, patched.text
+    doc = (
+        await client.get("/api/v1/sheet-types/avery-zweckform-3490/export", headers=admin)
+    ).json()
+    assert doc["format_version"] == 2
+    assert doc["type"]["backing_design"]["strips"] == strips
+    assert "id_placement" not in doc["type"]  # still auto: only the design changed
+
+    # Import it as a new type with a design this hub does not know: both are created.
+    doc["type"]["key"], doc["type"]["prefix"] = "acme-3490", "AZ9"
+    doc["type"]["backing_design"]["key"] = "acme-liner"
+    created = await client.post("/api/v1/sheet-types/import", json=doc, headers=admin)
+    assert created.status_code == 201, created.text
+    assert created.json() == {"outcome": "created", "key": "acme-3490", "version": 1}
+    read = (await client.get("/api/v1/sheet-types/acme-3490", headers=admin)).json()
+    assert read["origin"] == "imported" and read["id_placement"] == "auto"
+    assert read["backing_design"]["key"] == "acme-liner"
+    assert read["backing_design"]["strips"] == strips
+
+    # Exported again it is version 2 with the same design: the round trip is stable.
+    again = (await client.get("/api/v1/sheet-types/acme-3490/export", headers=admin)).json()
+    assert again["format_version"] == 2
+    assert again["type"]["backing_design"] == doc["type"]["backing_design"]

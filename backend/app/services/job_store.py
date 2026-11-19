@@ -110,13 +110,38 @@ class JobStore(Protocol):
         detail: dict[str, Any] | None,
         *,
         result: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         """Transition any non-terminal -> FAILED with ``error = "<code>: <message>"``.
 
         ``result`` (when given) replaces the stored result, and ``detail`` (when given) is
         merged into it as ``error_detail`` — all in the same write as the state change, so a
         crash leaves either the old row or the finished one, never a half-written mix.
-        Silently no-op if job_id does not exist or the row is already terminal.
+        Silently no-op if job_id does not exist or the row is already terminal. Returns
+        whether the row changed (a caller announces the failure only then).
+        """
+
+    async def set_loaded_roll(self, job_id: UUID, roll: dict[str, Any]) -> bool:
+        """Set ``payload.loaded_roll`` (any state, #389): the roll the job was sent to.
+
+        Returns False when the job is unknown; the rest of the payload is kept.
+        """
+
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        """Replace the payload of a QUEUED job (a deferred job completed, #281).
+
+        Returns False, and writes nothing, when the job is unknown or no longer QUEUED.
+        """
+
+    async def mark_queued_failed_restart(self, job_id: UUID, error: str) -> None:
+        """QUEUED -> FAILED_RESTART with *error*: a deferred job a restart interrupted (#281).
+
+        Silently no-op if job_id does not exist or the row is not QUEUED.
+        """
+
+    async def mark_queued_many_failed_restart(self, job_ids: list[UUID], error: str) -> list[UUID]:
+        """The QUEUED ones of ``job_ids`` -> FAILED_RESTART with *error*, in one write (#281).
+
+        Returns the ids that changed; unknown and no longer QUEUED ids are left alone.
         """
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
@@ -219,14 +244,49 @@ class MemoryJobStore(JobStore):
         detail: dict[str, Any] | None,
         *,
         result: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         job = self._jobs.get(job_id)
         if job is None or job.state in _TERMINAL:
-            return
+            return False
         job.state = JobState.FAILED.value
         job.error = f"{code}: {message}"
         job.result = _with_detail(dict(result) if result is not None else job.result, detail)
         job.finished_at = datetime.now(UTC)
+        return True
+
+    async def set_loaded_roll(self, job_id: UUID, roll: dict[str, Any]) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None:
+            return False
+        job.payload = {**(job.payload or {}), "loaded_roll": dict(roll)}
+        return True
+
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.QUEUED.value:
+            return False
+        job.payload = dict(payload)
+        return True
+
+    async def mark_queued_failed_restart(self, job_id: UUID, error: str) -> None:
+        job = self._jobs.get(job_id)
+        if job is None or job.state != JobState.QUEUED.value:
+            return
+        job.state = JobState.FAILED_RESTART.value
+        job.error = error
+        job.finished_at = datetime.now(UTC)
+
+    async def mark_queued_many_failed_restart(self, job_ids: list[UUID], error: str) -> list[UUID]:
+        changed: list[UUID] = []
+        for job_id in job_ids:
+            job = self._jobs.get(job_id)
+            if job is None or job.state != JobState.QUEUED.value:
+                continue
+            job.state = JobState.FAILED_RESTART.value
+            job.error = error
+            job.finished_at = datetime.now(UTC)
+            changed.append(job_id)
+        return changed
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         count = 0

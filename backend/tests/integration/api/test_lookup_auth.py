@@ -67,3 +67,18 @@ async def test_lookup_with_a_read_key_is_200(api_client_with_seed):
         )
     assert resp.status_code == 200, resp.text
     assert resp.json()["name"] == "ThinkPad X1 Carbon"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path", ["/api/v1/lookup/grocy/batteries/4", "/api/v1/lookup/grocy/chores/7"]
+)
+async def test_grocy_object_lookups_need_credentials(api_client_with_seed, path):
+    with (
+        patch("app.api.routes.lookup._lookup_service.grocy_battery", new=AsyncMock()) as b,
+        patch("app.api.routes.lookup._lookup_service.grocy_chore", new=AsyncMock()) as c,
+    ):
+        resp = await api_client_with_seed.get(path)
+    assert resp.status_code == 401
+    b.assert_not_called()
+    c.assert_not_called()

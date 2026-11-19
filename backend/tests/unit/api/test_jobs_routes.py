@@ -365,7 +365,7 @@ async def test_retry_clones_failed_job(session) -> None:
     # Cloned fields match original
     assert body["printer_id"] == str(original.printer_id)
     assert body["template_key"] == original.template_key
-    assert body["payload"] == original.payload
+    assert body["payload"] == {**original.payload, "retry_of": str(original.id)}
     # timestamps: no started_at or finished_at on fresh job
     assert body["started_at"] is None
     assert body["finished_at"] is None
@@ -584,3 +584,22 @@ async def test_list_jobs_filter_by_since(session) -> None:
     ids = {item["id"] for item in body}
     assert str(j1.id) in ids
     assert str(j2.id) in ids
+
+
+@pytest.mark.asyncio
+async def test_a_retry_does_not_copy_the_roll_of_the_original(session) -> None:
+    """#389: a retry records the roll it is sent to, never the one the original was sent to."""
+    printer = await _make_printer(session)
+    original = await _make_job(session, printer.id, state=JobState.FAILED.value)
+    original.payload = {
+        "title": "test",
+        "loaded_roll": {"width_mm": 62, "media_raw": "62mm", "media_kind": "continuous"},
+    }
+    session.add(original)
+    await session.commit()
+
+    client = TestClient(_build_app(session), raise_server_exceptions=True)
+    r = client.post(f"/api/v1/jobs/{original.id}/retry")
+
+    assert r.status_code == 201
+    assert r.json()["payload"] == {"title": "test", "retry_of": str(original.id)}

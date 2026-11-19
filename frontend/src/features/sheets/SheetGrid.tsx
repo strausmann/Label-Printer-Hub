@@ -118,7 +118,7 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
   return (
     <g data-state={state}>
       {shape()}
-      {state === "used" &&
+      {(state === "used" || isId) &&
         (round ? (
           <circle cx={cx} cy={cy} r={r} fill={`url(#${patternId})`} data-marker="hatch" pointerEvents="none" opacity={overlay ? 0.4 : 1} />
         ) : (

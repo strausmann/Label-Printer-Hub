@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.calibration.model import CalibrationRead
+from app.schemas.printer import PRINT_CONFIRMATION_DOC, PrintConfirmationRead
 
 
 class TapeResolution(BaseModel):
@@ -52,6 +53,17 @@ class PageMedia(BaseModel):
     hardware_margins_mm: HardwareMargins | None
 
 
+class TrayLoadingRead(BaseModel):
+    """How the tray takes paper (#350): set once by the guided test, changed by an admin."""
+
+    print_side: Literal["up", "down"] = Field(
+        description="The face that gets printed, as the sheet lies in the tray."
+    )
+    leading_edge: Literal["top", "bottom"] = Field(
+        description="The edge of the printed image that lands at the sheet edge put in first."
+    )
+
+
 class TrayCapability(BaseModel):
     key: str
     label: str
@@ -61,6 +73,9 @@ class TrayCapability(BaseModel):
     media: str | None = Field(description="Media the printer reports in this tray, if any.")
     calibration: CalibrationRead | None = Field(
         description="Stored calibration; None while the tray has none or is disabled."
+    )
+    loading: TrayLoadingRead | None = Field(
+        default=None, description="How the tray takes paper; None while nobody has set it."
     )
 
 
@@ -82,6 +97,10 @@ class Capabilities(BaseModel):
             "When the values were read. A page printer that went offline keeps the time of "
             "its last successful reading."
         )
+    )
+    print_confirmation: PrintConfirmationRead | None = Field(
+        default=None,
+        description="Tape printers only: " + PRINT_CONFIRMATION_DOC,
     )
     stale: bool = Field(
         default=False,

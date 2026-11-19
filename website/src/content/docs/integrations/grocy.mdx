@@ -1,0 +1,69 @@
+---
+title: Grocy
+description: Print product labels from Grocy, on demand or when stock changes.
+---
+
+import Screenshot from "../../../components/Screenshot.astro";
+
+The Grocy plugin looks up products in your Grocy and prints their labels, with a QR code that leads back to the product.
+
+## Setup
+
+1. In Grocy, create an API key under the user menu.
+2. In Labelyard, open **Settings > Integrations > Grocy**, enter the Grocy address and the key, and test the connection. Or set `LABELYARD_GROCY_URL` and `LABELYARD_GROCY_API_KEY`.
+
+## Printing
+
+Scan or type a product ID or a product barcode on the lookup page, or a label link the hub printed earlier (`/product/…`). From a script, use `{"lookup": {"app": "grocy", "identifier": "<product-id>"}}` with `POST /api/v1/print`.
+
+## Printing when stock changes
+
+Grocy can call the hub when stock is added or removed, and the hub prints a label for the product, with the stock change as a third line (for example `Stock change: +2`) when the event carries one. See [webhooks](/integrations/webhooks/).
+
+## Printing Grocy's own labels
+
+Grocy has a label printer feature of its own: a print button for products, stock entries, chores, batteries and recipes. Labelyard can be the printer behind that button.
+
+<Screenshot shot="grocy-labels" lang="en" alt="Grocy labels: the switch, the default printer and a layout and printer for each label type." />
+
+1. Open **Settings > Integrations**. The **Grocy labels** panel sits below the integrations.
+2. Switch on **Print Grocy's labels**. Until then, the hub refuses Grocy's labels with `503`.
+3. Choose the **default printer**. **First enabled tape printer** picks the first tape printer that is enabled. A page printer also needs a **sheet type**, see [Printing Grocy labels onto sheets](#printing-grocy-labels-onto-sheets).
+4. For each label type, choose a layout and a printer. A type left at **Same as default** goes to the default printer, with its sheet type. The layout with a detail line needs a second line from Grocy, which Grocy sends only for a stock entry with a due date. Any other label with that layout prints without the detail line, and the job records the layout it printed.
+5. Press **Save**.
+6. Create an API key with the `print` scope under **Settings > Access and keys**, limited to the printers of these labels (see [keys in a URL](/admin/api-keys/#keys-in-a-url)).
+7. Copy the lines the panel shows into Grocy's `data/config.php` and replace `<print-key>` with that key:
+
+```php
+Setting('FEATURE_FLAG_LABEL_PRINTER', true);
+Setting('LABEL_PRINTER_WEBHOOK', 'https://hub.example.invalid/api/v1/webhook/grocy/label?token=<print-key>');
+Setting('LABEL_PRINTER_RUN_SERVER', true);
+Setting('LABEL_PRINTER_HOOK_JSON', true);
+```
+
+The panel fills in the address from `LABELYARD_PUBLIC_URL`. `LABEL_PRINTER_RUN_SERVER` must be `true`: Grocy then calls the hub from its server, not from the browser. `LABEL_PRINTER_HOOK_JSON` makes Grocy send the label as JSON, which the hub requires.
+
+Use a key with the print scope, restricted to the label printer. Grocy writes the address with the key to its own log. It also shows the address to the Grocy user when the hub refuses a label or does not answer within 2 seconds.
+
+The hub answers within two seconds with `202` and the ID of a new job; printing happens after that answer. So Grocy reports success even when the label cannot print. A printer that is offline or out of tape, or a label the hub cannot read, ends as a **failed** job. Failed labels show on the **Jobs** page with the reason, and can be retried there; a sheet label that failed before it reached the page printer takes a free cell like a new label. A label the hub could not read has nothing to print again: send it again from Grocy.
+
+A proxy with single sign-on must let `/api/v1/webhook/` through, as for the other [webhooks](/integrations/webhooks/#behind-a-proxy-with-sso).
+
+If Grocy and the hub run as containers in the same Docker network, use the hub's address inside that network instead of the public one, for example `http://labelyard:8000/api/v1/webhook/grocy/label?token=<print-key>` (the host name is the hub's container or service name). The call then never passes the reverse proxy, so neither single sign-on nor a proxy outage can block a label, and the key does not travel over the public address. The panel always shows the public address; replace the part before `/api/v1/` yourself.
+
+## Printing Grocy labels onto sheets
+
+A label can also go to a page printer, onto a sheet of labels. The printer lists tape printers and page printers in two groups.
+
+1. Choose a page printer as the default printer or as the printer of a label type.
+2. Choose its **sheet type**. The list shows the sheet types that are not archived. You cannot save until a page printer has a sheet type.
+3. Press **Save**.
+
+Each Grocy label takes one cell. The hub picks the started sheet of that sheet type with the fewest free cells, and in it the first free cell. Cells that wait for a confirmation do not count as free. When no sheet has a free cell, the hub starts a new sheet and prints its ID in the margin where it fits. If a sheet cannot take the label after all, the hub tries the next sheet, and a new one at the latest. Two labels that arrive at the same time take different cells and never start two new sheets. The cell records the label as `grocy` with its Grocycode, so you find it on the sheet later.
+
+A label type with its own page printer uses its own sheet type. A type at **Same as default** uses the default printer and the default sheet type. Switching a printer back to a tape printer or to **Same as default** clears its sheet type. The layout of the label type applies on a sheet too; the cell of the sheet type decides the size.
+
+The hub refuses a label with `503` when the sheet type is not set, no longer exists or is archived. The panel warns about a stored sheet type that is archived or gone. A label the cell cannot show, for example a QR code too large for it, ends as a **failed** job without taking a cell. If the hub stops before the label is handed to the printer, the job ends **failed** and the cell is free again.
+
+If you print onto the same sheet from the print page while a Grocy label is on its way, the hub plans again. A print that sent its preview may then answer that the plan has changed: check the preview and print again.
+

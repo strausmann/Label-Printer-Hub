@@ -32,6 +32,7 @@ export const status = (printerId: string, over: Record<string, unknown> = {}) =>
   online: true,
   captured_at: "2026-11-04T10:00:00Z",
   error_state: null,
+  error_flags: [],
   last_error: null,
   last_probe_age_s: 4,
   stale: false,
@@ -136,8 +137,25 @@ export const settingsList = (over: Record<string, Partial<SettingFixture>> = {})
     settingView("integrations.grocy.url", "url", { value: "" }),
     settingView("integrations.grocy.api_key", "secret"),
     settingView("integrations.grocy.timeout", "float", { value: 5 }),
+    settingView("integrations.grocy.label.enabled", "bool", { value: false }),
+    settingView("integrations.grocy.label.printer", "str", { value: "" }),
+    settingView("integrations.grocy.label.sheet_type", "str", { value: "" }),
+    ...(["product", "stock_entry", "chore", "battery", "recipe"] as const).flatMap((type) => [
+      settingView(`integrations.grocy.label.${type}.content_type`, "enum", {
+        value: type === "stock_entry" ? "qr_three_lines" : "qr_two_lines",
+        choices: ["qr_only", "qr_one_line", "qr_two_lines", "qr_three_lines"],
+      }),
+      settingView(`integrations.grocy.label.${type}.printer`, "str", { value: "" }),
+      settingView(`integrations.grocy.label.${type}.sheet_type`, "str", { value: "" }),
+    ]),
     settingView("integrations.spoolman.url", "url", { value: "" }),
     settingView("integrations.spoolman.timeout", "float", { value: 5 }),
+    settingView("integrations.spoolman.label.nozzle_field", "str", { value: "nozzle_temperature" }),
+    settingView("integrations.spoolman.label.pressure_advance_field", "str", { value: "flowdynamics" }),
+    settingView("integrations.spoolman.label.flow_ratio_field", "str", { value: "flowrate" }),
+    settingView("integrations.spoolman.label.drying_temp_field", "str", { value: "drying_condiftions_temp" }),
+    settingView("integrations.spoolman.label.drying_time_field", "str", { value: "drying_condiftions_time" }),
+    settingView("integrations.spoolman.label.title_source", "enum", { value: "material", choices: ["material", "name"] }),
     settingView("integrations.paperless.url", "url", { value: "" }),
     settingView("integrations.paperless.token", "secret"),
     settingView("integrations.paperless.timeout", "float", { value: 5 }),
@@ -167,7 +185,7 @@ export const ADMIN_PRINTER = {
   slug: PRINTER_A.slug,
   model: PRINTER_A.model,
   backend: "ptouch",
-  connection: { host: "192.0.2.10", port: 9100, snmp: { discover: false, community: "public" } },
+  connection: { host: "192.0.2.10", port: 9100, snmp: { discover: false, community_set: true } },
   queue: { timeout_s: 30 },
   cut_defaults: { half_cut: false },
   enabled: true,
@@ -205,7 +223,10 @@ export const pageStatus = (printerId: string, over: Partial<Schemas["PrinterStat
   markers: [{ name: "Black toner", color: "#000000", level_percent: 80, low: false, empty: false, some_remaining: true, type: "toner" }],
   trays: PAGE_TRAYS,
   jobs_ahead: 0,
+  last_sheet_tray: null,
+  last_calibration_print: null,
   error_state: null,
+  error_flags: [],
   last_error: null,
   last_probe_age_s: 3,
   stale: false,
@@ -272,6 +293,11 @@ export const SHEET_TYPE: Schemas["SheetTypeRead"] = {
   source_name: null,
   source_url: null,
   source_url_shipped: false,
+  id_placement: "auto",
+  id_cell: null,
+  id_placement_resolved: "margin",
+  id_placement_auto: "margin",
+  backing_design: null,
 };
 
 /** A sheet with the given cells in the given state; everything else is free. */
@@ -310,6 +336,8 @@ export function sheetRead(
     last_used_at: "2026-11-04T09:00:00Z",
     note: null,
     cells: rows,
+    back_side_missing: false,
+    back_side_state: null,
     ...over,
   };
 }
@@ -330,6 +358,7 @@ export function sheetSummary(code = "L4736-0001", over: Partial<Schemas["SheetSu
     label_w: sheet.label_w,
     label_h: sheet.label_h,
     last_used_at: sheet.last_used_at,
+    back_side_missing: sheet.back_side_missing,
     ...over,
   };
 }
@@ -379,6 +408,7 @@ export const PRINTED_PAGE: Schemas["PrintedPage"] = {
   margin_band: null,
   margin_id: false,
   feed_mark: false,
+  back_side_pending: false,
 };
 
 /** The envelope the API answers errors with; `detail` carries the structured data of the code. */

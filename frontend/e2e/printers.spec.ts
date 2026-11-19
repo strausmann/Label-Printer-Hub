@@ -51,7 +51,9 @@ test.describe("printers", () => {
 
     // … and resuming from there flips it back.
     await attention.getByRole("button", { name: "Resume Workshop PT-P750W" }).click();
-    await expect(attention.getByText("Workshop PT-P750W")).toHaveCount(0);
+    // The printer may stay on the card for another reason (the fixture printer is not monitored), so the
+    // paused entry is what must go: its Resume button.
+    await expect(attention.getByRole("button", { name: "Resume Workshop PT-P750W" })).toHaveCount(0);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await shot(page, "task-11-overview-phone.png");

@@ -310,3 +310,97 @@ async def test_media_raw_of_only_control_characters_is_none(
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     pf = await query_preflight("192.0.2.10", community="public", timeout_s=1.0)
     assert pf.media_raw is None
+
+
+async def test_media_raw_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R25-1: an overlong media name is stored at most 64 characters long and parses safely."""
+    from pysnmp.proto import rfc1902
+
+    async def fake_get_cmd(*args, **_kwargs):
+        oids = [args[i] for i in (4, 5, 6)]
+        return (
+            None,
+            None,
+            0,
+            [
+                (oids[0], rfc1902.Integer(3)),
+                (oids[1], rfc1902.OctetString(b"\x00\x00")),
+                (oids[2], rfc1902.OctetString("9" * 5000 + "mm")),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    pf = await query_preflight("192.0.2.10", community="public", timeout_s=1.0)
+    assert pf.media_raw is not None and len(pf.media_raw) <= 64
+    assert pf.loaded_tape_mm is None
+    assert pf.media_kind is None
+
+
+def test_media_parsers_bound_their_digits() -> None:
+    from app.printer_backends.snmp_helper import (
+        parse_label_length_mm,
+        parse_loaded_tape_mm,
+        parse_media_kind,
+    )
+
+    long = "29mm x " + "9" * 5000 + "mm"
+    assert parse_label_length_mm(long) is None
+    assert parse_media_kind(long) in (None, "continuous")
+    assert parse_loaded_tape_mm("9" * 5000 + "mm") is None
+    assert parse_label_length_mm("29mm x 90mm") == 90
+    assert parse_loaded_tape_mm('12mm(0.47")') == 12
+
+
+async def test_query_preflight_reads_the_label_counter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#393: ``prtMarkerLifeCount`` comes in the same round trip; a missing one is ``None``."""
+    from pysnmp.proto import rfc1902, rfc1905
+
+    counter: list[object] = [rfc1902.Counter32(257)]
+
+    async def fake_get_cmd(*args, **_kwargs):
+        return (
+            None,
+            None,
+            0,
+            [
+                (args[4], rfc1902.Integer(3)),
+                (args[5], rfc1902.OctetString(b"\x00\x00")),
+                (args[6], rfc1902.OctetString("62mm")),
+                (args[7], counter[0]),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    assert (await query_preflight("192.0.2.10")).marker_count == 257
+    counter[0] = rfc1905.noSuchInstance
+    assert (await query_preflight("192.0.2.10")).marker_count is None
+    counter[0] = rfc1905.noSuchObject
+    assert (await query_preflight("192.0.2.10")).marker_count is None
+
+
+async def test_query_preflight_asks_again_without_the_counter_on_an_error_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pysnmp.proto import rfc1902
+
+    asked: list[int] = []
+
+    async def fake_get_cmd(*args, **_kwargs):
+        asked.append(len(args) - 4)
+        if len(args) - 4 == 4:
+            return (None, rfc1902.Integer(2), 4, [])  # noSuchName for the whole request
+        return (
+            None,
+            None,
+            0,
+            [
+                (args[4], rfc1902.Integer(3)),
+                (args[5], rfc1902.OctetString(b"\x00\x00")),
+                (args[6], rfc1902.OctetString("62mm")),
+            ],
+        )
+
+    monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
+    status = await query_preflight("192.0.2.10")
+    assert asked == [4, 3]
+    assert status.loaded_tape_mm == 62 and status.marker_count is None

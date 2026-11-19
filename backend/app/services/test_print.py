@@ -28,8 +28,8 @@ from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.schemas.capabilities import HardwareMargins
-from app.schemas.print_request import RawLabelData
 from app.services.status_freshness import backoff_of, is_stale
+from app.services.test_label import TapeTestText
 from app.sheets.printer_facts import facts_of, read_status
 
 _DEFAULT_PORTS: Final = {"http": 80, "https": 443}
@@ -64,15 +64,17 @@ def printer_url(public_url: AnyHttpUrl, printer_id: UUID) -> str:
     return f"{scheme}://{netloc}{path}/printers/{printer_id}"
 
 
-def tape_test_label(
+def tape_test_text(
     printer: Printer, width_mm: int, now: datetime, version: str, printer_url: str
-) -> RawLabelData:
-    """The test label: the printer's name, the tape width, the time and a QR to the printer."""
-    return RawLabelData(
+) -> TapeTestText:
+    """What the test label says (#377): the printer's name, the tape width, the time, the hub's
+    version and the link to the printer's page for the QR."""
+    return TapeTestText(
+        printer=printer.name,
+        width_mm=width_mm,
+        printed_at=f"{now:%Y-%m-%d %H:%M}",
+        version=version,
         qr_payload=printer_url,
-        primary_id=printer.name,
-        title=f"{width_mm} mm · {now:%Y-%m-%d %H:%M}",
-        secondary=(f"Printer Hub {version}",),
     )
 
 

@@ -76,6 +76,39 @@ describe("JobDetail", () => {
     expect(within(summary).getByText("12 mm")).toBeVisible();
   });
 
+  it("#389: shows the roll that was loaded when the job was drawn", async () => {
+    const roll = { width_mm: 29, media_raw: "29mm", media_kind: "continuous", colour: "white" };
+    mockApi(routes("failed", { payload: { ...payload, tape_mm: 29, loaded_roll: roll } }));
+    await renderApp({ path: `/jobs/${ID}` });
+    const summary = await screen.findByRole("region", { name: "What was printed" });
+    expect(within(summary).getByText("Loaded roll")).toBeVisible();
+    expect(within(summary).getByText(/29 mm · continuous · White/)).toBeVisible();
+    expect(within(summary).getByText("(29mm)")).toBeVisible();
+  });
+
+  it("#389: a roll without a colour says so, an older job shows a dash", async () => {
+    const roll = { width_mm: 62, media_raw: null, media_kind: null, colour: null };
+    mockApi(routes("done", { payload: { ...payload, loaded_roll: roll } }));
+    const { unmount } = await renderApp({ path: `/jobs/${ID}` });
+    const summary = await screen.findByRole("region", { name: "What was printed" });
+    expect(within(summary).getByText("62 mm · colour not given")).toBeVisible();
+    unmount();
+
+    mockApi(routes("done"));
+    await renderApp({ path: `/jobs/${ID}` });
+    const older = await screen.findByRole("region", { name: "What was printed" });
+    const label = within(older).getByText("Loaded roll");
+    expect(label.nextElementSibling).toHaveTextContent("—");
+  });
+
+  it("#389: says a stored error code in the app's words, not the stored English", async () => {
+    mockApi(routes("failed", { error: "printer_error: The printer reports an error: jammed", result: { error_detail: { flags: ["jammed"] } } }));
+    await renderApp({ path: `/jobs/${ID}` });
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The printer reports: Tape jammed — clear it to print. Fix it on the printer and retry.");
+    expect(alert).not.toHaveTextContent("printer_error");
+  });
+
   it("lists the state history from the job's timestamps", async () => {
     mockApi(routes("done", { started_at: "2026-11-04T10:00:05Z", finished_at: "2026-11-04T10:00:09Z" }));
     await renderApp({ path: `/jobs/${ID}` });

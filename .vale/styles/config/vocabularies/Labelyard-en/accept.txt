@@ -9,6 +9,9 @@
 ^template$
 ^printer$
 ^tray$
+^sheet code$
+^liner$
+^backing design$
 ^calibration$
 ^preview$
 ^print job$

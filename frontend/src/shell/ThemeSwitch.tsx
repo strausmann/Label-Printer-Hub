@@ -3,7 +3,7 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
-import { Radio, RadioGroup } from "react-aria-components";
+import { Button, Radio, RadioGroup } from "react-aria-components";
 import { MoonIcon, SunIcon, SystemIcon } from "./icons";
 import { applyTheme, isTheme, readTheme, storeTheme, type ThemeChoice } from "./theme";
 
@@ -18,18 +18,40 @@ export function ThemeSwitch() {
     { value: "dark", label: t`Dark theme`, icon: <MoonIcon width={18} height={18} /> },
   ];
 
+  const order: ThemeChoice[] = ["system", "light", "dark"];
+  const current = options.find((o) => o.value === choice) ?? options[0]!;
+  const apply = (value: ThemeChoice) => {
+    setChoice(value);
+    storeTheme(value);
+    applyTheme(value);
+  };
+  const word: Record<ThemeChoice, string> = {
+    system: t({ message: "system", context: "the chosen theme, after the word Theme" }),
+    light: t({ message: "light", context: "the chosen theme, after the word Theme" }),
+    dark: t({ message: "dark", context: "the chosen theme, after the word Theme" }),
+  };
+
+  const chosen = word[choice];
+  const next = word[order[(order.indexOf(choice) + 1) % order.length]!];
+
   return (
+    <>
+    {/* Below 640 px the three-way switch would push the other controls off the screen (320 px): one button cycles through it. */}
+    <Button
+      aria-label={t`Theme: ${chosen}. Switch to ${next}`}
+      onPress={() => apply(order[(order.indexOf(choice) + 1) % order.length]!)}
+      className="press flex size-11 items-center justify-center rounded-r2 text-ink-2 transition-colors duration-150 hover:bg-sunken hover:text-ink data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-1 data-[focus-visible]:outline-link sm:hidden"
+    >
+      {current.icon}
+    </Button>
     <RadioGroup
       aria-label={t`Theme`}
       orientation="horizontal"
       value={choice}
       onChange={(value) => {
-        if (!isTheme(value)) return;
-        setChoice(value);
-        storeTheme(value);
-        applyTheme(value);
+        if (isTheme(value)) apply(value);
       }}
-      className="flex rounded-r2 bg-sunken p-0.5"
+      className="hidden rounded-r2 bg-sunken p-0.5 sm:flex"
     >
       {options.map((option) => (
         <Radio
@@ -42,5 +64,6 @@ export function ThemeSwitch() {
         </Radio>
       ))}
     </RadioGroup>
+    </>
   );
 }

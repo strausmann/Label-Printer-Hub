@@ -12,26 +12,29 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import AuthContext, check_printer_access
+from app.api.print_errors import print_error_http, print_error_responses
+from app.auth.dependencies import (
+    AuthContext,
+    charge_lookup_fan_out,
+    check_printer_access,
+    refund_lookup_fan_out,
+)
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
 from app.printer_backends.exceptions import (
     ConflictingOrientationError,
-    ContentTypeDataMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
     PrinterOfflineError,
-    QrPayloadTooLongError,
     SnmpQueryError,
     TapeMismatchError,
-    UnsupportedTapeError,
 )
 from app.repositories import print_batches as batches_repo
 from app.repositories import printers as printers_repo
 from app.schemas.print_batch import BatchRequest, BatchResponse
 from app.services.batch_dispatch import dispatch_batch
-from app.services.lookup_service import LookupFailedError, UnknownAppError
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 from app.services.print_queue import (
     MAX_LABELS_PER_TAPE_JOB,
     QUEUED_RUN_RETRY_AFTER_S,
@@ -46,13 +49,16 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 # (POST /api/v1/print), so this is a clean separation.
 router = APIRouter(prefix="/api/v1")
 
-_SYNC_ERROR_MAP: dict[type[Exception], str] = {
-    PrinterOfflineError: "printer_offline",
-    PrinterCoverOpenError: "printer_cover_open",
-    # R2-2: align with print.py — snmp_query_failed (was snmp_error)
-    SnmpQueryError: "snmp_query_failed",
-    TapeMismatchError: "tape_mismatch",
-}
+# What dispatch_batch raises before it looks anything up: the queue claim and the preflight.
+_NO_LOOKUP_RAN = (
+    TooManyQueuedRunsError,
+    PrinterCoverOpenError,
+    TapeMismatchError,
+    PrinterOfflineError,
+    SnmpQueryError,
+    NoTapeLoadedError,
+    ConflictingOrientationError,
+)
 
 
 @router.post(
@@ -60,6 +66,17 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
     status_code=status.HTTP_202_ACCEPTED,
     response_model=BatchResponse,
     tags=["print"],
+    responses=print_error_responses(
+        "wrapped",
+        extra={
+            400: "`printer_slug_mismatch`: `printer_slug` names another printer.",
+            404: "`printer_not_found`.",
+            409: "`media_kind_mismatch`: a page printer (IPP).",
+            422: "`conflicting_orientation`, or an invalid body.",
+            429: "`too-many-queued-runs` or `rate_limit_exceeded`, with Retry-After.",
+            503: "`router_not_initialized`, `printer_unreachable` or `service_not_initialized`.",
+        },
+    ),
     summary="Submit a batch of print jobs",
     description=(
         "Validates all items and enqueues the batch as one tape run — no per-item errors are "
@@ -77,7 +94,11 @@ _SYNC_ERROR_MAP: dict[type[Exception], str] = {
         "`LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most "
         "`LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. "
         "A run that waits for `/continue` or a reprint counts against its key only. Over a "
-        "cap the batch answers 429 too-many-queued-runs."
+        "cap the batch answers 429 too-many-queued-runs. Items that carry a `lookup` also "
+        "count against the key's rate limit: the request's own token pays for the first lookup, "
+        "each further one takes another token (never more than a full bucket), and a batch the "
+        "remaining budget cannot cover answers 429 `rate_limit_exceeded` before any lookup; a "
+        "batch refused before the first lookup gives the tokens back."
     ),
 )
 async def create_batch(
@@ -146,21 +167,30 @@ async def create_batch(
     else:
         use_half_cut = backend_supports_half_cut
 
+    # Every item with a lookup is one integration call; the request's token pays for the first.
+    # 429 here, before the printer is asked and before any lookup.
+    charged = charge_lookup_fan_out(auth, sum(1 for item in body.items if item.lookup is not None))
+
     # #277: the queue's tape run carries the batch id, so continue/reprint find it.
     run_id = uuid4()
     label_ids: list[UUID] = []
     try:
-        job_ids = await dispatch_batch(
-            service=service,
-            items=body.items,
-            half_cut=use_half_cut,
-            run_id=run_id,
-            label_ids=label_ids,
-            queue=getattr(http.app.state, "print_queue", None),
-            printer_id=printer.id,
-            api_key_id=auth.api_key_id,
-            source_ip=auth.ip,
-        )
+        try:
+            job_ids = await dispatch_batch(
+                service=service,
+                items=body.items,
+                half_cut=use_half_cut,
+                run_id=run_id,
+                label_ids=label_ids,
+                queue=getattr(http.app.state, "print_queue", None),
+                printer_id=printer.id,
+                api_key_id=auth.api_key_id,
+                source_ip=auth.ip,
+            )
+        except _NO_LOOKUP_RAN:
+            # Refused before the first lookup (queue claim, preflight): the client retries.
+            refund_lookup_fan_out(auth, charged)
+            raise
     except TooManyQueuedRunsError as exc:
         # 263-76: the rate-limit answer's shape; nothing was looked up, drawn or stored.
         raise HTTPException(
@@ -175,76 +205,6 @@ async def create_batch(
             },
             headers={"Retry-After": str(QUEUED_RUN_RETRY_AFTER_S)},
         ) from exc
-    except UnknownAppError as exc:
-        # 422: the request names an integration this hub does not have (a client mistake).
-        # Fixed message: the exception text lists the registered integrations.
-        raise HTTPException(
-            422,
-            detail={
-                "error_code": "integration_unknown_app",
-                "error_message": "The requested integration is not available.",
-            },
-        ) from exc
-    except LookupFailedError as exc:
-        # 502: the integration failed or its upstream is unreachable. NOT str(exc): the
-        # plugin wraps upstream errors, which can carry URLs and response details (CWE-209).
-        raise HTTPException(
-            502,
-            detail={
-                "error_code": "integration_lookup_failed",
-                "error_message": "The integration failed or could not be reached.",
-            },
-        ) from exc
-    except (PrinterCoverOpenError, TapeMismatchError) as exc:
-        # 409: hardware state the user can fix (cover open / wrong tape)
-        raise HTTPException(
-            409,
-            detail={
-                "error_code": _SYNC_ERROR_MAP[type(exc)],
-                # str(exc) is safe here: these exceptions carry only hardware-state
-                # descriptions (e.g. "Expected 12mm tape, loaded 24mm"), no stack
-                # trace fragments or internal paths.
-                "error_message": str(exc),
-            },
-        ) from exc
-    except (PrinterOfflineError, SnmpQueryError) as exc:
-        # R2-2: 503 — server-side / network issue, client should retry later.
-        # Consistent with print.py which maps PrinterOfflineError → 503.
-        raise HTTPException(
-            503,
-            detail={
-                "error_code": _SYNC_ERROR_MAP[type(exc)],
-                "error_message": str(exc),
-            },
-        ) from exc
-    except (NoTapeLoadedError, UnsupportedTapeError) as exc:
-        # 409: tape hardware state — client must change tape and retry.
-        # NOTE: We do NOT expose str(exc) — CWE-209 guard: use a fixed message
-        # + structured detail instead of raw exception text.
-        if isinstance(exc, NoTapeLoadedError):
-            error_code = "no_tape_loaded"
-            error_msg = "No tape loaded — insert a Brother TZe or DK cartridge."
-            error_detail: dict[str, object] = {}
-        else:
-            error_code = "unsupported_tape"
-            error_msg = "The currently loaded tape width is not supported by the layout engine."
-            error_detail = {"tape_mm": exc.tape_mm}
-        detail: dict[str, object] = {"error_code": error_code, "error_message": error_msg}
-        if error_detail:
-            detail["error_detail"] = error_detail
-        raise HTTPException(409, detail=detail) from exc
-    except ContentTypeDataMismatchError as exc:
-        # 422: client-side data error — missing fields for the chosen content type.
-        raise HTTPException(
-            422,
-            detail={
-                "error_code": "content_type_data_mismatch",
-                "error_message": (
-                    "The label data is missing fields required for the selected content type."
-                ),
-                "error_detail": {"missing_fields": list(exc.missing_fields)},
-            },
-        ) from exc
     except ConflictingOrientationError as exc:
         # 422: a batch prints with one orientation (#258)
         raise HTTPException(
@@ -255,16 +215,9 @@ async def create_batch(
                 "error_detail": {"orientations": list(exc.orientations)},
             },
         ) from exc
-    except QrPayloadTooLongError as exc:
-        # 422: a payload does not fit the fixed QR code of the tape (#258).
-        raise HTTPException(
-            422,
-            detail={
-                "error_code": "qr_payload_too_long",
-                "error_message": "The QR payload does not fit the fixed QR code of this tape.",
-                "error_detail": {"length": exc.length, "max_bytes": exc.max_bytes},
-            },
-        ) from exc
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # The shared table (#378): status, code, fixed text and detail under ``detail``.
+        raise print_error_http(exc, http) from exc
 
     # 7. Persist tracking row
     # auth.subject_id does NOT exist — use api_key_id or source

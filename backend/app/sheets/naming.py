@@ -41,7 +41,7 @@ def derive_key(vendor: str, first_code: str) -> str:
 def default_allow_qr(g: Geometry) -> bool:
     """A QR code is allowed by default when the shorter label side is at least 10 mm.
 
-    Evidence: on Avery Zweckform L4731REV (25.4 x 10 mm) a QR code with a short number beside
+    Evidence: on Avery Zweckform L4731REV (25.4 x 9.98 mm) a QR code with a short number beside
     it prints and scans. The value is only the default for a new type; the type keeps its own
     switch afterwards.
     """

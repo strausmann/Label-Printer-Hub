@@ -7,7 +7,9 @@ import { queuedJobs } from "../../api/errorDetail";
 import { queryString } from "../../api/queryString";
 import type { components } from "../../api/schema.gen";
 import { watchPrint } from "../jobs/printWatch";
+import { statusKey } from "../printers/api";
 import {
+  capabilitiesKey,
   marginCheckKey,
   nextCodeKey,
   SHEET_PREVIEW_KEY,
@@ -132,6 +134,17 @@ export const useResolveCells = () =>
   }));
 
 /**
+ * Settles every unconfirmed cell at once. `expectedCells` are the cells the person was shown: when the sheet's
+ * unconfirmed cells are others now, also as many, nothing is settled. Their number goes along for an older hub.
+ */
+export const useResolveAllCells = () =>
+  useCellsWrite<{ code: string; outcome: "printed" | "not_printed"; expectedCells: number[] }>("resolve-all", ({ outcome, expectedCells }) => ({
+    outcome,
+    expected_count: expectedCells.length,
+    expected_cells: expectedCells,
+  }));
+
+/**
  * The plan for a print onto sheets, rendered by the server. The key sits outside `["printers", …]`
  * (see keys.ts); `sheet.updated` refreshes it only when a placement names that sheet.
  */
@@ -177,6 +190,73 @@ export function usePrintSheets(printerId: string) {
       void client.invalidateQueries({ queryKey: [SHEET_PREVIEW_KEY] });
       void client.invalidateQueries({ queryKey: ["jobs"] });
       void client.invalidateQueries({ queryKey: ["printers", printerId, "queue"] });
+      // The status names the tray the newest sheet page used (#344).
+      void client.invalidateQueries({ queryKey: statusKey(printerId) });
     },
+  });
+}
+
+// ---------------------------------------------------------------- the code on the back (#350)
+
+export type SheetBackPrint = Schemas["SheetBackPrint"];
+export type PageJobQueued = Schemas["PageJobQueued"];
+export type TrayLoadingRead = Schemas["TrayLoadingRead"];
+
+/** "Print sheet code" / "Print again": queues the code strip on the back of an existing sheet; the caller watches the job. */
+export function usePrintBackSide() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, body }: { code: string; body: SheetBackPrint }) => post<PageJobQueued>(`/api/v1/sheets/${encode(code)}/back-side`, body),
+    // The caller registers the job (with its own live line), so it is watched once (#350 review M6).
+    onSettled: (_d, _e, { code }) => {
+      refreshAfterWrite(client);
+      void client.invalidateQueries({ queryKey: sheetKey(code) });
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+    },
+  });
+}
+
+/** "Yes, it is printed": only this marks the code on the back as printed. */
+export function useConfirmBackSide() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (code: string) => post<SheetRead>(`/api/v1/sheets/${encode(code)}/back-side/confirm`),
+    onSuccess: (sheet, code) => client.setQueryData(sheetKey(code), sheet),
+    onSettled: () => refreshAfterWrite(client),
+  });
+}
+
+/** "Reprint margin code": queues a page with only the margin code of a printed margin sheet, and watches it. */
+export function usePrintMarginId() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ code, body }: { code: string; body: SheetBackPrint }) => post<PageJobQueued>(`/api/v1/sheets/${encode(code)}/margin-id`, body),
+    onSuccess: (queued, { body }) => void watchPrint({ kind: "sheet", printerId: body.printer, jobIds: [queued.job_id] }),
+    onSettled: (_d, _e, { code, body }) => {
+      void client.invalidateQueries({ queryKey: sheetKey(code) });
+      void client.invalidateQueries({ queryKey: ["jobs"] });
+      void client.invalidateQueries({ queryKey: ["printers", body.printer, "queue"] });
+    },
+  });
+}
+
+const loadingPath = (printerId: string, tray: string) => `/api/v1/printers/${encode(printerId)}/trays/${encode(tray)}/loading`;
+
+/** Stores how a tray takes paper; the capabilities carry it from then on. */
+export function useSetTrayLoading() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ printerId, tray, loading }: { printerId: string; tray: string; loading: TrayLoadingRead }) =>
+      apiFetch<TrayLoadingRead>(loadingPath(printerId, tray), { method: "PUT", json: loading }),
+    onSettled: (_d, _e, { printerId }) => void client.invalidateQueries({ queryKey: capabilitiesKey(printerId) }),
+  });
+}
+
+/** Prints the loading test page of a tray. */
+export function usePrintLoadingTest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ printerId, tray }: { printerId: string; tray: string }) => post<PageJobQueued>(`${loadingPath(printerId, tray)}/test-page`),
+    onSettled: () => void client.invalidateQueries({ queryKey: ["jobs"] }),
   });
 }

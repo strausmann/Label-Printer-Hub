@@ -87,10 +87,22 @@ def existing(code: str, **kw: Any) -> PlacementRequest:
     return PlacementRequest(sheet_code=code, new_sheet=None, **kw)
 
 
-def new(placement: str = "manual", **kw: Any) -> PlacementRequest:
+def new(
+    placement: str = "manual",
+    *,
+    id_cell: int | None = None,
+    used: list[int] | None = None,
+    **kw: Any,
+) -> PlacementRequest:
     return PlacementRequest(
         sheet_code=None,
-        new_sheet=NewSheetIn(type_key=KEY, version=None, id_placement=placement),  # type: ignore[arg-type]
+        new_sheet=NewSheetIn(
+            type_key=KEY,
+            version=None,
+            id_placement=placement,  # type: ignore[arg-type]
+            used_cells=[MarkedCell(n) for n in used or []],
+            id_cell=id_cell,
+        ),
         **kw,
     )
 
@@ -768,3 +780,97 @@ async def test_reserve_exact_hands_back_the_cells_in_the_order_it_was_given(sess
     assert [a.cell for a in page.assignments] == [1, 9, 2, 5]
     assert [a.item_index for a in page.assignments] == [None, 0, 1, 2]
     assert [a.ref for a in page.assignments[1:]] == ["r-9", "r-2", "r-5"]
+
+
+# ---------------------------------------------------------------------------- given job ids (#281)
+
+
+async def test_reserve_uses_given_job_ids(session: AsyncSession) -> None:
+    code = await make_sheet(session, used=5)
+    given = uuid4()
+    (page,) = await do_reserve(session, [existing(code)], 1, job_ids=[given])
+
+    assert page.job_id == given
+    rows = [c for c in await cells(session) if c.state == "reserved"]
+    assert [(c.cell_no, c.job_id) for c in rows] == [(6, given)]
+
+
+async def test_reserve_job_ids_length_mismatch_raises(session: AsyncSession) -> None:
+    code = await make_sheet(session, used=5)
+    with pytest.raises(ValueError, match="job_ids"):
+        await do_reserve(session, [existing(code)], 1, job_ids=[uuid4(), uuid4()])
+    assert [c for c in await cells(session) if c.state == "reserved"] == []
+
+
+async def test_deferred_reservation_counts_as_unattached(session: AsyncSession) -> None:
+    """C26 for the Grocy stored row: its reserved cells have a ``jobs`` row, but the row still
+    carries the deferred payload (no ``detail.margin_id``) until the hand-off."""
+    await make_sheet(session, placement="margin")
+    sheet_id = (await session.execute(select(Sheet.id))).scalar_one()
+    job_id = uuid4()
+    session.add(
+        Job(
+            id=job_id,
+            printer_id=uuid4(),
+            state=JobState.QUEUED.value,
+            payload={"deferred": True, "deferred_kind": "sheet_page", "label_data": {}},
+        )
+    )
+    session.add(
+        SheetCell(sheet_id=sheet_id, cell_no=1, state="reserved", job_id=job_id, source="grocy")
+    )
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is True
+    assert await feed_mark_in_flight(session, sheet_id) is True
+    # Handed off: a page payload without a margin ID does not carry it.
+    row = await session.get(Job, job_id)
+    assert row is not None
+    row.payload = {"kind": "sheet_page", "detail": {"sheet_id": str(sheet_id)}}
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is False
+    # A finished deferred row (a tape Grocy job keeps the flag) does not count.
+    row.payload = {"deferred": True, "label_data": {}}
+    row.state = JobState.DONE.value
+    await session.commit()
+    assert await margin_id_in_flight(session, sheet_id) is False
+
+
+# ---------------------------------------------------------------- preferred ID cell (#350)
+
+
+async def _sheet_row(session: AsyncSession, code: str) -> Sheet:
+    return (await session.execute(select(Sheet).where(col(Sheet.code) == code))).scalar_one()
+
+
+async def test_preferred_id_cell_is_used(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("cell", id_cell=5)], 0)
+
+    assert page.id_cell == 5
+    assert [(a.cell, a.item_index) for a in page.assignments] == [(5, None)]
+    assert (await _sheet_row(session, page.sheet_code)).id_cell_no == 5
+
+
+async def test_preferred_id_cell_taken_falls_back_to_first_free(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("cell", id_cell=5, used=[5])], 0)
+
+    assert page.id_cell == 1
+    by_cell = {c.cell_no: c for c in await cells(session)}
+    assert by_cell[5].state == "used" and by_cell[5].marked_by_hand is True
+    assert by_cell[1].source == "hub"
+
+
+async def test_preferred_id_cell_beyond_geometry_falls_back(session: AsyncSession) -> None:
+    (page,) = await do_reserve(session, [new("cell", id_cell=99)], 0)
+    assert page.id_cell == 1
+
+
+async def test_reserved_cell_is_skipped_by_first_free(session: AsyncSession) -> None:
+    first = (await do_reserve(session, [new("cell", id_cell=2)], 0))[0]
+    # The ID-only job did not come out: its cell is free again, the preference stays.
+    await release(session, first.job_id)
+
+    (page,) = await do_reserve(session, [existing(first.sheet_code)], 3)
+
+    assert page.id_cell == 2
+    items = sorted(a.cell for a in page.assignments if a.item_index is not None)
+    assert items == [1, 3, 4]

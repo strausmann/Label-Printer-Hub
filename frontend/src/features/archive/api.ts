@@ -106,3 +106,9 @@ export const useImportType = () =>
     // The type the import touched: a new version changes an open detail, a new key has none cached yet.
     (_v, data) => data?.key ?? null,
   );
+
+export type BackingDesignRead = Schemas["BackingDesignRead"];
+
+/** The vendor prints on the back of a liner (#350); a type links one of them. */
+export const useBackingDesigns = (enabled = true) =>
+  useQuery({ queryKey: ["backing-designs"], queryFn: () => apiFetch<BackingDesignRead[]>("/api/v1/backing-designs"), enabled });

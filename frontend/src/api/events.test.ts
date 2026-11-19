@@ -7,6 +7,8 @@ import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emitSessionConfirmed, setOnUnauthorized, setSessionUnknown } from "./client";
 import { resetPrintWatch, useWatchedPrints, watchPrint } from "../features/jobs/printWatch";
+import { notificationJobsKey } from "../features/notifications/useNotifications";
+import { useCoverRefusals } from "../features/printers/coverRefusals";
 import { useHubEvents } from "./events";
 
 class FakeEventSource {
@@ -124,6 +126,13 @@ describe("useHubEvents", () => {
     const { invalidate } = setup();
     act(() => last().emit("job.state_changed", "p1"));
     expect(keys(invalidate)).toEqual([["jobs"], ["printers", "p1", "queue"]]);
+  });
+
+  it("a job that failed on the open cover records a cover refusal for its printer (#376)", () => {
+    setup();
+    act(() => last().emit("job.state_changed", "p1", { job_id: "j1", to_state: "failed", error_code: "printer_cover_open" }));
+    act(() => last().emit("job.state_changed", "p2", { job_id: "j2", to_state: "failed", error_code: "tape_mismatch" }));
+    expect(renderHook(() => useCoverRefusals()).result.current).toEqual({ p1: { title: "" } });
   });
 
   it("printer.status invalidates the printers prefix once, which reaches the printer's own queries", () => {
@@ -520,7 +529,7 @@ describe("useHubEvents", () => {
     expect(FakeEventSource.instances).toHaveLength(3);
   });
 
-  it("after an automatic reconnect the sheet lists, the types and the previews are fetched again; the first open fetches nothing", () => {
+  it("after an automatic reconnect the sheet lists, the types, the previews and the job lists are fetched again; the first open fetches nothing", () => {
     const { invalidate } = setup();
     act(() => last().open());
     expect(invalidate).not.toHaveBeenCalled();
@@ -528,7 +537,7 @@ describe("useHubEvents", () => {
     act(() => void vi.advanceTimersByTime(1000));
     expect(invalidate).not.toHaveBeenCalled();
     act(() => last().open());
-    expect(keys(invalidate)).toEqual([["sheets"], ["sheet-types"], ["sheet-preview"]]);
+    expect(keys(invalidate)).toEqual([["sheets"], ["sheet-types"], ["sheet-preview"], ["jobs"]]);
   });
 
   it("backoff doubles and caps at 30s", () => {
@@ -593,6 +602,48 @@ describe("useHubEvents", () => {
     act(() => last().emit("auth.expired", null));
     act(() => result.current.reconnect());
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+});
+
+describe("the notification centre's jobs", () => {
+  /** The query the bell reads: an observer on its real key, counting how often the list is fetched. */
+  function watchNotificationJobs(client: QueryClient) {
+    const queryFn = vi.fn(async () => []);
+    const observer = new QueryObserver(client, { queryKey: notificationJobsKey, queryFn, staleTime: 60_000 });
+    return { queryFn, unsubscribe: observer.subscribe(() => {}) };
+  }
+
+  it("updates when a job.state_changed event arrives", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setup(client);
+    const { queryFn, unsubscribe } = watchNotificationJobs(client);
+    try {
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      act(() => last().emit("job.state_changed", "p1", { job_id: "j1", to_state: "failed" }));
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("resyncs after a reconnect: a job that changed while the stream was down is read again", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    setup(client);
+    const { queryFn, unsubscribe } = watchNotificationJobs(client);
+    try {
+      act(() => last().open());
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      act(() => last().fail());
+      act(() => void vi.advanceTimersByTime(1000));
+      act(() => last().open());
+      await act(async () => void (await vi.advanceTimersByTimeAsync(0)));
+      expect(queryFn).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
   });
 });
 

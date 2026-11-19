@@ -23,6 +23,17 @@ import bcrypt
 # modern hardware). Deliberately slow to resist offline brute-force attacks.
 _BCRYPT_ROUNDS = 12
 
+KEY_SCHEME = "lh_pat_"
+"""The fixed start of every hub API key."""
+
+KEY_PREFIX_LENGTH = 16
+"""Characters of a key stored as ``ApiKey.key_prefix``: shown in the UI, used for the lookup."""
+
+
+def key_prefix(plaintext: str) -> str:
+    """The lookup and display prefix of a key: its first ``KEY_PREFIX_LENGTH`` characters."""
+    return plaintext[:KEY_PREFIX_LENGTH]
+
 
 def generate_api_key() -> tuple[str, str, str]:
     """Generate a new API key.
@@ -34,7 +45,7 @@ def generate_api_key() -> tuple[str, str, str]:
         - bcrypt_hash — stored in the DB, used for verify_api_key()
     """
     body = secrets.token_urlsafe(32)  # 256 bits of entropy, URL-safe charset
-    plaintext = f"lh_pat_{body}"
-    prefix = plaintext[:16]
+    plaintext = f"{KEY_SCHEME}{body}"
+    prefix = key_prefix(plaintext)
     hashed = bcrypt.hashpw(plaintext.encode(), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode()
     return plaintext, prefix, hashed

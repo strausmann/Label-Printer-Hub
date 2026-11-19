@@ -36,6 +36,7 @@ import { Printers as SettingsPrinters } from "../features/settings/Printers";
 import { General, Jobs } from "../features/settings/sections";
 import { SettingsLayout } from "../features/settings/SettingsPage";
 import { System } from "../features/settings/System";
+import { GrocycodePage } from "../features/scan/GrocycodePage";
 import { ScanScreen } from "../features/scan/ScanScreen";
 import { SheetArchivePage } from "../features/archive/ArchivePage";
 import { parseArchiveSearch } from "../features/archive/search";
@@ -164,9 +165,9 @@ const cartRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cart",
   component: CartPage,
-  validateSearch: (search: Record<string, unknown>): { sheet?: string | undefined } => {
+  validateSearch: (search: Record<string, unknown>): { sheet?: string | undefined; tray?: string | undefined } => {
     const sheet = text(search.sheet);
-    return { sheet: sheet && parseSheetCode(`sheet:${sheet}`) ? sheet : undefined };
+    return { sheet: sheet && parseSheetCode(`sheet:${sheet}`) ? sheet : undefined, tray: sheetTypeKey(search.tray) };
   },
 });
 
@@ -225,6 +226,7 @@ const routeTree = rootRoute.addChildren([
   page("/asset/$id", AssetPage),
   page("/spool/$id", SpoolPage),
   page("/product/$id", ProductPage),
+  page("/grocycode/$entity/$id", GrocycodePage),
   cartRoute,
   page("/about", AboutPage),
   page("/scan", ScanScreen),

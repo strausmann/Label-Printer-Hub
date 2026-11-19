@@ -76,6 +76,22 @@ describe("PrinterDetail", () => {
     expect(within(connection).getByText("brother_ql")).toBeVisible();
   });
 
+  it("a tape printer shows how it confirms a print (#393), read-only", async () => {
+    const print_confirmation = { channel: "label_counter", confirm_transport: "raw", label_counter: true, counter_read: true, ipp_incomplete: false, confirmed_at: "2026-11-18T09:00:00Z" };
+    mockApi(routes({ ...PRINTER_B, print_confirmation }));
+    const first = await renderApp({ path: `/printers/${PRINTER_B.id}` });
+    const connection = await screen.findByRole("region", { name: "Connection" });
+    expect(within(connection).getByText("Print confirmation")).toBeVisible();
+    expect(within(connection).getByText("Label counter")).toBeVisible();
+    expect(within(connection).queryByRole("button", { name: /confirmation/i })).toBeNull();
+    first.unmount();
+
+    mockApi(routes({ ...PRINTER_B, print_confirmation: null }));
+    await renderApp({ path: `/printers/${PRINTER_B.id}` });
+    const untested = await screen.findByRole("region", { name: "Connection" });
+    expect(within(untested).getByText("Not tested yet — a test print finds out")).toBeVisible();
+  });
+
   it("an IPP printer shows no tape host and port; a key below admin gets no address, an admin gets it", async () => {
     mockApi(routes({ ...PAGE_PRINTER, connection: { tls_verify: false } }));
     const first = await renderApp({ path: `/printers/${PAGE_PRINTER.id}` });

@@ -104,6 +104,7 @@ def test_content_box_round_is_inscribed_square() -> None:
         (ContentType.QR_TWO_LINES, ContentType.TEXT_TWO_LINES),
         (ContentType.QR_THREE_LINES, ContentType.TEXT_TWO_LINES),
         (ContentType.QR_WITH_LISTING, ContentType.TEXT_TWO_LINES),
+        (ContentType.SPOOL_SWATCH, ContentType.TEXT_TWO_LINES),
     ],
 )
 def test_map_content_type_without_qr(ct: ContentType, mapped_to: ContentType) -> None:
@@ -561,3 +562,14 @@ def test_a_25_by_10_mm_cell_without_qr_prints_text_only() -> None:
     square = cell.image.crop((0, 0, edge, edge))
     expected = build_qr("ASN00123", edge)
     assert expected is not None and square.tobytes() != expected.tobytes()
+
+
+def test_check_required_accepts_a_swatch() -> None:
+    from app.schemas.spool_swatch import SpoolSwatch
+    from app.sheets.cell_render import check_required
+
+    swatch = SpoolSwatch(spool_id=12, vendor="TecBears")
+    check_required(ContentType.SPOOL_SWATCH, _data(qr_payload="https://x.example", swatch=swatch))
+    with pytest.raises(ContentTypeDataMismatchError) as exc:
+        check_required(ContentType.SPOOL_SWATCH, _data(qr_payload="https://x.example"))
+    assert exc.value.missing_fields == ("swatch",)

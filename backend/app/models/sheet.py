@@ -41,6 +41,10 @@ class SheetType(SQLModel, table=True):
     __tablename__ = "sheet_types"
     __table_args__ = (
         CheckConstraint("origin IN ('seed','custom','imported')", name="ck_sheet_types_origin"),
+        CheckConstraint(
+            "id_placement IN ('auto','margin','back_side','cell')",
+            name="ck_sheet_types_id_placement",
+        ),
     )
 
     id: UUID = Field(default_factory=uuid4, sa_column=Column(Uuid, primary_key=True))
@@ -59,6 +63,17 @@ class SheetType(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now, sa_column=_dt())
     updated_at: datetime = Field(default_factory=_now, sa_column=_dt())
     created_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
+    # Where the sheet code of a new sheet goes (#350, R-350-1): ``auto`` resolves to ``margin``
+    # or ``back_side`` (``app.sheets.id_placement``); ``id_cell`` is the preferred ID cell of a
+    # ``cell`` sheet; ``backing_design_id`` names the vendor print on the back of the liner.
+    id_placement: str = Field(
+        default="auto",
+        sa_column=Column(String, nullable=False, server_default="auto"),
+    )
+    id_cell: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    backing_design_id: UUID | None = Field(
+        default=None, sa_column=Column(Uuid, ForeignKey("backing_designs.id"), nullable=True)
+    )
 
 
 class SheetTypeVersion(SQLModel, table=True):
@@ -107,7 +122,8 @@ class Sheet(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint("state IN ('active','discarded')", name="ck_sheets_state"),
         CheckConstraint(
-            "id_placement IN ('cell','margin','manual')", name="ck_sheets_id_placement"
+            "id_placement IN ('cell','margin','manual','back_side')",
+            name="ck_sheets_id_placement",
         ),
         Index("ix_sheets_type_state", "type_id", "state"),
     )
@@ -122,8 +138,18 @@ class Sheet(SQLModel, table=True):
     state: str = Field(default="active", sa_column=Column(String, nullable=False))
     discarded_at: datetime | None = Field(default=None, sa_column=_dt(nullable=True))
     discarded_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
+    # #350 review M5: who switched an unprinted margin sheet to the code on the back. A manual
+    # sheet keeps its placement and gets an extra back side instead (``back_side_state``).
+    placement_changed_at: datetime | None = Field(default=None, sa_column=_dt(nullable=True))
+    placement_changed_by: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     id_placement: str = Field(sa_column=Column(String, nullable=False))
     id_printed: bool = Field(default=False, sa_column=Column(Boolean, nullable=False))
+    # An extra code on the back of a sheet whose code is printed elsewhere (1.7.0 acceptance):
+    # ``None`` (never asked for), ``pending`` (queued, not confirmed) or ``confirmed``. A
+    # ``back_side`` sheet keeps using ``id_printed``.
+    back_side_state: str | None = Field(default=None, sa_column=Column(String, nullable=True))
+    # The preferred ID cell of a ``cell`` sheet (R-350-7); taken when it is free.
+    id_cell_no: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
     # The feed-direction mark (spec 10.2a) has its own flag, independent of ``id_printed``.
     feed_mark_printed: bool = Field(
         default=False,

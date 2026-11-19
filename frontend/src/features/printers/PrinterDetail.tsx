@@ -16,11 +16,15 @@ import { useCancelJob, useClearQueue, usePrinter, usePrinterStatus, useQueue, us
 import { IdentityMismatchBanner, SettledNotice, useIdentityKindLabel } from "./IdentityMismatchBanner";
 import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
+import { FlagLine, RollLine } from "./PrinterCard";
+import { usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
 import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
 import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
+import { printConfirmationText } from "./printConfirmation";
 import { RollColourEdit, RollColourPrompt } from "./RollColourPrompt";
+import { unsupportedRoll } from "./roll";
 import { TapeSwatch } from "./TapeSwatch";
 
 const route = getRouteApi("/printers/$printerId");
@@ -52,7 +56,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
   const queue = useQueue(printer.id);
   const calibration = useFeature("calibration");
   const printing = (queue.data ?? []).some((j) => j.state === "printing");
-  const view = describePrinter(printer, status.data, printing);
+  const waitingOf = usePrinterWaiting();
+  const view = describePrinter(printer, status.data, printing, waitingOf(printer.id, status.data));
   const page = isPagePrinter(printer, status.data);
   // The union is wider than what the server sends: an IPP printer's address is left out for keys below admin.
   const connection: Record<string, unknown> = printer.connection;
@@ -96,6 +101,8 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           <h1 className="text-title font-bold">{printer.name}</h1>
           <StatusBadge state={view.badge} label={kinds[view.kind]} />
           {view.detail && <p className="text-small text-ink-2">{view.detail}</p>}
+          <FlagLine flags={view.flags} as="p" />
+          <RollLine roll={view.roll} as="p" />
           {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked />}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
           <ReasonLine reasons={view.reasons} />
@@ -152,7 +159,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                   {unknown ? (
                     <span className="text-ink-2">{t`Tape not known`}</span>
                   ) : (
-                    <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} offline={status.data?.online === false} />
+                    <TapeSwatch widthMm={tapeWidthOf(status.data)} colour={status.data?.tape_colour} probed={status.data?.captured_at != null} offline={status.data?.online === false} roll={unsupportedRoll(status.data)} />
                   )}
                 </p>
                 {canAskColour && tapeWidthOf(status.data) !== null && (
@@ -187,6 +194,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
                 <>
                   <Row label={t`Host`} value={textOf(connection.host)} mono />
                   <Row label={t`Port`} value={textOf(connection.port)} mono />
+                  <Row label={t`Print confirmation`} value={printConfirmationText(printer.print_confirmation, i18n._.bind(i18n))} />
                 </>
               )}
               {admin && printer.hardware_id && <Row label={identityKind(printer.hardware_id_kind)} value={printer.hardware_id} mono />}

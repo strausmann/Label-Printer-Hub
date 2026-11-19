@@ -118,6 +118,37 @@ test.describe.serial("calibration", () => {
     expect(response.headers()["content-type"]).toContain("application/pdf");
   });
 
+  test("the reading guide opens on a phone and fits the width", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openCalibration(page, id);
+    await chooseType(page);
+    const trigger = page.getByRole("button", { name: "How to read the calibration page" });
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const one = page.getByRole("img", { name: "How to read one crossing" });
+    const sheet = page.getByRole("img", { name: /^The crossings to read on / });
+    await expect(one).toBeVisible();
+    await expect(sheet).toBeVisible();
+    // Neither drawing is wider than the screen, and the page does not scroll sideways.
+    for (const figure of [one, sheet]) {
+      const box = await figure.boundingBox();
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    // The card under Current values reads at this width too.
+    const stillOff = page.getByRole("heading", { name: "Still off after the check print?" });
+    await stillOff.scrollIntoViewIfNeeded();
+    await expect(stillOff).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    // The link leaves the app in a new tab.
+    const link = page.getByRole("link", { name: /More on labelyard\.app/ });
+    await expect(link).toHaveAttribute("href", "https://labelyard.app/using/calibration/");
+    await expect(link).toHaveAttribute("target", "_blank");
+  });
+
   test("the print result sits below the buttons: they do not move, and the line reaches Done without a reload (#239)", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -338,6 +369,28 @@ test.describe.serial("calibration", () => {
     // The choice is shown, not only in the address: printer and tray are preselected.
     await expect(page.getByRole("button", { name: / Printer$/ })).toContainText(PRINTER);
     await expect(page.getByRole("button", { name: / Tray$/ })).toContainText(trayLabel);
+  });
+
+  test("a correction for another tray than the printed calibration page is warned about (#344)", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/calibration?printer=${id}&tray=auto`);
+    await expect(page.getByRole("heading", { level: 1, name: "Calibration" })).toBeVisible();
+    await chooseType(page);
+    await page.getByRole("button", { name: "Print the calibration page (without correction)" }).click();
+    await expect(page.getByRole("link", { name: "Show the job" })).toBeVisible();
+
+    // The values are about to be saved for the main tray, but the page came from "Automatic".
+    const trayButton = page.getByRole("button", { name: / Tray$/ });
+    await trayButton.click();
+    await page.getByRole("option", { name: "Main tray" }).click();
+    await expect(page.getByText(/The calibration page was printed from Automatic, but you are saving for Main tray/)).toBeVisible();
+
+    // Back on the tray the page came from, nothing to warn about.
+    await trayButton.click();
+    await page.getByRole("option", { name: "Automatic" }).click();
+    await expect(page.getByText("Saves for: Automatic")).toBeVisible();
+    await expect(page.getByText(/The calibration page was printed from/)).toHaveCount(0);
   });
 
   test("fits four readings, saves them, the capabilities show the values; reset puts the tray back", async () => {

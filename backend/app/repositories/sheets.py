@@ -150,13 +150,21 @@ async def cells_by_ref(
 async def unattached_reservation_sheets(
     session: AsyncSession, sheet_ids: Sequence[UUID]
 ) -> set[UUID]:
-    """Which of the sheets have a ``reserved`` cell whose job has no ``jobs`` row yet."""
+    """Which of the sheets have a ``reserved`` cell whose job has no ``jobs`` row yet, or
+    whose job is a stored Grocy row not handed off yet (``queued`` with ``payload.deferred``,
+    #281): neither tells yet whether its page carries the margin ID or the feed mark (C26)."""
+    no_row = ~exists().where(col(Job.id) == col(SheetCell.job_id))
+    deferred = exists().where(
+        col(Job.id) == col(SheetCell.job_id),
+        col(Job.state) == JobState.QUEUED.value,
+        literal_column(json_at("$.deferred")) == 1,
+    )
     result = await session.execute(
         select(col(SheetCell.sheet_id))
         .where(
             col(SheetCell.sheet_id).in_(list(sheet_ids)),
             col(SheetCell.state) == "reserved",
-            ~exists().where(col(Job.id) == col(SheetCell.job_id)),
+            no_row | deferred,
         )
         .distinct()
         .execution_options(**_FRESH)
@@ -219,6 +227,21 @@ async def active_job_payloads(
         _of_sheets(sheet_ids),
         col(Job.state).in_((JobState.QUEUED.value, JobState.PRINTING.value)),
     )
+
+
+async def back_side_job_active(session: AsyncSession, sheet_id: UUID) -> bool:
+    """Whether a ``sheet_back_page`` job of the sheet is queued or printing."""
+    result = await session.execute(
+        select(func.count())
+        .select_from(Job)
+        .where(
+            literal_column(json_at("$.kind")) == "sheet_back_page",
+            _of_sheets([sheet_id]),
+            col(Job.state).in_((JobState.QUEUED.value, JobState.PRINTING.value)),
+        )
+        .execution_options(**_FRESH)
+    )
+    return int(result.scalar_one()) > 0
 
 
 async def unconfirmed_job_payloads(

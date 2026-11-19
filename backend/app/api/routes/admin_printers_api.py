@@ -59,6 +59,7 @@ from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import ProbeSummary
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
+from app.schemas.printer import CONNECTION_READ_DOC
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
@@ -74,8 +75,10 @@ from app.services.printer_admin_service import (
     PrinterAlreadyEnabledError,
     PrinterNotFoundBySlugError,
     PrinterNotFoundError,
+    SnmpCommunityRequiredError,
     TraysNotAllowedError,
     probe_ipp,
+    snmp_view,
 )
 from app.sheets.errors import SheetApiError
 
@@ -112,7 +115,7 @@ class PrinterRead(BaseModel):
     slug: str
     model: str
     backend: str
-    connection: dict[str, Any]
+    connection: dict[str, Any] = Field(description=CONNECTION_READ_DOC)
     queue: dict[str, Any]
     cut_defaults: dict[str, Any]
     layout_defaults: dict[str, LayoutDefault] = Field(
@@ -218,7 +221,7 @@ def _row_to_read(printer: Printer) -> PrinterRead:
         slug=printer.slug,
         model=printer.model,
         backend=printer.backend,
-        connection=printer.connection or {},
+        connection=snmp_view(printer.connection or {}),  # never the community (#296)
         queue={"timeout_s": printer.queue_timeout_s},
         cut_defaults={"half_cut": printer.cut_defaults_half_cut},
         layout_defaults={
@@ -414,6 +417,9 @@ async def get_printer(
         "Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. "
         "``connection`` must fit the stored backend (422 ``invalid_connection``); "
         "``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). "
+        "``connection.snmp.community`` is write-only: omitted or null keeps the stored one "
+        "while host and port stay the same; a new host or port without a community, or "
+        "discovery without any community, is 422 ``snmp_community_required``. "
         "An ``ipp`` printer is probed again when its URI changes or a tray key is new. "
         "A change of the connection, the trays or the IPP queue timeout re-wires the printer "
         "before the answer: a job printing on it finishes first (up to its queue timeout), "
@@ -446,6 +452,17 @@ async def update_printer(
             detail={
                 "error_code": "trays_not_allowed",
                 "error_message": "Trays can only be set for page printers (IPP).",
+            },
+        ) from exc
+    except SnmpCommunityRequiredError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "snmp_community_required",
+                "error_message": (
+                    "Send the SNMP community: status discovery needs one, and a new host "
+                    "or port does not take over the stored one."
+                ),
             },
         ) from exc
     except PrinterNotFoundBySlugError as exc:
@@ -565,7 +582,9 @@ async def resolve_identity(
     session: SessionDep,
     _auth: AdminAuthDep,
 ) -> PrinterRead:
-    check_printer_access(_auth, printer_id)  # a key restricted to other printers: 403
+    # No-op for every key that can reach this admin route (an admin key is never restricted,
+    # #283); kept as defence in depth.
+    check_printer_access(_auth, printer_id)
     svc = PrinterAdminService(session, audit_user=_audit_user(_auth))
     try:
         printer = await svc.resolve_identity(

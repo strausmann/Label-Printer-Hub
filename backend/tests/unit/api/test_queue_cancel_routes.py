@@ -450,3 +450,192 @@ async def test_clear_route_during_submit_serialisation_is_never_printed(
         assert await env.db_state(job_id) == JobState.CANCELLED.value
     finally:
         gate.release.set()
+
+
+# ---------------------------------------------------------------------------- untracked rows (#281)
+
+_HANDED_TAPE = {**_PAYLOAD, "deferred": True}  # a deferred tape row whose payload is complete
+_PAGE = {"kind": "calibration_page", "detail": {}}  # a page payload the queue never registered
+
+
+class _Bus:
+    def __init__(self) -> None:
+        self.events: list[Any] = []
+
+    def next_event_id(self, channel: str) -> int:
+        return len(self.events) + 1
+
+    def publish(self, channel: str, event: Any) -> None:
+        self.events.append(event)
+
+
+async def _untracked(env: _Env, payload: dict[str, Any]) -> UUID:
+    job = Job(printer_id=env.printer.id, payload=dict(payload))
+    await env.store.save_queued(job)
+    return job.id
+
+
+def _cancelled_events(bus: _Bus, job_id: UUID) -> int:
+    return sum(
+        1
+        for e in bus.events
+        if e.data.get("job_id") == str(job_id) and e.data.get("to_state") == "cancelled"
+    )
+
+
+@pytest.fixture
+def short_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.api.routes.jobs as jobs_routes
+
+    monkeypatch.setattr(jobs_routes, "_HAND_OFF_WAIT_S", 0.2)
+
+
+@pytest.mark.asyncio
+async def test_untracked_handed_off_row_is_cancelled_after_the_wait(
+    env: _Env, short_wait: None
+) -> None:
+    """The fallback: a page row the queue never registers is cancelled once, with one event."""
+    bus = _Bus()
+    env.app.state.event_bus = bus
+    job_id = await _untracked(env, _PAGE)
+    async with env.client() as c:
+        r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
+    assert r.status_code == 200, r.text
+    assert await env.db_state(job_id) == JobState.CANCELLED.value
+    assert _cancelled_events(bus, job_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_double_cancel_in_the_fallback_wins_once(
+    env: _Env, short_wait: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Both cancels reach the last-resort write together (a two-party barrier holds the first
+    until the second arrives): the guarded statement lets one write, the other answers 409."""
+    import app.repositories.jobs as jobs_repo
+
+    barrier = asyncio.Barrier(2)
+    guarded = jobs_repo.cancel_queued_unhanded
+    plain = jobs_repo.mark_cancelled
+
+    async def together() -> None:
+        async with asyncio.timeout(2):
+            await barrier.wait()
+
+    async def last_resort(session: Any, job_id: UUID, *, unhanded_only: bool = True) -> Any:
+        if not unhanded_only:
+            await together()
+        return await guarded(session, job_id, unhanded_only=unhanded_only)
+
+    async def plain_together(session: Any, job_id: UUID) -> Any:
+        await together()
+        return await plain(session, job_id)
+
+    monkeypatch.setattr(jobs_repo, "cancel_queued_unhanded", last_resort)
+    monkeypatch.setattr(jobs_repo, "mark_cancelled", plain_together)
+    bus = _Bus()
+    env.app.state.event_bus = bus
+    job_id = await _untracked(env, _PAGE)
+    async with env.client() as c:
+        first, second = await asyncio.gather(
+            c.post(f"/api/v1/jobs/{job_id}/cancel"), c.post(f"/api/v1/jobs/{job_id}/cancel")
+        )
+    assert sorted((first.status_code, second.status_code)) == [200, 409]
+    assert _cancelled_events(bus, job_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_registration_during_the_wait_cancels_through_the_queue(
+    env: _Env, short_wait: None
+) -> None:
+    await _hold(env)
+    job_id = await _untracked(env, _HANDED_TAPE)
+
+    async def register() -> None:
+        await asyncio.sleep(0.05)  # after the route's first look and its guarded write
+        await env.queue.submit_with_id(
+            job_id, env.printer.id, Image.new("1", (300, 76)), tape_mm=24
+        )
+
+    async with env.client() as c:
+        r, _ = await asyncio.gather(c.post(f"/api/v1/jobs/{job_id}/cancel"), register())
+    assert r.status_code == 200, r.text
+    assert (await env.queue.get(job_id)).state.value == "cancelled"
+    assert await env.db_state(job_id) == JobState.CANCELLED.value
+    await env.queue.resume_printer(env.printer.id)
+    await _drain_with_canary(env)
+    assert env.printer.prints == 1  # the canary only
+
+
+@pytest.mark.asyncio
+async def test_state_change_during_the_wait_answers_409(env: _Env, short_wait: None) -> None:
+    job_id = await _untracked(env, _HANDED_TAPE)
+
+    async def fail_it() -> None:
+        await asyncio.sleep(0.05)
+        async with env.factory() as s:
+            row = await s.get(Job, job_id)
+            assert row is not None
+            row.state = JobState.FAILED.value
+            await s.commit()
+
+    async with env.client() as c:
+        r, _ = await asyncio.gather(c.post(f"/api/v1/jobs/{job_id}/cancel"), fail_it())
+    assert r.status_code == 409, r.text
+    assert "failed" in r.text
+    assert await env.db_state(job_id) == JobState.FAILED.value
+
+
+@pytest.mark.asyncio
+async def test_untracked_row_is_written_at_most_twice(
+    env: _Env, short_wait: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review N-2: one guarded write, read-only polling, one write at the deadline."""
+    import app.repositories.jobs as jobs_repo
+
+    writes = 0
+    guarded = jobs_repo.cancel_queued_unhanded
+
+    async def counting(*args: Any, **kwargs: Any) -> Any:
+        nonlocal writes
+        writes += 1
+        return await guarded(*args, **kwargs)
+
+    monkeypatch.setattr(jobs_repo, "cancel_queued_unhanded", counting)
+    job_id = await _untracked(env, _PAGE)
+    async with env.client() as c:
+        r = await c.post(f"/api/v1/jobs/{job_id}/cancel")
+    assert r.status_code == 200, r.text
+    assert writes == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_between_pick_up_check_and_write_is_not_overwritten(
+    env: _Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-review R2-1: the route's last guarded write lands while the worker picks the job up.
+    ``mark_printing`` must not overwrite the ``cancelled`` row with ``printing``: it answers
+    False, the worker does not print, the row stays cancelled. The cancel is injected right
+    before the store's write, after anything it may have read."""
+    import app.repositories.jobs as jobs_repo
+
+    names = [n for n in ("mark_printing", "mark_printing_if_queued") if hasattr(jobs_repo, n)]
+    originals = {n: getattr(jobs_repo, n) for n in names}
+
+    def cancelling(name: str) -> Any:
+        async def write(session: Any, job_id: UUID) -> Any:
+            async with env.factory() as other:  # the route's deadline write, another session
+                await guarded_cancel(other, job_id, unhanded_only=False)
+            return await originals[name](session, job_id)
+
+        return write
+
+    guarded_cancel = jobs_repo.cancel_queued_unhanded
+    for n in names:
+        monkeypatch.setattr(jobs_repo, n, cancelling(n))
+    await _hold(env)
+    job_id = await env.seed_job()
+    await _settle()
+    await env.queue.resume_printer(env.printer.id)
+    await env.queue.wait_for_job(str(job_id), timeout_s=5)
+    assert env.printer.prints == 0
+    assert await env.db_state(job_id) == JobState.CANCELLED.value

@@ -69,7 +69,9 @@ describe("page job at the printer", () => {
   });
 
   it("does not ask for the printer status unless the job is stopped without a cause", async () => {
-    const { calls } = mockApi(routes("printing"));
+    // No printers listed: the notification bell in the shell reads the status of every listed printer, which would hide
+    // whether the job page asks for it.
+    const { calls } = mockApi(routes("printing", {}, { "GET /api/v1/printers": [] }));
     const { queryClient } = await renderApp({ path: `/jobs/${ID}` });
     await screen.findByText("At the printer");
     act(() => void queryClient.setQueryData(pageJobStateKey(ID), event("stopped", ["toner-empty"])));
@@ -240,6 +242,13 @@ describe("retry and cancel of page jobs", () => {
     expect(await retryRefused(409, "job_not_retryable")).toHaveTextContent("This job cannot be retried: nothing is left to print.");
   });
 
+  it("409 job_not_retryable of a margin-code reprint points to Reprint margin code (review M3)", async () => {
+    const alert = await retryRefused(409, "job_not_retryable", { reason: "margin_code_only", sheet_code: CODE });
+    expect(alert).toHaveTextContent("This job printed only the sheet code in the margin. Print it again with Reprint margin code on the sheet page.");
+    expect(alert).not.toHaveTextContent("nothing is left to print");
+    expect(within(alert).getByRole("link", { name: `Open ${CODE}` })).toHaveAttribute("href", `/sheets/${CODE}`);
+  });
+
   it("409 printer_disabled", async () => {
     expect(await retryRefused(409, "printer_disabled")).toHaveTextContent("The printer is switched off.");
   });
@@ -362,5 +371,29 @@ describe("test page job", () => {
     expect(within(section).getByText("bypass")).toBeVisible();
     expect(within(section).getByText("A4")).toBeVisible();
     expect(within(section).queryByText("Sheet")).toBeNull();
+  });
+});
+
+describe("the code on the back and the tray loading test (#350)", () => {
+  const back = { kind: "sheet_back_page", media: "A4", tray: "main", detail: { sheet_code: "A3490-0001", sheet_id: "x" } };
+  const loading = { kind: "tray_loading_page", media: "A4", tray: "bypass", detail: { tray: "bypass" } };
+
+  it("the back page shows its sheet code and links the sheet", async () => {
+    mockApi(routes("done", { payload: back }));
+    await renderApp({ path: `/jobs/${ID}` });
+    await screen.findByRole("heading", { level: 1, name: "Sheet code on the back · A3490-0001" });
+    const section = screen.getByRole("region", { name: "Sheet code on the back" });
+    expect(within(section).getByRole("link", { name: "A3490-0001" })).toHaveAttribute("href", "/sheets/A3490-0001");
+    expect(within(section).queryByText("Cells")).toBeNull();
+  });
+
+  it("de: both titles are German", async () => {
+    mockApi(routes("done", { payload: back }));
+    const view = await renderApp({ path: `/jobs/${ID}`, language: "de" });
+    await screen.findByRole("heading", { level: 1, name: "Bogencode auf der Rückseite · A3490-0001" });
+    view.unmount();
+    mockApi(routes("done", { payload: loading }));
+    await renderApp({ path: `/jobs/${ID}`, language: "de" });
+    await screen.findByRole("heading", { level: 1, name: "Einlegetest Fach · bypass" });
   });
 });

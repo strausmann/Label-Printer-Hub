@@ -1,13 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SIGNED_IN, renderApp } from "../../test-utils";
+import { resetCoverRefusals, useCoverRefusals } from "./coverRefusals";
 import { mockApi, PAGE_PRINTER, PRINTER_A, pageStatus, respond, status } from "../test-api";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  resetCoverRefusals();
+});
 
 const JOB = "cccccccc-0000-4000-8000-000000000001";
 
@@ -33,6 +37,14 @@ describe("TestPrintButton", () => {
     expect(posts(calls)).toHaveLength(1);
     expect(posts(calls)[0]!.body).toBeUndefined();
     expect(screen.getByRole("link", { name: "Open the job" })).toHaveAttribute("href", `/jobs/${JOB}`);
+  });
+
+  it("is off with the reason for a die-cut roll (#391)", async () => {
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id, { media_kind: "die_cut", label_length_mm: 90, tape_width_mm: 29, tape_loaded: "29mm" })));
+    await open(PRINTER_A);
+    const button = await screen.findByRole("button", { name: "Test print" });
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveAccessibleDescription("Unsupported roll loaded: 29 × 90 mm die-cut labels");
   });
 
   it("is enabled for an unpolled tape printer", async () => {
@@ -150,6 +162,8 @@ describe("TestPrintButton", () => {
     ["printer-disabled", "The printer is switched off in the hub. Switch it on in the printer settings."],
     ["printer-paused", "The printer is paused. Resume it, then try again."],
     ["printer-status-unknown", "The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again."],
+    ["unsupported-tape", "This tape width cannot print this label. Load another tape."],
+    ["printer-cover-open", "The printer cover is open. Close it and try again."],
   ])("explains %s in the app's own words, not the server's English", async (type, words) => {
     const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: { type, title: "T", status: 409, detail: "server text" } }) };
     mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
@@ -177,6 +191,45 @@ describe("TestPrintButton", () => {
     await open(PRINTER_A, SIGNED_IN, "de");
     await userEvent.click(await screen.findByRole("button", { name: "Testdruck" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Es ist kein Band eingelegt. Lege ein Band ein und versuche es noch einmal.");
+  });
+
+  it("a test print refused on the open cover escalates the cover at once (#376)", async () => {
+    const problem = { type: "printer-cover-open", title: "The printer cover is open.", status: 409 };
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: problem }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The printer cover is open.");
+    expect(renderHook(() => useCoverRefusals()).result.current).toEqual({ [PRINTER_A.id]: { title: "" } });
+  });
+
+  it("a test print refused for another reason records no cover refusal", async () => {
+    const problem = { type: "no-tape-loaded", title: "No tape loaded", status: 409 };
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: problem }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    await screen.findByRole("alert");
+    expect(renderHook(() => useCoverRefusals()).result.current).toEqual({});
+  });
+
+  it("the test print names the unsupported width", async () => {
+    const problem = { type: "unsupported-tape", title: "T", status: 409, extensions: { tape_mm: 70 } };
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: respond(409, { detail: problem }) };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("This label cannot print on 70 mm tape. Load another tape.");
+  });
+
+  it("a 500 still says the test print could not be started", async () => {
+    // Starlette answers an unhandled error with plain text, not JSON.
+    const plain = new Response("Internal Server Error", { status: 500, headers: { "Content-Type": "text/plain" } });
+    const route = { [`POST /api/v1/printers/${PRINTER_A.id}/test-print`]: plain };
+    mockApi(routes(PRINTER_A, status(PRINTER_A.id), route));
+    await open(PRINTER_A);
+    await userEvent.click(await screen.findByRole("button", { name: "Test print" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The test print could not be started.");
   });
 
   it("keeps the API detail for a problem type it does not know", async () => {

@@ -29,6 +29,17 @@ export function suggestedCrossings(cols: number, rows: number): Crossing[] {
   return all.filter((c, i) => all.findIndex((o) => o.col_gap === c.col_gap && o.row_gap === c.row_gap) === i);
 }
 
+/** The crossing in the middle of the grid, rounding up: S `ceil((cols−1)/2)`, Z `ceil((rows−1)/2)`. */
+export function centreCrossing(cols: number, rows: number): Crossing {
+  return { col_gap: Math.ceil(Math.max(cols - 1, 1) / 2), row_gap: Math.ceil(Math.max(rows - 1, 1) / 2) };
+}
+
+/** What the reading guide asks for: the four outermost crossings and the one in the centre, without doubles. */
+export function crossingsToRead(cols: number, rows: number): Crossing[] {
+  const all = [...suggestedCrossings(cols, rows), centreCrossing(cols, rows)];
+  return all.filter((c, i) => all.findIndex((o) => o.col_gap === c.col_gap && o.row_gap === c.row_gap) === i);
+}
+
 /** S counts the gaps between columns, Z the gaps between rows (the numbers printed on the page). */
 export const crossingName = (colGap: number, rowGap: number): string => `S${colGap} · Z${rowGap}`;
 
@@ -68,3 +79,45 @@ export const readingsRequest = (type: string, version: number, rows: readonly Re
   version,
   readings: completeReadings(rows),
 });
+
+/**
+ * The tray the page starts on: the address, then the tray sheets last printed from (the tray that
+ * matters in practice), then the printer's default, then the first. Each must be one that can be
+ * calibrated; one that cannot (`auto` is not a tray with its own paper) is skipped.
+ */
+export function preselectTray(input: {
+  address?: string;
+  lastSheet: string | null;
+  defaultKey?: string;
+  trays: readonly { key: string }[];
+}): string | undefined {
+  const known = (key: string | null | undefined) => (key != null && input.trays.some((x) => x.key === key) ? key : undefined);
+  return known(input.address) ?? known(input.lastSheet) ?? known(input.defaultKey) ?? input.trays[0]?.key;
+}
+
+/** How long a calibration print counts as "the page in front of you": a measured sheet is usually used the same day. */
+export const CALIBRATION_PRINT_WINDOW_H = 24;
+
+/**
+ * Which trays to warn about when saving for `saveTray`. `requested`: the calibration page was
+ * printed from another tray, recently, and after the values stored now (an older print was
+ * measured and saved already). `sheets`: sheets print from another tray. Each is that other tray's
+ * key, or `null`.
+ */
+export function trayWarnings(input: {
+  saveTray: string;
+  requested: { tray: string; at: string } | null;
+  storedAt: string | null;
+  sheets: string | null;
+  now: number;
+}): { requested: string | null; sheets: string | null } {
+  const { requested, storedAt } = input;
+  const printedAt = requested ? Date.parse(requested.at) : NaN;
+  const storedMs = storedAt ? Date.parse(storedAt) : NaN;
+  const recent = input.now - printedAt <= CALIBRATION_PRINT_WINDOW_H * 3_600_000;
+  const afterStored = Number.isNaN(storedMs) || printedAt > storedMs;
+  return {
+    requested: requested && requested.tray !== input.saveTray && recent && afterStored ? requested.tray : null,
+    sheets: input.sheets && input.sheets !== input.saveTray ? input.sheets : null,
+  };
+}

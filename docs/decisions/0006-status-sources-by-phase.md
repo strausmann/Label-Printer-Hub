@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # 0006 — Status sources by phase (ESC i S / passive notifications / SNMP)
 
-- **Status:** Accepted (amended 2026-11-10, see "Amendment" at the end)
+- **Status:** Accepted (amended 2026-11-10 and 2026-11-17, see the amendments at the end)
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -90,3 +90,18 @@ If a future QL firmware version starts answering standalone `ESC i S` (or a cont
 ## Amendment — 2026-11-10 (#252)
 
 A live read-only spike (#229) on a PT-P750W and a QL-820NWB found that `ESC i S` on TCP/9100 gets no answer within 8 seconds over the network, with or without the invalidate and initialise prefix. Network status therefore comes from SNMP; `ESC i S` is not a usable status source over TCP/9100 for these families. SNMP reports the tape width but no tape colour (the media colour entry holds a generic value, not a tape colour), so both families ask the person when the roll changes. The spike results (commands, answers, the SNMP entries read) are recorded in issue [#229](https://github.com/strausmann/Label-Printer-Hub/issues/229) and in the ledger of the 1.5.0 plan, Revision 3 ([Task 0 row](../superpowers/plans/2026-11-09-api-v1-live-printers-manifest.md#ledger)). The `ESC i S` rows in the tables above describe the original plan, not what the hub does today; the decision text is left as written.
+
+## Amendment — 2026-11-17 (#389): the status right before and right after sending
+
+Neither print library reads anything back over the network: `brother_ql` 0.9.4 returns `outcome: "sent"` right after writing on its `network` backend ("The network backend doesn't support readback"), and `ptouch` only writes. A tape print therefore has two more SNMP reads around the send, both on UDP/161, never on the print connection:
+
+| Phase | Source | What it decides |
+|---|---|---|
+| **Submit** | SNMP preflight (`preflight_check`) | the loaded tape width the label is drawn for; `payload.loaded_roll` is recorded |
+| **Right before sending** (both backends, once per send call; a batch call is checked once) | SNMP preflight | refuses, nothing sent: any blocking error bit (`noPaper` → `tape_empty`, `doorOpen` → `printer_cover_open`, every other bit of `post_send.HARD_ERROR_FLAGS` → `printer_error`), no tape (`no_tape_loaded`), a different width (`tape_mismatch`), a die-cut roll on a QL (`media_type_mismatch`); the read is kept for the job record (`loaded_roll` of the roll it was sent to) |
+| **After sending** (`check_after_send`, single jobs and after each group of a tape run) | one SNMP read, `POST_SEND_SETTLE_S` (1 s) after the send | fails the job only on blocking bits that are **new** compared with the read before sending; a bit that was there before refused up front, so a sticky bit never yields a printed-but-failed label |
+
+When the status cannot be read after sending, a **single job** stays `done` (the label was sent; a warning is logged). A **tape run** keeps its #277 behaviour: the group's outcome is `outcome_unknown` and the run stops. The two differ on purpose: a run cannot continue blind, a single label must not be reported as failed when nothing says it failed.
+
+Not verified on hardware: which bit a QL-820NWB sets after it refuses a job ("wrong roll type"), and whether it is visible one second after the send. SNMP has no media type code, only the media text (`prtInputMediaName`); whether a QL names a die-cut roll with a label length is unverified too, and an unrecognised text is never refused. Each roll change is logged at INFO with the reported text and the kind read from it, so a refused print can be traced.
+

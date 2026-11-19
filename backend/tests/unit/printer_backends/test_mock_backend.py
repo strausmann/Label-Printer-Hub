@@ -80,3 +80,16 @@ async def test_tape_mismatch_raises(img_128: Image.Image, tape_24: TapeSpec) -> 
         await backend.print_image(img_128, tape_24)
     assert exc.value.expected_mm == 24
     assert exc.value.loaded_mm == 12
+
+
+@pytest.mark.asyncio
+async def test_read_status_reports_the_bits_without_refusing() -> None:
+    """#389: the check after sending reads ``read_status``, like on the real backends; only
+    ``preflight_check`` refuses."""
+    backend = MockPrinterBackend(tape_empty=True, cover_open=True)
+
+    status = await backend.read_status()
+
+    assert status.error_flags == ["noPaper", "doorOpen"]
+    with pytest.raises(TapeEmptyError):
+        await backend.preflight_check()

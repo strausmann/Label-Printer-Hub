@@ -53,6 +53,13 @@ describe("typed search parameters", () => {
     expect((await mountAt("/cart")).state.location.search).toEqual({});
   });
 
+  it("/cart keeps a tray key of up to 64 characters and drops longer ones", async () => {
+    expect((await mountAt(`/cart?tray=${"t".repeat(64)}`)).state.location.search).toEqual({ tray: "t".repeat(64) });
+    expect((await mountAt(`/cart?tray=${"t".repeat(65)}`)).state.location.search).toEqual({});
+    expect((await mountAt("/cart?tray=")).state.location.search).toEqual({});
+    expect((await mountAt("/cart?sheet=L4736-0002&tray=tray-1")).state.location.search).toEqual({ sheet: "L4736-0002", tray: "tray-1" });
+  });
+
   it("/calibration keeps printer and tray", async () => {
     const router = await mountAt("/calibration?printer=p1&tray=tray-2");
     expect(router.state.location.search).toEqual({ printer: "p1", tray: "tray-2" });

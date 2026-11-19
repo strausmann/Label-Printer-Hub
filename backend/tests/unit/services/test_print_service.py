@@ -19,6 +19,7 @@ from app.printer_backends.exceptions import (
     PrinterDisabledError,
     PrinterOfflineError,
     TapeEmptyError,
+    UnsupportedTapeError,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.schemas.content_type import ContentType
@@ -31,6 +32,8 @@ from app.schemas.print_request import (
 from app.services.layout_engine import LayoutEngine
 from app.services.lookup_service import AppLookupService
 from app.services.print_service import PrintService
+from app.services.test_label import TapeTestText
+from app.services.test_label import test_label_band as band_of
 
 _PRINTER_ID = UUID("bbbbbbbb-0000-0000-0000-000000000001")
 
@@ -79,6 +82,39 @@ def make_service():
 
 
 class TestSubmitPrintJob:
+    @pytest.mark.asyncio
+    async def test_label_transform_and_source_app_reach_the_stored_payload(
+        self, make_service
+    ) -> None:
+        """The transform runs on the resolved data before it is rendered and stored (#284)."""
+        svc, _queue, store, _backend = make_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_THREE_LINES,
+            data=RawLabelData(
+                primary_id="K02", title="Workshop", qr_payload="https://example.com/x"
+            ),
+        )
+        await svc.submit_print_job(
+            request,
+            source_app="spoolman",
+            label_transform=lambda label: label.model_copy(update={"secondary": ("851g",)}),
+        )
+        label = store.save_queued.await_args.args[0].payload["label_data"]
+        assert (label["source_app"], label["secondary"]) == ("spoolman", ("851g",))
+
+    @pytest.mark.asyncio
+    async def test_without_a_transform_the_data_is_unchanged_and_manual(self, make_service) -> None:
+        svc, _queue, store, _backend = make_service()
+        request = PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            data=RawLabelData(
+                primary_id="K02", title="Workshop", qr_payload="https://example.com/x"
+            ),
+        )
+        await svc.submit_print_job(request)
+        label = store.save_queued.await_args.args[0].payload["label_data"]
+        assert (label["source_app"], label["secondary"]) == ("manual", ())
+
     @pytest.mark.asyncio
     async def test_renders_on_loaded_tape_mm_18(self, make_service) -> None:
         """Happy path: 18mm tape, QR_TWO_LINES — returns UUID, queue.submit called."""
@@ -520,3 +556,187 @@ class TestPrinterDisabledCheck:
         job_id = await svc.submit_print_job(request)
         assert isinstance(job_id, UUID)
         queue.submit_with_id.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Deferred jobs (#281): a failing end-of-job write must not break a stop
+# ---------------------------------------------------------------------------
+
+
+async def _interrupted_jobs(svc: PrintService, backend: MagicMock, count: int) -> list[UUID]:
+    """``count`` deferred jobs whose preflight never returns."""
+    import asyncio
+
+    started = asyncio.Semaphore(0)
+
+    async def slow_preflight() -> PreflightStatus:
+        started.release()
+        await asyncio.sleep(60)
+        return _preflight()
+
+    backend.preflight_check = slow_preflight
+    ids = [
+        await svc.accept_deferred_job(
+            RawLabelData(title="Oat milk", primary_id=str(n), qr_payload=f"grcy:p:{n}"),
+            content_type=ContentType.QR_TWO_LINES,
+            source_app="grocy",
+            api_key_id=None,
+            source_ip=None,
+        )
+        for n in range(count)
+    ]
+    for _ in ids:
+        await asyncio.wait_for(started.acquire(), 2)
+    return ids
+
+
+class TestCancelDeferred:
+    async def test_a_store_error_while_ending_the_jobs_does_not_raise(self, make_service) -> None:
+        svc, queue, store, backend = make_service()
+        store.mark_queued_many_failed_restart = AsyncMock(
+            side_effect=RuntimeError("database is locked")
+        )
+        ids = await _interrupted_jobs(svc, backend, 2)
+        await svc.cancel_deferred()  # must not raise: the recovery ends the rows later
+        store.mark_queued_many_failed_restart.assert_awaited_once()
+        assert sorted(store.mark_queued_many_failed_restart.await_args.args[0]) == sorted(ids)
+        queue.submit_with_id.assert_not_called()
+
+    async def test_many_jobs_end_in_one_bounded_write(self, make_service) -> None:
+        """Review N1: one store call for all of them, and a stuck store cannot hold the stop."""
+        import asyncio
+        import time
+
+        from app.services.print_service import DEFERRED_STOP_BUDGET_S
+
+        svc, _queue, store, backend = make_service()
+
+        async def locked(_ids: list[UUID], _error: str) -> list[UUID]:
+            await asyncio.sleep(30)  # the database lock never clears
+            return []
+
+        store.mark_queued_many_failed_restart = AsyncMock(side_effect=locked)
+        await _interrupted_jobs(svc, backend, 20)
+        started = time.monotonic()
+        await svc.cancel_deferred()
+        elapsed = time.monotonic() - started
+        assert store.mark_queued_many_failed_restart.await_count == 1
+        assert elapsed < DEFERRED_STOP_BUDGET_S + 0.5
+
+    async def test_ended_jobs_are_announced_failed_restart(self, make_service) -> None:
+        """Review N4: a watcher sees the job leave ``queued``."""
+        from app.services.event_bus import EventBus
+
+        svc, _queue, store, backend = make_service()
+        bus = EventBus()
+        svc._event_bus = bus
+        events = bus.subscribe(f"printer:{_PRINTER_ID}:queue", "t")
+        ids = await _interrupted_jobs(svc, backend, 2)
+        # The store ended only the first one (the second was cancelled meanwhile).
+        store.mark_queued_many_failed_restart = AsyncMock(return_value=[ids[0]])
+        await svc.cancel_deferred()
+        frames = []
+        while not events.empty():
+            frames.append(events.get_nowait())
+        assert [(f.data["job_id"], f.data["from_state"], f.data["to_state"]) for f in frames] == [
+            (str(ids[0]), "queued", "failed_restart")
+        ]
+        assert frames[0].data["error_code"] == "deferred_interrupted"
+
+
+# ---------------------------------------------------------------------------
+# The test label on every tape width (#377)
+# ---------------------------------------------------------------------------
+
+_TEST_LABEL_CASES = [
+    *(("brother_ql", "QL-820NWB", mm) for mm in (12, 29, 38, 50, 54, 62)),
+    *(("ptouch", "PT-E550W", mm) for mm in (4, 6, 9, 12, 18, 24)),
+    ("ptouch", "PT-P900", 36),
+]
+
+
+def _test_text(width_mm: int) -> TapeTestText:
+    return TapeTestText(
+        printer="Workshop",
+        width_mm=width_mm,
+        printed_at="2026-11-17 14:03",
+        version="1.7.0",
+        qr_payload="https://hub.example.invalid/printers/0d5c6b1e-8f6a-4f4e-9d61-3a2b9c1f7e42",
+    )
+
+
+class TestTestLabel:
+    @pytest.mark.parametrize(
+        ("backend_name", "model", "mm"),
+        _TEST_LABEL_CASES,
+        ids=[f"{m}-{mm}" for _b, m, mm in _TEST_LABEL_CASES],
+    )
+    async def test_test_label_prints_on_every_tape_width(
+        self, make_service, backend_name: str, model: str, mm: int
+    ) -> None:
+        svc, queue, store, backend = make_service(loaded_tape_mm=mm)
+        band = band_of(backend_name, model, mm)
+        job_id = await svc.submit_test_label(
+            _test_text, lambda width: band_of(backend_name, model, width)
+        )
+        queue.submit_with_id.assert_awaited_once()
+        args, kwargs = queue.submit_with_id.await_args
+        assert args[0] == job_id
+        assert args[2].height == band.px
+        assert (kwargs["tape_mm"], kwargs["orientation"]) == (mm, "along")
+        job = store.save_queued.await_args.args[0]
+        assert job.template_key == "test_label"
+        assert job.payload["options"]["orientation"] == "along"
+        assert job.payload["test_label"]["px"] == band.px
+        assert job.payload["test_label"]["dpi"] == band.dpi
+        assert job.payload["label_data"]["title"] == f"{mm} mm · 2026-11-17 14:03"
+        assert backend.preflight_check.await_count == 1
+
+    async def test_the_test_label_asks_the_backend_to_detect_the_confirmation(
+        self, make_service
+    ) -> None:
+        """#393: the test print decides how the printer confirms a print."""
+        svc, queue, _store, _backend = make_service(loaded_tape_mm=24)
+        await svc.submit_test_label(_test_text, lambda width: band_of("ptouch", "PT-E550W", width))
+        assert queue.submit_with_id.await_args.kwargs["detect_confirmation"] is True
+
+    async def test_test_label_payload_names_no_connection(self, make_service) -> None:
+        svc, _queue, store, _backend = make_service(loaded_tape_mm=24)
+        await svc.submit_test_label(_test_text, lambda width: band_of("ptouch", "PT-E550W", width))
+        stored = str(store.save_queued.await_args.args[0].payload)
+        for leak in ("192.0.2", "community", "ptouch", "brother_ql", "PT-E550W", "snmp"):
+            assert leak not in stored
+
+    async def test_a_width_the_model_lacks_refuses_before_rendering(self, make_service) -> None:
+        svc, queue, store, _backend = make_service(loaded_tape_mm=36)
+        with pytest.raises(UnsupportedTapeError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+        queue.submit_with_id.assert_not_awaited()
+        store.save_queued.assert_not_awaited()
+
+    async def test_no_tape_is_refused(self, make_service) -> None:
+        svc, _queue, _store, _backend = make_service(loaded_tape_mm=None)
+        with pytest.raises(NoTapeLoadedError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+
+    async def test_a_disabled_printer_is_refused(self, make_service) -> None:
+        svc, _queue, _store, backend = make_service()
+        svc._printer_enabled = False
+        with pytest.raises(PrinterDisabledError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+        backend.preflight_check.assert_not_awaited()
+
+    async def test_an_offline_printer_is_refused(self, make_service) -> None:
+        svc, queue, _store, backend = make_service()
+        backend.preflight_check.side_effect = PrinterOfflineError("unreachable")
+        with pytest.raises(PrinterOfflineError):
+            await svc.submit_test_label(
+                _test_text, lambda width: band_of("ptouch", "PT-E550W", width)
+            )
+        queue.submit_with_id.assert_not_awaited()

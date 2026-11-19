@@ -20,6 +20,7 @@ from uuid import UUID
 import app.models  # noqa: F401
 import pytest
 import pytest_asyncio
+from app.models.job import Job
 from app.models.ui_session import UiSession
 from app.services.event_bus import BusEvent, EventBus
 from httpx import ASGITransport, AsyncClient
@@ -167,7 +168,9 @@ async def _open(app, headers: dict[str, str], query: str = "") -> Stream:
     return Stream(app, STREAM_PATH + (f"?{query}" if query else ""), headers)
 
 
-def _job_event(bus: EventBus, printer_id: UUID, to_state: str = "printing") -> None:
+def _job_event(
+    bus: EventBus, printer_id: UUID, to_state: str = "printing", job_id: str = "job-1"
+) -> None:
     channel = f"printer:{printer_id}:queue"
     bus.publish(
         channel,
@@ -177,7 +180,7 @@ def _job_event(bus: EventBus, printer_id: UUID, to_state: str = "printing") -> N
             event_type="job.state_changed",
             timestamp=datetime.now(UTC),
             data={
-                "job_id": "job-1",
+                "job_id": job_id,
                 "from_state": "queued",
                 "to_state": to_state,
                 "queue_depth": 0,
@@ -462,20 +465,84 @@ async def test_valid_session_gets_keepalive_not_auth_expired(hub_app, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_legacy_admin_key_stream_is_not_cut_by_the_recheck(hub_app, monkeypatch):
+    """#283, API-key path: the heartbeat re-check (``usable_key_printer_ids``) must agree with
+    the initial list, or the stream ends with ``auth.expired`` on every heartbeat."""
+    app, _ = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    printer = await _insert_printer("alpha")
+    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(printer)])
+    stream = await _open(app, _key_header(key))
+    try:
+        await _connected(stream)
+        assert await stream.frame() == ": keepalive"
+        assert await stream.frame() == ": keepalive"
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_admin_session_stream_is_not_cut_by_the_recheck(hub_app, monkeypatch):
+    """#283, session path: the re-check (``load_valid``) reads the key's current list, which
+    must be ignored for an admin key, or the stream ends on every heartbeat."""
+    app, client = hub_app
+    _set_env(monkeypatch, sse_heartbeat_s="0.05")
+    printer = await _insert_printer("alpha")
+    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(printer)])
+    assert (await _sign_in(client, key)).status_code == 204
+    cookie = f"lph_session={client.cookies.get('lph_session')}"
+    stream = await _open(app, {"Cookie": cookie})
+    try:
+        await _connected(stream)
+        assert await stream.frame() == ": keepalive"
+        assert await stream.frame() == ": keepalive"
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
 async def test_restricted_key_stream_excludes_other_printers(hub_app):
     app, _ = hub_app
     allowed = await _insert_printer("alpha")
     other = await _insert_printer("beta")
-    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(allowed)])
+    # A plain key sees only its own jobs (#294), so the key owns a job on each printer and
+    # only the printer list separates them. An admin key is never restricted (#283).
+    key, key_id = await _insert_key(["print"], allowed_printer_ids=[str(allowed)])
+    async with _factory()() as db:
+        owned = {}
+        for printer in (allowed, other):
+            job = Job(printer_id=printer, template_key=None, payload={}, state="queued")
+            job.api_key_id = key_id
+            db.add(job)
+            await db.flush()
+            owned[printer] = str(job.id)
+        await db.commit()
     stream = await _open(app, _key_header(key))
     try:
         await _connected(stream)
-        _job_event(_bus(app), other)
-        _job_event(_bus(app), allowed)
+        _job_event(_bus(app), other, job_id=owned[other])
+        _job_event(_bus(app), allowed, job_id=owned[allowed])
         ev = await stream.event_of_type("job.state_changed")
         assert ev["payload"]["printer_id"] == str(allowed)
         # nothing of the other printer is subscribed at all
         assert _bus(app).subscriber_count(f"printer:{other}:queue") == 0
+    finally:
+        await stream.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_key_with_a_stored_printer_list_streams_every_printer(hub_app):
+    """#283: the list an older version stored on an admin key is ignored by the stream."""
+    app, _ = hub_app
+    allowed = await _insert_printer("alpha")
+    other = await _insert_printer("beta")
+    key, _ = await _insert_key(["admin"], allowed_printer_ids=[str(allowed)])
+    stream = await _open(app, _key_header(key), f"printer_id={other}")
+    try:
+        await _connected(stream)
+        _job_event(_bus(app), other)
+        ev = await stream.event_of_type("job.state_changed")
+        assert ev["payload"]["printer_id"] == str(other)
     finally:
         await stream.close()
 

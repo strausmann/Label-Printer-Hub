@@ -328,3 +328,37 @@ async def test_offline_to_online_publishes_even_when_hr_status_unchanged() -> No
     assert True in online_values, (
         "online recovery must be published even when hr_printer_status is unchanged"
     )
+
+
+@pytest.mark.asyncio
+async def test_a_roll_change_logs_what_the_printer_reports(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#389: the media text and its kind are logged at INFO on every roll change."""
+    from app.services.roll_tracker import RollChange
+
+    tracker = MagicMock()
+    tracker.observe = AsyncMock(
+        return_value=RollChange(width_mm=29, media_raw="29mm", prompt_pending=True)
+    )
+    producer = StatusProbeProducer(
+        bus=_make_bus(),
+        printer_id="00000000-0000-0000-0000-000000000389",
+        host="198.51.100.1",
+        roll_tracker=tracker,
+    )
+    status = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=29, error_flags=[], media_raw="29mm"
+    )
+
+    with caplog.at_level("INFO", logger="app.services.producers.status_probe_producer"):
+        await producer._observe_roll(status)
+        tracker.observe.return_value = None  # the same roll again: no log line
+        await producer._observe_roll(status)
+
+    lines = [r for r in caplog.records if "Roll changed" in r.getMessage()]
+    assert len(lines) == 1
+    assert lines[0].levelname == "INFO"
+    assert "media_raw='29mm'" in lines[0].getMessage()
+    assert "media_kind=continuous" in lines[0].getMessage()
+    assert "198.51.100.1" not in lines[0].getMessage()

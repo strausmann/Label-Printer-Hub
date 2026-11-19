@@ -16,8 +16,14 @@ import re
 from typing import Any
 
 from app.integrations.live_config import StoreBoundPlugin
+from app.integrations.spoolman.swatch import DEFAULT_SWATCH_KEYS, SwatchKeys, build_swatch
 from app.schemas.label_data import LabelData
+from app.schemas.spool_swatch import SpoolSwatch
 from app.services.errors import AppLookupNotFoundError
+from app.settings_store.registry import (
+    SPOOLMAN_LABEL_KEY_SETTINGS,
+    SPOOLMAN_LABEL_TITLE_SOURCE_KEY,
+)
 
 # Spool ids are integers. Anything else (dot-segments included) would change the request path.
 _SPOOL_ID = re.compile(r"[0-9]{1,20}")
@@ -90,4 +96,23 @@ class SpoolmanPlugin(StoreBoundPlugin):
             qr_payload=f"{base if base is not None else self._base_url}/spool/show/{spoolman_id}",
             source_app="spoolman",
             secondary=tuple(secondary_parts),
+            swatch=self._swatch(payload),
+        )
+
+    def _swatch(self, payload: dict[str, Any]) -> SpoolSwatch | None:
+        """The swatch label's data (#346), read with the settings as they are now."""
+        store = self._store
+        if store is None:
+            keys, title_source, language, time_zone = DEFAULT_SWATCH_KEYS, "material", "en", "UTC"
+        else:
+            keys = SwatchKeys(*(str(store.get(k) or "") for k, _ in SPOOLMAN_LABEL_KEY_SETTINGS))
+            title_source = str(store.get(SPOOLMAN_LABEL_TITLE_SOURCE_KEY))
+            language = str(store.get("general.language"))
+            time_zone = str(store.get("general.time_zone"))
+        return build_swatch(
+            payload,
+            keys=keys,
+            title_source="name" if title_source == "name" else "material",
+            language=language if language in ("en", "de") else "en",
+            time_zone=time_zone,
         )

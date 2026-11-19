@@ -1,0 +1,95 @@
+---
+title: Spoolman
+description: Spulenetiketten für 3D-Druck-Filament aus Spoolman drucken.
+---
+
+import { Image } from "astro:assets";
+import samples from "../../../../assets/spoolman/spoolman-swatch-samples.png";
+
+Das Spoolman-Plugin schlägt Spulen in deinem Spoolman nach und druckt ihre Etiketten, mit einem QR-Code, der zurück zur Spule führt. Spoolman braucht keinen API-Schlüssel.
+
+## Einrichtung
+
+Öffne **Einstellungen > Integrationen > Spoolman**, trag die Adresse von Spoolman ein und teste die Verbindung. Oder setz `LABELYARD_SPOOLMAN_URL`.
+
+## Drucken
+
+Scanne oder tippe auf der Suchseite eine Spulen-ID, oder einen Etikettenlink, den der Hub früher gedruckt hat (`/spool/…`). Aus einem Skript nimmst du `{"lookup": {"app": "spoolman", "identifier": "<spulen-id>"}}` mit `POST /api/v1/print`.
+
+## Spulenetikett
+
+Das **Spulenetikett** ist das erste Layout, das eine Spoolman-Spule anbietet. Es zeigt, was du am Drucker brauchst, direkt vom Regal ablesbar:
+
+- den Hersteller, rechts daneben die Farbcodes des Filaments;
+- einen schwarzen Balken mit dem Material und darunter den Filamentnamen;
+- die Druckwerte: Düsen- und Betttemperatur, Pressure Advance (`PA (K)`) und Flussrate;
+- die Spule: Trocknung, Leerspulengewicht, Nettogewicht und Ort;
+- eine Fußzeile mit Durchmesser, Dichte, Charge und dem Tag, an dem die Spule geöffnet wurde;
+- den QR-Code mit der Spulen-ID darunter.
+
+<figure>
+  <Image src={samples} alt="Spoolman-Spulenetiketten für zwei Beispielspulen auf vier Medien: L4737REV-Bogen ohne Fußzeile, 62-mm-QL-Band mit Fußzeile und das kurze Etikett auf L4736REV und 6121" />
+  <figcaption>Ein Beispiel mit zwei ausgedachten Spulen. Das gedruckte Etikett folgt demselben Aufbau.</figcaption>
+</figure>
+
+Zeilen ohne Wert fallen weg. Das Etikett ist in Atkinson Hyperlegible Next gesetzt; Text in Schriften, die sie nicht abdeckt (zum Beispiel Kyrillisch, Chinesisch oder Arabisch), druckt als leere Kästchen. Restgewicht und Preis stehen absichtlich nicht drauf: Sie ändern sich, und der QR-Code führt zu den aktuellen Werten in Spoolman.
+
+### Material und Filamentname
+
+Standardmäßig zeigt der Balken das Material des Filaments und die Zeile darunter den Filamentnamen. Steht bei dir das Produkt im Namen, tausch die beiden: **Einstellungen > Integrationen > Spoolman > Etikettenfelder > Balken zeigt**, oder setz `LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE` auf `name`.
+
+### Zusatzfelder
+
+Düsentemperatur, Pressure Advance, Flussrate und Trocknung kommen aus den Zusatzfeldern von Spoolman. Der Hub liest standardmäßig diese Schlüssel:
+
+| Wert | Standardschlüssel | Gelesen aus |
+|---|---|---|
+| Düsentemperatur | `nozzle_temperature` | Filament, sonst die Extrudertemperatur des Filaments |
+| Pressure Advance | `flowdynamics` | Spule, sonst Filament |
+| Flussrate | `flowrate` | Spule, sonst Filament |
+| Trocknungstemperatur | `drying_condiftions_temp` | Filament |
+| Trocknungsdauer | `drying_condiftions_time` | Filament |
+
+Nutzt dein Spoolman andere Schlüssel, änderst du sie unter **Einstellungen > Integrationen > Spoolman > Etikettenfelder**. Ein leerer Schlüssel liest nichts. Leg diese Zusatzfelder in Spoolman als Zahlenfelder (Ganzzahl oder Kommazahl) oder als Bereiche an; ein Textfeld speichert die Zahl als Text, und der Hub lässt diese Zeile weg. Ein Wert, der nicht zur Form seines Felds passt, oder ein Bereich, der von hoch nach niedrig eingetragen ist, lässt nur seine eigene Zeile weg.
+
+### Wo es passt
+
+Das Etikett ist für eine Bogenzelle von 63,5 × 29,6 mm (Avery Zweckform L4737REV) und für 62-mm-Endlosband auf einem Brother QL gemacht; die schmaleren DK-Endlosbänder bekommen es auch (siehe unten). Wird der Platz kleiner, lässt das Etikett Teile weg, immer in derselben Reihenfolge, damit jede Zelle eines Bogens gleich gedruckt wird:
+
+| Fassung | Zeigt | Beispiel |
+|---|---|---|
+| Voll | alles | 62-mm-Band, bei 36 mm geschnitten |
+| Ohne Fußzeile | keine Fußzeile | L4737REV |
+| Erste Spalte | keine Fußzeile, keine Spulenspalte | Avery Zweckform 4780 |
+| Kurz | Hersteller, Balken, Filamentname, Farbcodes und QR-Code | L4736REV, 6121 |
+
+Eine Zelle, die kleiner ist als die kurze Fassung, wird abgelehnt, bevor eine Zelle reserviert wird. Lange Feldnamen brechen in eine zweite Zeile um; Text, der dann noch nicht passt, wird kleiner und erst als letzter Ausweg mit `…` gekürzt. Die Vorschau markiert die Zelle dann als gekürzt.
+
+Auf einem Brother QL druckt das Spulenetikett auf diesen DK-Endlosbändern, jeweils in fester Richtung:
+
+| Band | Richtung | Zeigt | Etikettlänge |
+|---|---|---|---|
+| 62 mm | quer | alles | 36 mm |
+| 54 mm | quer | alles außer der Fußzeile | 30 mm |
+| 50 mm | längs | alles | 30 bis 53 mm |
+| 38 mm | längs | alles | 30 bis 53 mm |
+| 29 mm | quer | die kurze Fassung: Hersteller, Balken, Filamentname, Farbcodes und QR-Code | 20 mm |
+
+Längs zum Band ist das Etikett so lang, wie seine Texte es brauchen, aber nie kürzer als 30 mm: Eine Spule mit allen Feldern braucht etwa 53 mm, eine mit nur Hersteller, Material und Farbe 30 mm. Richtung und Anordnung gelten für das Spulenetikett nicht, deshalb blenden die Artikelansicht und der Warenkorb sie aus. Auf 62-mm-Band druckt ein Warenkorb mit anderen Etiketten das Spulenetikett in seiner eigenen Richtung. Auf 29-, 38-, 50- und 54-mm-Band druckt bisher nur das Spulenetikett: Der Warenkorb markiert jedes andere Etikett mit „Auf 38-mm-Band druckt nur das Spulenetikett“, und ein Warenkorb, der sie noch enthält, wird mit dieser Meldung abgelehnt, bevor etwas gedruckt wird. Nimm diese Etiketten heraus oder leg 62-mm-Band ein. Auf anderem Band (12 mm, P-touch) sagt die Vorschau, dass das Spulenetikett nicht verfügbar ist.
+
+Der QR-Code behält Module von mindestens 0,25 mm, damit er lesbar bleibt. Ein längerer Link, als das Band fasst, wird abgelehnt, statt kleiner gedruckt zu werden; der Warenkorb meldet „Der QR-Code passt nicht auf dieses Band“ mit der Zahl der Bytes:
+
+| Band | Längster Link im QR-Code |
+|---|---|
+| 62 mm | 213 Bytes |
+| 50 und 38 mm | 122 Bytes |
+| 29 mm | 84 Bytes |
+| 54 mm | 62 Bytes |
+
+Ein Spoolman-Link wie `https://spoolman.example.org/spool/show/123` hat etwa 45 Bytes und passt auf jede Breite.
+
+Eine Spule öffnet mit dem Spulenetikett, wenn sie an einen Bogendrucker oder an einen QL mit einem dieser Bänder geht. Auf einem P-touch, auf anderem Band oder wenn Spoolman nichts für das Etikett geliefert hat, öffnet sie mit **QR-Code, Code und Titel**. Wechselst du Drucker oder Band, wird neu gewählt, bis du selbst ein Layout aussuchst; deine Wahl bleibt dann.
+
+## Drucken, wenn sich eine Spule ändert
+
+Ereignisse aus Spoolman können den Hub aufrufen, der dann das Etikett der Spule druckt, mit dem restlichen Filament als dritter Zeile (zum Beispiel `851 g übrig`), wenn das Ereignis es mitbringt. Diese Etiketten behalten das kurze QR-Layout. Siehe [Webhooks](/de/integrations/webhooks/).

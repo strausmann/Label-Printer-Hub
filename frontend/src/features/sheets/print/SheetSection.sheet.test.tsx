@@ -307,7 +307,10 @@ describe("one sheet per print run (#277)", () => {
   const printedSix = { batch_id: BATCH, pages: [page], placed: 6, remaining: 3 };
 
   it("the preview says how many labels fit on the sheet and that the rest stays in the cart", async () => {
-    await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: sixOfNine }));
+    const { calls } = await cartView("/cart", [LINE("7", 5, "Flour"), LINE("9", 4, "Sugar")], routes({ preview: sixOfNine }));
+    // The text follows the preview request, which follows the cart, the printers and the sheet: wait for the request
+    // first, then for its answer on the page.
+    await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
     expect(await screen.findByText("6 of 9 labels fit on this sheet. The rest stays in the cart.")).toBeVisible();
   });
 

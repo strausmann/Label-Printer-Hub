@@ -18,6 +18,9 @@ These are the words Labelyard uses, in the interface, in the documentation and i
 | <a id="template"></a>**template** | Vorlage | A saved design that a label is printed from. | - |
 | <a id="printer"></a>**printer** | Drucker | A device Labelyard prints on. | - |
 | <a id="tray"></a>**tray** | Fach | A paper tray of a page printer that holds sheets. | - |
+| <a id="sheet-code"></a>**sheet code** | Bogencode | The code that identifies a sheet, for example A3490-0001. It is printed in the margin, on the back of the liner or in a reserved cell. | - |
+| <a id="liner"></a>**liner** | Trägerpapier | The backing paper the labels of a sheet sit on. | - |
+| <a id="backing-design"></a>**backing design** | Trägerdesign | The vendor print on the back of the liner, with the free strips where the sheet code can go. | - |
 | <a id="calibration"></a>**calibration** | Kalibrierung | The correction that makes a print land exactly on the cells of a tray. | - |
 | <a id="preview"></a>**preview** | Vorschau | The picture of a label as it will print. | - |
 | <a id="job"></a>**print job** | Auftrag | One request to print, tracked from the queue to the result. | - |

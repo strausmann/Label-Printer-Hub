@@ -80,6 +80,8 @@ class FakeQueue:
         self.submitted: list[tuple[UUID, PagePayload, UUID]] = []
         self.calls = 0
         self.before_submit: Any = None  # awaited with the call number before each submit
+        self.stored: list[tuple[UUID, PagePayload, UUID]] = []
+        self.on_stored: Any = None  # awaited with (job_id, payload) in submit_stored_page_job
 
     async def submit_page_job(
         self,
@@ -97,6 +99,21 @@ class FakeQueue:
         if self.fail_on == self.calls:
             raise self.exc
         self.submitted.append((printer_id, payload, job_id))
+        return job_id
+
+    async def submit_stored_page_job(
+        self,
+        printer_id: UUID,
+        payload: PagePayload,
+        *,
+        api_key_id: UUID | None,
+        job_id: UUID,
+    ) -> UUID:
+        """The hand-off of a stored row (#281); ``on_stored`` runs first and may raise."""
+        self.calls += 1
+        if self.on_stored is not None:
+            await self.on_stored(job_id, payload)
+        self.stored.append((printer_id, payload, job_id))
         return job_id
 
     @property
@@ -1257,3 +1274,229 @@ def test_retry_checks_the_id_cell_at_the_fresh_dpi_too() -> None:
     with pytest.raises(IdCellContentMismatchError) as refused:
         print_service._check_retry_fits(detail(), 100)
     assert refused.value.detail == {"cell": "id", "missing_fields": ["qr_payload"]}
+
+
+# ---------------------------------------------------------------------------- a stored row (#281)
+
+
+async def _stored_row(factory: async_sessionmaker[AsyncSession], printer: Any) -> UUID:
+    """The ``queued`` row a Grocy label stores before its sheet is chosen (R-281-16)."""
+    row = DbJob(
+        printer_id=printer.id,
+        template_key=None,
+        payload={"deferred": True, "deferred_kind": "sheet_page", "label_data": {}},
+    )
+    async with factory() as s:
+        s.add(row)
+        await s.commit()
+    return row.id
+
+
+async def run_stored(
+    factory: Any, printer: Any, request: Any, queue: FakeQueue, job_id: UUID
+) -> Any:
+    return await print_service.print_sheets(
+        factory,
+        printer=printer,
+        request=request,
+        lookup=FakeLookup(),
+        queue=queue,
+        actor="grocy",
+        api_key_id=None,
+        source_ip=None,
+        language="en",
+        job_id=job_id,
+        source_app="grocy",
+    )
+
+
+async def test_stored_row_is_handed_off_with_its_own_id(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, used=5)
+    job_id = await _stored_row(factory, printer)
+    queue = FakeQueue()
+
+    out = await run_stored(
+        factory, printer, req([raw(1, source="grocy")], [on(code)]), queue, job_id
+    )
+
+    assert [p.job_id for p in out.pages] == [job_id]
+    assert queue.submitted == []  # never a second row
+    ((printer_id, payload, handed),) = queue.stored
+    assert (printer_id, handed) == (printer.id, job_id)
+    (cell,) = SheetPageDetail.model_validate(payload.detail).cells
+    assert cell.cell == 6 and cell.label_data["source_app"] == "grocy"
+    rows = await cell_rows(factory)
+    assert [(r.cell_no, r.state, r.job_id, r.source) for r in rows if r.cell_no == 6] == [
+        (6, "reserved", job_id, "grocy")
+    ]
+
+
+async def test_stored_row_failure_releases_the_cell(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """The hand-off failed before the swap: the row still says ``deferred``, so the page was
+    never queued and its cell is free at once (not after a sweep)."""
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, used=5)
+    job_id = await _stored_row(factory, printer)
+    queue = FakeQueue()
+
+    held: list[int] = []
+
+    async def fail(_job_id: UUID, _payload: PagePayload) -> None:
+        held.extend(r.cell_no for r in await cell_rows(factory) if r.state == "reserved")
+        raise RuntimeError("queue is down")
+
+    queue.on_stored = fail
+    with pytest.raises(RuntimeError, match="queue is down"):
+        await run_stored(factory, printer, req([raw(1)], [on(code)]), queue, job_id)
+
+    assert held == [6]  # reserved for the hand-off
+
+    assert [r.cell_no for r in await cell_rows(factory) if r.state == "reserved"] == []
+    assert await count(factory, PrintBatch) == 0
+
+
+async def test_stored_row_cancelled_after_swap_keeps_the_cell(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """A ``CancelledError`` after the swap committed: the row is a ``queued`` page now, and
+    the next recovery prints it onto its cells (T7-1); releasing them would print it twice."""
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, used=5)
+    job_id = await _stored_row(factory, printer)
+    queue = FakeQueue()
+
+    async def swap_then_cancel(handed: UUID, payload: PagePayload) -> None:
+        async with factory() as s:
+            row = await s.get(DbJob, handed)
+            assert row is not None
+            row.payload = payload.model_dump(mode="json")
+            await s.commit()
+        raise asyncio.CancelledError
+
+    queue.on_stored = swap_then_cancel
+    with pytest.raises(asyncio.CancelledError):
+        await run_stored(factory, printer, req([raw(1)], [on(code)]), queue, job_id)
+
+    assert [(r.cell_no, r.job_id) for r in await cell_rows(factory) if r.state == "reserved"] == [
+        (6, job_id)
+    ]
+
+
+class _FailingAfter:
+    """A session factory that fails every session opened once ``armed`` is set."""
+
+    def __init__(self, factory: async_sessionmaker[AsyncSession]) -> None:
+        self._factory = factory
+        self.armed = False
+
+    def __call__(self) -> Any:
+        if self.armed:
+            raise RuntimeError("database is gone")
+        return self._factory()
+
+
+async def test_stored_row_lookup_failure_keeps_the_cell(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, used=5)
+    job_id = await _stored_row(factory, printer)
+    queue = FakeQueue()
+    failing = _FailingAfter(factory)
+
+    async def fail(_job_id: UUID, _payload: PagePayload) -> None:
+        failing.armed = True  # the row cannot be read: the sweep settles the cells later
+        raise RuntimeError("queue is down")
+
+    queue.on_stored = fail
+    with pytest.raises(print_service.PrintInterruptedError):  # kept: reported as queued
+        await run_stored(failing, printer, req([raw(1)], [on(code)]), queue, job_id)
+
+    assert [(r.cell_no, r.job_id) for r in await cell_rows(factory) if r.state == "reserved"] == [
+        (6, job_id)
+    ]
+
+
+async def test_stored_row_cancelled_before_the_swap_releases_the_cell(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    from app.services.print_queue import JobNoLongerQueuedError
+
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, used=5)
+    job_id = await _stored_row(factory, printer)
+    queue = FakeQueue()
+
+    async def cancelled(handed: UUID, _payload: PagePayload) -> None:
+        async with factory() as s:
+            row = await s.get(DbJob, handed)
+            assert row is not None
+            row.state = "cancelled"
+            await s.commit()
+        raise JobNoLongerQueuedError(handed)
+
+    queue.on_stored = cancelled
+    with pytest.raises(JobNoLongerQueuedError):
+        await run_stored(factory, printer, req([raw(1)], [on(code)]), queue, job_id)
+
+    assert [r for r in await cell_rows(factory) if r.state == "reserved"] == []
+
+
+async def test_too_small_swatch_cell_reserves_nothing(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """#346: below the ``core`` tier (Avery 5167) the swatch is refused before any reservation."""
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row, seed_geometry
+
+    await ts.create_type(
+        session,
+        ts.TypeFields("acme-5167", "A5167", "Acme", ["5167"], None, True),
+        seed_geometry("avery-5167"),
+        actor="t",
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-5167")
+    queue = FakeQueue()
+    item = raw(0, ContentType.SPOOL_SWATCH, qr_payload=SAMPLE_URL, swatch=every_row())
+
+    with pytest.raises(ItemContentMismatchError) as err:
+        await run_print(factory, printer, req([item], [on(code)]), queue=queue)
+
+    assert err.value.detail == {"item_index": 0, "missing_fields": ["label_size"]}
+    assert await cell_rows(factory) == []
+    assert queue.submitted == []
+
+
+async def test_raw_swatch_item_prints_into_a_sheet_cell(
+    factory: async_sessionmaker[AsyncSession], session: AsyncSession
+) -> None:
+    """Review M9: a raw sheet item carries ``data.swatch`` into the stored cell and the PDF."""
+    from app.sheets.sheet_page import render_sheet_page
+
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row, seed_geometry
+
+    await ts.create_type(
+        session,
+        ts.TypeFields("acme-4737", "A4737", "Acme", ["L4737REV"], None, True),
+        seed_geometry("avery-zweckform-l4737rev"),
+        actor="t",
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-4737")
+    queue = FakeQueue()
+    swatch = every_row()
+    item = raw(0, ContentType.SPOOL_SWATCH, qr_payload=SAMPLE_URL, swatch=swatch)
+
+    await run_print(factory, printer, req([item], [on(code)]), queue=queue)
+
+    detail = queue.detail()
+    (cell,) = detail.cells
+    assert cell.content_type is ContentType.SPOOL_SWATCH
+    assert cell.label_data["swatch"] == swatch.model_dump(mode="json")
+    (_, payload, _) = queue.submitted[0]
+    assert render_sheet_page(payload, compress=False).startswith(b"%PDF")

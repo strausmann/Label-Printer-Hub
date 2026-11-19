@@ -8,7 +8,9 @@ type Json = Record<string, unknown>;
 const obj = (v: unknown): Json => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Json) : {});
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v : typeof v === "number" ? String(v) : null);
 
-export type PageKind = "sheet_page" | "calibration_page" | "test_page";
+export type PageKind = "sheet_page" | "calibration_page" | "test_page" | "sheet_back_page" | "tray_loading_page";
+
+const PAGE_KINDS: readonly PageKind[] = ["sheet_page", "calibration_page", "test_page", "sheet_back_page", "tray_loading_page"];
 
 /** What a page job (a sheet page or a calibration page) stores in `payload.detail` and `job_summary`. */
 export interface PageInfo {
@@ -31,6 +33,16 @@ export interface PageInfo {
 /** The job kind of a tape test label (`template_key`); the print service names it, not the payload. */
 export const TEST_LABEL_KEY = "test_label";
 
+/** The roll that was loaded when a tape job was drawn (#389, `payload.loaded_roll`). */
+export interface LoadedRoll {
+  widthMm: number | null;
+  /** The printer's own media text, e.g. `29mm`. */
+  mediaRaw: string | null;
+  mediaKind: "continuous" | "die_cut" | null;
+  /** The colour the operator gave the roll; null when none was given. */
+  colour: string | null;
+}
+
 export interface PayloadSummary {
   page: PageInfo | null;
   title: string | null;
@@ -41,6 +53,8 @@ export interface PayloadSummary {
   copies: number | null;
   copyIndex: number | null;
   copyTotal: number | null;
+  /** Null for jobs drawn before #389 and for page jobs. */
+  loadedRoll: LoadedRoll | null;
 }
 
 const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
@@ -57,13 +71,13 @@ function cellNumbers(list: unknown): number[] {
 /** The page-job part of a payload, or null for a tape job. Values of the wrong shape count as missing. */
 export function pageInfoOf(job: Job): PageInfo | null {
   const p = obj(job.payload);
-  if (p.kind !== "sheet_page" && p.kind !== "calibration_page" && p.kind !== "test_page") return null;
+  if (!PAGE_KINDS.includes(p.kind as PageKind)) return null;
   const detail = obj(p.detail);
   const summary = obj(detail.job_summary);
   const cells = cellNumbers(detail.cells);
   const idCell = num(obj(detail.id_cell).cell);
   return {
-    kind: p.kind,
+    kind: p.kind as PageKind,
     sheetCode: str(detail.sheet_code) ?? str(summary.sheet_code),
     cells,
     idCell,
@@ -73,6 +87,19 @@ export function pageInfoOf(job: Job): PageInfo | null {
     tray: str(p.tray),
     media: str(p.media),
   };
+}
+
+function loadedRollOf(value: unknown): LoadedRoll | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const r = obj(value);
+  const kind = r.media_kind === "continuous" || r.media_kind === "die_cut" ? r.media_kind : null;
+  return { widthMm: num(r.width_mm), mediaRaw: str(r.media_raw), mediaKind: kind, colour: str(r.colour) };
+}
+
+/** The `error_detail` a failed job stores in `result` (flags, widths, …); null when it has none. */
+export function errorDetailOf(job: Job): Record<string, unknown> | null {
+  const detail = obj(job.result).error_detail;
+  return typeof detail === "object" && detail !== null && !Array.isArray(detail) ? (detail as Json) : null;
 }
 
 /** Reads the fields the print service stores in `payload`; anything missing stays null. */
@@ -91,6 +118,7 @@ export function summarizePayload(job: Job): PayloadSummary {
     copies: num(options.copies),
     copyIndex: num(p.copy_index),
     copyTotal: num(p.copy_total),
+    loadedRoll: loadedRollOf(p.loaded_roll),
   };
 }
 
@@ -107,6 +135,14 @@ function pageTitle(page: PageInfo, label: string | null): string {
     // The payload stores the tray's key; the label is known once the printer's status has been read.
     const tray = label ?? page.tray;
     return tray === null ? t`Test page` : t`Test page · ${tray}`;
+  }
+  if (page.kind === "tray_loading_page") {
+    const tray = label ?? page.tray;
+    return tray === null ? t`Tray loading test` : t`Tray loading test · ${tray}`;
+  }
+  if (page.kind === "sheet_back_page") {
+    const code = page.sheetCode;
+    return code === null ? t`Sheet code on the back` : t`Sheet code on the back · ${code}`;
   }
   if (page.sheetCode === null) return t`Sheet page`;
   const code = page.sheetCode;

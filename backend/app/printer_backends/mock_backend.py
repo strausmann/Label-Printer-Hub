@@ -24,6 +24,7 @@ from app.printer_backends.exceptions import (
     refused_before_sending,
 )
 from app.printer_backends.snmp_helper import PreflightStatus
+from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import (
     MediaType,
     NotificationCode,
@@ -80,6 +81,9 @@ class MockPrinterBackend:
     backend_id = "mock"
     half_cut_supported: bool = False
 
+    # #389: no hardware to wait for after sending (``post_send.check_after_send``).
+    post_send_settle_s: float = 0.0
+
     def __init__(
         self,
         host: str = "mock://test",
@@ -90,6 +94,7 @@ class MockPrinterBackend:
         cover_open: bool = False,
         offline: bool = False,
         tape_runs_out_after: int | None = None,
+        label_counter: int | None = 0,
     ) -> None:
         self.host = host
         self._loaded_tape_mm = loaded_tape_mm
@@ -101,7 +106,15 @@ class MockPrinterBackend:
         # preflight says the tape is empty (the SNMP ``noPaper`` bit).
         self.tape_runs_out_after = tape_runs_out_after
         self.printed_images: list[Image.Image] = []
+        self.printed_orientations: list[LabelOrientation | None] = []
+        """The ``orientation`` the queue passed for each printed image (#346)."""
         self.status_query_count: int = 0
+        # #393: a fake ``prtMarkerLifeCount`` that rises with every printed label (``None``: the
+        # printer reports no counter), the read before the last send and the labels sent since.
+        self.label_counter: int | None = label_counter
+        self.last_send_status: PreflightStatus | None = None
+        self.labels_sent: int = 0
+        self._in_batch = False
 
     @classmethod
     def from_settings(cls, settings: Any) -> MockPrinterBackend:  # noqa: ARG003
@@ -119,8 +132,11 @@ class MockPrinterBackend:
             cover_open=self._cover_open,
         )
 
-    async def preflight_check(self) -> PreflightStatus:
-        """Mock SNMP preflight — raises the same errors as PTouchBackend."""
+    async def read_status(self) -> PreflightStatus:
+        """Mock SNMP read — the status with its error bits, never a refusal on a bit (#389).
+
+        Like the real backends, the check after sending reads this, not ``preflight_check``.
+        """
         if self._offline:
             raise PrinterOfflineError(f"mock backend marked offline at {self.host!r}")
         error_flags: list[str] = []
@@ -128,15 +144,21 @@ class MockPrinterBackend:
             error_flags.append("noPaper")
         if self._cover_open:
             error_flags.append("doorOpen")
-        if self._tape_empty:
-            raise TapeEmptyError()
-        if self._cover_open:
-            raise PrinterCoverOpenError()
         return PreflightStatus(
             hr_printer_status="idle",
             loaded_tape_mm=self._loaded_tape_mm,
             error_flags=error_flags,
+            marker_count=self.label_counter,
         )
+
+    async def preflight_check(self) -> PreflightStatus:
+        """Mock SNMP preflight — raises the same errors as PTouchBackend."""
+        status = await self.read_status()
+        if self._tape_empty:
+            raise TapeEmptyError()
+        if self._cover_open:
+            raise PrinterCoverOpenError()
+        return status
 
     async def print_image(
         self,
@@ -147,8 +169,12 @@ class MockPrinterBackend:
         high_resolution: bool = False,  # noqa: ARG002
         half_cut: bool = False,  # noqa: ARG002
         last_page: bool = True,  # noqa: ARG002
+        orientation: LabelOrientation | None = None,
+        detect_confirmation: bool = False,  # noqa: ARG002 - the mock has nothing to detect
     ) -> None:
         # Like the PT backend's preflight: a refusal here means nothing was sent (#277).
+        if not self._in_batch:
+            await self._begin_send()
         status = await self.query_status()
         if status.tape_empty:
             raise refused_before_sending(TapeEmptyError())
@@ -162,6 +188,10 @@ class MockPrinterBackend:
                 )
             )
         self.printed_images.append(image.copy())
+        self.printed_orientations.append(orientation)
+        self.labels_sent += 1
+        if self.label_counter is not None:
+            self.label_counter += 1
         if (
             self.tape_runs_out_after is not None
             and len(self.printed_images) >= self.tape_runs_out_after
@@ -176,6 +206,7 @@ class MockPrinterBackend:
         auto_cut: bool = True,
         high_resolution: bool = False,
         half_cut: bool = True,
+        orientation: LabelOrientation | None = None,
     ) -> None:
         """Test-friendly Mock-Implementation via default_print_images_loop.
 
@@ -183,11 +214,25 @@ class MockPrinterBackend:
         Mock recording method). Phase 1k.2 Task 5: replaces NotImplementedError
         stub from Task 2 fix-up commit.
         """
-        await default_print_images_loop(
-            self,
-            images,
-            tape_spec,
-            auto_cut=auto_cut,
-            high_resolution=high_resolution,
-            half_cut=half_cut,
-        )
+        await self._begin_send()
+        self._in_batch = True
+        try:
+            await default_print_images_loop(
+                self,
+                images,
+                tape_spec,
+                auto_cut=auto_cut,
+                high_resolution=high_resolution,
+                half_cut=half_cut,
+                orientation=orientation,
+            )
+        finally:
+            self._in_batch = False
+
+    async def _begin_send(self) -> None:
+        """#393: the read before sending (with the counter) and a fresh label count."""
+        self.labels_sent = 0
+        try:
+            self.last_send_status = await self.read_status()
+        except PrinterOfflineError:
+            self.last_send_status = None

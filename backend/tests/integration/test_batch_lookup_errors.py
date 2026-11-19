@@ -219,3 +219,109 @@ async def test_unregistered_app_is_its_own_code_not_a_500(batch_env) -> None:
     assert response.status_code == 422, response.text
     assert response.json()["detail"]["error_code"] == "integration_unknown_app"
     queue.enqueue_batch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_batch_over_the_rate_budget_is_429_before_any_lookup(batch_env) -> None:
+    """The lookups of a batch are charged to the key like render-check lookups: a budget that
+    cannot cover them is refused before the printer is asked and before any lookup."""
+    from app.services.rate_limiter import _rate_limiter
+
+    client, queue, app = batch_env
+    key_id = uuid4()
+    ctx = AuthContext(
+        source="api-key",
+        scope="admin",
+        api_key_id=key_id,
+        ip="127.0.0.1",
+        rate_limit_per_minute=10,
+    )
+    app.dependency_overrides[require_print] = lambda: ctx
+    for _ in range(3):  # the request's own token plus earlier use: 7 left, the batch needs 9
+        assert _rate_limiter.check_and_consume(key_id, limit_per_minute=10)
+    plugin = _Plugin("snipeit", None)
+    lookup = AsyncMock(wraps=plugin.lookup)
+    plugin.lookup = lookup  # type: ignore[method-assign]
+    IntegrationRegistry.register(plugin)  # type: ignore[arg-type]
+    items = [
+        {"content_type": "qr_two_lines", "lookup": {"app": "snipeit", "identifier": str(i)}}
+        for i in range(10)
+    ]
+    try:
+        response = await client.post("/api/v1/print/p/batch", json={"items": items})
+    finally:
+        _rate_limiter.reset(key_id)
+    assert response.status_code == 429, response.text
+    assert response.json()["detail"]["error_code"] == "rate_limit_exceeded"
+    assert int(response.headers["Retry-After"]) >= 1
+    lookup.assert_not_awaited()
+    queue.enqueue_batch.assert_not_awaited()
+
+
+def _limited_ctx(app: FastAPI, limit: int = 10) -> Any:
+    key_id = uuid4()
+    ctx = AuthContext(
+        source="api-key",
+        scope="admin",
+        api_key_id=key_id,
+        ip="127.0.0.1",
+        rate_limit_per_minute=limit,
+    )
+    app.dependency_overrides[require_print] = lambda: ctx
+    return key_id
+
+
+def _lookup_items(n: int) -> list[dict[str, Any]]:
+    return [
+        {"content_type": "qr_two_lines", "lookup": {"app": "snipeit", "identifier": str(i)}}
+        for i in range(n)
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("refusal", ["queue_full", "printer_offline"])
+async def test_batch_refused_before_any_lookup_gives_the_tokens_back(batch_env, refusal) -> None:
+    """429 too-many-queued-runs and a printer 503 happen before the first lookup: the charge
+    is refunded, so the client's retry does not pay twice."""
+    from app.printer_backends.exceptions import PrinterOfflineError
+    from app.services.print_queue import TooManyQueuedRunsError
+    from app.services.rate_limiter import _rate_limiter
+
+    client, _queue, app = batch_env
+    key_id = _limited_ctx(app)
+    assert _rate_limiter.check_and_consume(key_id, limit_per_minute=10)  # the request's token
+    before = _rate_limiter._buckets[key_id].tokens
+    IntegrationRegistry.register(_Plugin("snipeit", None))  # type: ignore[arg-type]
+    if refusal == "queue_full":
+        full = MagicMock()
+        full.claim_run_slot.side_effect = TooManyQueuedRunsError("printer", 5)
+        app.state.print_queue = full
+        expected = 429
+    else:
+        app.state.backend_router.get("p").preflight_check.side_effect = PrinterOfflineError("off")
+        expected = 503
+    try:
+        response = await client.post("/api/v1/print/p/batch", json={"items": _lookup_items(6)})
+        after = _rate_limiter._buckets[key_id].tokens
+    finally:
+        _rate_limiter.reset(key_id)
+    assert response.status_code == expected, response.text
+    assert after == pytest.approx(before, abs=0.5)  # only the refill of a moment may differ
+
+
+@pytest.mark.asyncio
+async def test_batch_that_ran_lookups_keeps_the_charge(batch_env) -> None:
+    from app.services.rate_limiter import _rate_limiter
+
+    client, _queue, app = batch_env
+    key_id = _limited_ctx(app)
+    assert _rate_limiter.check_and_consume(key_id, limit_per_minute=10)
+    before = _rate_limiter._buckets[key_id].tokens
+    IntegrationRegistry.register(_Plugin("snipeit", RuntimeError("down")))  # type: ignore[arg-type]
+    try:
+        response = await client.post("/api/v1/print/p/batch", json={"items": _lookup_items(6)})
+        after = _rate_limiter._buckets[key_id].tokens
+    finally:
+        _rate_limiter.reset(key_id)
+    assert response.status_code == 502
+    assert after < before - 4  # 5 extra lookups were charged and not given back

@@ -135,3 +135,55 @@ describe("test print jobs", () => {
     expect(canRetry(testPage({ state: "done" }) as never)).toBe(false);
   });
 });
+
+describe("loaded roll (#389)", () => {
+  it("reads the roll a tape job was drawn for", () => {
+    const tape = job("t", P, "failed", {
+      payload: { tape_mm: 29, loaded_roll: { width_mm: 29, media_raw: "29mm", media_kind: "continuous", colour: "white" } },
+    });
+    expect(summarizePayload(tape as never).loadedRoll).toEqual({ widthMm: 29, mediaRaw: "29mm", mediaKind: "continuous", colour: "white" });
+  });
+
+  it("is null for an older job, and ignores values of the wrong shape", () => {
+    expect(summarizePayload(job("t", P, "done", { payload: { tape_mm: 29 } }) as never).loadedRoll).toBeNull();
+    const odd = job("t", P, "done", { payload: { loaded_roll: { width_mm: "29", media_raw: 7, media_kind: "roll", colour: "" } } });
+    expect(summarizePayload(odd as never).loadedRoll).toEqual({ widthMm: null, mediaRaw: null, mediaKind: null, colour: null });
+  });
+});
+
+describe("the code on the back and the tray loading test (#350)", () => {
+  const backPage = (state = "queued") =>
+    job("j5", P, state, {
+      template_key: null,
+      payload: { kind: "sheet_back_page", media: "A4", tray: "manual", detail: { sheet_code: "A3490-0001", strip: { x: 3350, y: 2400, w: 2200, h: 6200 } } },
+    });
+  const loadingPage = (state = "queued") =>
+    job("j6", P, state, { template_key: null, payload: { kind: "tray_loading_page", media: "A4", tray: "manual", detail: { tray: "manual" } } });
+
+  it("pageInfoOf reads a sheet_back_page", () => {
+    expect(pageInfoOf(backPage() as never)).toMatchObject({ kind: "sheet_back_page", sheetCode: "A3490-0001", cells: [], cellCount: 0 });
+  });
+
+  it("a tray_loading_page is titled with its tray", () => {
+    expect(pageInfoOf(loadingPage() as never)).toMatchObject({ kind: "tray_loading_page", tray: "manual", sheetCode: null });
+    expect(jobTitle(loadingPage() as never)).toBe("Tray loading test · manual");
+    expect(jobTitle(loadingPage() as never, "Tray 1 (manual feed)")).toBe("Tray loading test · Tray 1 (manual feed)");
+    expect(jobTitle(backPage() as never)).toBe("Sheet code on the back · A3490-0001");
+  });
+
+  it("canRetry allows a failed back page and loading page", () => {
+    expect(canRetry(backPage("failed") as never)).toBe(true);
+    expect(canRetry(loadingPage("failed") as never)).toBe(true);
+    expect(canRetry(backPage("done") as never)).toBe(false);
+  });
+
+  it("de: both titles are German", async () => {
+    await initI18n("de");
+    try {
+      expect(jobTitle(backPage() as never)).toBe("Bogencode auf der Rückseite · A3490-0001");
+      expect(jobTitle(loadingPage() as never)).toBe("Einlegetest Fach · manual");
+    } finally {
+      await initI18n("en");
+    }
+  });
+});

@@ -4,8 +4,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp, SIGNED_IN } from "../../test-utils";
-import { ADMIN_PRINTER, KEY_ADMIN, KEY_KEPT, mockApi, PRINTER_A, respond, settingsList } from "../test-api";
+import { renderApp, SIGNED_IN, widenAppWaits } from "../../test-utils";
+import { ADMIN_PRINTER, KEY_ADMIN, KEY_KEPT, mockApi, PAGE_PRINTER, PRINTER_A, respond, settingsList, SHEET_TYPE } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -13,6 +13,11 @@ const lastBody = (calls: { method: string; path: string; body: string | undefine
   const call = [...calls].reverse().find((c) => c.method === method && c.path === path);
   return call?.body ? (JSON.parse(call.body) as Record<string, unknown>) : undefined;
 };
+
+// Each test boots the whole app; on a loaded runner (load average above 10) a test passed the limit. The per-test
+// limit and the findBy window are widened for this file only, like the other whole-app test files.
+vi.setConfig({ testTimeout: 15_000 });
+widenAppWaits();
 
 describe("Settings", () => {
   it("tells a non-admin they need an admin key", async () => {
@@ -142,6 +147,291 @@ describe("Integrations", () => {
     expect(within(clients).getByText("print")).toBeVisible();
     expect(within(clients).getByText("Never used")).toBeVisible();
     expect(within(clients).queryByText("First admin key")).toBeNull();
+  });
+});
+
+// Several React Aria selects are opened per test (2-3 s each run); the 5 s default left no margin under coverage.
+describe("Grocy labels", { timeout: 15_000 }, () => {
+  const SPARE = { ...ADMIN_PRINTER, id: "44444444-4444-4444-8444-444444444444", name: "Spare tape", slug: "spare-tape", enabled: false };
+  const routes = (over: Record<string, unknown> = {}) => ({
+    "GET /api/v1/settings": settingsList(),
+    "GET /api/v1/admin/api-keys": [],
+    "GET /api/v1/admin/printers": [ADMIN_PRINTER, { ...PAGE_PRINTER, connection: { uri: "ipp://printer.example.invalid/ipp/print", tls_verify: true } }, SPARE],
+    "GET /api/v1/sheet-types": [SHEET_TYPE, ARCHIVED_TYPE],
+    ...over,
+  });
+  const ARCHIVED_TYPE = { ...SHEET_TYPE, key: "OLD-TYPE", vendor: "Old", product_codes: ["OLD-1"], archived_at: "2026-11-02T08:00:00Z" };
+  const panel = () => screen.findByRole("group", { name: "Grocy labels" });
+
+  it("the Grocy section shows the label switch, five layout selects, one default and five per-type printer selects", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    expect(within(grocy).getByRole("switch", { name: "Print Grocy's labels" })).not.toBeChecked();
+    expect(within(grocy).getAllByRole("button", { name: /Layout$/ })).toHaveLength(5);
+    expect(within(grocy).getAllByRole("button", { name: /Printer$/ })).toHaveLength(5);
+    expect(within(grocy).getByRole("button", { name: /Default printer$/ })).toHaveTextContent("First enabled tape printer");
+    for (const name of ["Product", "Stock entry", "Chore", "Battery", "Recipe"]) {
+      expect(within(grocy).getByRole("group", { name })).toBeVisible();
+    }
+    expect(within(within(grocy).getByRole("group", { name: "Stock entry" })).getByRole("button", { name: /Layout$/ })).toHaveTextContent("QR code, code, title and detail");
+    // Enabled printers only: a disabled one is not a target.
+    await userEvent.click(within(grocy).getByRole("button", { name: /Default printer$/ }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options).toEqual(["First enabled tape printer", PRINTER_A.name, PAGE_PRINTER.name]);
+  });
+
+  it("page printers are offered under their own group", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("button", { name: /Default printer$/ }));
+    const tape = await screen.findByRole("group", { name: "Tape printers" });
+    const page = screen.getByRole("group", { name: "Page printers" });
+    expect(within(tape).getAllByRole("option").map((o) => o.textContent)).toEqual([PRINTER_A.name]);
+    expect(within(page).getAllByRole("option").map((o) => o.textContent)).toEqual([PAGE_PRINTER.name]);
+  });
+
+  it("a page printer shows the sheet type select with active types only", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    expect(within(grocy).queryByRole("button", { name: /Sheet type$/ })).toBeNull();
+    await userEvent.click(within(grocy).getByRole("button", { name: /Default printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: PAGE_PRINTER.name }));
+    const sheetType = await within(grocy).findByRole("button", { name: /Sheet type$/ });
+    await userEvent.click(sheetType);
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("Example Labels L4736REV-25");
+    expect(options[0]).toHaveTextContent(SHEET_TYPE.key);
+    await userEvent.click(options[0]!);
+    expect(sheetType).toHaveTextContent("Example Labels L4736REV-25");
+    expect(sheetType).not.toHaveTextContent(`L4736REV-25${SHEET_TYPE.key}`);
+  });
+
+  it("save is disabled until a sheet type is chosen", async () => {
+    const { calls } = mockApi(routes({ "PUT /api/v1/settings": settingsList() }));
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    const battery = within(grocy).getByRole("group", { name: "Battery" });
+    await userEvent.click(within(battery).getByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: PAGE_PRINTER.name }));
+    const save = within(grocy).getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(within(battery).getByText("Choose a sheet type for this page printer.")).toBeVisible();
+    await userEvent.click(within(battery).getByRole("button", { name: /Sheet type$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: new RegExp(SHEET_TYPE.key) }));
+    expect(save).toBeEnabled();
+    expect(within(battery).queryByText("Choose a sheet type for this page printer.")).toBeNull();
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({
+        values: {
+          "integrations.grocy.label.battery.printer": PAGE_PRINTER.slug,
+          "integrations.grocy.label.battery.sheet_type": SHEET_TYPE.key,
+        },
+      }),
+    );
+  });
+
+  it('"Same as default" hides the sheet type', async () => {
+    const { calls } = mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({
+          "integrations.grocy.label.battery.printer": { value: PAGE_PRINTER.slug, is_set: true },
+          "integrations.grocy.label.battery.sheet_type": { value: SHEET_TYPE.key, is_set: true },
+        }),
+        "PUT /api/v1/settings": settingsList(),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const battery = within(await panel()).getByRole("group", { name: "Battery" });
+    expect(await within(battery).findByRole("button", { name: /Sheet type$/ })).toBeVisible();
+    await userEvent.click(within(battery).getByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "Same as default" }));
+    expect(within(battery).queryByRole("button", { name: /Sheet type$/ })).toBeNull();
+    await userEvent.click(within(await panel()).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({
+        values: { "integrations.grocy.label.battery.printer": "", "integrations.grocy.label.battery.sheet_type": "" },
+      }),
+    );
+  });
+
+  it("an archived stored sheet type shows the warning", async () => {
+    mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({
+          "integrations.grocy.label.printer": { value: PAGE_PRINTER.slug, is_set: true },
+          "integrations.grocy.label.sheet_type": { value: ARCHIVED_TYPE.key, is_set: true },
+        }),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    expect(await within(grocy).findByText("This sheet type is archived or no longer exists. Grocy labels for it are refused.")).toBeVisible();
+    const field = within(grocy).getByRole("button", { name: /Sheet type$/ });
+    expect(field).toHaveTextContent(ARCHIVED_TYPE.key);
+    // The warning is tied to the field, so a screen reader announces it with the field.
+    expect(field).toHaveAccessibleDescription(/archived or no longer exists/);
+  });
+
+  it("saving sends only changed label keys", async () => {
+    const { calls } = mockApi(routes({ "PUT /api/v1/settings": settingsList({ "integrations.grocy.label.enabled": { value: true } }) }));
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    const save = within(grocy).getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    await userEvent.click(within(grocy).getByRole("switch", { name: "Print Grocy's labels" }));
+    const stock = within(grocy).getByRole("group", { name: "Stock entry" });
+    await userEvent.click(within(stock).getByRole("button", { name: /Layout$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "QR code only" }));
+    await userEvent.click(within(stock).getByRole("button", { name: /Printer$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: PRINTER_A.name }));
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({
+        values: {
+          "integrations.grocy.label.enabled": true,
+          "integrations.grocy.label.stock_entry.content_type": "qr_only",
+          "integrations.grocy.label.stock_entry.printer": PRINTER_A.slug,
+        },
+      }),
+    );
+    expect(await within(grocy).findByText("Saved")).toBeVisible();
+  });
+
+  it('a per-type printer left empty saves "" and shows "Same as default"', async () => {
+    const { calls } = mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({ "integrations.grocy.label.chore.printer": { value: PRINTER_A.slug, is_set: true } }),
+        "PUT /api/v1/settings": settingsList(),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const chore = within(await panel()).getByRole("group", { name: "Chore" });
+    const printer = within(chore).getByRole("button", { name: /Printer$/ });
+    await waitFor(() => expect(printer).toHaveTextContent(PRINTER_A.name));
+    await userEvent.click(printer);
+    await userEvent.click(await screen.findByRole("option", { name: "Same as default" }));
+    expect(printer).toHaveTextContent("Same as default");
+    await userEvent.click(within(await panel()).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({ values: { "integrations.grocy.label.chore.printer": "" } }));
+  });
+
+  it("keeps a saved printer that can no longer take labels visible", async () => {
+    mockApi(routes({ "GET /api/v1/settings": settingsList({ "integrations.grocy.label.printer": { value: SPARE.slug, is_set: true } }) }));
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await waitFor(() => expect(within(grocy).getByRole("button", { name: /Default printer$/ })).toHaveTextContent(`${SPARE.slug} (not available)`));
+  });
+
+  it("the copy button copies the block", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    const block = within(grocy).getByLabelText("Lines for Grocy's config.php");
+    expect(block).toHaveTextContent("Setting('LABEL_PRINTER_WEBHOOK', 'https://hub.example.invalid/api/v1/webhook/grocy/label?token=<print-key>');");
+    await userEvent.click(within(grocy).getByRole("button", { name: "Copy lines" }));
+    expect(writeText).toHaveBeenCalledWith(
+      [
+        "Setting('FEATURE_FLAG_LABEL_PRINTER', true);",
+        "Setting('LABEL_PRINTER_WEBHOOK', 'https://hub.example.invalid/api/v1/webhook/grocy/label?token=<print-key>');",
+        "Setting('LABEL_PRINTER_RUN_SERVER', true);",
+        "Setting('LABEL_PRINTER_HOOK_JSON', true);",
+      ].join("\n"),
+    );
+    expect(await within(grocy).findByText("Copied")).toBeVisible();
+  });
+
+  it("says so when the block cannot be copied", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) }, configurable: true });
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("button", { name: "Copy lines" }));
+    expect(await within(grocy).findByText(/Copy failed/)).toBeVisible();
+  });
+
+  it("a failed save shows the server error", async () => {
+    mockApi(routes({ "PUT /api/v1/settings": respond(422, { detail: "integrations.grocy.label.printer: not a printer", code: "validation_error" }) }));
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("switch", { name: "Print Grocy's labels" }));
+    await userEvent.click(within(grocy).getByRole("button", { name: "Save" }));
+    expect(await within(grocy).findByRole("alert")).toHaveTextContent("integrations.grocy.label.printer: not a printer");
+    expect(within(grocy).queryByText("Saved")).toBeNull();
+    // Nothing is lost: the edit is still there and can be saved again.
+    expect(within(grocy).getByRole("switch", { name: "Print Grocy's labels" })).toBeChecked();
+    expect(within(grocy).getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("an edit made while a save is on its way survives that save", async () => {
+    let answer: (value: unknown) => void = () => {};
+    const { calls } = mockApi(
+      routes({
+        "PUT /api/v1/settings": () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("switch", { name: "Print Grocy's labels" }));
+    await userEvent.click(within(grocy).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(lastBody(calls, "PUT", "/api/v1/settings")).toEqual({ values: { "integrations.grocy.label.enabled": true } }));
+    // The save has not answered yet; the person goes on editing.
+    const chore = within(grocy).getByRole("group", { name: "Chore" });
+    await userEvent.click(within(chore).getByRole("button", { name: /Layout$/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "QR code only" }));
+    answer(settingsList({ "integrations.grocy.label.enabled": { value: true } }));
+    expect(await within(grocy).findByText("Saved")).toBeVisible();
+    expect(within(chore).getByRole("button", { name: /Layout$/ })).toHaveTextContent("QR code only");
+    expect(within(grocy).getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("a saved printer is shown by its slug, not as unavailable, when the printers cannot be loaded", async () => {
+    mockApi(
+      routes({
+        "GET /api/v1/settings": settingsList({ "integrations.grocy.label.printer": { value: PRINTER_A.slug, is_set: true } }),
+        "GET /api/v1/admin/printers": respond(500, { detail: "boom" }),
+      }),
+    );
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    // While the list loads (a 5xx is asked again twice) the slug is shown as it is.
+    expect(within(grocy).getByRole("button", { name: /Default printer$/ })).toHaveTextContent(PRINTER_A.slug);
+    expect(
+      await within(grocy).findByText("The printers could not be loaded. A saved printer is shown by its short name.", undefined, { timeout: 10_000 }),
+    ).toBeVisible();
+    const target = within(grocy).getByRole("button", { name: /Default printer$/ });
+    expect(target).toHaveTextContent(PRINTER_A.slug);
+    expect(target).not.toHaveTextContent("not available");
+  });
+
+  it("a save the server cannot be reached for says so", async () => {
+    mockApi(routes({ "PUT /api/v1/settings": () => Promise.reject(new TypeError("Failed to fetch")) }));
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    await userEvent.click(within(grocy).getByRole("switch", { name: "Print Grocy's labels" }));
+    await userEvent.click(within(grocy).getByRole("button", { name: "Save" }));
+    expect(await within(grocy).findByRole("alert")).toBeVisible();
+  });
+
+  it("the warning names the Grocy user exposure and links to the keys", async () => {
+    mockApi(routes());
+    await renderApp({ path: "/settings/integrations" });
+    const grocy = await panel();
+    expect(
+      within(grocy).getByText(
+        "Use a key with the print scope, restricted to the label printer. Grocy writes the address with the key to its own log, and shows it to the Grocy user when the hub refuses a label or does not answer within 2 seconds.",
+      ),
+    ).toBeVisible();
+    expect(within(grocy).getByRole("link", { name: "Access and keys" })).toHaveAttribute("href", "/settings/access");
   });
 });
 
@@ -294,6 +584,42 @@ describe("AccessKeys", () => {
     expect(document.body.innerHTML).not.toContain("lph_fake-plaintext-for-tests");
     // The list shows the prefix only.
     expect(await screen.findByText("lph_kept…")).toBeVisible();
+  });
+
+  it("an admin key with a stored printer list shows it as ignored", async () => {
+    mockApi({
+      "GET /api/v1/settings": settingsList(),
+      "GET /api/v1/admin/api-keys": [{ ...KEY_ADMIN, allowed_printer_ids: [PRINTER_A.id] }, { ...KEY_KEPT, allowed_printer_ids: [PRINTER_A.id] }],
+    });
+    await renderApp({ path: "/settings/access" });
+    const adminRow = (await screen.findByText("First admin key")).closest("li") as HTMLElement;
+    expect(within(adminRow).getByText(/Ignored for admin keys/)).toBeVisible();
+    // A print key keeps its restriction, so nothing is marked as ignored on its row.
+    const printRow = screen.getByText("Kept").closest("li") as HTMLElement;
+    expect(within(printRow).queryByText(/Ignored for admin keys/)).toBeNull();
+  });
+
+  it("an admin key without a stored printer list shows no ignored note", async () => {
+    mockApi({ "GET /api/v1/settings": settingsList(), "GET /api/v1/admin/api-keys": [KEY_ADMIN] });
+    await renderApp({ path: "/settings/access" });
+    await screen.findByText("First admin key");
+    expect(screen.queryByText(/Ignored for admin keys/)).toBeNull();
+  });
+
+  it("the create form offers no printer restriction next to the admin scope", async () => {
+    const { calls } = mockApi({
+      "GET /api/v1/settings": settingsList(),
+      "GET /api/v1/admin/api-keys": [],
+      "POST /api/v1/admin/api-keys": () => ({ key_id: KEY_ADMIN.id, name: "Boss", plaintext: "lph_fake-plaintext-for-tests", prefix: "lph_boss", scopes: ["admin"] }),
+    });
+    await renderApp({ path: "/settings/access" });
+    const form = (await screen.findByRole("form", { name: "Create an API key" })) as HTMLElement;
+    await userEvent.click(within(form).getByRole("checkbox", { name: "admin" }));
+    expect(within(form).queryByText(/printer/i)).toBeNull();
+    await userEvent.type(within(form).getByRole("textbox", { name: "Key name" }), "Boss");
+    await userEvent.click(within(form).getByRole("button", { name: "Create key" }));
+    await screen.findByRole("dialog", { name: "Your new key" });
+    expect(lastBody(calls, "POST", "/api/v1/admin/api-keys")).not.toHaveProperty("allowed_printer_ids");
   });
 
   it("revokes a key after a confirmation", async () => {

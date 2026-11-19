@@ -39,7 +39,11 @@ from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import Sheet
 from app.page_render.test_page import render_test_page
-from app.printer_backends.exceptions import NoTapeLoadedError, PrinterOfflineError
+from app.printer_backends.exceptions import (
+    NoTapeLoadedError,
+    PrinterCoverOpenError,
+    PrinterOfflineError,
+)
 from app.printer_backends.ipp.attributes import (
     IppStatusRecord,
     Margins,
@@ -96,13 +100,14 @@ async def _printer(
     paused: bool = False,
     connection: dict[str, Any] | None = None,
     name: str | None = None,
+    model: str = "m",
 ) -> UUID:
     async with factory() as s:
         p = Printer(
             id=uuid4(),
             name=name or f"Office ({uuid4().hex[:4]})",
             slug=f"p-{uuid4().hex[:6]}",
-            model="m",
+            model=model,
             backend=backend,
             enabled=enabled,
             connection=connection or {"uri": FAKE_URI},
@@ -201,6 +206,7 @@ class Env:
         self.app, self.queue, self.fake, self.factory = app, queue, fake, factory
         self.runtime, self.backend, self.tape = runtime, backend, tape
         self.tape_id, self.page_id, self.auth = tape_id, page_id, auth
+        self.ql = _TapePrinter(uuid4())
 
     def client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://t")
@@ -248,6 +254,7 @@ async def env(async_session_factory: async_sessionmaker[AsyncSession]) -> AsyncI
             async_session_factory,
             "ptouch",
             connection={"host": "192.0.2.10", "snmp": {"community": "hunter2-community"}},
+            model="PT-E550W",
         )
         page_id = await _printer(async_session_factory)
         await _page_cache(async_session_factory, page_id)
@@ -311,7 +318,7 @@ async def test_tape_test_print_creates_one_job_done(env: Env) -> None:
     [row] = await env.job_rows()
     assert str(row.id) == job_id
     assert row.template_key == "test_label"
-    assert row.payload["content_type"] == "qr_three_lines"
+    assert row.payload["content_type"] == "text_two_lines"
     assert row.payload["tape_mm"] == 24
     [(image, tape_mm)] = env.tape.printed
     assert tape_mm == 24
@@ -332,10 +339,11 @@ async def test_tape_label_names_the_printer_and_points_at_it(env: Env) -> None:
     r = await env.post(env.tape_id)
     await env.done(r.json()["job_id"])
     [row] = await env.job_rows()
-    data = row.payload["label_data"]
-    assert data["qr_payload"] == f"https://hub.example.invalid/printers/{env.tape_id}"
-    assert data["title"].startswith("24 mm · ")
-    assert data["secondary"][0].startswith("Printer Hub ")
+    label = row.payload["test_label"]
+    assert label["qr_payload"] == f"https://hub.example.invalid/printers/{env.tape_id}"
+    assert label["printer"] == (await _printer_row(env, env.tape_id)).name
+    assert (label["width_mm"], label["dpi"], label["px"]) == (24, 180, 128)
+    assert row.payload["label_data"]["title"].startswith("24 mm · ")
 
 
 async def test_tape_label_carries_no_connection_details(env: Env) -> None:
@@ -374,35 +382,110 @@ async def test_tape_without_tape_is_409(env: Env) -> None:
     assert await env.job_rows() == []
 
 
-async def test_tape_test_label_prints_on_62mm_with_its_long_printer_url(env: Env) -> None:
-    """#258: the fixed QR box takes the version the payload needs; the >= 67-byte printer URL
-    of the test label prints on 62 mm across (it did not fit a fixed version 3)."""
+async def test_tape_test_print_on_an_unsupported_width_is_409(env: Env) -> None:
+    """#378: a width the layout engine does not draw answers 409, never 500, and names it."""
     env.backend.preflight_check.return_value = PreflightStatus(
-        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+        hr_printer_status="idle", loaded_tape_mm=70, error_flags=[]
     )
     r = await env.post(env.tape_id)
+    assert r.status_code == 409, r.text
+    assert _err(r)["type"] == "unsupported-tape"
+    assert _err(r)["extensions"] == {"tape_mm": 70}
+    assert await env.job_rows() == []
+
+
+async def test_tape_test_print_with_the_cover_open_is_409_wrapped(env: Env) -> None:
+    """#378: under ``detail`` like every refusal of this route, not the global handler's body."""
+    env.backend.preflight_check.side_effect = PrinterCoverOpenError()
+    r = await env.post(env.tape_id)
+    assert r.status_code == 409, r.text
+    assert _err(r)["type"] == "printer-cover-open"
+    assert await env.job_rows() == []
+
+
+async def _ql_printer(env: Env) -> UUID:
+    """A ``brother_ql`` row served by the env's queue and print service (fake backend)."""
+    pid = await _printer(
+        env.factory, "brother_ql", connection={"host": "192.0.2.11"}, model="QL-820NWB"
+    )
+    tape = _TapePrinter(pid)
+    await env.queue.add_printer(tape)
+    env.runtime.services[pid] = PrintService(
+        printer_id=pid, backend=env.backend, queue=env.queue, store=SQLiteJobStore(env.factory),
+        engine=LayoutEngine(),
+    )  # fmt: skip
+    env.ql = tape
+    return pid
+
+
+_EVERY_WIDTH = [
+    *(("brother_ql", mm, px) for mm, px in
+      {12: 106, 29: 306, 38: 413, 50: 554, 54: 590, 62: 696}.items()),
+    *(("ptouch", mm, px) for mm, px in {4: 24, 6: 32, 9: 50, 12: 70, 18: 112, 24: 128}.items()),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("backend", "mm", "px"), _EVERY_WIDTH, ids=[f"{b}-{mm}" for b, mm, _px in _EVERY_WIDTH]
+)
+async def test_tape_test_print_accepted_on_every_width(
+    env: Env, backend: str, mm: int, px: int
+) -> None:
+    """#377: every tape the model takes prints the test label, at the model's band."""
+    env.backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=mm, error_flags=[]
+    )
+    pid = await _ql_printer(env) if backend == "brother_ql" else env.tape_id
+    r = await env.post(pid)
     assert r.status_code == 202, r.text
     await env.done(r.json()["job_id"])
-    [row] = await env.job_rows()
-    assert len(row.payload["label_data"]["qr_payload"]) >= 67
-    assert row.payload["options"]["orientation"] == "across"
-    [(image, tape_mm)] = env.tape.printed
-    assert (tape_mm, image.width) == (62, 696)
+    printed = env.ql.printed if backend == "brother_ql" else env.tape.printed
+    [(image, tape_mm)] = printed
+    assert (tape_mm, image.height) == (mm, px)
 
 
-async def test_tape_test_label_too_long_for_the_qr_box_is_422(
+async def test_tape_test_label_prints_on_62mm_along(env: Env) -> None:
+    """#377: on 62 mm the test label runs along the tape like on every other width (#258 had
+    it across); the >= 67-byte printer URL still gets its QR."""
+    env.backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
+    )
+    pid = await _ql_printer(env)
+    r = await env.post(pid)
+    assert r.status_code == 202, r.text
+    await env.done(r.json()["job_id"])
+    [row] = [x for x in await env.job_rows() if x.printer_id == pid]
+    assert len(row.payload["test_label"]["qr_payload"]) >= 67
+    assert row.payload["options"]["orientation"] == "along"
+    [(image, tape_mm)] = env.ql.printed
+    assert (tape_mm, image.height) == (62, 696)
+
+
+async def test_a_printer_link_too_long_for_the_qr_still_prints(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A printer link beyond 4 px modules is refused with its own problem type, never a 500."""
+    """#377: the test print is never refused for its link; the QR is left out."""
     monkeypatch.setattr(
-        "app.api.routes.test_print.printer_url", lambda *_a: "https://h.invalid/" + "p" * 200
+        "app.api.routes.test_print.printer_url", lambda *_a: "https://h.invalid/" + "p" * 5000
     )
     env.backend.preflight_check.return_value = PreflightStatus(
         hr_printer_status="idle", loaded_tape_mm=62, error_flags=[]
     )
+    pid = await _ql_printer(env)
+    r = await env.post(pid)
+    assert r.status_code == 202, r.text
+    await env.done(r.json()["job_id"])
+
+
+async def test_a_width_the_model_lacks_is_409(env: Env) -> None:
+    """#377: the E550W takes no 36 mm tape: 409 ``unsupported-tape`` before rendering."""
+    env.backend.preflight_check.return_value = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=36, error_flags=[]
+    )
     r = await env.post(env.tape_id)
-    assert r.status_code == 422, r.text
-    assert _err(r)["type"] == "qr-payload-too-long"
+    assert r.status_code == 409, r.text
+    assert _err(r)["type"] == "unsupported-tape"
+    assert _err(r)["extensions"] == {"tape_mm": 36}
     assert await env.job_rows() == []
 
 
@@ -617,7 +700,7 @@ async def test_printer_url_has_single_slash(env: Env) -> None:
     r = await env.post(env.tape_id)
     await env.done(r.json()["job_id"])
     [row] = await env.job_rows()
-    url = row.payload["label_data"]["qr_payload"]
+    url = row.payload["test_label"]["qr_payload"]
     assert url == f"https://hub.example.invalid/printers/{env.tape_id}"
     assert "//printers" not in url
 
@@ -630,7 +713,7 @@ async def test_printer_url_drops_credentials_from_the_public_url(
     r = await env.post(env.tape_id)
     await env.done(r.json()["job_id"])
     [row] = await env.job_rows()
-    url = row.payload["label_data"]["qr_payload"]
+    url = row.payload["test_label"]["qr_payload"]
     assert url == f"https://hub.example.invalid/base/printers/{env.tape_id}"
     assert "pw-leak" not in str(row.payload)
 

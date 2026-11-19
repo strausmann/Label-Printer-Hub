@@ -16,12 +16,15 @@ from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.bounded_body import read_bounded
 from app.api.routes.sheet_common import actor, mapped
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_read
 from app.db.session import get_session
+from app.models.backing_design import BackingDesign
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.schemas.sheets import (
+    BackingDesignRead,
     GeometryMm,
     ImportResponse,
     SheetTypeCreate,
@@ -32,10 +35,12 @@ from app.schemas.sheets import (
     VersionRead,
 )
 from app.seed.sheet_seed import shipped_source_urls
+from app.sheets import backing_design_service as bds
 from app.sheets import exchange
 from app.sheets import type_service as ts
 from app.sheets.errors import ImportTooLargeError, SheetTypeVersionNotFoundError
 from app.sheets.geometry import normalise, validate_geometry
+from app.sheets.id_placement import resolve_type_placement
 from app.sheets.naming import KEY_PATTERN
 
 router = APIRouter(prefix="/api/v1/sheet-types", tags=["sheet-types"])
@@ -70,15 +75,38 @@ def _version_read(v: SheetTypeVersion, sheets: int) -> VersionRead:
     )
 
 
+def design_read(design: BackingDesign, types_in_use: int) -> BackingDesignRead:
+    return BackingDesignRead(
+        key=design.key,
+        name=design.name,
+        page_size=design.page_size,  # type: ignore[arg-type]
+        strips=bds.strips_to_mm(design.strips),
+        origin=design.origin,  # type: ignore[arg-type]
+        types_in_use=types_in_use,
+    )
+
+
+_Designs = dict[Any, tuple[BackingDesign, int]]
+
+
+async def _designs(session: AsyncSession) -> _Designs:
+    return {d.id: (d, used) for d, used in await bds.list_with_usage(session)}
+
+
 async def _type_read(
     session: AsyncSession,
     t: SheetType,
     versions: list[tuple[SheetTypeVersion, int]] | None = None,
+    designs: _Designs | None = None,
 ) -> tuple[SheetTypeRead, list[VersionRead]]:
     if versions is None:
         versions = await ts.list_versions_with_sheet_counts(session, t.id)
+    if designs is None:
+        designs = await _designs(session) if t.backing_design_id is not None else {}
     current, _ = versions[-1]  # oldest first; a type always has version 1
-    hints = validate_geometry(normalise(ts.version_geometry(current)))
+    geometry = ts.version_geometry(current)
+    hints = validate_geometry(normalise(geometry))
+    linked = designs.get(t.backing_design_id)
     read = SheetTypeRead(
         key=t.key,
         prefix=t.prefix,
@@ -103,6 +131,11 @@ async def _type_read(
         geometry=_geometry(current),
         hints=hints,
         sheets_in_use=sum(count for _, count in versions),
+        id_placement=t.id_placement,  # type: ignore[arg-type]
+        id_cell=t.id_cell,
+        id_placement_resolved=resolve_type_placement(t.id_placement, geometry),
+        id_placement_auto=resolve_type_placement("auto", geometry),  # type: ignore[arg-type]
+        backing_design=None if linked is None else design_read(*linked),
     )
     return read, [_version_read(v, count) for v, count in versions]
 
@@ -129,7 +162,8 @@ async def list_sheet_types(
             include_archived=include_archived,
         )
         by_type = await ts.list_versions_with_sheet_counts_many(session, [t.id for t in types])
-        return [(await _type_read(session, t, by_type[t.id]))[0] for t in types]
+        designs = await _designs(session)
+        return [(await _type_read(session, t, by_type[t.id], designs))[0] for t in types]
 
 
 @router.post(
@@ -153,7 +187,7 @@ async def import_sheet_type(
     new_prefix: Annotated[str | None, Query(max_length=10, pattern=r"^[A-Z][A-Z0-9]{1,9}$")] = None,
 ) -> ImportResponse:
     with mapped():
-        raw = await _read_bounded(request)
+        raw = await read_bounded(request, exchange.MAX_IMPORT_BYTES, ImportTooLargeError)
         doc = exchange.parse_import(raw)
         result = await exchange.import_type(
             session, doc, mode=mode, new_key=new_key, new_prefix=new_prefix, actor=actor(auth)
@@ -161,24 +195,6 @@ async def import_sheet_type(
     if result.outcome == "unchanged":
         response.status_code = status.HTTP_200_OK
     return ImportResponse(outcome=result.outcome, key=result.key, version=result.version)
-
-
-async def _read_bounded(request: Request) -> bytes:
-    """Read the body, never more than the limit plus one chunk.
-
-    The app has no global body limit, so ``Request.body()`` would buffer anything. A declared
-    length above the limit is refused before a byte is read; without one, reading stops as
-    soon as more than the limit has arrived.
-    """
-    declared = request.headers.get("content-length", "")
-    if declared.isdigit() and int(declared) > exchange.MAX_IMPORT_BYTES:
-        raise ImportTooLargeError()
-    buffer = bytearray()
-    async for chunk in request.stream():
-        buffer.extend(chunk)
-        if len(buffer) > exchange.MAX_IMPORT_BYTES:
-            raise ImportTooLargeError()
-    return bytes(buffer)
 
 
 @router.post(
@@ -242,7 +258,21 @@ async def get_sheet_type_version(
     "/{key}",
     response_model=SheetTypeRead,
     summary="Edit the non-geometric fields of a sheet type",
-    responses=_NOT_FOUND,
+    description=(
+        "`id_placement` sets where the sheet code of a new sheet goes, `id_cell` the preferred "
+        "cell of a `cell` sheet (checked against the current version's cell count), "
+        "`backing_design` the vendor print on the back of the liner (a design key; `null` "
+        "clears it)."
+    ),
+    responses={
+        404: {"description": "Sheet type or backing design not found."},
+        422: {
+            "description": (
+                "A field is invalid, `id_cell` is outside the sheet (`id_cell_out_of_range`) or "
+                "the design is for another page size (`backing_design_page_size_mismatch`)."
+            )
+        },
+    },
 )
 async def patch_sheet_type(
     key: KeyPath, body: SheetTypePatch, session: SessionDep, auth: AdminDep
@@ -324,6 +354,6 @@ async def export_sheet_type(
         doc = await exchange.export_type(session, key, version)
     filename = f"{doc.type.key}-v{doc.version.version}.json"
     return JSONResponse(
-        content=doc.model_dump(mode="json"),
+        content=doc.to_json(),
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

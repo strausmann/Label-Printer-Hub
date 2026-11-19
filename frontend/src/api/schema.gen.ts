@@ -19,7 +19,7 @@ export interface paths {
         put?: never;
         /**
          * Create a new API key
-         * @description Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix.
+         * @description Creates a new API key. The ``plaintext`` field in the response is the full key — it is shown ONCE and never stored. Copy it before closing this response. Subsequent GETs return only the prefix. A key with the admin scope always acts on every printer: a non-empty ``allowed_printer_ids`` on it is 422 ``admin_key_not_restrictable``.
          */
         post: operations["create_api_key_api_v1_admin_api_keys_post"];
         delete?: never;
@@ -51,7 +51,7 @@ export interface paths {
         head?: never;
         /**
          * Update API key metadata
-         * @description Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that.
+         * @description Update ``enabled``, ``rate_limit_per_minute``, ``notes``, or ``allowed_printer_ids``. Cannot change scopes or the key value itself — revoke and recreate for that. A key with the admin scope refuses a non-empty ``allowed_printer_ids`` (422 ``admin_key_not_restrictable``).
          */
         patch: operations["update_api_key_api_v1_admin_api_keys__key_id__patch"];
         trace?: never;
@@ -134,7 +134,7 @@ export interface paths {
         get: operations["get_printer_api_v1_admin_printers__slug__get"];
         /**
          * Drucker aktualisieren
-         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
+         * @description Aktualisiert einen Drucker per PATCH-Semantik (nur geänderte Felder). Slug und ID können nicht geändert werden. Gibt 404 zurück wenn kein Drucker mit diesem Slug existiert. ``connection`` must fit the stored backend (422 ``invalid_connection``); ``trays`` (replace-all) are for ``ipp`` printers only (422 ``trays_not_allowed``). ``connection.snmp.community`` is write-only: omitted or null keeps the stored one while host and port stay the same; a new host or port without a community, or discovery without any community, is 422 ``snmp_community_required``. An ``ipp`` printer is probed again when its URI changes or a tray key is new. A change of the connection, the trays or the IPP queue timeout re-wires the printer before the answer: a job printing on it finishes first (up to its queue timeout), waiting jobs stay queued. A rename re-wires nothing.
          */
         put: operations["update_printer_api_v1_admin_printers__slug__put"];
         post?: never;
@@ -210,6 +210,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backing-designs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List backing designs */
+        get: operations["list_backing_designs_api_v1_backing_designs_get"];
+        put?: never;
+        /** Create a backing design */
+        post: operations["create_backing_design_api_v1_backing_designs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backing-designs/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a backing design no sheet type uses */
+        delete: operations["delete_backing_design_api_v1_backing_designs__key__delete"];
+        options?: never;
+        head?: never;
+        /** Change the name or the free strips of a backing design */
+        patch: operations["patch_backing_design_api_v1_backing_designs__key__patch"];
         trace?: never;
     };
     "/api/v1/batches/runs/held": {
@@ -309,7 +345,7 @@ export interface paths {
         put?: never;
         /**
          * Reprint a stopped tape batch from a label
-         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` nothing of the group was sent: reprint from its first label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.
+         * @description A stopped run (#277): with `stop_kind` `unknown` the group's outcome is unknown — count what printed, fix the tape, and reprint from the first label that is missing (`reprint_from` to `reprint_to`); that label to the end of the group, and every label that was not started, are queued again as new jobs, and the labels before it count as printed. With `refused` the labels from `reprint_from` on did not print (nothing of the group was sent, or the printer confirmed only the labels before them, #393): reprint from that label. A printer the stop paused is resumed. Labels whose stored job was cleaned up are listed in `skipped_job_ids`. The batch then lists the run's labels (`GET` shows the new jobs). `from_label` outside the range answers 422 `label_out_of_range`. Held runs live in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), also a part that was continued but had not started, and a stopped run can then no longer be reprinted (`run` is `null`, this answers 404). A held run counts against `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20) of its key, not against the printer's cap: over it a new batch of that key answers 429 `too-many-queued-runs` until a run is continued, reprinted to the end or discarded. At most five runs per printer are held, at most two of one key: a further held run discards that key's own oldest (`run_discarded_limit`), never another key's. While the five places are taken, a batch of more than 50 labels from a key without a held run there gets 429 `too-many-queued-runs`; smaller batches are always taken. All callers without a key (SSO users) count as one key; a browser session signed in with a key counts as that key.
          */
         post: operations["reprint_batch_api_v1_batches__batch_id__reprint_post"];
         delete?: never;
@@ -364,7 +400,7 @@ export interface paths {
         };
         /**
          * List jobs
-         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).  An API key without ``admin`` scope, and a browser session signed in with one, sees only the jobs that key submitted; SSO users and admin keys see every job of their printers.
+         * @description Returns jobs matching the optional filters, ordered by creation time.  ``state`` accepts any valid JobState value (``queued``, ``printing``, ``done``, ``failed``, ``cancelled``, ``failed_restart``).  ``since`` is an ISO-8601 datetime; only jobs created at or after that instant are returned.  ``limit`` caps the result (default 50, max 200).  ``order`` is ``oldest`` (default) or ``newest``, which returns the latest jobs first.  An API key without ``admin`` scope, and a browser session signed in with one, sees only the jobs that key submitted; SSO users and admin keys see every job of their printers.
          */
         get: operations["list_jobs_api_v1_jobs_get"];
         put?: never;
@@ -466,9 +502,49 @@ export interface paths {
         put?: never;
         /**
          * Retry a failed job
-         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.
+         * @description Clones a ``failed`` (or ``failed_restart`` / ``cancelled``) job into a new ``queued`` job with a fresh UUID.  The original job is untouched and remains as an immutable history entry.  The new job is handed to the print queue immediately — no restart needed.  Returns 409 when the original job is still in an active state (``queued`` or ``printing``) or its printer is not available, and 422 when the stored payload cannot be re-rendered (e.g. webhook-created jobs).  A Grocy label job that failed before its render (printer offline, no tape) is accepted again on its printer and completes in the background, like the webhook; a Grocy label that could not be built answers 422 and creates no row.  A Grocy label for a sheet that ended before it reached the printer is accepted again the same way: a new job takes a free cell of the sheet type, chosen like a new label; it answers 409 ``printer_disabled``, ``media_kind_mismatch`` or ``sheet_type_archived``, 409 ``printer-identity-mismatch`` for a held printer, and 409 ``job_not_retryable`` when the sheet type was deleted, without creating a row.  Page jobs: a calibration page is re-submitted from its payload, so retry prints the same page again with its original calibration snapshot and date; a fresh check print with the current calibration is a new calibration-page request.  A sheet page is retried onto the same cells of the same sheet as a new job, with a fresh calibration snapshot and the margin ID and feed mark decided again for the printer.  It answers 409 ``job_not_retryable`` for a ``done`` job (or an ID-only job whose ID was printed since), 409 ``cells_unconfirmed`` while a cell of the job waits for confirmation, 409 ``cells_taken`` (with the cell numbers) when a cell is no longer free, 409 ``printer_disabled`` for a disabled printer (a calibration page too), 422 ``tray_unknown`` when the tray was removed or disabled since, and 409 ``sheet_discarded`` for a discarded sheet; nothing is reserved or created in any of these cases.  A page with the sheet code on the back is re-sent from its payload (same strip, date and turn) while its sheet is active and still has its code on the back, else 409 ``sheet_discarded`` or ``id_placement_mismatch``; the job never marks the code as printed.  A tray loading test page is re-sent like a test page.  The new job's payload carries ``retry_of``, the id of the job it repeats; that job may have been cleaned up since, so the id may no longer resolve.
          */
         post: operations["retry_job_api_v1_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/grocy/batteries/{battery_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a Grocy battery
+         * @description Name, description, last and next charging and the number of charge cycles of one Grocy battery, for the page a scanned battery code opens.  Same access and errors as the product lookup: 404 when Grocy has no such battery, 503 when Grocy is not set up, 502 when it fails.
+         */
+        get: operations["grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lookup/grocy/chores/{chore_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a Grocy chore
+         * @description Name, description, last and next execution and the assigned user of one Grocy chore, for the page a scanned chore code opens.  Same access and errors as the product lookup: 404 when Grocy has no such chore, 503 when Grocy is not set up, 502 when it fails.
+         */
+        get: operations["grocy_chore_api_v1_lookup_grocy_chores__chore_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -487,6 +563,26 @@ export interface paths {
          * @description Looks up an entity from the given integration app by its identifier.  ``app`` must be one of ``snipeit``, ``grocy``, or ``spoolman`` — an unsupported value returns 422.  Returns 404 ProblemDetail when the entity does not exist in the integration's backend.  The ``url`` field is the deep-link to the entity in the integration's own web UI, suitable for embedding in a QR code or label.
          */
         get: operations["lookup_api_v1_lookup__app___entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the hub's recent notices
+         * @description Notices of the last 30 days, newest first (sheet types marked verified or updated).
+         */
+        get: operations["list_notices_api_v1_notices_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -526,7 +622,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a batch of print jobs
-         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch. A printer holds at most `LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. A run that waits for `/continue` or a reprint counts against its key only. Over a cap the batch answers 429 too-many-queued-runs.
+         * @description Validates all items and enqueues the batch as one tape run — no per-item errors are returned. The labels (copies included) print in sub-jobs of at most 50; each further sub-job waits for `POST /api/v1/batches/{batch_id}/continue`. Inside a sub-job the labels go out in groups of 10 with a status check after each; when a group fails, the run stops (see `GET /api/v1/batches/{batch_id}`). A tape end stops it when the printer reports it: a PT sets the SNMP `noPaper` bit; whether a QL-820NWB reports the end of a DK roll is not verified, so on a QL the check reliably catches only an unreachable printer and an open cover. Any validation failure or hardware precondition (printer_offline, cover_open, unsupported_tape, no_tape_loaded, content_type_data_mismatch) rejects the whole batch with the appropriate 4xx status code. A page printer (IPP) answers 409 media_kind_mismatch. A printer holds at most `LABELYARD_MAX_QUEUED_RUNS_PER_PRINTER` (default 5) runs and a key at most `LABELYARD_MAX_QUEUED_RUNS_PER_KEY` (default 20); a run counts until it is over. A run that waits for `/continue` or a reprint counts against its key only. Over a cap the batch answers 429 too-many-queued-runs. Items that carry a `lookup` also count against the key's rate limit: the request's own token pays for the first lookup, each further one takes another token (never more than a full bucket), and a batch the remaining budget cannot cover answers 429 `rate_limit_exceeded` before any lookup; a batch refused before the first lookup gives the tokens back.
          */
         post: operations["create_batch_api_v1_print__printer_key__batch_post"];
         delete?: never;
@@ -913,9 +1009,69 @@ export interface paths {
         put?: never;
         /**
          * Print a test label (tape) or a test page (page printer)
-         * @description Prints one test label on a tape printer (printer name, tape width, time, a QR to the printer's page in the hub) or one test page on a page printer (a frame on the printable area, name, tray, time, a QR). A tape printer is asked at submit time what tape is loaded, so the answer needs no polling; a page printer needs a fresh status.
+         * @description Prints one test label on a tape printer (printer name, tape width, time and a 50 mm ruler on every tape the model takes, from 29 mm also a QR to the printer's page in the hub) or one test page on a page printer (a frame on the printable area, name, tray, time, a QR). A tape printer is asked at submit time what tape is loaded, so the answer needs no polling; a page printer needs a fresh status.
          */
         post: operations["test_print_api_v1_printers__printer_id__test_print_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/trays/{tray}/loading": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set how a tray takes paper
+         * @description `print_side`: the face that gets printed as the sheet lies in the tray; `leading_edge`: the edge of the printed image at the sheet edge put in first. A `print` key may set it only while it is unset; an `admin` key may change it.
+         */
+        put: operations["put_tray_loading_api_v1_printers__printer_id__trays__tray__loading_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/printers/{printer_id}/trays/{tray}/loading/test-page": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print the tray loading test page
+         * @description A page with a big "TOP ↑" at the top edge of the printed image and "PRINTED SIDE" in the middle, in the hub's language. Mark a cross on the face-up side next to the edge that goes in first, print, then answer where the print and "TOP" landed.
+         */
+        post: operations["print_tray_loading_page_api_v1_printers__printer_id__trays__tray__loading_test_page_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/render/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check cart items against the layout before printing
+         * @description Looks up every distinct item once (at most eight lookups at a time), draws it for ``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one verdict per item in request order.  A failing item does not fail the request: its result carries ``error_code`` (``qr_payload_too_long``, ``content_type_data_mismatch``, ``integration_item_not_found``, ``integration_unknown_app``, ``integration_lookup_failed``, ``integration_not_configured``) and, where it helps, ``error_detail``.  Returns 409 (``unsupported_tape``) before any lookup when the tape width or the orientation is not available.  Rate limit: the request's own token pays for the first distinct lookup, each further one takes another token from the key's bucket (never more than a full bucket); a request the remaining budget cannot cover is refused with 429 ``rate_limit_exceeded`` before any lookup.  Nothing is printed and no job is created.
+         */
+        post: operations["render_check_api_v1_render_check_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1061,7 +1217,10 @@ export interface paths {
         delete: operations["delete_sheet_type_api_v1_sheet_types__key__delete"];
         options?: never;
         head?: never;
-        /** Edit the non-geometric fields of a sheet type */
+        /**
+         * Edit the non-geometric fields of a sheet type
+         * @description `id_placement` sets where the sheet code of a new sheet goes, `id_cell` the preferred cell of a `cell` sheet (checked against the current version's cell count), `backing_design` the vendor print on the back of the liner (a design key; `null` clears it).
+         */
         patch: operations["patch_sheet_type_api_v1_sheet_types__key__patch"];
         trace?: never;
     };
@@ -1162,7 +1321,7 @@ export interface paths {
         put?: never;
         /**
          * Create a sheet, with the cells already used marked by hand
-         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves the first free cell for the sheet ID label and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job's first free cell; the error names the sheet in `error_detail.sheet_code`.
+         * @description `id_placement` `margin` (the default) and `manual` only store the sheet. `cell` also reserves a cell for the sheet ID label (`id_cell` or the type's while it is free, else the first free one) and queues an ID-only job on the named page printer; `job_id` names it. If the job cannot be queued, the sheet stays without a reservation and the ID goes onto the next job; the error names the sheet in `error_detail.sheet_code`. `back_side` creates the sheet and queues the job that prints its code on the back of the liner (`job_id`); the code counts as printed only after `POST /api/v1/sheets/{code}/back-side/confirm`. If that job cannot be queued, the sheet stays and the error names it the same way.
          */
         post: operations["create_sheet_api_v1_sheets_post"];
         delete?: never;
@@ -1225,6 +1384,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sheets/{code}/back-side": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print the sheet code on the back of the liner
+         * @description Queues the job that prints the code strip on the back of the sheet: "Print again" on the same sheet, or the activation of a sheet whose code goes on the back. An unprinted `margin` sheet switches to `back_side` in the same call. A `manual` sheet and a sheet whose code is printed (`margin`, `cell`) keep their placement and get an extra code on the back: `back_side_state` becomes `pending`. The job never sets `id_printed` or confirms the extra code; `POST /api/v1/sheets/{code}/back-side/confirm` does.
+         */
+        post: operations["print_back_side_api_v1_sheets__code__back_side_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/back-side/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm that the sheet code on the back is printed
+         * @description The person checked the code on the back (toner dry, QR not smeared). Only this marks the code of a `back_side` sheet as printed, and an extra code on the back of another sheet as `confirmed` (`back_side_state`); a second confirmation changes nothing.
+         */
+        post: operations["confirm_back_side_api_v1_sheets__code__back_side_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sheets/{code}/cells/mark": {
         parameters: {
             query?: never;
@@ -1253,6 +1452,23 @@ export interface paths {
         put?: never;
         /** Settle cells waiting for confirmation as printed or not printed */
         post: operations["resolve_cells_api_v1_sheets__code__cells_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sheets/{code}/cells/resolve-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle every cell waiting for confirmation as printed or not printed */
+        post: operations["resolve_all_cells_api_v1_sheets__code__cells_resolve_all_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1296,6 +1512,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sheets/{code}/margin-id": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Print the margin code of a sheet again
+         * @description Queues a page that prints only the sheet code in the margin of a `margin` sheet whose code is printed: no cell is reserved and no label is printed. The band is chosen again for this printer and tray. `id_printed` stays as it is.
+         */
+        post: operations["print_margin_id_api_v1_sheets__code__margin_id_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/system/logs": {
         parameters: {
             query?: never;
@@ -1327,9 +1563,29 @@ export interface paths {
         put?: never;
         /**
          * Accept a Grocy product event and print its label
-         * @description Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
+         * @description Receives a Grocy webhook event for a product stock change and prints the product label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; a ``quantity`` in range is printed as the label's third line, in the hub's language, and never counts copies.
          */
         post: operations["grocy_webhook_api_v1_webhook_grocy_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webhook/grocy/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a label request of Grocy's label printer webhook
+         * @description Grocy's label printer webhook (``LABEL_PRINTER_WEBHOOK``) for products, stock entries, chores, batteries and recipes.  **Authentication:** an API key with the ``print`` scope as the ``token`` query parameter (Grocy sends no headers) or the ``X-Label-Hub-Key`` header; a read key answers 403 ``insufficient_scope``, an admin key 403 ``token_scope_too_wide``, every other failure of the token 401 ``invalid_token``.  The key's printer restriction and rate limit apply.  The webhook is off until ``integrations.grocy.label.enabled`` is set.  The label type comes from the Grocycode; content type and printer come from the mapping of that type in Settings > Integrations > Grocy (a type without a printer uses the default target, and without one the first enabled tape printer).  A page printer prints the label onto one cell of its sheet type: the lowest free cell of the started sheet with the fewest free cells, else a new sheet with its ID in the margin.  The route answers 202 within 1.5 s with the job's UUID: printing runs afterwards, and a printer failure (offline, no tape) sets the job ``failed`` with the code ``POST /api/v1/print`` would answer; on a page printer a sheet failure sets the code of the sheet print (for example ``content_type_data_mismatch``).  A label that cannot be built (unreadable body, invalid Grocycode, name field of another type) also answers 202, with a ``failed`` job (``grocy_label_invalid``, ``grocy_label_mismatch``).
+         */
+        post: operations["grocy_label_webhook_api_v1_webhook_grocy_label_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1347,7 +1603,7 @@ export interface paths {
         put?: never;
         /**
          * Accept a Spoolman spool event and print its label
-         * @description Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; ``quantity`` is accepted but not printed.
+         * @description Receives a Spoolman webhook event for a spool update and prints the spool label through the print queue, like ``POST /api/v1/print``.  Requires the ``X-API-Key`` header — returns 503 when the key is not configured, 401 when the key is wrong, 422 when required payload fields are missing and 429 above the per-key rate limit.  Printer and lookup errors (no tape, printer disabled or offline, integration failed) are answered as by ``POST /api/v1/print`` (409/422/502/503); an unknown spool or product answers 404 ``app-lookup-not-found`` and an integration that is not configured 503 ``integration_not_configured`` (both in the problem-detail body shape). Nothing is queued.  On success returns 202 with the new job's UUID; the queue worker prints it.  One label is printed; a ``quantity`` in range is printed as the label's third line, in the hub's language, and never counts copies.
          */
         post: operations["spoolman_webhook_api_v1_webhook_spoolman_post"];
         delete?: never;
@@ -1480,6 +1736,80 @@ export interface components {
             rate_limit_per_minute: number;
             /** Scopes */
             scopes: string[];
+        };
+        /** BackingDesignCreate */
+        BackingDesignCreate: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /**
+             * Strips
+             * @default []
+             */
+            strips: components["schemas"]["StripMm"][];
+        };
+        /**
+         * BackingDesignDoc
+         * @description A backing design inside a sheet type document (R-350-8).
+         */
+        BackingDesignDoc: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /** Strips */
+            strips: components["schemas"]["StripMm"][];
+        };
+        /**
+         * BackingDesignPatch
+         * @description Only the fields the client sends change; the page size of a design is fixed.
+         */
+        BackingDesignPatch: {
+            /** Name */
+            name?: string | null;
+            /** Strips */
+            strips?: components["schemas"]["StripMm"][] | null;
+        };
+        /**
+         * BackingDesignRead
+         * @description A backing design: the vendor print on the back of a liner and its free strips.
+         */
+        BackingDesignRead: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "seed" | "custom" | "imported";
+            /**
+             * Page Size
+             * @enum {string}
+             */
+            page_size: "A4" | "Letter";
+            /**
+             * Strips
+             * @description Free strips on the back of the liner in mm, viewed on the liner with the sheet's top at the top after turning it over along the long edge.
+             */
+            strips: components["schemas"]["StripMm"][];
+            /**
+             * Types In Use
+             * @description Sheet types that point to this design.
+             */
+            types_in_use: number;
         };
         /** BatchRead */
         BatchRead: {
@@ -1619,6 +1949,16 @@ export interface components {
              */
             scale_y: number;
         };
+        /**
+         * CalibrationPrintRead
+         * @description The newest calibration page the hub printed: the tray it came from and when.
+         */
+        CalibrationPrintRead: {
+            /** At */
+            at: string;
+            /** Tray */
+            tray: string;
+        };
         /** CalibrationPut */
         CalibrationPut: {
             /** @description The sheet type version the page was measured on (optional). */
@@ -1722,6 +2062,8 @@ export interface components {
              * @description None while nothing is known (page printer that never answered), when no tape is loaded, or when the loaded tape width has no geometry entry (tape).
              */
             media: components["schemas"]["TapeMedia"] | components["schemas"]["PageMedia"] | null;
+            /** @description Tape printers only: Tape printers (#393): how the printer confirms a print, found by its last test print; null when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends) */
+            print_confirmation?: components["schemas"]["PrintConfirmationRead"] | null;
             /** Resolution Dpi */
             resolution_dpi: components["schemas"]["TapeResolution"] | components["schemas"]["PageResolution"];
             /**
@@ -1803,7 +2145,7 @@ export interface components {
          * @description Tape-independent semantic content types for label rendering.
          * @enum {string}
          */
-        ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing";
+        ContentType: "qr_only" | "qr_one_line" | "qr_two_lines" | "qr_three_lines" | "text_one_line" | "text_two_lines" | "qr_with_listing" | "spool_swatch";
         /**
          * DetailError
          * @description The error body the routes actually send: FastAPI's ``{"detail": "<text>"}``.
@@ -1849,9 +2191,9 @@ export interface components {
             format: "label-printer-hub.sheet-type";
             /**
              * Format Version
-             * @constant
+             * @enum {integer}
              */
-            format_version: 1;
+            format_version: 1 | 2;
             type: components["schemas"]["TypeDoc"];
             version: components["schemas"]["VersionDoc"];
         };
@@ -1922,6 +2264,89 @@ export interface components {
             shape: "rectangle" | "round";
         };
         /**
+         * GrocyBatteryResult
+         * @description What Grocy knows about one battery.
+         */
+        GrocyBatteryResult: {
+            /**
+             * Charge Cycles
+             * @description How often it was charged so far
+             * @default 0
+             */
+            charge_cycles: number;
+            /**
+             * Description
+             * @description The description, when one is set
+             */
+            description?: string | null;
+            /**
+             * Id
+             * @description The battery id
+             */
+            id: string;
+            /**
+             * Last Charged
+             * @description When it was last charged. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            last_charged?: string | null;
+            /**
+             * Name
+             * @description The battery's name
+             */
+            name: string;
+            /**
+             * Next Estimated Charge
+             * @description When it is estimated to need charging next; null without interval. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            next_estimated_charge?: string | null;
+            /**
+             * Url
+             * @description The battery's page in Grocy's web UI
+             */
+            url?: string | null;
+        };
+        /**
+         * GrocyChoreResult
+         * @description What Grocy knows about one chore.
+         */
+        GrocyChoreResult: {
+            /**
+             * Assigned To
+             * @description Display name of the user assigned to the next run, if Grocy returns one
+             */
+            assigned_to?: string | null;
+            /**
+             * Description
+             * @description The description, when one is set
+             */
+            description?: string | null;
+            /**
+             * Id
+             * @description The chore id
+             */
+            id: string;
+            /**
+             * Last Tracked
+             * @description When it was last done. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            last_tracked?: string | null;
+            /**
+             * Name
+             * @description The chore's name
+             */
+            name: string;
+            /**
+             * Next Estimated Execution
+             * @description When it is estimated to be done next; null when it is not scheduled. Grocy's local time, without a time zone offset; null when Grocy has no such date.
+             */
+            next_estimated_execution?: string | null;
+            /**
+             * Url
+             * @description The chore's page in Grocy's web UI
+             */
+            url?: string | null;
+        };
+        /**
          * GrocyWebhookPayload
          * @description Event payload emitted by Grocy when a product stock event occurs.
          */
@@ -1933,7 +2358,7 @@ export interface components {
             product_id: string;
             /**
              * Quantity
-             * @description Optional stock quantity delta. Accepted, not printed yet (see #284)
+             * @description Optional stock change, -1000000 to 1000000. Printed as the label's third line in the hub's language (for example 'Stock change: +2'); out of range, nothing is printed. Never a copy count
              */
             quantity?: number | null;
             /**
@@ -2223,6 +2648,12 @@ export interface components {
             /** Corner */
             corner: ("top_left" | "top_right" | "bottom_left") | null;
             /**
+             * Default Placement
+             * @description Where the sheet code of a new sheet of the type goes on this printer: the type's setting, `auto` resolved by `printable`.
+             * @enum {string}
+             */
+            default_placement: "margin" | "back_side" | "cell";
+            /**
              * Feed Mark
              * @description Whether the feed-direction mark prints, in the hub's current language.
              */
@@ -2307,12 +2738,15 @@ export interface components {
         /** NewSheetModel */
         NewSheetModel: {
             /**
-             * Id Placement
-             * @description Where the sheet ID is printed; `margin` if left out.
-             * @default margin
-             * @enum {string}
+             * Id Cell
+             * @description The preferred cell of a `cell` sheet's code; left out: the sheet type's. A cell that is taken or outside the sheet falls back to the first free one.
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_cell?: number | null;
+            /**
+             * Id Placement
+             * @description Where the sheet code goes. Left out: as the sheet type says (`auto` resolves to `margin` or `back_side` by the type's geometry). `back_side` prints no ID on the front; the code goes on the back of the liner in a pass of its own.
+             */
+            id_placement?: ("cell" | "margin" | "manual" | "back_side") | null;
             /**
              * Type
              * @description Sheet type key.
@@ -2337,6 +2771,14 @@ export interface components {
         };
         /** PageJobAccepted */
         PageJobAccepted: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /** PageJobQueued */
+        PageJobQueued: {
             /**
              * Job Id
              * Format: uuid
@@ -2522,6 +2964,44 @@ export interface components {
             version: number;
         };
         /**
+         * PrintConfirmationRead
+         * @description How a tape printer confirms that a label printed (#393), found by its last test print.
+         */
+        PrintConfirmationRead: {
+            /**
+             * Channel
+             * @description ``ipp``: the printer reports the job state; ``label_counter``: its label counter is read before and after; ``none``: neither works, a sent label counts as printed
+             * @enum {string}
+             */
+            channel: "ipp" | "label_counter" | "none";
+            /**
+             * Confirm Transport
+             * @description ``ipp``: labels go out as an IPP job; ``raw``: over TCP port 9100
+             * @enum {string}
+             */
+            confirm_transport: "ipp" | "raw";
+            /**
+             * Confirmed At
+             * @description When the test print found it
+             */
+            confirmed_at: string;
+            /**
+             * Counter Read
+             * @description ``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour and with every test print
+             */
+            counter_read: boolean;
+            /**
+             * Ipp Incomplete
+             * @description ``true`` when the printer took a test print's IPP job and did not complete it without a fault to explain it; test prints then stay on TCP 9100 until the host or port changes
+             */
+            ipp_incomplete: boolean;
+            /**
+             * Label Counter
+             * @description The label counter rose by exactly the labels sent
+             */
+            label_counter: boolean;
+        };
+        /**
          * PrintJobResponse
          * @description POST /api/v1/print 202 body — queue accepted.
          */
@@ -2604,6 +3084,12 @@ export interface components {
          * @description One page job of a sheet print (the counterpart of ``PreviewPage``).
          */
         PrintedPage: {
+            /**
+             * Back Side Pending
+             * @description The sheet's code goes on the back of the liner and is not confirmed yet: offer `POST /api/v1/sheets/{code}/back-side`.
+             * @default false
+             */
+            back_side_pending: boolean;
             /**
              * Cells
              * @description The cells the request's items take, in item order.
@@ -2751,6 +3237,11 @@ export interface components {
              */
             captured_at?: string | null;
             /**
+             * Error Flags
+             * @description Active RFC 3805 error flags of a fresh tape reading (e.g. ``doorOpen``, ``noPaper``) in bit order, for a client to put into words. Empty when the printer is ready, offline, not polled or stale, and for page printers.
+             */
+            error_flags?: string[];
+            /**
              * Error State
              * @description Active error flags as a string; None when printer is ready
              */
@@ -2772,6 +3263,13 @@ export interface components {
              */
             kind?: ("tape" | "page") | null;
             /**
+             * Label Length Mm
+             * @description Label length in mm of a ``die_cut`` roll; None for a continuous roll or when unknown
+             */
+            label_length_mm?: number | null;
+            /** @description Tray and time of the newest queued, printing or finished calibration page job of this printer; None for tape printers and when none exists. */
+            last_calibration_print?: components["schemas"]["CalibrationPrintRead"] | null;
+            /**
              * Last Error
              * @description Exception message from the most recent failed probe
              */
@@ -2781,8 +3279,18 @@ export interface components {
              * @description Age of the cached reading in seconds; for an offline page printer, since its last successful reading
              */
             last_probe_age_s?: number | null;
+            /**
+             * Last Sheet Tray
+             * @description Tray key of the newest queued, printing or finished sheet page job of this printer (any API key); None for tape printers and when none exists. Filled on every branch of the status, also for an unpolled or stale printer.
+             */
+            last_sheet_tray?: string | null;
             /** Markers */
             markers?: components["schemas"]["MarkerRead"][] | null;
+            /**
+             * Media Kind
+             * @description Kind of the loaded roll, derived from the media name the printer reports: ``continuous`` (width only) or ``die_cut`` (a label length is named); None when no roll is loaded, the printer reports nothing recognisable, or the status is stale or unpolled. Printing on a ``die_cut`` roll is refused with 409 ``media_type_mismatch``.
+             */
+            media_kind?: ("continuous" | "die_cut") | null;
             /**
              * Note
              * @description Human-readable hint, e.g. 'No probe yet'
@@ -2984,6 +3492,7 @@ export interface components {
              * @default []
              */
             secondary: string[];
+            swatch?: components["schemas"]["SpoolSwatch"] | null;
             /** Title */
             title?: string | null;
         };
@@ -3050,6 +3559,62 @@ export interface components {
              * @enum {string}
              */
             severity: "report" | "warning" | "error";
+        };
+        /**
+         * RenderCheckItem
+         * @description One cart item: how it is drawn and which integration item feeds it.
+         */
+        RenderCheckItem: {
+            content_type: components["schemas"]["ContentType"];
+            lookup: components["schemas"]["RenderCheckLookup"];
+        };
+        /**
+         * RenderCheckLookup
+         * @description The integration item a label is drawn from.
+         */
+        RenderCheckLookup: {
+            /** App */
+            app: string;
+            /** Identifier */
+            identifier: string;
+        };
+        /**
+         * RenderCheckRequest
+         * @description Cart items to check against one tape width and layout.
+         */
+        RenderCheckRequest: {
+            /** Items */
+            items: components["schemas"]["RenderCheckItem"][];
+            layout_preset?: components["schemas"]["QlLayoutPreset"] | null;
+            orientation?: components["schemas"]["LabelOrientation"] | null;
+            /** Tape Mm */
+            tape_mm: number;
+        };
+        /**
+         * RenderCheckResponse
+         * @description One result per request item, in request order.
+         */
+        RenderCheckResponse: {
+            /** Results */
+            results: components["schemas"]["RenderCheckResult"][];
+        };
+        /**
+         * RenderCheckResult
+         * @description Verdict for the item at ``index`` of the request.
+         */
+        RenderCheckResult: {
+            /** Error Code */
+            error_code?: string | null;
+            /** Error Detail */
+            error_detail?: {
+                [key: string]: unknown;
+            } | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Index */
+            index: number;
+            /** Ok */
+            ok: boolean;
         };
         /**
          * ReprintHint
@@ -3127,6 +3692,24 @@ export interface components {
              */
             total: number;
         };
+        /** ResolveAllRequest */
+        ResolveAllRequest: {
+            /**
+             * Expected Cells
+             * @description The unconfirmed cells the caller showed, in any order. When the sheet's unconfirmed cells are not exactly these now, also with the same number, nothing is settled (409 unconfirmed_count_changed).
+             */
+            expected_cells?: number[] | null;
+            /**
+             * Expected Count
+             * @description The number of unconfirmed cells the caller saw. When the sheet has a different number now, nothing is settled (409 unconfirmed_count_changed).
+             */
+            expected_count?: number | null;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "printed" | "not_printed";
+        };
         /** ResolveRequest */
         ResolveRequest: {
             /** Cells */
@@ -3192,14 +3775,14 @@ export interface components {
         };
         /**
          * SNMPConfig
-         * @description Verschachtelt — konsistent mit altem YAML-Schema.
+         * @description SNMP status discovery of a tape printer. The community is write-only (#296).
          */
         SNMPConfig: {
             /**
              * Community
-             * @default public
+             * @description Write-only (#296). Omitted or null keeps the stored community (``public`` on create), but only while host and port stay the same: an update that changes either must send the community again (422 ``snmp_community_required``), so a stored community is never sent to a new host. A non-empty string replaces it. Responses never carry it; they report ``connection.snmp.community_set`` instead.
              */
-            community: string | null;
+            community?: string | null;
             /**
              * Discover
              * @default false
@@ -3266,19 +3849,40 @@ export interface components {
                 error_message: string;
             };
         };
+        /**
+         * SheetBackPrint
+         * @description The printer and tray of a back-side job.
+         */
+        SheetBackPrint: {
+            /**
+             * Printer
+             * @description Printer slug or UUID (a page printer).
+             */
+            printer: string;
+            /**
+             * Tray
+             * @description Tray of the job; left out: the printer's default.
+             */
+            tray?: string | null;
+        };
         /** SheetCreate */
         SheetCreate: {
             /**
+             * Id Cell
+             * @description `cell` only: the preferred cell of the ID label; left out, the sheet type's. A cell that is taken or outside the sheet falls back to the first free one.
+             */
+            id_cell?: number | null;
+            /**
              * Id Placement
-             * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves the first free cell for the ID label and queues an ID-only job (`job_id` in the response).
+             * @description Where the sheet ID goes. `margin` (the default) and `manual` only store the sheet; the margin ID is printed by the first job that prints onto it. `cell` needs a page printer: it reserves a cell for the ID label (`id_cell`, else the type's, while it is free; otherwise the first free one) and queues an ID-only job (`job_id` in the response). `back_side` needs a page printer too: it queues the job that prints the code on the back of the liner; the code counts as printed only after `POST /api/v1/sheets/{code}/back-side/confirm`.
              * @enum {string}
              */
-            id_placement?: "cell" | "margin" | "manual";
+            id_placement?: "cell" | "margin" | "manual" | "back_side";
             /** Note */
             note?: string | null;
             /**
              * Printer
-             * @description Printer slug or UUID. Required for `cell`, ignored otherwise.
+             * @description Printer slug or UUID. Required for `cell` and `back_side`, ignored otherwise.
              */
             printer?: string | null;
             /**
@@ -3305,6 +3909,16 @@ export interface components {
          */
         SheetCreated: {
             /**
+             * Back Side Missing
+             * @description An active sheet whose wanted code on the back of the liner is not confirmed yet: `id_placement` `back_side` with `id_printed` false, or an extra code on the back that is `pending` (`back_side_state`). A sheet that never asked for a code on the back misses nothing.
+             */
+            back_side_missing: boolean;
+            /**
+             * Back Side State
+             * @description An extra code on the back of a sheet whose code is elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
+             */
+            back_side_state: ("pending" | "confirmed") | null;
+            /**
              * Cells
              * @description Every cell that is not free, by cell number.
              */
@@ -3326,7 +3940,7 @@ export interface components {
              * Id Placement
              * @enum {string}
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_placement: "cell" | "margin" | "manual" | "back_side";
             /** Id Printed */
             id_printed: boolean;
             /**
@@ -3475,11 +4089,22 @@ export interface components {
              * @default []
              */
             secondary: string[];
+            swatch?: components["schemas"]["SpoolSwatch"] | null;
             /** Title */
             title?: string | null;
         };
         /** SheetRead */
         SheetRead: {
+            /**
+             * Back Side Missing
+             * @description An active sheet whose wanted code on the back of the liner is not confirmed yet: `id_placement` `back_side` with `id_printed` false, or an extra code on the back that is `pending` (`back_side_state`). A sheet that never asked for a code on the back misses nothing.
+             */
+            back_side_missing: boolean;
+            /**
+             * Back Side State
+             * @description An extra code on the back of a sheet whose code is elsewhere: `pending` (queued, not confirmed), `confirmed`, or `null` (never asked for). Always `null` for a `back_side` sheet, which uses `id_printed`.
+             */
+            back_side_state: ("pending" | "confirmed") | null;
             /**
              * Cells
              * @description Every cell that is not free, by cell number.
@@ -3502,7 +4127,7 @@ export interface components {
              * Id Placement
              * @enum {string}
              */
-            id_placement: "cell" | "margin" | "manual";
+            id_placement: "cell" | "margin" | "manual" | "back_side";
             /** Id Printed */
             id_printed: boolean;
             /** Label H */
@@ -3535,6 +4160,11 @@ export interface components {
         };
         /** SheetSummary */
         SheetSummary: {
+            /**
+             * Back Side Missing
+             * @description An active sheet whose wanted code on the back of the liner is not confirmed yet: `id_placement` `back_side` with `id_printed` false, or an extra code on the back that is `pending` (`back_side_state`). A sheet that never asked for a code on the back misses nothing.
+             */
+            back_side_missing: boolean;
             /** Code */
             code: string;
             /** Free */
@@ -3604,6 +4234,8 @@ export interface components {
             allow_qr: boolean;
             /** Archived At */
             archived_at: string | null;
+            /** @description The vendor print on the back of the liner; `null` for a plain liner. */
+            backing_design: components["schemas"]["BackingDesignRead"] | null;
             /** Created At */
             created_at: string | null;
             /** Current Version */
@@ -3617,6 +4249,29 @@ export interface components {
              * @description Advisory codes about the current geometry.
              */
             hints: string[];
+            /**
+             * Id Cell
+             * @description The preferred cell of a `cell` sheet's code.
+             */
+            id_cell: number | null;
+            /**
+             * Id Placement
+             * @description Where the sheet code of a new sheet goes. `auto` resolves to `margin` or `back_side` (see `id_placement_resolved`).
+             * @enum {string}
+             */
+            id_placement: "auto" | "margin" | "back_side" | "cell";
+            /**
+             * Id Placement Auto
+             * @description What `auto` resolves to for this type, whatever `id_placement` is set to: `margin` when a margin band can hold the code, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_auto: "margin" | "back_side";
+            /**
+             * Id Placement Resolved
+             * @description `id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_resolved: "margin" | "back_side" | "cell";
             /** Key */
             key: string;
             /** Notes */
@@ -3654,14 +4309,60 @@ export interface components {
             versions: components["schemas"]["VersionRead"][];
         };
         /**
+         * SheetTypeNotice
+         * @description A shipped sheet type was marked verified or got new dimensions (spec 10i, R-334-4).
+         *
+         *     Information only: it carries no secret and no write path. ``code`` is the type's product
+         *     code without its pack-size suffix, as it stood when the notice was written.
+         */
+        SheetTypeNotice: {
+            /** At */
+            at: string;
+            /**
+             * Code
+             * @description Product code of the type, or its key when it has none.
+             */
+            code: string;
+            /**
+             * Id
+             * @description Stable id of the notice; a browser keeps its read state under it.
+             */
+            id: string;
+            /**
+             * Key
+             * @description Key of the sheet type the notice is about.
+             */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "sheet_type_verified" | "sheet_type_updated";
+        };
+        /**
          * SheetTypePatch
          * @description Only the fields the client sends change. ``null`` clears a nullable field.
          */
         SheetTypePatch: {
             /** Allow Qr */
             allow_qr?: boolean;
+            /**
+             * Backing Design
+             * @description Key of a backing design; `null` clears it (plain liner).
+             */
+            backing_design?: string | null;
             /** Description */
             description?: string | null;
+            /**
+             * Id Cell
+             * @description Checked against the current version's cell count.
+             */
+            id_cell?: number | null;
+            /**
+             * Id Placement
+             * @enum {string}
+             */
+            id_placement?: "auto" | "margin" | "back_side" | "cell";
             /** Notes */
             notes?: string | null;
             /** Prefix */
@@ -3683,6 +4384,8 @@ export interface components {
             allow_qr: boolean;
             /** Archived At */
             archived_at: string | null;
+            /** @description The vendor print on the back of the liner; `null` for a plain liner. */
+            backing_design: components["schemas"]["BackingDesignRead"] | null;
             /** Created At */
             created_at: string | null;
             /** Current Version */
@@ -3696,6 +4399,29 @@ export interface components {
              * @description Advisory codes about the current geometry.
              */
             hints: string[];
+            /**
+             * Id Cell
+             * @description The preferred cell of a `cell` sheet's code.
+             */
+            id_cell: number | null;
+            /**
+             * Id Placement
+             * @description Where the sheet code of a new sheet goes. `auto` resolves to `margin` or `back_side` (see `id_placement_resolved`).
+             * @enum {string}
+             */
+            id_placement: "auto" | "margin" | "back_side" | "cell";
+            /**
+             * Id Placement Auto
+             * @description What `auto` resolves to for this type, whatever `id_placement` is set to: `margin` when a margin band can hold the code, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_auto: "margin" | "back_side";
+            /**
+             * Id Placement Resolved
+             * @description `id_placement` resolved without a printer: `auto` is `margin` when a margin band of 4 mm fits with the assumed 5 mm hardware margin, otherwise `back_side`.
+             * @enum {string}
+             */
+            id_placement_resolved: "margin" | "back_side" | "cell";
             /** Key */
             key: string;
             /** Notes */
@@ -3736,13 +4462,70 @@ export interface components {
             key: string;
         };
         /**
+         * SpoolSwatch
+         * @description What the swatch label prints for one spool; every field but the id is optional.
+         */
+        SpoolSwatch: {
+            /** Bed C */
+            bed_c?: number | null;
+            /**
+             * Color Hexes
+             * @default []
+             */
+            color_hexes: string[];
+            /** Color Name */
+            color_name?: string | null;
+            /** Density G Cm3 */
+            density_g_cm3?: number | null;
+            /** Diameter Mm */
+            diameter_mm?: number | null;
+            /** Drying C */
+            drying_c?: number | null;
+            /** Drying H */
+            drying_h?: [
+                number,
+                number
+            ] | null;
+            /** Flow Ratio */
+            flow_ratio?: number | null;
+            /**
+             * Language
+             * @default en
+             * @enum {string}
+             */
+            language: "en" | "de";
+            /** Location */
+            location?: string | null;
+            /** Lot */
+            lot?: string | null;
+            /** Net Weight G */
+            net_weight_g?: number | null;
+            /** Nozzle C */
+            nozzle_c?: [
+                number,
+                number
+            ] | null;
+            /** Opened */
+            opened?: string | null;
+            /** Pressure Advance */
+            pressure_advance?: number | null;
+            /** Spool Id */
+            spool_id: number;
+            /** Spool Weight G */
+            spool_weight_g?: number | null;
+            /** Title */
+            title?: string | null;
+            /** Vendor */
+            vendor?: string | null;
+        };
+        /**
          * SpoolmanWebhookPayload
          * @description Event payload emitted by Spoolman when a spool is updated.
          */
         SpoolmanWebhookPayload: {
             /**
              * Quantity
-             * @description Optional remaining filament in grams. Accepted, not printed yet (see #284)
+             * @description Optional remaining filament in grams, 0 to 1000000. Printed as the label's third line in the hub's language (for example '851g remaining'); out of range, nothing is printed. Never a copy count
              */
             quantity?: number | null;
             /**
@@ -3755,6 +4538,20 @@ export interface components {
              * @description Event type string (e.g. 'updated', 'created', 'consumed')
              */
             type: string;
+        };
+        /**
+         * StripMm
+         * @description A free strip on the back of the liner, in mm, in back-side coordinates (R-350-4).
+         */
+        StripMm: {
+            /** H Mm */
+            h_mm: number;
+            /** W Mm */
+            w_mm: number;
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
         };
         /** TapeMedia */
         TapeMedia: {
@@ -3856,7 +4653,7 @@ export interface components {
             reprint_to: number | null;
             /**
              * State
-             * @description `awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed; the labels after it were not started. With `stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a QL-820NWB reports a DK roll end is not verified); with `refused` the printer refused before anything was sent (wrong tape, no tape, cover open, unreachable). `POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), and a stopped run cannot be reprinted after it.
+             * @description `awaiting_confirmation`: the next sub-job starts after `POST .../continue`. `stopped`: a group failed; the labels after it were not started. With `stop_kind` `unknown` the group's outcome is unknown (an error while sending, or the status check after the group: on a PT the SNMP `noPaper` bit at tape end; whether a QL-820NWB reports a DK roll end is not verified); with `refused` the labels from `reprint_from` on did not print: the printer refused before anything was sent (wrong tape, no tape, cover open, unreachable), or it confirmed only the labels before them (#393: `labels_not_confirmed`, or a blocking bit such as `tape_empty` with a known count; the confirmed labels are done). `POST .../reprint` picks it up, `POST .../discard` gives it up. Held runs are kept in memory: a hub restart fails every label that waited for a confirmation (`tape_run_interrupted`), and a stopped run cannot be reprinted after it.
              * @enum {string}
              */
             state: "printing" | "awaiting_confirmation" | "stopped";
@@ -3867,7 +4664,7 @@ export interface components {
             stop_code: string | null;
             /**
              * Stop Kind
-             * @description After a stop: the group's outcome is unknown, or nothing of it was sent.
+             * @description After a stop: `unknown`, the group's outcome is unknown; `refused`, the labels from `reprint_from` on did not print (nothing was sent, or the printer confirmed only the labels before them).
              */
             stop_kind: ("unknown" | "refused") | null;
             /** Sub Job Size */
@@ -3920,6 +4717,8 @@ export interface components {
             label: string;
             /** Load Hint */
             load_hint: string | null;
+            /** @description How the tray takes paper; None while nobody has set it. */
+            loading?: components["schemas"]["TrayLoadingRead"] | null;
             /**
              * Media
              * @description Media the printer reports in this tray, if any.
@@ -3947,6 +4746,37 @@ export interface components {
             label: string;
             /** Load Hint */
             load_hint?: string | null;
+        };
+        /** TrayLoadingPut */
+        TrayLoadingPut: {
+            /**
+             * Leading Edge
+             * @enum {string}
+             */
+            leading_edge: "top" | "bottom";
+            /**
+             * Print Side
+             * @enum {string}
+             */
+            print_side: "up" | "down";
+        };
+        /**
+         * TrayLoadingRead
+         * @description How the tray takes paper (#350): set once by the guided test, changed by an admin.
+         */
+        TrayLoadingRead: {
+            /**
+             * Leading Edge
+             * @description The edge of the printed image that lands at the sheet edge put in first.
+             * @enum {string}
+             */
+            leading_edge: "top" | "bottom";
+            /**
+             * Print Side
+             * @description The face that gets printed, as the sheet lies in the tray.
+             * @enum {string}
+             */
+            print_side: "up" | "down";
         };
         /**
          * TrayRead
@@ -3989,8 +4819,17 @@ export interface components {
         TypeDoc: {
             /** Allow Qr */
             allow_qr: boolean;
+            backing_design?: components["schemas"]["BackingDesignDoc"] | null;
             /** Description */
             description?: string | null;
+            /** Id Cell */
+            id_cell?: number | null;
+            /**
+             * Id Placement
+             * @default auto
+             * @enum {string}
+             */
+            id_placement: "auto" | "margin" | "back_side" | "cell";
             /** Key */
             key: string;
             /** Notes */
@@ -4105,7 +4944,10 @@ export interface components {
         app__api__routes__admin_printers_api__PrinterRead: {
             /** Backend */
             backend: string;
-            /** Connection */
+            /**
+             * Connection
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             */
             connection: {
                 [key: string]: unknown;
             };
@@ -4181,7 +5023,10 @@ export interface components {
         app__schemas__printer__PrinterRead: {
             /** Backend */
             backend: string;
-            /** Connection */
+            /**
+             * Connection
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             */
             connection: {
                 [key: string]: unknown;
             };
@@ -4233,6 +5078,8 @@ export interface components {
             pause?: components["schemas"]["PauseRead"] | null;
             /** Paused */
             paused: boolean;
+            /** @description Tape printers (#393): how the printer confirms a print, found by its last test print; null when it was never test-printed since 1.7.0 (the hub then probes IPP when it sends) */
+            print_confirmation?: components["schemas"]["PrintConfirmationRead"] | null;
             /**
              * Slug
              * @default
@@ -4748,6 +5595,149 @@ export interface operations {
             };
         };
     };
+    list_backing_designs_api_v1_backing_designs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackingDesignRead"][];
+                };
+            };
+        };
+    };
+    create_backing_design_api_v1_backing_designs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackingDesignCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackingDesignRead"];
+                };
+            };
+            /** @description The key exists (`backing_design_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request: a strip is smaller than 1 mm or reaches outside the page (`invalid_geometry`, `error_detail.field` names it, e.g. `strips.0`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_backing_design_api_v1_backing_designs__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Design key, e.g. `avery-zweckform-ultragrip`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Backing design not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A sheet type uses the design (`backing_design_in_use`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_backing_design_api_v1_backing_designs__key__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Design key, e.g. `avery-zweckform-ultragrip`. */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackingDesignPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackingDesignRead"];
+                };
+            };
+            /** @description Backing design not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request: a strip is smaller than 1 mm or reaches outside the page (`invalid_geometry`, `error_detail.field` names it, e.g. `strips.0`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     held_runs_api_v1_batches_runs_held_get: {
         parameters: {
             query?: {
@@ -5026,6 +6016,8 @@ export interface operations {
                 since?: string | null;
                 /** @description Maximum number of jobs to return (1-200, default 50) */
                 limit?: number;
+                /** @description Sort by creation time: ``oldest`` first (default) or ``newest`` first. With ``newest`` and a ``limit`` the latest jobs come back, not the first ones. */
+                order?: "oldest" | "newest";
             };
             header?: never;
             path?: never;
@@ -5217,6 +6209,80 @@ export interface operations {
             };
         };
     };
+    grocy_battery_api_v1_lookup_grocy_batteries__battery_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric Grocy id */
+                battery_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrocyBatteryResult"];
+                };
+            };
+            /** @description The request names an integration this hub does not have. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The integration failed or its upstream could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    grocy_chore_api_v1_lookup_grocy_chores__chore_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The numeric Grocy id */
+                chore_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrocyChoreResult"];
+                };
+            };
+            /** @description The request names an integration this hub does not have. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The integration failed or its upstream could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     lookup_api_v1_lookup__app___entity_id__get: {
         parameters: {
             query?: never;
@@ -5238,13 +6304,38 @@ export interface operations {
                     "application/json": components["schemas"]["LookupResult"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The request names an integration this hub does not have. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description The integration failed or its upstream could not be reached. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_notices_api_v1_notices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["SheetTypeNotice"][];
                 };
             };
         };
@@ -5271,7 +6362,14 @@ export interface operations {
                     "application/json": components["schemas"]["PrintJobResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `printer_error`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `tape_label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5279,6 +6377,20 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `no_tape_printer`: no tape printer is configured. Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -5307,7 +6419,28 @@ export interface operations {
                     "application/json": components["schemas"]["BatchResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description `printer_slug_mismatch`: `printer_slug` names another printer. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `printer_not_found`. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `media_kind_mismatch`: a page printer (IPP). Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `printer_error`, `unsupported_tape`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `tape_label_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5315,6 +6448,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+            /** @description `too-many-queued-runs` or `rate_limit_exceeded`, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `router_not_initialized`, `printer_unreachable` or `service_not_initialized`. Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6170,15 +7324,172 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline`, `no-tape-loaded` (tape printer), `media-unknown` (page printer) or `printer-unavailable`. */
+            /** @description `printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer the hub does not poll), `printer-offline` (also an SNMP failure of a tape printer), `media-unknown` (page printer) or `printer-unavailable`. `unsupported-tape`: the printer model does not take the loaded tape; it carries the loaded width in `extensions.tape_mm`. Known printer or render errors: `printer-disabled`, `tape-mismatch`, `media-type-mismatch`, `tape-empty`, `no-tape-loaded`, `printer-cover-open`, `printer-error`, `printer-offline`, `unsupported-tape`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. `qr-payload-too-long`: the printer link does not fit the fixed QR code of the loaded tape (QL 62 mm). */
+            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`, `tape-label-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Known printer or render errors: `integration-lookup-failed`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_tray_loading_api_v1_printers__printer_id__trays__tray__loading_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrayLoadingPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrayLoadingRead"];
+                };
+            };
+            /** @description These credentials may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Already set and the key is not admin (`tray_loading_already_set`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request or an unknown tray (`tray_unknown`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    print_tray_loading_page_api_v1_printers__printer_id__trays__tray__loading_test_page_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Printer id (a page printer). */
+                printer_id: string;
+                /** @description Tray key. */
+                tray: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobQueued"];
+                };
+            };
+            /** @description These credentials may not use this printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown printer (`printer_not_found`). */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A tape printer (`media_kind_mismatch`) or unknown to the print queue (`printer-unavailable`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description An unknown or disabled tray (`tray_unknown`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    render_check_api_v1_render_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderCheckResponse"];
+                };
+            };
+            /** @description Unsupported tape width or orientation (`unsupported_tape`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid body: no items, more than 50, or an identifier too long */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The key's rate limit cannot cover the lookups (`rate_limit_exceeded`) */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6271,6 +7582,13 @@ export interface operations {
                     "application/json": components["schemas"]["SettingView"][];
                 };
             };
+            /** @description Request body larger than 64 KiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     export_settings_api_v1_settings_export_get: {
@@ -6321,6 +7639,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["IntegrationTestResult"];
                 };
+            };
+            /** @description Request body larger than 64 KiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -6606,7 +7931,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetTypeRead"];
                 };
             };
-            /** @description Sheet type not found. */
+            /** @description Sheet type or backing design not found. */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6615,7 +7940,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description A field is invalid, `id_cell` is outside the sheet (`id_cell_out_of_range`) or the design is for another page size (`backing_design_page_size_mismatch`). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6914,7 +8239,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`) or unknown to the queue. */
+            /** @description Sheet type is archived, no cell is free for the ID (`insufficient_cells`), the printer is disabled (`printer_disabled`), a tape printer (`media_kind_mismatch`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6923,7 +8248,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description A cell number is outside the sheet, or `cell` without a printer. */
+            /** @description A cell number is outside the sheet, `cell` or `back_side` without a printer, or the code does not fit a free strip on the back (`back_strip_does_not_fit`). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7087,6 +8412,119 @@ export interface operations {
             };
         };
     };
+    print_back_side_api_v1_sheets__code__back_side_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetBackPrint"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobQueued"];
+                };
+            };
+            /** @description These credentials may not use the printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The sheet is discarded (`sheet_discarded`), its code cannot go on the back (`id_placement_mismatch`: an unprinted `cell` sheet, or an unprinted margin sheet whose margin ID is in flight), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request, an unknown tray (`tray_unknown`), or the code does not fit a free strip on the back (`back_strip_does_not_fit`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    confirm_back_side_api_v1_sheets__code__back_side_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The sheet is discarded (`sheet_discarded`), or its code does not go on the back and no extra code on the back was printed (`id_placement_mismatch`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
     mark_cells_api_v1_sheets__code__cells_mark_post: {
         parameters: {
             query?: never;
@@ -7185,6 +8623,60 @@ export interface operations {
                 };
             };
             /** @description A cell number is outside the sheet. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
+    resolve_all_cells_api_v1_sheets__code__cells_resolve_all_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveAllRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetRead"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet is discarded, nothing is waiting for confirmation (no_unconfirmed_cells), or the count differs from expected_count or the cells from expected_cells (unconfirmed_count_changed, error_detail.unconfirmed holds the current number). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The request body is invalid. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7308,6 +8800,69 @@ export interface operations {
             };
         };
     };
+    print_margin_id_api_v1_sheets__code__margin_id_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Sheet code, e.g. `L4736-0002`. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetBackPrint"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageJobQueued"];
+                };
+            };
+            /** @description These credentials may not use the printer. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Sheet not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description The sheet is discarded (`sheet_discarded`), it is not a printed `margin` sheet or its margin code is in flight (`id_placement_mismatch`), the printer is a tape printer (`media_kind_mismatch`), disabled (`printer_disabled`), unknown to the queue (`printer-unavailable`) or its device changed (`printer-identity-mismatch`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+            /** @description Invalid request, an unknown tray (`tray_unknown`), or no margin band is deep enough on this printer (`margin_id_does_not_fit`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SheetApiErrorResponse"];
+                };
+            };
+        };
+    };
     get_system_logs_api_v1_system_logs_get: {
         parameters: {
             query?: {
@@ -7363,7 +8918,28 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookAcceptedResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The webhook key is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `app-lookup-not-found` (problem body): unknown spool or product. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `printer_error`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `tape_label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7371,6 +8947,131 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
+            };
+            /** @description Above the per-key rate limit, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The webhook key is not configured, no enabled tape printer, or `integration_not_configured` (problem body). Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    grocy_label_webhook_api_v1_webhook_grocy_label_post: {
+        parameters: {
+            query?: {
+                /** @description A Labelyard API key with the print scope (D24, ADR 0027). Read from a literal 'token=' parameter only; the X-Label-Hub-Key header wins when both are sent. The hub hides the value in its own logs */
+                token?: string;
+            };
+            header?: {
+                /** @description The same key as a header, for callers that can send headers */
+                "X-Label-Hub-Key"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The JSON object Grocy sends with LABEL_PRINTER_HOOK_JSON=true, at most 1 MiB. Fields not listed are ignored */
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Battery
+                     * @description The battery name, for a battery label
+                     */
+                    battery?: string | null;
+                    /**
+                     * Chore
+                     * @description The chore name, for a chore label
+                     */
+                    chore?: string | null;
+                    /**
+                     * Due Date
+                     * @description Grocy's localised due date line of a stock entry, for example 'DD: 2026-12-01'. Printed as the third line of a stock entry label
+                     */
+                    due_date?: string | null;
+                    /**
+                     * Grocycode
+                     * @description The Grocycode of the object, for example 'grcy:p:12' (product), 'grcy:p:12:63a1b2c3d4e5f' (stock entry), 'grcy:c:3' (chore), 'grcy:b:4' (battery) or 'grcy:r:5' (recipe). It decides the label type and is the QR code
+                     */
+                    grocycode: string;
+                    /**
+                     * Product
+                     * @description The product name, for a product or stock entry label
+                     */
+                    product?: string | null;
+                    /**
+                     * Recipe
+                     * @description The recipe name, for a recipe label
+                     */
+                    recipe?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookAcceptedResponse"];
+                };
+            };
+            /** @description ``invalid_token``: the token is missing, unknown, disabled or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ``insufficient_scope`` (a read key), ``token_scope_too_wide`` (an admin key) or ``printer_not_allowed`` (the key may not use the label's printer; the message does not name it). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ``body_too_large``: the body is larger than 1 MiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ``json_required``: set LABEL_PRINTER_HOOK_JSON=true in Grocy. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ``rate_limit_exceeded``: the key's per-minute limit, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description ``grocy_label_disabled`` (the webhook is switched off), ``grocy_label_printer_unavailable`` (the mapped printer is unknown or disabled), ``grocy_label_sheet_type_unavailable`` (a page printer whose sheet type is not set, unknown or archived) or no enabled tape printer. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -7398,7 +9099,28 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookAcceptedResponse"];
                 };
             };
-            /** @description Validation Error */
+            /** @description The webhook key is wrong. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `app-lookup-not-found` (problem body): unknown spool or product. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `printer_disabled`, `tape_mismatch`, `media_type_mismatch`, `tape_empty`, `no_tape_loaded`, `printer_cover_open`, `printer_error`, `unsupported_tape`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `tape_label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7406,6 +9128,27 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
+            };
+            /** @description Above the per-key rate limit, with Retry-After. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The webhook key is not configured, no enabled tape printer, or `integration_not_configured` (problem body). Known printer or render errors: `printer_offline`, `snmp_query_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

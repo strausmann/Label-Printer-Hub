@@ -37,10 +37,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import hashlib
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -55,6 +56,7 @@ from app.models.printer_tray import PrinterTray
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
+from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
 from app.printer_models.registry import ModelRegistry
 from app.repositories import printer_identity as identity_repo
 from app.schemas.label_layout import parse_layout_defaults
@@ -118,7 +120,7 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
         port=int(conn.get("port", 9100)),
         snmp=SNMPConfig(
             discover=snmp_raw.get("discover", False),
-            community=snmp_raw.get("community", "public"),
+            community=snmp_raw.get("community") or "public",
         ),
         queue=QueueConfig(timeout_s=getattr(p, "queue_timeout_s", 30)),
         cut_defaults=CutDefaults(
@@ -217,6 +219,13 @@ class _Wiring:
     make_producer: Callable[[], Awaitable[IppStatusProducer]] | None = None
 
 
+def _tape_address(connection: Mapping[str, Any] | None) -> tuple[object, object]:
+    """Host and port of a tape printer's connection (as ``printer_admin_service._address``,
+    whose change clears the stored confirmation record)."""
+    conn = connection or {}
+    return conn.get("host"), conn.get("port", 9100)
+
+
 class PrinterRuntime:
     """Attaches and detaches printers; owns their backends, clients, states and producers.
 
@@ -246,6 +255,10 @@ class PrinterRuntime:
         self._retries: dict[UUID, asyncio.Task[None]] = {}
         self.reconciles: set[asyncio.Task[None]] = set()
         self.roll_tracker = RollTracker(getattr(app.state, "event_bus", None), session_factory)
+        # #389: a job sent to a roll records that roll's colour too.
+        queue = getattr(app.state, "print_queue", None)
+        if queue is not None and getattr(type(queue), "set_roll_colour", None) is not None:
+            queue.set_roll_colour(self.roll_tracker.colour_of)
         self._wired: dict[UUID, _Wiring] = {}
         self._ipp_limiter = asyncio.Semaphore(_IPP_PROBE_CONCURRENCY)
         self._tape_registry = TapeRegistry()
@@ -384,6 +397,8 @@ class PrinterRuntime:
         wirings = list(self._wired.values())
         try:
             for wiring in wirings:
+                if wiring.service is not None:
+                    await wiring.service.cancel_deferred()  # #281: they end failed_restart
                 await self._stop_producer(wiring)
             await self._queue().stop(
                 timeout_s=shutdown_wait_s(
@@ -469,6 +484,7 @@ class PrinterRuntime:
             self._router.register(cfg)
             registered = True
             backend = self._router.get(cfg.slug)
+            self._wire_confirmation(backend, printer)
             driver: Any = driver_cls(backend=backend)
             queue_printer = driver.make_queue_printer(self._tape_registry, printer_id=printer.id)
             service = PrintService(
@@ -480,6 +496,8 @@ class PrinterRuntime:
                 backend=cast(Any, backend),
                 store=self._app.state.job_store,
                 layout_defaults=parse_layout_defaults(printer.layout_defaults),
+                event_bus=getattr(self._app.state, "event_bus", None),
+                roll_colour=self.roll_tracker.colour_of,
             )
             self._router.register_service(cfg.slug, service)
             if self._started:
@@ -635,6 +653,16 @@ class PrinterRuntime:
             return
         try:
             await self._cancel_retry(printer_id)
+            if wiring.service is not None:
+                # #281: a deferred job still being prepared ends failed_restart at once
+                # instead of printing through a stale wiring; the start-up recovery only
+                # catches what a crash or a failed (or slow) write left queued.
+                await wiring.service.cancel_deferred()
+            grocy_sheets = getattr(self._app.state, "grocy_sheet_labels", None)
+            if grocy_sheets is not None:
+                # #281 R-281-16: the same for Grocy labels on a page printer's sheets, before
+                # the re-attach's recovery could end a row whose task still reserves.
+                await grocy_sheets.cancel_for(printer_id)
             # The producer first: once stopped it cannot reach the queue's pause control
             # for a printer the queue has forgotten (ruling b).
             await self._stop_producer(wiring)
@@ -677,6 +705,51 @@ class PrinterRuntime:
             else:
                 del self._lock_users[printer_id]
                 self._locks.pop(printer_id, None)
+
+    def _wire_confirmation(self, backend: object, printer: Printer) -> None:
+        """#393: the backend sends the way the printer's last test print found to work, and a
+        new test print stores what it finds on the printer row.
+
+        The sink is bound to the address the backend was wired for: a test print still running
+        against the old host after an address change cannot write over the record the change
+        cleared (audit run 28, hardening note 1).
+        """
+        state = getattr(backend, "send_state", None)
+        if not isinstance(state, TapeSendState):
+            return
+        state.record = ConfirmationRecord.from_json(printer.print_confirmation)
+        state.sink = functools.partial(
+            self._store_confirmation, printer.id, address=_tape_address(printer.connection)
+        )
+
+    async def _store_confirmation(
+        self,
+        printer_id: UUID,
+        record: ConfirmationRecord,
+        *,
+        address: tuple[object, object] | None = None,
+    ) -> None:
+        """Write *record* to the printer row (#393). A gone row is left alone, and so is a row
+        whose host or port is no longer *address*, the one the writer was wired for."""
+        async with self._sessions()() as session:
+            row = await session.get(Printer, printer_id)
+            if row is None:
+                return
+            if address is not None and _tape_address(row.connection) != address:
+                _log.info(
+                    "Printer %s: print confirmation of its previous address not stored",
+                    printer_id,
+                )
+                return
+            row.print_confirmation = record.to_json()
+            session.add(row)
+            await session.commit()
+        _log.info(
+            "Printer %s: print confirmation %s (label counter %s)",
+            printer_id,
+            record.confirm_transport,
+            record.label_counter,
+        )
 
     async def _identity_sink(self, printer_id: UUID, observed: ObservedIdentity) -> IdentityOutcome:
         """The sink both status producers call after a successful probe (#231).

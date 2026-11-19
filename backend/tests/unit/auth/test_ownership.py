@@ -5,13 +5,15 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from app.auth.dependencies import AuthContext
 from app.auth.ownership import may_see, owner_only
 
-KEY = uuid4()
+# A fixed key: it appears in parametrize ids, which must be the same in every collection
+# (pytest-xdist workers compare them).
+KEY = UUID("0f1e2d3c-4b5a-4697-8877-665544332211")
 
 
 def _ctx(source: str, scope: str, key=KEY) -> AuthContext:

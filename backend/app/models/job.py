@@ -53,6 +53,10 @@ def json_at(path: str) -> str:
 # or the index cannot match.
 PAGE_SHEET_EXPR = json_at("$.detail.sheet_id")
 
+# The kind of a stored page payload (``sheet_page``, ``calibration_page``), for the index
+# ``ix_jobs_printer_kind_created`` (migration 20261115a1) and the query that reads it (#344).
+PAGE_KIND_EXPR = json_at("$.kind")
+
 
 class FiniteJSON(TypeDecorator[Any]):
     """A JSON column that refuses ``NaN`` and ``Infinity``.
@@ -79,6 +83,8 @@ class Job(SQLModel, table=True):
         # The sheet of a page job, for the in-flight rules (R11-1). Queries use the same
         # ``PAGE_SHEET_EXPR`` text or SQLite does not use the index.
         Index("ix_jobs_page_sheet", text(PAGE_SHEET_EXPR)),
+        # The newest page job of a printer by kind (#344): one seek, no sort.
+        Index("ix_jobs_printer_kind_created", "printer_id", text(PAGE_KIND_EXPR), "created_at"),
         CheckConstraint(
             f"state IN ({','.join(repr(s.value) for s in JobState)})",
             name="ck_jobs_state",

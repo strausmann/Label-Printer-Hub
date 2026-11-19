@@ -159,6 +159,14 @@ Sekunden, die auf Spoolman gewartet wird.
 
 Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sperrt das Feld dort.
 
+### `LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE`
+
+Standard: `material`
+
+Was der schwarze Balken des Spulen-Etiketts zeigt: `material` (Standard) oder den Filamentnamen `name`. Die Zeile darunter zeigt jeweils das andere.
+
+Auch in der Weboberfläche einstellbar; ein hier gesetzter Wert gewinnt und sperrt das Feld dort.
+
 ### `LABELYARD_SERVER_PORT`
 
 Standard: `8000`
@@ -170,6 +178,18 @@ Der Port, auf dem der Container lauscht. Den liest der Startbefehl des Container
 Standard: `INFO`
 
 Einer der Werte `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Jeder andere Wert bricht den Start mit einem Fehler ab. Bei `DEBUG` sind die eigenen Logger des Hubs ausführlich, der Datenbanktreiber bleibt aber auf `INFO`, SQL-Anweisungen und ihre Werte landen also nicht im Log. Bibliotheken von Dritten protokollieren bei `DEBUG` sehr wohl: Lies ein Debug-Log, bevor du es weitergibst.
+
+### `LABELYARD_ACCESS_LOG`
+
+Standard: `True`
+
+Schreibt je HTTP-Anfrage eine Zeile im nginx-Format „combined“ auf stdout, damit CrowdSec und andere Log-Werkzeuge sie lesen können. Von einem Schlüssel erscheint nur sein öffentliches Präfix. `false` schaltet das Zugriffsprotokoll ganz ab. Siehe [Sicherheit](/de/admin/security/#zugriffsprotokoll).
+
+### `LABELYARD_ACCESS_LOG_PROBES`
+
+Standard: `False`
+
+Schreibt auch erfolgreiche Zustandsprüfungen (`/healthz` und `/readiness` mit Antwort 2xx oder 503) ins Zugriffsprotokoll. Standardmäßig aus, damit Prüfaufrufe es nicht fluten; ein abgewiesener Schlüssel an `/readiness` erscheint in jedem Fall.
 
 ### `LABELYARD_SIGN_IN_LIMIT_PER_MINUTE`
 

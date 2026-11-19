@@ -43,8 +43,78 @@ let stopUpdateChecks: (() => void) | null = null;
 let checkedFor: string | null = null;
 // Called when a worker starts waiting; the Reload button waits for it with a time limit.
 const workerWaiters = new Set<() => void>();
+// The newest version the hub reported that differs from this bundle; null while nothing waits. It outlives the
+// mismatch while a worker fetched for it still waits.
+let serverVersion: string | null = null;
+// When this page first saw a new version waiting (ISO); null while none waits.
+let detectedAt: string | null = null;
+/** localStorage key holding the version whose toast the person closed with Later (shared by all tabs of the browser). */
+export const DISMISSED_KEY = "labelyard.update.dismissed";
+// What the waiting version is called for dismissal: the hub's version, "" for a waiting worker no mismatch named.
+const keyOf = (version: string | null): string => version ?? "";
+function readDismissed(): string | null {
+  try {
+    return window.localStorage.getItem(DISMISSED_KEY);
+  } catch {
+    return null; // blocked storage: Later then holds for this page only
+  }
+}
+function writeDismissed(key: string | null): void {
+  try {
+    if (key === null) window.localStorage.removeItem(DISMISSED_KEY);
+    else window.localStorage.setItem(DISMISSED_KEY, key);
+  } catch {
+    // blocked storage: the in-memory value still closes the toast for this page
+  }
+}
+// The waiting version whose toast Later closed (read from storage at load); a different waiting version opens it again.
+// The sidebar box and the notification entry stay either way.
+let dismissed: string | null = readDismissed();
+let wasWaiting = false;
 const listeners = new Set<() => void>();
-const emit = () => listeners.forEach((l) => l());
+
+/** What the update notice shows: the toast, the sidebar box and the notification entry (#354). */
+export interface UpdateNotice {
+  /** A new version waits: a waiting service worker, or the hub runs another version than this bundle. */
+  waiting: boolean;
+  /**
+   * The newest version the hub reported that differs from this bundle; null for a waiting worker that no mismatch named.
+   * Kept while such a worker waits after the versions match again, so the notice and its entry id stay the same.
+   */
+  version: string | null;
+  /** ISO time this page first saw a version waiting; null while none waits. */
+  detectedAt: string | null;
+  /** The toast is open; Later closes it for that version, across reloads and tabs. */
+  toastOpen: boolean;
+}
+
+const buildNotice = (): UpdateNotice => {
+  const waiting = waitingWorker || versionMismatch;
+  if (!waiting) {
+    detectedAt = null;
+    // The update is applied (the app runs the version that was waiting): nothing stale stays behind.
+    if (wasWaiting) {
+      dismissed = null;
+      writeDismissed(null);
+    }
+  } else detectedAt ??= new Date().toISOString();
+  wasWaiting = waiting;
+  const toastOpen = dismissed === null || dismissed !== keyOf(serverVersion);
+  return { waiting, version: serverVersion, detectedAt, toastOpen };
+};
+// A new object on every change and the same one in between, as useSyncExternalStore needs.
+let notice: UpdateNotice = buildNotice();
+
+const emit = () => {
+  notice = buildNotice();
+  listeners.forEach((l) => l());
+};
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
 
 /**
  * Starts the service worker. A new version waits (it is not forced on open tabs, whose lazy
@@ -146,6 +216,8 @@ export async function applyUpdate(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
   updating = true;
+  // Reload is the answer to the notice: forget Later in storage (this page keeps it, so the toast stays shut meanwhile).
+  writeDismissed(null);
   emit();
   try {
     let hubAnswered = false;
@@ -229,47 +301,66 @@ const deps = {
  * nothing typed is lost). The browser is asked for the new service worker at once, so that the
  * button usually finds it waiting.
  */
-export function noteServerVersion(serverVersion: string | null | undefined): void {
-  if (!serverVersion) return;
-  if (serverVersion === deps.buildVersion) {
+export function noteServerVersion(reported: string | null | undefined): void {
+  if (!reported) return;
+  if (reported === deps.buildVersion) {
     checkedFor = null;
     if (versionMismatch) {
       versionMismatch = false;
+      // A worker that still waits was fetched for that version: the notice keeps naming it (and its entry its id).
+      if (!waitingWorker) serverVersion = null;
       emit();
     }
     return;
   }
-  if (!versionMismatch) {
+  if (!versionMismatch || serverVersion !== reported) {
     versionMismatch = true;
+    serverVersion = reported;
     emit();
   }
-  if (checkedFor !== serverVersion && registration) {
-    checkedFor = serverVersion;
+  if (checkedFor !== reported && registration) {
+    checkedFor = reported;
     checkForWorker(registration);
   }
 }
 
+/**
+ * Later: closes the toast for the waiting version, remembered in localStorage so a reload or another tab keeps it
+ * closed. The sidebar box and the notification entry stay.
+ */
+export function dismissUpdateToast(): void {
+  const key = keyOf(serverVersion);
+  if (dismissed === key) return;
+  dismissed = key;
+  writeDismissed(key);
+  emit();
+}
+
+/** The update notice; the same object until something about it changes. */
+export function useUpdateNotice(): UpdateNotice {
+  return useSyncExternalStore(subscribe, () => notice);
+}
+
+/** Is a new version waiting (the state the "New version available" banner shows)? */
+export function updateIsWaiting(): boolean {
+  return waitingWorker || versionMismatch;
+}
+
+/** Is the page on its way out because `applyUpdate` told it to reload? */
+export function updateIsReloading(): boolean {
+  return reloading;
+}
+
 export function useUpdating(): boolean {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => updating,
-  );
+  return useSyncExternalStore(subscribe, () => updating);
 }
 
 export function useNeedRefresh(): boolean {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    () => waitingWorker || versionMismatch,
-  );
+  return useSyncExternalStore(subscribe, () => waitingWorker || versionMismatch);
 }
 
-export function resetUpdatesForTest(): void {
+/** Back to a fresh page; `reload` keeps the stored Later, as a real reload does. */
+export function resetUpdatesForTest(options: { reload?: boolean } = {}): void {
   waitingWorker = false;
   versionMismatch = false;
   refreshing = false;
@@ -278,6 +369,11 @@ export function resetUpdatesForTest(): void {
   updateSW = null;
   registration = null;
   checkedFor = null;
+  serverVersion = null;
+  detectedAt = null;
+  if (!options.reload) writeDismissed(null);
+  dismissed = readDismissed();
+  wasWaiting = false;
   stopUpdateChecks?.();
   workerWaiters.clear();
   deps.workerWaitMs = WORKER_WAIT_MS;

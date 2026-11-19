@@ -1,0 +1,37 @@
+---
+title: Cart and bulk printing
+description: Collect labels from several lookups and print them together, on tape or onto a sheet.
+---
+
+import Screenshot from "../../../components/Screenshot.astro";
+
+The **cart** collects labels before you print them, much like a shopping cart. Use it when you want several labels at once: a shelf of assets, the products of one delivery, a box of spools.
+
+## Filling the cart
+
+Look up or scan an item and choose **Add to cart** instead of printing it right away. The cart lives in the browser you use; another device has its own.
+
+In an item's **Print onto a sheet**, **Add to cart** collects the item for one sheet run; **Open cart** keeps the sheet and tray you chose.
+
+## The cart icon
+
+The cart icon sits in the top bar on every page, on a computer and on a phone, next to the notification bell. A badge shows how many **items** the cart holds, the rows of the cart page, not the number of copies: two items with three and four copies each count as 2. Above 99 the badge reads **99+**. An empty cart shows no badge, and the icon still opens the cart. Screen readers hear "Cart, 2 items" or "Cart, empty". The count follows the cart live, also when you change it in another tab of the same browser.
+
+## Previews and warnings
+
+On a Brother QL with 62 mm tape the cart shows a preview for each layout in it, not only for the first item. Labels with the same layout look alike, so the cart draws the first item of each one, in the order of the cart. It shows at most four previews and says how many more layouts it leaves out.
+
+<Screenshot shot="cart-check" lang="en" alt="The cart with previews of two layouts and a warning on an item whose QR code does not fit the tape." />
+
+Once the printer reports its tape, the cart also checks every item against that tape and the chosen arrangement, without printing anything. An item that cannot be drawn gets a red note under its name, for example **The QR code does not fit this tape: 812 of at most 122 bytes.** Above the print button, the cart says how many items will not print.
+
+The warning does not stop you: the print button stays on. Remove the item, pick another arrangement or a shorter link, then check again; or print anyway: the hub then refuses the whole batch, and the cart stays as it was. One item that cannot be drawn is enough, so remove the flagged items first. If the check itself fails or is busy, the cart says **Could not check the items; the print still checks them.** and shows no warnings. The print always checks every item again.
+
+## Printing the cart
+
+Open the cart and print everything in it:
+
+- **On a tape printer** the labels go into the printer's queue together, as one batch (see [print queue](/using/queue/)).
+- **Onto a sheet** the preview places the labels on the free cells. What does not fit stays in the cart for the next sheet (see [sheets](/using/sheets/)).
+
+If an item was deleted in its app since you added it, the hub cannot print it and tells you. Remove it from the cart and print again.

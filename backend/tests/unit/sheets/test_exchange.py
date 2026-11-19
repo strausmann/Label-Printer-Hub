@@ -88,7 +88,8 @@ async def _counts(session: AsyncSession) -> tuple[int, int]:
 
 
 def _doc_dict(doc: exchange.ExportDoc) -> dict[str, Any]:
-    return json.loads(doc.model_dump_json())
+    """The document as the export route sends it."""
+    return json.loads(json.dumps(doc.to_json()))
 
 
 def _raw(d: dict[str, Any]) -> bytes:
@@ -294,7 +295,7 @@ REJECTED: list[tuple[str, Any, type[Exception]]] = [
     ("unknown_type_field", _mutate(["type", "colour"], "red"), InvalidImportError),
     ("unknown_top_field", _mutate(["extra"], 1), InvalidImportError),
     ("unknown_geometry_field", _mutate(["version", "geometry", "bleed"], 1.0), InvalidImportError),
-    ("format_version_2", _mutate(["format_version"], 2), InvalidImportError),
+    ("format_version_3", _mutate(["format_version"], 3), InvalidImportError),
     ("format_wrong", _mutate(["format"], "other.format"), InvalidImportError),
     ("three_decimals", _mutate(["version", "geometry", "margin_top"], 9.855), InvalidImportError),
     ("negative_length", _mutate(["version", "geometry", "label_w"], -1), InvalidImportError),
@@ -570,3 +571,130 @@ async def test_as_new_key_creates_the_key_even_for_identical_geometry(
     )
     assert (result.outcome, result.key, result.version) == ("created_as_new_key", "my-copy", 1)
     assert await _counts(session) == (2, 2)
+
+
+# ---------------------------------------------------------------- placement and design (#350)
+
+_STRIPS = [{"x": 3350, "y": 2200, "w": 2200, "h": 25300}]
+
+
+async def _placed_type(session: AsyncSession) -> None:
+    from app.sheets import backing_design_service as bds
+
+    await ts.create_type(session, _fields(), G, actor="tester")
+    await bds.create(session, key="ultragrip", name="Ultragrip", page_size="A4", strips=_STRIPS)
+    await ts.patch_type(
+        session,
+        "avery-l4736",
+        {"id_placement": "back_side", "id_cell": 3, "backing_design": "ultragrip"},
+        actor="tester",
+    )
+
+
+async def test_export_of_untouched_type_has_no_new_keys(session: AsyncSession) -> None:
+    doc = await _base_doc(session)
+    assert doc["format_version"] == 1
+    for name in ("id_placement", "id_cell", "backing_design"):
+        assert name not in doc["type"]
+
+
+async def test_export_with_placement_is_version_2(session: AsyncSession) -> None:
+    await _placed_type(session)
+    doc = _doc_dict(await exchange.export_type(session, "avery-l4736", None))
+    assert doc["format_version"] == 2
+    assert doc["type"]["id_placement"] == "back_side" and doc["type"]["id_cell"] == 3
+    assert doc["type"]["backing_design"] == {
+        "key": "ultragrip",
+        "name": "Ultragrip",
+        "page_size": "A4",
+        "strips": [{"x_mm": 33.5, "y_mm": 22.0, "w_mm": 22.0, "h_mm": 253.0}],
+    }
+
+
+async def test_version_1_doc_with_new_keys_is_refused(session: AsyncSession) -> None:
+    doc = await _base_doc(session)
+    doc["type"]["id_placement"] = "back_side"
+    with pytest.raises(InvalidImportError):
+        exchange.parse_import(_raw(doc))
+    doc["format_version"] = 2
+    assert exchange.parse_import(_raw(doc)).type.id_placement == "back_side"
+
+
+async def test_import_id_cell_outside_geometry_is_422(session: AsyncSession) -> None:
+    from app.sheets.errors import IdCellOutOfRangeError
+
+    doc = await _base_doc(session)  # 4 x 12 = 48 cells
+    doc["format_version"] = 2
+    doc["type"]["id_cell"] = 49
+    with pytest.raises(IdCellOutOfRangeError) as exc:
+        exchange.parse_import(_raw(doc))
+    assert exc.value.status == 422 and exc.value.error_code == "id_cell_out_of_range"
+    doc["type"]["id_cell"] = 48
+    assert exchange.parse_import(_raw(doc)).type.id_cell == 48
+
+
+async def test_import_strip_outside_page_is_refused(session: AsyncSession) -> None:
+    doc = await _base_doc(session)
+    doc["format_version"] = 2
+    doc["type"]["backing_design"] = {
+        "key": "evil",
+        "name": "Evil",
+        "page_size": "A4",
+        "strips": [{"x_mm": 900, "y_mm": 0, "w_mm": 22, "h_mm": 62}],
+    }
+    with pytest.raises(InvalidImportError) as exc:
+        exchange.parse_import(_raw(doc))
+    assert exc.value.detail == {"errors": ["type.backing_design.strips.0"]}
+
+
+async def test_export_import_round_trip_keeps_placement_and_design(
+    session: AsyncSession,
+) -> None:
+    from app.models.backing_design import BackingDesign
+
+    await _placed_type(session)
+    doc = exchange.parse_import(
+        _raw(_doc_dict(await exchange.export_type(session, "avery-l4736", None)))
+    )
+    result = await exchange.import_type(
+        session, doc, mode="as_new_key", new_key="avery-copy", new_prefix="CPY", actor="t"
+    )
+    assert result.outcome == "created_as_new_key"
+    copy = await ts.get_type(session, "avery-copy")
+    original = await ts.get_type(session, "avery-l4736")
+    assert copy.id_placement == "back_side" and copy.id_cell == 3
+    assert copy.backing_design_id == original.backing_design_id
+    designs = (await session.execute(select(func.count()).select_from(BackingDesign))).scalar_one()
+    assert designs == 1
+
+
+async def test_import_unknown_design_is_created_as_imported(
+    session: AsyncSession, other_session: AsyncSession
+) -> None:
+    from app.sheets import backing_design_service as bds
+
+    await _placed_type(session)
+    doc = exchange.parse_import(
+        _raw(_doc_dict(await exchange.export_type(session, "avery-l4736", None)))
+    )
+    await exchange.import_type(other_session, doc, actor="importer")
+    design = await bds.get(other_session, "ultragrip")
+    assert design.origin == "imported" and design.strips == _STRIPS
+    t = await ts.get_type(other_session, "avery-l4736")
+    assert t.backing_design_id == design.id
+
+
+async def test_import_existing_design_keeps_local_strips(
+    session: AsyncSession, other_session: AsyncSession
+) -> None:
+    from app.sheets import backing_design_service as bds
+
+    await _placed_type(session)
+    local = [{"x": 1000, "y": 1000, "w": 2200, "h": 6200}]
+    await bds.create(other_session, key="ultragrip", name="Local", page_size="A4", strips=local)
+    doc = exchange.parse_import(
+        _raw(_doc_dict(await exchange.export_type(session, "avery-l4736", None)))
+    )
+    await exchange.import_type(other_session, doc, actor="importer")
+    design = await bds.get(other_session, "ultragrip")
+    assert design.strips == local and design.name == "Local" and design.origin == "custom"

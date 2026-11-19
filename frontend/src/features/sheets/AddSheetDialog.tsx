@@ -19,6 +19,8 @@ import { useSheetErrorText } from "./errors";
 import { GeometryDiagram } from "./GeometryDiagram";
 import { SheetGrid } from "./SheetGrid";
 import { SheetTypeCombobox } from "./SheetTypeCombobox";
+import { ActivateBackSide } from "./backSide/ActivateBackSide";
+import { pageSizeMm } from "./cellState";
 
 type Placement = NonNullable<SheetCreate["id_placement"]>;
 
@@ -126,7 +128,7 @@ function Done({
   );
 }
 
-function AddSheetForm({ onClose }: { onClose: () => void }) {
+function AddSheetForm({ onClose, onTitle }: { onClose: () => void; onTitle: (title: string | null) => void }) {
   const { t } = useLingui();
   const errorText = useSheetErrorText();
   const create = useCreateSheet();
@@ -135,7 +137,9 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
 
   const [typeKey, setTypeKey] = useState(NO_TYPE);
   const [marked, setMarked] = useState<ReadonlySet<number>>(new Set());
-  const [placement, setPlacement] = useState<Placement>("margin");
+  // Left alone, the placement follows the type (and, with a printer, the margin check): R-350-2.
+  const [placementChoice, setPlacement] = useState<Placement | null>(null);
+  const [activating, setActivating] = useState(false);
   const [printerId, setPrinterId] = useState(NO_PRINTER);
   const [trayChoice, setTrayChoice] = useState<string | null>(null);
   const [created, setCreated] = useState<{ sheet: SheetCreated; hint: string | null } | null>(null);
@@ -160,9 +164,12 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
   // An answer is known once it came, or failed: a failure must not look like "no trays".
   const capsKnown = printerId !== NO_PRINTER && caps.isSuccess;
   const margin = useMarginCheck(type?.key ?? null, capsKnown ? printerId : null, trayKey);
+  const defaultPlacement: Placement = (printerId !== NO_PRINTER && margin.data?.default_placement) || type?.id_placement_resolved || "margin";
+  const placement: Placement = placementChoice ?? defaultPlacement;
 
   function chooseType(key: string) {
     setTypeKey(key);
+    setPlacement(null);
     setMarked(new Set()); // another type has other cells
     create.reset();
   }
@@ -182,10 +189,30 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
     return <Done created={created?.sheet ?? null} hint={created?.hint ?? null} partial={partial} onClose={onClose} />;
   }
 
-  const needsPrinter = placement === "cell";
+  if (activating && type) {
+    return (
+      <ActivateBackSide
+        target={{ kind: "new", body: { type: type.key, used_cells: [...marked].sort((a, b) => a - b).map((cell) => ({ cell })) } }}
+        codeLabel={next.data?.code ?? type.prefix}
+        typeLabel={type.vendor ? `${type.vendor} ${type.product_codes[0] ?? type.key}` : type.key}
+        page={pageSizeMm(type.geometry)}
+        strips={type.backing_design?.page_size === type.geometry.page_size ? type.backing_design.strips : []}
+        initialPrinterId={printerId === NO_PRINTER ? undefined : printerId}
+        initialTray={trayKey}
+        onUseCell={() => {
+          setPlacement("cell");
+          setActivating(false);
+          onTitle(null);
+        }}
+        onClose={onClose}
+      />
+    );
+  }
+
+  const needsPrinter = placement === "cell" || placement === "back_side";
   let blocker: string | null = null;
   if (needsPrinter) {
-    if (printerId === NO_PRINTER) blocker = t`Choose a printer and a tray to print the ID label.`;
+    if (printerId === NO_PRINTER) blocker = placement === "back_side" ? t`Choose a printer and a tray to print the sheet code.` : t`Choose a printer and a tray to print the ID label.`;
     else if (caps.isError) blocker = t`The printer could not be asked for its trays. Try again in a moment.`;
     else if (capsKnown && trayKey === null) blocker = t`This printer reports no trays, so it cannot print the ID label.`;
   }
@@ -193,11 +220,17 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
 
   function submit() {
     if (!type || !ready) return;
+    if (placement === "back_side") {
+      // The sheet is created by "Print sheet code" in the activation steps; Escape before it creates nothing.
+      setActivating(true);
+      onTitle(t`Activate new sheet`);
+      return;
+    }
     const body: SheetCreate = {
       type: type.key,
       used_cells: [...marked].sort((a, b) => a - b).map((cell) => ({ cell })),
       id_placement: placement,
-      ...(placement === "cell" ? { printer: printerId, tray: trayKey } : {}),
+      ...(placement === "cell" ? { printer: printerId, tray: trayKey, ...(type.id_cell ? { id_cell: type.id_cell } : {}) } : {}),
     };
     const hint = next.data?.code ?? null;
     create.mutate(body, { onSuccess: (sheet) => setCreated({ sheet, hint }) });
@@ -307,7 +340,7 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
           </section>
 
           <RadioGroup value={placement} onChange={(v) => setPlacement(v as Placement)} className="flex min-w-0 flex-col gap-1">
-            <Label className={LABEL}>{t`Where the sheet ID goes`}</Label>
+            <Label className={LABEL}>{t`Where the sheet code goes`}</Label>
             <PlacementOption
               value="margin"
               title={t`In the margin`}
@@ -315,9 +348,18 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
             />
             {printerId !== NO_PRINTER ? <MarginResult check={margin.data} isError={margin.isError} /> : null}
             <PlacementOption
+              value="back_side"
+              title={t`On the back of the liner`}
+              description={t`One extra pass: turn the sheet over and the hub prints the code on the back. No label is used.`}
+            />
+            <PlacementOption
               value="cell"
-              title={t`In the first free cell`}
-              description={t`The ID takes the first free label and is printed right away.`}
+              title={type.id_cell ? t`In a reserved cell` : t`In the first free cell`}
+              description={
+                type.id_cell
+                  ? t`The ID takes cell ${type.id_cell} (or the first free one) and is printed right away.`
+                  : t`The ID takes the first free label and is printed right away.`
+              }
             />
             <PlacementOption
               value="manual"
@@ -337,7 +379,7 @@ function AddSheetForm({ onClose }: { onClose: () => void }) {
       {/* The actions stay in reach while the form scrolls inside the dialog. */}
       <div className="sticky -bottom-4 -mx-4 -mb-4 flex flex-wrap gap-3 border-t border-line bg-surface px-4 pt-3 pb-4 sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6 sm:pb-6">
         <Button type="submit" isDisabled={!ready} className={PRIMARY_BUTTON}>
-          {placement === "cell" ? t`Add and print ID label` : t`Add sheet`}
+          {placement === "cell" ? t`Add and print ID label` : placement === "back_side" ? t`Continue` : t`Add sheet`}
         </Button>
         <Button onPress={onClose} className={SECONDARY_BUTTON}>
           {t`Cancel`}
@@ -353,13 +395,17 @@ export function AddSheetDialog({ isOpen, onClose }: { isOpen: boolean; onClose: 
   // A fresh form for every opening, while the old one stays on screen during the closing animation.
   const [opened, setOpened] = useState(0);
   const [wasOpen, setWasOpen] = useState(false);
+  const [title, setTitle] = useState<string | null>(null);
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen);
-    if (isOpen) setOpened((n) => n + 1);
+    if (isOpen) {
+      setOpened((n) => n + 1);
+      setTitle(null);
+    }
   }
   return (
-    <ModalDialog title={t`Add a sheet`} isOpen={isOpen} onClose={onClose} wide>
-      <AddSheetForm key={opened} onClose={onClose} />
+    <ModalDialog title={title ?? t`Add a sheet`} isOpen={isOpen} onClose={onClose} wide>
+      <AddSheetForm key={opened} onClose={onClose} onTitle={setTitle} />
     </ModalDialog>
   );
 }
