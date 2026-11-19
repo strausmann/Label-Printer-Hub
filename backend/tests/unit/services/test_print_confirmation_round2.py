@@ -138,6 +138,21 @@ async def test_a_failed_cancel_with_a_new_bit_is_outcome_unknown_for_a_single_jo
         await queue.stop()
 
 
+async def test_a_single_job_whose_outcome_is_unknown_pauses_the_printer_like_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The printer may still print the job: nothing else goes out until someone checked it.
+    fake = FakeIppPrinter(formats=RASTER, job_script=[5], impressions_script=[0])
+    printer = _Printer(monkeypatch, _cancel_fails(fake))
+    queue, job = await _single(printer)
+    try:
+        assert job.error_code == "outcome_unknown"
+        info = queue.pause_info(printer.queue_printer.id)
+        assert info is not None and info.reason_code == "outcome_unknown"
+    finally:
+        await queue.stop()
+
+
 async def test_a_failed_cancel_with_a_new_bit_is_outcome_unknown_for_a_group(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

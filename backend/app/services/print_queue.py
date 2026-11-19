@@ -176,6 +176,9 @@ _RECOVERABLE_PRINTER_ERRORS: tuple[type[PrinterError], ...] = (
     PrinterOfflineError,
     MediaTypeMismatchError,
     PrinterReportedError,
+    # #393: the printer may still print the job; nothing else goes out until someone checked it
+    # (a single job pauses like a run that stops with ``outcome_unknown``).
+    ConfirmationUnknownError,
 )
 
 _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
