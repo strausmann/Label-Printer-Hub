@@ -264,7 +264,7 @@ async def check_after_send(
             if interpretable and printed is not None and printed >= expected:
                 # Every label came out (the last one used up the roll): all are printed, and
                 # the bit pauses the printer.
-                await _finish(state, False, printed == expected)
+                await _finish(state, False, printed == expected, fault=True)
                 _raise_new_bits(status, before_flags, expected)
             _raise_new_bits(status, before_flags, printed if interpretable else None)
         if printed is None:
@@ -334,7 +334,7 @@ async def _ipp_not_completed(
         if cancel.result == "failed":
             status = await _read_or_none(backend)
             exact = _exact(before, status, expected)
-            await _finish(state, False, exact)
+            await _finish(state, False, exact, fault=_fault(status, before_flags))
             if not exact or status is None:
                 raise ConfirmationUnknownError()
             # The counter rose by exactly the labels sent: every label is out, nothing is left
@@ -346,7 +346,9 @@ async def _ipp_not_completed(
         if cancel.impressions is not None:
             printed = outcome.printed_before + min(cancel.impressions, outcome.pending_labels)
     status = await _read_or_none(backend)
-    await _finish(state, False, _exact(before, status, expected))
+    await _finish(
+        state, False, _exact(before, status, expected), fault=_fault(status, before_flags)
+    )
     if printed >= expected:
         if status is not None and _has_new_bits(status, before_flags):
             _raise_new_bits(status, before_flags, expected)
@@ -365,23 +367,37 @@ async def _read_or_none(backend: Any) -> PreflightStatus | None:
         return None
 
 
+def _fault(status: PreflightStatus | None, before_flags: frozenset[str]) -> bool:
+    """A new blocking bit (jam, open cover, tape end) explains why an IPP job did not complete."""
+    return status is not None and _has_new_bits(status, before_flags)
+
+
 def _exact(before: int | None, status: PreflightStatus | None, expected: int) -> bool:
     after = _count_of(status) if status is not None else None
     return before is not None and after is not None and after - before == expected
 
 
-async def _finish(state: TapeSendState | None, ipp_completed: bool, counter_exact: bool) -> None:
-    """A test print stores what it found (#393); any other send stores nothing."""
+async def _finish(
+    state: TapeSendState | None, ipp_completed: bool, counter_exact: bool, *, fault: bool = False
+) -> None:
+    """A test print stores what it found (#393); any other send stores nothing.
+
+    *fault*: the printer reported a new blocking bit with the send. An IPP job it took and did
+    not complete is then the printer's fault (a jam, an open cover, the tape end), not a broken
+    IPP channel, so ``ipp_incomplete`` is not set and the next test print tries IPP again.
+    """
     if state is None or not state.detecting:
         return
     state.detecting = False
     ipp = ipp_completed and not state.detect_ipp_failed
-    # The printer took the IPP job but did not complete it (or an earlier test print found
-    # that): later test prints stay on TCP 9100. A Print-Job that was not taken is not this.
+    # The printer took the IPP job but did not complete it without a fault to explain it (or an
+    # earlier test print found that): later test prints stay on TCP 9100. A Print-Job that was
+    # not taken, or one a jam or the tape end aborted, is not this.
     record = ConfirmationRecord(
         confirm_transport="ipp" if ipp else "raw",
         label_counter=counter_exact,
         confirmed_at=datetime.now(UTC),
-        ipp_incomplete=not ipp and (state.detect_ipp_skipped or state.detect_ipp_taken),
+        ipp_incomplete=not ipp
+        and (state.detect_ipp_skipped or (state.detect_ipp_taken and not fault)),
     )
     await state.store(record)

@@ -20,6 +20,7 @@ from app.printer_backends.brother_ql_backend import BrotherQLBackend
 from app.printer_backends.exceptions import (
     ConfirmationUnknownError,
     LabelsNotConfirmedError,
+    PrinterReportedError,
     PrintFailedError,
 )
 from app.printer_backends.post_send import check_after_send
@@ -467,3 +468,39 @@ async def test_a_test_print_whose_ipp_is_refused_does_not_mark_it_incomplete(
     await _confirm(backend)
 
     assert [r.ipp_incomplete for r in sink.records] == [False]
+
+
+async def test_a_test_print_aborted_by_a_printer_fault_does_not_pin_9100(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Final review N1: the printer aborted the IPP job because it jammed. That is the printer's
+    # fault, not a broken IPP channel: once the jam is cleared, the next test print tries IPP.
+    snmp = _Snmp(monkeypatch)
+    flags: list[str] = []
+
+    async def preflight(host: str, **_: Any) -> PreflightStatus:
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=29,
+            error_flags=list(flags),
+            media_raw="29mm",
+            marker_count=snmp.counter,
+        )
+
+    monkeypatch.setattr("app.printer_backends.brother_ql_backend.query_preflight", preflight)
+    fake = FakeIppPrinter(formats=RASTER, job_script=[8], impressions_script=[0])
+    backend = _backend(fake)
+    sink = _Sink()
+    backend.send_state.sink = sink
+
+    await backend.print_image(_image(), _spec(), detect_confirmation=True)
+    flags.append("jammed")
+    with pytest.raises(PrinterReportedError):
+        await _confirm(backend)
+    assert [(r.confirm_transport, r.ipp_incomplete) for r in sink.records] == [("raw", False)]
+
+    flags.clear()
+    before = len(_ops(fake))
+    await backend.print_image(_image(), _spec(), detect_confirmation=True)
+    assert "Print-Job" in _ops(fake)[before:]
+    assert snmp.raw_sent == []
