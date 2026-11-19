@@ -41,7 +41,7 @@ import functools
 import hashlib
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -217,6 +217,13 @@ class _Wiring:
     state: IppPrinterState | None = None
     # Builds a fresh status producer (with its own client); set for page printers only.
     make_producer: Callable[[], Awaitable[IppStatusProducer]] | None = None
+
+
+def _tape_address(connection: Mapping[str, Any] | None) -> tuple[object, object]:
+    """Host and port of a tape printer's connection (as ``printer_admin_service._address``,
+    whose change clears the stored confirmation record)."""
+    conn = connection or {}
+    return conn.get("host"), conn.get("port", 9100)
 
 
 class PrinterRuntime:
@@ -701,18 +708,38 @@ class PrinterRuntime:
 
     def _wire_confirmation(self, backend: object, printer: Printer) -> None:
         """#393: the backend sends the way the printer's last test print found to work, and a
-        new test print stores what it finds on the printer row."""
+        new test print stores what it finds on the printer row.
+
+        The sink is bound to the address the backend was wired for: a test print still running
+        against the old host after an address change cannot write over the record the change
+        cleared (audit run 28, hardening note 1).
+        """
         state = getattr(backend, "send_state", None)
         if not isinstance(state, TapeSendState):
             return
         state.record = ConfirmationRecord.from_json(printer.print_confirmation)
-        state.sink = functools.partial(self._store_confirmation, printer.id)
+        state.sink = functools.partial(
+            self._store_confirmation, printer.id, address=_tape_address(printer.connection)
+        )
 
-    async def _store_confirmation(self, printer_id: UUID, record: ConfirmationRecord) -> None:
-        """Write *record* to the printer row (#393). A gone row is left alone."""
+    async def _store_confirmation(
+        self,
+        printer_id: UUID,
+        record: ConfirmationRecord,
+        *,
+        address: tuple[object, object] | None = None,
+    ) -> None:
+        """Write *record* to the printer row (#393). A gone row is left alone, and so is a row
+        whose host or port is no longer *address*, the one the writer was wired for."""
         async with self._sessions()() as session:
             row = await session.get(Printer, printer_id)
             if row is None:
+                return
+            if address is not None and _tape_address(row.connection) != address:
+                _log.info(
+                    "Printer %s: print confirmation of its previous address not stored",
+                    printer_id,
+                )
                 return
             row.print_confirmation = record.to_json()
             session.add(row)

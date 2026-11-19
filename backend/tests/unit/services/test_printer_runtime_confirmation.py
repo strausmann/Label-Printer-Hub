@@ -27,9 +27,13 @@ class _Runtime:
 
     def __init__(self) -> None:
         self.stored: list[tuple[Any, ConfirmationRecord]] = []
+        self.addresses: list[Any] = []
 
-    async def _store_confirmation(self, printer_id: Any, record: ConfirmationRecord) -> None:
+    async def _store_confirmation(
+        self, printer_id: Any, record: ConfirmationRecord, *, address: Any = None
+    ) -> None:
         self.stored.append((printer_id, record))
+        self.addresses.append(address)
 
 
 def _row(stored: dict[str, Any] | None) -> Printer:
@@ -55,6 +59,7 @@ async def test_the_stored_record_reaches_the_backend_and_new_ones_go_to_the_row(
     new = ConfirmationRecord("ipp", True, _AT)
     await backend.send_state.store(new)
     assert runtime.stored == [(row.id, new)]
+    assert runtime.addresses == [("192.0.2.12", 9100)]  # the address it was wired for
 
 
 async def test_without_a_record_the_backend_probes() -> None:

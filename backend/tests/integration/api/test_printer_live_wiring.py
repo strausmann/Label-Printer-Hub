@@ -640,3 +640,53 @@ async def test_a_tape_printers_print_confirmation_is_stored_and_shown(live: Live
         assert moved.status_code == 200, moved.text
     detail = await live.client.get(f"/api/v1/printers/{pid}")
     assert detail.json()["print_confirmation"] is None
+
+
+async def test_a_test_print_of_the_old_address_cannot_write_over_the_cleared_record(
+    live: Live,
+) -> None:
+    """Audit run 28, hardening note 1: a test print still running against the old host writes
+    its record after the admin changed the address (which cleared it). The write names the
+    address it was wired for and is dropped when the row's address changed."""
+    from datetime import UTC, datetime
+
+    from app.printer_backends.tape_confirmation import ConfirmationRecord
+    from app.printer_models.ql import QL820NWBDriver
+    from app.printer_models.registry import ModelRegistry
+
+    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
+    body = {
+        "name": "Hall QL",
+        "slug": "hall-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.14", "port": 9100},
+    }
+    resolve = patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    )
+    record = ConfirmationRecord("ipp", True, datetime(2026, 11, 18, 9, 0, tzinfo=UTC))
+    with resolve:
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+        pid = UUID(resp.json()["id"])
+        moved = await live.client.put(
+            f"{ADMIN}/hall-ql",
+            json={
+                "connection": {
+                    "host": "192.0.2.15",
+                    "port": 9100,
+                    "snmp": {"discover": False, "community": "public"},
+                }
+            },
+        )
+        assert moved.status_code == 200, moved.text
+        # The old wiring's sink, still bound to the old address.
+        await live.runtime._store_confirmation(pid, record, address=("192.0.2.14", 9100))
+        detail = await live.client.get(f"/api/v1/printers/{pid}")
+        assert detail.json()["print_confirmation"] is None
+        # A write for the address the row has now is stored.
+        await live.runtime._store_confirmation(pid, record, address=("192.0.2.15", 9100))
+        detail = await live.client.get(f"/api/v1/printers/{pid}")
+        assert detail.json()["print_confirmation"]["channel"] == "ipp"
