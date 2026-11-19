@@ -2086,7 +2086,7 @@ async def print_sheet_back(
             )
             await session.commit()
         if target.change == "switched":
-            logger.info("sheet %s switched to the code on the back", code)
+            logger.info("sheet %s switched to the code on the back", sheet.id)
         if target.change is not None:
             await ss.publish_detail(session, sheet, bus)
             await session.commit()
