@@ -247,3 +247,24 @@ def test_a_label_too_long_maps_to_its_own_code() -> None:
     assert known.detail == {"length_mm": 1601, "max_mm": 1000}
     assert _printer_error_to_record(exc)[0] == "label_too_long"
     assert _printer_error_to_record(exc)[2] == {"length_mm": 1601, "max_mm": 1000}
+
+
+async def test_a_negative_impression_count_is_clamped_at_the_source() -> None:
+    # Run 26, hardening note 7: a printer that reports -5 impressions printed nothing.
+    fake = FakeIppPrinter(
+        formats=["application/octet-stream"], job_script=[8], impressions_script=[-5]
+    )
+    ipp = TapeIppTransport("192.0.2.88", transport=httpx.ASGITransport(app=fake))  # type: ignore[arg-type]
+    job = await ipp.submit(b"x", 1)
+    outcome = await ipp.wait([(job, 1)], timeout_s=1.0, poll_s=0.0)
+    assert (outcome.completed, outcome.printed) == (False, 0)
+
+
+async def test_a_negative_impression_count_after_a_cancel_is_clamped_too() -> None:
+    fake = FakeIppPrinter(
+        formats=["application/octet-stream"], job_script=[5], impressions_after_cancel=-3
+    )
+    ipp = TapeIppTransport("192.0.2.89", transport=httpx.ASGITransport(app=fake))  # type: ignore[arg-type]
+    job = await ipp.submit(b"x", 1)
+    outcome = await ipp.cancel(job, poll_s=0.0)
+    assert (outcome.result, outcome.impressions) == ("cancelled", 0)

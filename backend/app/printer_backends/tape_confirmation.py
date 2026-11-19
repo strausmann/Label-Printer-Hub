@@ -361,7 +361,7 @@ class TapeIppTransport:
                     info = None
                 if info is not None:
                     if info.impressions_completed is not None:
-                        impressions = info.impressions_completed
+                        impressions = max(0, info.impressions_completed)
                     if info.state >= _IPP_STATE_FINAL:
                         _logger.info("IPP job that was not confirmed in time cancelled")
                         return CancelOutcome("cancelled", impressions)
@@ -412,7 +412,9 @@ class TapeIppTransport:
                     if info is not None:
                         seen = True
                         state = info.state
-                        impressions = info.impressions_completed or impressions
+                        # Run 26, hardening note 7: a negative count is clamped here, at the
+                        # source, not only by every consumer.
+                        impressions = max(0, info.impressions_completed or impressions)
                         if info.state >= _IPP_STATE_FINAL:
                             if info.state == _IPP_STATE_COMPLETED:
                                 printed += labels
