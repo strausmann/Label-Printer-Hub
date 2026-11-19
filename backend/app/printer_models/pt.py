@@ -301,6 +301,28 @@ class _PTPQueuePrinter:
             half_cut=bool(options.pop("half_cut", True)),
         )
 
+    def check_label_lengths(
+        self, images: list[Image.Image], *, tape_mm: int, **options: Any
+    ) -> None:
+        """Audit run 27: refuse labels longer than the tape allows when they are submitted
+        (``TapeLabelTooLongError``), measured by this printer's backend as it would send them.
+        A tape without a spec is left to the send, which refuses it there."""
+        from app.services.tape_registry import UnknownTapeError
+
+        media_type = options.get("media_type", self._default_media_type)
+        try:
+            tape_spec = self._tape_registry.lookup_pt(tape_mm, media_type)
+        except UnknownTapeError:
+            return
+        check = getattr(self._backend, "check_label_lengths", None)
+        if check is None:
+            return
+        check(
+            images,
+            tape_spec,
+            high_resolution=bool(options.get("high_resolution", False)),
+        )
+
     post_send_settle_s: float | None = None
     """Wait before the status is read after sending (#389). ``None``: the backend's own
     ``post_send_settle_s`` (the mock backend has no printer to wait for), else

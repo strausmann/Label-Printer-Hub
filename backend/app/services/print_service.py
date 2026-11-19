@@ -290,6 +290,14 @@ class PrintService:
         *detect_confirmation* (#393, the test print): the backend finds out how the printer
         confirms a print and stores it with the printer.
         """
+        # Audit run 27: a label longer than the tape allows is refused here, before it is
+        # stored or queued (422 ``tape_label_too_long``); the send checks again.
+        await self._check_label_lengths(
+            [image],
+            tape_mm=tape_mm,
+            high_resolution=options.high_resolution,
+            orientation=str(orientation),
+        )
         job_id = uuid4()
         job = Job(
             id=job_id,
@@ -314,6 +322,13 @@ class PrintService:
             **({"detect_confirmation": True} if detect_confirmation else {}),
         )
         return job_id
+
+    async def _check_label_lengths(self, images: list[Image.Image], **options: Any) -> None:
+        """The queue's check of the tape length limit (``TapeLabelTooLongError``), off the event
+        loop: fitting a large batch to the roll is CPU-bound. A queue without it is skipped."""
+        check = getattr(self._queue, "check_label_lengths", None)
+        if check is not None:
+            await asyncio.to_thread(check, self._printer_id, images, **options)
 
     async def _submit_label(
         self,
@@ -723,6 +738,16 @@ class PrintService:
 
         prepared = await asyncio.gather(
             *[_prepare_one(r, o) for r, o in zip(requests, resolved_options, strict=True)]
+        )
+
+        # Audit run 27: every label of the batch against the tape's length limit, before anything
+        # is stored or queued; one label too long refuses the whole batch (422).
+        first = requests[0].options
+        await self._check_label_lengths(
+            [image for image, _ in prepared],
+            tape_mm=tape_mm,
+            high_resolution=first.high_resolution,
+            orientation=str(orientation),
         )
 
         # 3. Pre-allocate job UUIDs + persist in JobStore

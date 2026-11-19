@@ -2311,6 +2311,18 @@ class PrintQueue:
             self._notify_pause_change(printer_id, info)
         logger.info("Printer %s paused: %s", printer_id, reason)
 
+    def check_label_lengths(
+        self, printer_id: UUID, images: list[Image.Image], *, tape_mm: int, **options: Any
+    ) -> None:
+        """Audit run 27: refuse tape labels longer than the tape allows before they are queued
+        (``TapeLabelTooLongError``). A printer without the check (a page printer, a test double)
+        or not known here is left to the send. CPU-bound for a large batch: call it in a thread.
+        """
+        printer = self._printers.get(printer_id)
+        check = getattr(printer, "check_label_lengths", None)
+        if check is not None:
+            check(images, tape_mm=tape_mm, **options)
+
     def pause_info(self, printer_id: UUID) -> PauseInfo | None:
         """Pause details while the worker is paused, else ``None``."""
         if self._worker_states.get(printer_id) != PrinterWorkerState.PAUSED:
@@ -3303,7 +3315,9 @@ class PrintQueue:
             cause, cause_msg, cause_detail = "batch_failed", f"batch print failed: {exc}", None
         if (
             isinstance(exc, PrinterError)
-            and not isinstance(exc, LabelsNotConfirmedError)
+            # A shortfall and a label too long for the tape are not the printer's state: the
+            # printer stays free for the next job, as for a single job (audit run 27).
+            and not isinstance(exc, (LabelsNotConfirmedError, TapeLabelTooLongError))
             and printer_id in self._worker_states
         ):
             await self.pause_printer(printer_id, reason=cause)

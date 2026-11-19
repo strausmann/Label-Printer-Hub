@@ -293,6 +293,16 @@ class PTouchBackend:
         # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
         self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
 
+    def check_label_lengths(
+        self, images: list[Image.Image], tape_spec: TapeSpec, **_options: Any
+    ) -> list[float]:
+        """The tape length of each label; raises ``TapeLabelTooLongError`` (``nothing_sent``)
+        for one longer than the tape allows (R26-2). The print service calls it when a job is
+        submitted, the send calls it again."""
+        lengths = [label_length_mm(image, self.dpi) for image in images]
+        check_label_lengths(lengths, tape_spec.max_length_mm)
+        return lengths
+
     @property
     def dpi(self) -> int:
         """The resolution of this model's raster along the tape, from its ``ptouch`` entry
@@ -435,8 +445,7 @@ class PTouchBackend:
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
         # / PrinterOfflineError on detected issues.
         self.last_send_status = None
-        length = label_length_mm(image, self.dpi)
-        check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
+        (length,) = self.check_label_lengths([image], tape_spec)  # R26-2, before any SNMP
         if detect_confirmation:
             self.send_state.reset_counter_gate()  # R3-2: the read below asks for the counter
         try:
@@ -524,8 +533,7 @@ class PTouchBackend:
             raise ValueError("print_images requires at least one image")
 
         self.last_send_status = None
-        lengths = [label_length_mm(image, self.dpi) for image in images]
-        check_label_lengths(lengths, tape_spec.max_length_mm)  # R26-2: the whole batch or none
+        lengths = self.check_label_lengths(images, tape_spec)  # R26-2: the whole batch or none
         try:
             _require_tape_class(tape_spec.width_mm)
             await self._check_before_send(tape_spec)

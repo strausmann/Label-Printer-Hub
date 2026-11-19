@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # Must run before brother_ql is used: restores Image.ANTIALIAS (removed in Pillow 10),
 # which brother_ql 0.9.x calls in its resize branch. See _pillow_compat and issue #254.
@@ -175,6 +175,31 @@ class BrotherQLBackend:
         self.last_send_status: PreflightStatus | None = None
         # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
         self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
+
+    def check_label_lengths(
+        self,
+        images: list[Image.Image],
+        tape_spec: TapeSpec,
+        *,
+        high_resolution: bool = False,
+        orientation: LabelOrientation | None = None,
+        **_options: Any,
+    ) -> list[float]:
+        """The tape length of each label as it would be sent (fitted to the roll); raises
+        ``TapeLabelTooLongError`` (``nothing_sent``) for one longer than the tape allows
+        (R26-2). The print service calls it when a job is submitted, the send checks again."""
+        ql_label = _ql_label_of(tape_spec)
+        lengths = [
+            label_length_mm(
+                _fit_to_printable_width(
+                    image, ql_label, dpi_600=high_resolution, orientation=orientation
+                ),
+                _ql_dpi(high_resolution),
+            )
+            for image in images
+        ]
+        check_label_lengths(lengths, tape_spec.max_length_mm)
+        return lengths
 
     async def print_image(
         self,
