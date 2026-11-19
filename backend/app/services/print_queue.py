@@ -3228,6 +3228,9 @@ class PrintQueue:
         """
         count = max(0, min(exc.printed or 0, len(active)))
         printed = active[:count]
+        # The part this group belongs to, taken before the rows are written: a cancel of the
+        # part's other labels in that window ends the part and moves the run on (M3).
+        part = run.current if run is not None else None
         # With every label printed the run stops right after the group: nothing of it is
         # reprinted, a reprint starts at the first label that was not started.
         resume_at = (
@@ -3248,6 +3251,7 @@ class PrintQueue:
             nothing_sent=False,
             not_printed=True,
             resume_at=resume_at,
+            part=part,
         )
 
     async def _stop_run(
@@ -3262,6 +3266,7 @@ class PrintQueue:
         nothing_sent: bool,
         not_printed: bool = False,
         resume_at: int | None = None,
+        part: int | None = None,
     ) -> None:
         """A group failed and the run stops; every label after the group is not started.
 
@@ -3278,7 +3283,13 @@ class PrintQueue:
         Order (M1): the printer is paused first, then the run turns ``stopped`` with all labels
         set in memory (no await in between), then the events, then the store. A reprint that
         follows any event finds a stopped run and a printer it may resume.
+
+        *part*: the sub-job of the group, taken before any await of the caller. A cancel of the
+        part's last queued labels while this stop waited may have moved the run on to the next
+        part (or finished it); the stop applies to the group's part, not the one it moved to.
         """
+        if run is not None and part is None:
+            part = run.current
         if isinstance(exc, PrinterError):
             cause, cause_msg, cause_detail = _printer_error_to_record(exc)
         else:
@@ -3289,7 +3300,12 @@ class PrintQueue:
             and printer_id in self._worker_states
         ):
             await self.pause_printer(printer_id, reason=cause)
+        if run is not None and self._runs.get(run.run_id) is not run:
+            # Finished meanwhile: every label after the group was cancelled, nothing is held.
+            run = None
         if run is not None:
+            if part is not None:
+                run.current = part
             later = [*later, *run.job_ids[run.sub_jobs[run.current][1] :]]
         group_failed: list[Job] = []  # jobs that took FAILED here (M8: only these are stored)
         if not_printed:
