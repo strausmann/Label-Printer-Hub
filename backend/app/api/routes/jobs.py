@@ -744,8 +744,9 @@ async def _retry_sheet_page(
 
 
 async def _ensure_back_side_sheet(session: AsyncSession, payload: dict[str, Any]) -> None:
-    """A back-side page prints again only onto a sheet that is still active and ``back_side``
-    (R-350-6): a discarded code never prints again."""
+    """A back-side page prints again only onto a sheet that is still active and has a code on
+    the back (R-350-6): a ``back_side`` sheet, or one that asked for an extra code on the back
+    (``back_side_state`` set) and keeps its own placement. A discarded code never prints again."""
     from app.models.sheet import Sheet
 
     detail = payload.get("detail")
@@ -757,7 +758,7 @@ async def _ensure_back_side_sheet(session: AsyncSession, payload: dict[str, Any]
     sheet = await session.get(Sheet, sheet_id)
     if sheet is None or sheet.state == "discarded":
         raise SheetDiscardedError().to_http()
-    if sheet.id_placement != "back_side":
+    if sheet.id_placement != "back_side" and sheet.back_side_state is None:
         raise IdPlacementMismatchError().to_http()
 
 

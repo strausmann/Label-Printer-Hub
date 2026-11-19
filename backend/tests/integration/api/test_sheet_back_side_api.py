@@ -367,6 +367,29 @@ async def test_back_job_retry_route_accepts_kind() -> None:
         assert payload["kind"] == "sheet_back_page"
 
 
+async def test_retry_of_extra_back_page_on_margin_sheet() -> None:
+    """An extra code on the back of a printed margin sheet keeps the margin placement; its failed
+    job must still be retryable (Codex review on #399)."""
+    async with running() as rig:
+        code = await _new_sheet("margin")
+        async with _factory()() as s:
+            row = (await s.execute(select(Sheet).where(col(Sheet.code) == code))).scalar_one()
+            row.id_printed = True
+            await s.commit()
+        rig.fake.print_status = REJECTED
+        resp = await _back(rig, code)
+        assert resp.status_code == 202, resp.text
+        job_id = resp.json()["job_id"]
+        await _until_job(job_id, "failed")
+        rig.fake.print_status = 0
+
+        retry = await rig.client.post(f"/api/v1/jobs/{job_id}/retry", headers=rig.key)
+
+        assert retry.status_code == 201, retry.text
+        payload = await rig.job_payload(retry.json()["id"])
+        assert payload["kind"] == "sheet_back_page" and payload["retry_of"] == job_id
+
+
 async def test_retry_of_back_page_on_discarded_sheet() -> None:
     async with running() as rig:
         rig.fake.print_status = REJECTED
