@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { configure, screen } from "@testing-library/react";
+import { configure, fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
@@ -112,10 +112,13 @@ describe("the QL 62 mm layout choice in the print panel", () => {
     await renderApp({ path: "/asset/42" });
     await screen.findByRole("img", { name: "Label preview" });
     const before = previews(calls).length;
-    await userEvent.click(screen.getByRole("radio", { name: "Standard" }));
-    await userEvent.click(screen.getByRole("radio", { name: "Small QR" }));
-    await userEvent.click(screen.getByRole("radio", { name: "Standard" }));
-    await vi.waitFor(() => expect(previews(calls).length).toBeGreaterThan(before));
+    // Three changes with no turn of the event loop between them: the debounce cannot run out
+    // in between, however loaded the machine is (userEvent waits between clicks, and on a busy
+    // runner those waits passed the 400 ms debounce).
+    fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Small QR" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Standard" }));
+    await vi.waitFor(() => expect(previews(calls).length).toBeGreaterThan(before), { timeout: 5_000 });
     await new Promise((resolve) => setTimeout(resolve, 400));
     expect(previews(calls).length - before).toBe(1);
   });
