@@ -13,6 +13,12 @@ export function printConfirmationText(confirmation: Printer["print_confirmation"
   const channel = channelText(confirmation, t);
   // Run 26, hardening note 3: say why test prints no longer try IPP.
   if (confirmation?.channel !== "ipp" && confirmation?.ipp_incomplete) {
+    if (confirmation.label_counter && confirmation.counter_read === false) {
+      // R3-7: both apply, say both.
+      return t(
+        msg`Not confirmed — the label counter does not answer, and IPP is not tried: the printer did not finish a test print's IPP job`,
+      );
+    }
     return confirmation.channel === "none"
       ? t(msg`Not confirmed — IPP is not tried: the printer did not finish a test print's IPP job`)
       : t(msg`Label counter — IPP is not tried: the printer did not finish a test print's IPP job`);

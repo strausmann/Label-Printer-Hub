@@ -2978,6 +2978,10 @@ msgid "Not confirmed — IPP is not tried: the printer did not finish a test pri
 msgstr "Nicht bestätigt – IPP wird nicht versucht: Der Drucker hat den IPP-Auftrag eines Testdrucks nicht fertig gedruckt"
 
 #: src/features/printers/printConfirmation.ts
+msgid "Not confirmed — the label counter does not answer, and IPP is not tried: the printer did not finish a test print's IPP job"
+msgstr "Nicht bestätigt – der Etikettenzähler antwortet nicht, und IPP wird nicht versucht: Der Drucker hat den IPP-Auftrag eines Testdrucks nicht fertig gedruckt"
+
+#: src/features/printers/printConfirmation.ts
 msgid "Not confirmed — the label counter does not answer; a test print checks again"
 msgstr "Nicht bestätigt – der Etikettenzähler antwortet nicht; ein Testdruck prüft es erneut"
 
