@@ -326,11 +326,11 @@ class _FailingCancelStore(MemoryJobStore):
         super().__init__()
         self.failed_for: UUID | None = None
 
-    async def mark_cancelled(self, job_id: UUID) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         if self.failed_for is None:
             self.failed_for = job_id
             raise RuntimeError("database is locked")
-        await super().mark_cancelled(job_id)
+        return await super().mark_cancelled(job_id, allow_printing=allow_printing)
 
 
 @pytest.mark.asyncio

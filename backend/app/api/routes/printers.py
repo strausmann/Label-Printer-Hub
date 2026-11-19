@@ -717,7 +717,16 @@ async def _clear_own_queued_jobs(
                 if live.state.value == JobState.QUEUED.value:
                     await queue.cancel(str(job.id))
             continue
-        await jobs_repo.mark_cancelled(session, job.id)
+        # Conditional write: a row the worker took since the read stays as it is.
+        await jobs_repo.mark_cancelled(session, job.id, states=(JobState.QUEUED.value,))
+        if queue is not None and queue.has_job(job.id):
+            # Handed to the queue while the write ran and the write won: end the in-memory job
+            # too, or it would only be vetoed (FAILED) when the worker pops it. Only this job,
+            # never the whole queue (it would cancel other keys' jobs).
+            with contextlib.suppress(KeyError):
+                live = await queue.get(job.id)
+                if live.state.value in (JobState.QUEUED.value, "paused"):
+                    await queue.cancel(str(job.id))
 
 
 @router.post(
@@ -773,4 +782,12 @@ async def clear_printer_queue(
     ]
 
     for job in queued_jobs:
-        await jobs_repo.mark_cancelled(session, job.id)
+        # Conditional write: a row the worker took since the read stays as it is.
+        await jobs_repo.mark_cancelled(session, job.id, states=(JobState.QUEUED.value,))
+
+    # A job registered with the queue while the rows were read is skipped by the filter above
+    # and was not there for the first sweep: cancel it in memory now (a job the worker already
+    # took is PRINTING and is left alone).
+    if queue is not None:
+        with contextlib.suppress(KeyError):
+            await queue.clear_queue(printer_id)

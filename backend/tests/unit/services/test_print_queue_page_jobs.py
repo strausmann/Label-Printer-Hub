@@ -697,7 +697,7 @@ async def test_a_cancel_whose_write_fails_during_the_end_keeps_the_job_known(
             await gate.wait()
             await super().mark_failed_code(job_id, *a, **k)
 
-        async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+        async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
             raise RuntimeError("database is locked")
 
     async with _env(FakeIppPrinter(job_script=[9])) as env:

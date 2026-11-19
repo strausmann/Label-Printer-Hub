@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
@@ -294,20 +295,26 @@ async def cancel_queued_unhanded(
     return await session.get(Job, job_id, populate_existing=True)
 
 
-async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:
-    """Transition QUEUED|PRINTING → CANCELLED. Sets finished_at."""
-    job = await _get_or_raise(session, job_id)
-    if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
-        raise ValueError(
-            f"Cannot mark_cancelled: job {job_id} is in state '{job.state}', "
-            "expected 'queued' or 'printing'"
-        )
-    job.state = JobState.CANCELLED.value
-    job.finished_at = datetime.now(UTC)
-    session.add(job)
+async def mark_cancelled(
+    session: AsyncSession, job_id: UUID, *, states: Collection[str]
+) -> Job | None:
+    """Move a job from one of ``states`` to CANCELLED in one guarded statement (sets finished_at).
+
+    The statement is the check and the write at once: a row a worker moved to ``printing``
+    between a caller's read and this write is not overwritten. ``None`` when no row changed
+    (unknown id, or the row is in another state).
+    """
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state).in_(tuple(states)))
+        .values(state=JobState.CANCELLED.value, finished_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
     await session.commit()
-    await session.refresh(job)
-    return job
+    if int(result.rowcount) == 0:  # type: ignore[attr-defined]
+        return None
+    return await session.get(Job, job_id, populate_existing=True)
 
 
 async def mark_inflight_as_failed_restart(session: AsyncSession) -> int:

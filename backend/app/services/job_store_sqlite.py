@@ -112,26 +112,29 @@ class SQLiteJobStore(JobStore):
                 return
             await jobs_repo.mark_failed(session, job_id, error)
 
-    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         """Transition QUEUED -> CANCELLED (page jobs: also PRINTING, ``allow_printing``).
 
-        Silently no-op if not found or in another state.
+        One conditional write (state in the allowed set), so a row a worker took meanwhile is
+        never overwritten. Returns True when the row changed; silently False if not found or in
+        another state.
         """
-        allowed = {JobState.QUEUED.value}
-        if allow_printing:
-            allowed.add(JobState.PRINTING.value)
+        states = (
+            (JobState.QUEUED.value, JobState.PRINTING.value)
+            if allow_printing
+            else (JobState.QUEUED.value,)
+        )
         async with self._session_factory() as session:
+            if await jobs_repo.mark_cancelled(session, job_id, states=states) is not None:
+                return True
             job = await jobs_repo.get(session, job_id)
-            if job is None:
-                return  # silent no-op (Protocol contract)
-            if job.state not in allowed:
+            if job is not None:
                 logger.warning(
                     "mark_cancelled called on job %s in state %s (expected queued)",
                     job_id,
                     job.state,
                 )
-                return
-            await jobs_repo.mark_cancelled(session, job_id)
+            return False
 
     async def set_result(self, job_id: UUID, result: dict[str, Any]) -> None:
         """Replace the job's ``result``. Silently no-op if not found."""

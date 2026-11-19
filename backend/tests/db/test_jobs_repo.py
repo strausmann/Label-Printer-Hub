@@ -92,13 +92,16 @@ async def test_failed_transition_from_queued(session):
     assert failed.started_at is None  # never started
 
 
+_CANCELLABLE = (JobState.QUEUED.value, JobState.PRINTING.value)
+
+
 @pytest.mark.asyncio
 async def test_cancelled_from_queued(session):
     """queued → cancelled; finished_at set."""
     printer = await _make_printer(session)
     job = await _queued(session, printer)
 
-    cancelled = await jobs.mark_cancelled(session, job.id)
+    cancelled = await jobs.mark_cancelled(session, job.id, states=_CANCELLABLE)
     assert cancelled.state == JobState.CANCELLED.value
     assert cancelled.finished_at is not None
     assert cancelled.started_at is None
@@ -111,7 +114,7 @@ async def test_cancelled_from_printing(session):
     job = await _queued(session, printer)
     await jobs.mark_printing(session, job.id)
 
-    cancelled = await jobs.mark_cancelled(session, job.id)
+    cancelled = await jobs.mark_cancelled(session, job.id, states=_CANCELLABLE)
     assert cancelled.state == JobState.CANCELLED.value
     assert cancelled.finished_at is not None
     assert cancelled.started_at is not None  # set during mark_printing

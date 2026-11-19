@@ -236,10 +236,10 @@ async def test_sqlite_store_mark_cancelled_only_from_queued(async_session_factor
     await store.save_queued(printing)
     await store.mark_printing(printing.id)
 
-    await store.mark_cancelled(queued.id)
+    assert await store.mark_cancelled(queued.id) is True
     with caplog.at_level(logging.WARNING):
-        await store.mark_cancelled(printing.id)
-    await store.mark_cancelled(uuid4())  # unknown id: silent no-op
+        assert await store.mark_cancelled(printing.id) is False
+    assert await store.mark_cancelled(uuid4()) is False  # unknown id: silent no-op
 
     cancelled = await store.get(queued.id)
     assert cancelled is not None
@@ -249,6 +249,7 @@ async def test_sqlite_store_mark_cancelled_only_from_queued(async_session_factor
     assert still_printing is not None
     assert still_printing.state == JobState.PRINTING.value
     assert "mark_cancelled called on job" in caplog.text
+    assert await store.mark_cancelled(printing.id, allow_printing=True) is True
 
 
 @pytest.mark.asyncio

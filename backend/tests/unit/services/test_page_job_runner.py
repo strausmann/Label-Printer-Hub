@@ -155,10 +155,10 @@ class _FailingStore(MemoryJobStore):
             raise RuntimeError("db down")
         await super().mark_done(job_id)
 
-    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         if self.fail == "cancelled":
             raise RuntimeError("db down")
-        await super().mark_cancelled(job_id, allow_printing=allow_printing)
+        return await super().mark_cancelled(job_id, allow_printing=allow_printing)
 
     async def mark_failed_code(self, job_id: UUID, *args: Any, **kwargs: Any) -> None:
         if self.fail == "failed":

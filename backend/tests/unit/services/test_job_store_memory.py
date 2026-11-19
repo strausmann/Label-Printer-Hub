@@ -119,9 +119,9 @@ async def test_memory_store_mark_cancelled_only_from_queued() -> None:
     await store.save_queued(printing)
     await store.mark_printing(printing.id)
 
-    await store.mark_cancelled(queued.id)
-    await store.mark_cancelled(printing.id)
-    await store.mark_cancelled(uuid4())  # unknown id: silent no-op
+    assert await store.mark_cancelled(queued.id) is True
+    assert await store.mark_cancelled(printing.id) is False
+    assert await store.mark_cancelled(uuid4()) is False  # unknown id: silent no-op
 
     assert (await store.get(queued.id)).state == JobState.CANCELLED.value  # type: ignore[union-attr]
     assert (await store.get(queued.id)).finished_at is not None  # type: ignore[union-attr]

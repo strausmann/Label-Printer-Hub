@@ -2312,12 +2312,15 @@ class PrintQueue:
         # The held limit may have discarded runs in this step; their rows follow the cancelled
         # label's, and are written even when that write fails or the client goes away (N1).
         try:
-            await self._store.mark_cancelled(UUID(job.id))
+            stored = await self._store.mark_cancelled(UUID(job.id))
         except BaseException:
             self._unpersisted.add(job.id)
             if discarded:
                 await self._persist_discarded(settled_run, discarded, keep_original=True)
             raise
+        if not stored:
+            # The in-memory CANCELLED is terminal and stays; the row was changed elsewhere.
+            logger.info("cancel of job %s not stored: the row was no longer cancellable", job.id)
         if discarded:
             await self._persist_discarded(settled_run, discarded, keep_original=False)
         if job.kind is not None:

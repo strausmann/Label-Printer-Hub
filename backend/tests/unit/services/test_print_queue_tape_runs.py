@@ -563,13 +563,13 @@ class _CancelWindowStore(_SlowDoneStore):
             raise self.exc
         await super().mark_done(job_id)
 
-    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         if job_id == self.gate_cancel:
             self.cancel_reached.set()
             await self.cancel_release.wait()
             if self.cancel_exc is not None:
                 raise self.cancel_exc
-        await super().mark_cancelled(job_id, allow_printing=allow_printing)
+        return await super().mark_cancelled(job_id, allow_printing=allow_printing)
 
 
 async def _held_runs(
