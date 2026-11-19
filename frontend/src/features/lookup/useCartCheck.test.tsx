@@ -37,6 +37,41 @@ afterEach(() => {
 });
 
 describe("useCartCheck", () => {
+  // Codex review of #399: the verdicts lived only in the component, the query cache kept just "done".
+  it("coming back to the same cart shows its verdicts again without a new request", async () => {
+    const { calls } = mockApi(checkRoute());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const layout = { orientation: "across", layout_preset: "compact" } as const;
+    const first = renderHook(() => useCartCheck(cart(3), 62, layout), { wrapper });
+    await waitFor(() => expect(first.result.current.flags.size).toBe(3));
+    first.unmount();
+
+    const again = renderHook(() => useCartCheck(cart(3), 62, layout), { wrapper });
+    expect(again.result.current.flags.size).toBe(3);
+    expect(again.result.current.isPending).toBe(false);
+    await settle();
+    expect(again.result.current.flags.size).toBe(3);
+    expect(sent(calls)).toEqual([["1", "2", "3"]]);
+  });
+
+  it("coming back after the cart grew asks only for the item that has no verdict yet", async () => {
+    const { calls } = mockApi(checkRoute());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const layout = { orientation: "across", layout_preset: "compact" } as const;
+    const first = renderHook(({ items }) => useCartCheck(items, 62, layout), { wrapper, initialProps: { items: cart(2) } });
+    await waitFor(() => expect(first.result.current.flags.size).toBe(2));
+    first.rerender({ items: cart(3) });
+    await waitFor(() => expect(first.result.current.flags.size).toBe(3));
+    first.unmount();
+
+    const again = renderHook(() => useCartCheck(cart(3), 62, layout), { wrapper });
+    expect(again.result.current.flags.size).toBe(3);
+    await settle();
+    expect(sent(calls)).toEqual([["1", "2"], ["3"]]);
+  });
+
   it("removing an item sends nothing, adding one sends only that one", async () => {
     const { calls } = mockApi(checkRoute());
     const view = setup(cart(3));

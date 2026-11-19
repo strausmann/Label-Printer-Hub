@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiFetch } from "../../api/client";
 import type { components } from "../../api/schema.gen";
@@ -45,6 +45,10 @@ async function checkAll(
 }
 
 const NONE: ReadonlyMap<string, RenderCheckResult> = new Map();
+const CHECK_KEY = "render-check";
+
+/** The verdicts one check run fetched, by verdict key: what the query caches. */
+type Verdicts = Record<string, RenderCheckResult>;
 
 /**
  * The verdict per cart item (key `app:id`). No check without a known tape.
@@ -59,21 +63,38 @@ export function useCartCheck(
   tapeMm: number | null,
   layout: LayoutOptions | undefined,
 ): { flags: ReadonlyMap<string, RenderCheckResult>; isPending: boolean; isError: boolean } {
+  const client = useQueryClient();
   // Mutated as answers arrive, never replaced: a render reads what the finished requests left.
   const [kept] = useState(() => new Map<string, RenderCheckResult>());
   const layoutKey = JSON.stringify(layout ?? null);
   const verdictKey = (item: CartItem) => `${tapeMm}|${layoutKey}|${item.app}:${item.id}:${item.content_type}`;
+  // The query cache outlives this component: verdicts fetched before (on an earlier visit of the cart, also for a
+  // smaller cart) are taken from it, so coming back neither loses them nor asks for them again (Codex review, #399).
+  for (const [, data] of client.getQueriesData<Verdicts>({ queryKey: [CHECK_KEY, tapeMm, layoutKey] })) {
+    if (data && typeof data === "object") for (const [key, verdict] of Object.entries(data)) if (!kept.has(key)) kept.set(key, verdict);
+  }
   // A run of clicks (layout, copies, removing items) asks once.
   const wanted = JSON.stringify([tapeMm, layoutKey, items.map((i) => [i.app, i.id, i.content_type])]);
   const settled = useDebounced(wanted, PREVIEW_DEBOUNCE_MS);
   const active = tapeMm !== null && items.length > 0;
   const missing = active ? items.filter((i) => !kept.has(verdictKey(i))) : [];
   const query = useQuery({
-    queryKey: ["render-check", tapeMm, layoutKey, missing.map((i) => [i.app, i.id, i.content_type])],
-    // Only runs once the debounce has caught up, so `missing`, `tapeMm` and `layout` are what the key says.
+    queryKey: [CHECK_KEY, tapeMm, layoutKey, missing.map((i) => [i.app, i.id, i.content_type])],
+    // Only runs once the debounce has caught up, so `missing`, `tapeMm` and `layout` are what the key says. Returns
+    // the verdicts it fetched, so the cache holds them for the next visit of the cart.
     queryFn: async ({ signal }) => {
-      await checkAll(missing, tapeMm as number, layout, (item, result) => kept.set(verdictKey(item), result), signal);
-      return true;
+      const fetched: Verdicts = {};
+      await checkAll(
+        missing,
+        tapeMm as number,
+        layout,
+        (item, result) => {
+          kept.set(verdictKey(item), result);
+          fetched[verdictKey(item)] = result;
+        },
+        signal,
+      );
+      return fetched;
     },
     enabled: missing.length > 0 && settled === wanted,
     retry: false,
@@ -82,7 +103,7 @@ export function useCartCheck(
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
-  // Reading `status` is what re-renders on success: the verdicts live in `kept`, which React Query knows nothing about.
+  // Reading `status` is what re-renders on success: the verdicts are read from `kept`, filled as answers arrive.
   const failed = query.status === "error";
   const flags = new Map<string, RenderCheckResult>();
   if (active && !(failed && missing.length > 0)) {
