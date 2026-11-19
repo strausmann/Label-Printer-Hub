@@ -22,6 +22,10 @@ export function PauseReason({ pause }: { pause: Printer["pause"] }) {
     tape_mismatch: t`Wrong tape loaded`,
     offline: t`Printer is offline`,
     printer_offline: t`Printer is offline`,
+    // #389: a blocking bit the tape printer reported (jam, service request, …), and a QL roll of
+    // die-cut labels (the hub prints on continuous tape only).
+    printer_error: t`The printer reports an error — check the printer`,
+    media_type_mismatch: t`Die-cut labels loaded — put in a continuous roll`,
     // #393: a print the printer did not confirm in time may still finish.
     outcome_unknown: t`A print may not have finished — check the printer`,
     // The hub's own hold while a page printer's status check is not running (it retries).

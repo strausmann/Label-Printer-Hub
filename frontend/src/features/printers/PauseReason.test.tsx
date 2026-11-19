@@ -25,6 +25,15 @@ describe("PauseReason", () => {
     expect(container.querySelector("code")).toBeNull();
   });
 
+  it.each([
+    ["printer_error", "The printer reports an error — check the printer"],
+    ["media_type_mismatch", "Die-cut labels loaded — put in a continuous roll"],
+  ])("the tape pause %s reads as a sentence, not the code font", (code, words) => {
+    const { container } = render(ui(code));
+    expect(screen.getByText(words)).toBeVisible();
+    expect(container.querySelector("code")).toBeNull();
+  });
+
   it("a tape code keeps its sentence", () => {
     render(ui("tape_empty"));
     expect(screen.getByText("Tape is empty")).toBeVisible();
@@ -70,5 +79,13 @@ describe("PauseReason in German", () => {
   it("outcome_unknown reads in German (#393)", () => {
     render(ui("outcome_unknown"));
     expect(screen.getByText("Ein Druck ist vielleicht nicht fertig – prüf den Drucker")).toBeVisible();
+  });
+
+  it.each([
+    ["printer_error", "Der Drucker meldet einen Fehler – prüf den Drucker"],
+    ["media_type_mismatch", "Stanzetiketten eingelegt – lege eine Endlosrolle ein"],
+  ])("the tape pause %s reads in German", (code, words) => {
+    render(ui(code));
+    expect(screen.getByText(words)).toBeVisible();
   });
 });

@@ -1604,6 +1604,10 @@ msgstr "Stanzetiketten"
 msgid "Die-cut labels"
 msgstr "Stanzetiketten"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Die-cut labels loaded — put in a continuous roll"
+msgstr "Stanzetiketten eingelegt – lege eine Endlosrolle ein"
+
 #: src/features/printers/model.ts
 msgid "Different device"
 msgstr "Anderes Gerät"
@@ -5571,6 +5575,10 @@ msgstr "Der Drucker hat nach dem Senden des Etiketts einen Fehler gemeldet. Sieh
 #: src/features/printers/flags.ts
 msgid "The printer reports a problem."
 msgstr "Der Drucker meldet ein Problem."
+
+#: src/features/printers/PauseReason.tsx
+msgid "The printer reports an error — check the printer"
+msgstr "Der Drucker meldet einen Fehler – prüf den Drucker"
 
 #: src/features/printers/printErrorText.ts
 msgid "The printer reports an error. Fix it on the printer and try again."

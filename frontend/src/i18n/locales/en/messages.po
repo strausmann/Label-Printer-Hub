@@ -1604,6 +1604,10 @@ msgstr "die-cut labels"
 msgid "Die-cut labels"
 msgstr "Die-cut labels"
 
+#: src/features/printers/PauseReason.tsx
+msgid "Die-cut labels loaded — put in a continuous roll"
+msgstr "Die-cut labels loaded — put in a continuous roll"
+
 #: src/features/printers/model.ts
 msgid "Different device"
 msgstr "Different device"
@@ -5571,6 +5575,10 @@ msgstr "The printer reported an error after the label was sent. Check the printe
 #: src/features/printers/flags.ts
 msgid "The printer reports a problem."
 msgstr "The printer reports a problem."
+
+#: src/features/printers/PauseReason.tsx
+msgid "The printer reports an error — check the printer"
+msgstr "The printer reports an error — check the printer"
 
 #: src/features/printers/printErrorText.ts
 msgid "The printer reports an error. Fix it on the printer and try again."
