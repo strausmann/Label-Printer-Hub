@@ -9,7 +9,6 @@ from uuid import uuid4
 
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
-    LabelTooLongError,
     MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
@@ -20,6 +19,7 @@ from app.printer_backends.exceptions import (
     SnmpQueryError,
     SpoolLabelOnlyTapeError,
     TapeEmptyError,
+    TapeLabelTooLongError,
     TapeMismatchError,
     UnsupportedTapeError,
 )
@@ -44,7 +44,7 @@ SAMPLES: dict[type[Exception], Exception] = {
         content_type="qr_two_lines", missing_fields=("title",)
     ),
     QrPayloadTooLongError: QrPayloadTooLongError(length=300, max_bytes=100),
-    LabelTooLongError: LabelTooLongError(length_mm=1601, max_mm=1000),
+    TapeLabelTooLongError: TapeLabelTooLongError(length_mm=1601, max_mm=1000),
     SnmpQueryError: SnmpQueryError("preflight SNMP failed"),
     MediaTypeMismatchError: MediaTypeMismatchError(loaded_kind="die_cut", media_raw="29mm x 90mm"),
     PrinterReportedError: PrinterReportedError(["jammed"]),

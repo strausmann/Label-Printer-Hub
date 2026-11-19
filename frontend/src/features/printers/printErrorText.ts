@@ -68,7 +68,7 @@ export function printErrorText(code: string | null | undefined, detail: Record<s
     }
     case "media_type_mismatch":
       return t(msg`The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll.`);
-    case "label_too_long": {
+    case "tape_label_too_long": {
       // R26-2: the rendered label is longer than the tape allows (TapeSpec.max_length_mm).
       const length = mm(detail?.length_mm);
       const max = mm(detail?.max_mm);

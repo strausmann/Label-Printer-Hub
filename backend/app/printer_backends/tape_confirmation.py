@@ -35,8 +35,8 @@ from typing import Any, Final, Literal
 import httpx
 
 from app.printer_backends.exceptions import (
-    LabelTooLongError,
     PrintFailedError,
+    TapeLabelTooLongError,
     refused_before_sending,
 )
 from app.printer_backends.ipp.client import IppClient
@@ -128,12 +128,12 @@ def confirm_timeout_s(labels: int, length_mm: float = 0.0) -> float:
 def check_label_lengths(lengths_mm: list[float], max_mm: int) -> None:
     """Refuse before sending when a label is longer than the tape allows (R26-2).
 
-    Raises ``LabelTooLongError`` (``nothing_sent``) for the first label over *max_mm*.
+    Raises ``TapeLabelTooLongError`` (``nothing_sent``) for the first label over *max_mm*.
     """
     for length in lengths_mm:
         if length > max_mm:
             raise refused_before_sending(
-                LabelTooLongError(length_mm=math.ceil(length), max_mm=max_mm)
+                TapeLabelTooLongError(length_mm=math.ceil(length), max_mm=max_mm)
             )
 
 

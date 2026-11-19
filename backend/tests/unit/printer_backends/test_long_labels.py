@@ -13,7 +13,7 @@ import httpx
 import pytest
 from app.printer_backends import post_send
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
-from app.printer_backends.exceptions import LabelsNotConfirmedError, LabelTooLongError
+from app.printer_backends.exceptions import LabelsNotConfirmedError, TapeLabelTooLongError
 from app.printer_backends.ptouch_backend import PTouchBackend
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.printer_backends.tape_confirmation import (
@@ -185,7 +185,7 @@ async def test_a_pt_label_longer_than_the_tape_allows_is_refused_before_sending(
     spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
     backend = PTouchBackend(host="192.0.2.85", ipp_transport=_refusing())
     too_long = Image.new("1", (round((spec.max_length_mm + 10) / 25.4 * 180), 76), 1)
-    with pytest.raises(LabelTooLongError) as err:
+    with pytest.raises(TapeLabelTooLongError) as err:
         await backend.print_image(too_long, spec)
     assert err.value.nothing_sent
     assert err.value.max_mm == spec.max_length_mm and err.value.length_mm > spec.max_length_mm
@@ -210,7 +210,7 @@ async def test_a_pt_batch_with_one_label_too_long_sends_nothing(
     spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
     backend = PTouchBackend(host="192.0.2.86", ipp_transport=_refusing())
     too_long = Image.new("1", (round((spec.max_length_mm + 10) / 25.4 * 180), 76), 1)
-    with pytest.raises(LabelTooLongError):
+    with pytest.raises(TapeLabelTooLongError):
         await backend.print_images([Image.new("1", (300, 76), 1), too_long], spec)
     assert sent == []
 
@@ -227,10 +227,10 @@ async def test_a_ql_label_longer_than_the_tape_allows_is_refused_before_sending(
         TapeRegistry.lookup_ql(29, MediaType.CONTINUOUS_LENGTH_TAPE), max_length_mm=50
     )
     backend = BrotherQLBackend(host="192.0.2.87", ipp_transport=_refusing())
-    with pytest.raises(LabelTooLongError) as err:
+    with pytest.raises(TapeLabelTooLongError) as err:
         await backend.print_image(Image.new("1", (1181, 306), 1), spec)  # 100 mm
     assert err.value.nothing_sent and (err.value.length_mm, err.value.max_mm) == (100, 50)
-    with pytest.raises(LabelTooLongError):
+    with pytest.raises(TapeLabelTooLongError):
         await backend.print_images(
             [Image.new("1", (300, 306), 1)] * 2 + [Image.new("1", (1181, 306), 1)], spec
         )
@@ -241,11 +241,11 @@ def test_a_label_too_long_maps_to_its_own_code() -> None:
     from app.services.print_error_codes import describe_print_error
     from app.services.print_queue import _printer_error_to_record
 
-    exc = LabelTooLongError(length_mm=1601, max_mm=1000)
+    exc = TapeLabelTooLongError(length_mm=1601, max_mm=1000)
     known = describe_print_error(exc)
-    assert (known.status, known.code) == (422, "label_too_long")
+    assert (known.status, known.code) == (422, "tape_label_too_long")
     assert known.detail == {"length_mm": 1601, "max_mm": 1000}
-    assert _printer_error_to_record(exc)[0] == "label_too_long"
+    assert _printer_error_to_record(exc)[0] == "tape_label_too_long"
     assert _printer_error_to_record(exc)[2] == {"length_mm": 1601, "max_mm": 1000}
 
 
@@ -268,3 +268,12 @@ async def test_a_negative_impression_count_after_a_cancel_is_clamped_too() -> No
     job = await ipp.submit(b"x", 1)
     outcome = await ipp.cancel(job, poll_s=0.0)
     assert (outcome.result, outcome.impressions) == ("cancelled", 0)
+
+
+def test_the_tape_length_code_is_not_the_sheet_text_code() -> None:
+    # Review round 3, R3-1: `label_too_long` is a sheet text over its limit (264-12).
+    from app.services.print_error_codes import describe_print_error
+    from app.sheets.errors import TextTooLongError
+
+    tape = describe_print_error(TapeLabelTooLongError(length_mm=1601, max_mm=1000)).code
+    assert tape != TextTooLongError.error_code

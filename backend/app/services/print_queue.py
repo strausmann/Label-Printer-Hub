@@ -47,7 +47,6 @@ from app.models.printer_state import PrinterState
 from app.printer_backends.exceptions import (
     ConfirmationUnknownError,
     LabelsNotConfirmedError,
-    LabelTooLongError,
     MediaTypeMismatchError,
     PrinterCoverOpenError,
     PrinterError,
@@ -57,6 +56,7 @@ from app.printer_backends.exceptions import (
     SnmpQueryError,
     StatusQueryFailedError,
     TapeEmptyError,
+    TapeLabelTooLongError,
     TapeMismatchError,
 )
 from app.printer_backends.ipp.client import JobInfo
@@ -193,7 +193,7 @@ _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
     PrinterReportedError: "printer_error",
     LabelsNotConfirmedError: "labels_not_confirmed",
     ConfirmationUnknownError: "outcome_unknown",
-    LabelTooLongError: "label_too_long",
+    TapeLabelTooLongError: "tape_label_too_long",
 }
 
 
@@ -209,7 +209,7 @@ def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any
         detail = {"flags": exc.flags}
     elif isinstance(exc, LabelsNotConfirmedError):
         detail = {"printed": exc.printed, "expected": exc.expected}
-    elif isinstance(exc, LabelTooLongError):
+    elif isinstance(exc, TapeLabelTooLongError):
         detail = {"length_mm": exc.length_mm, "max_mm": exc.max_mm}
     return code, str(exc) or code, detail
 

@@ -103,7 +103,7 @@ class LabelsNotConfirmedError(PrinterError):
         super().__init__(f"{self.printed} of {self.expected} labels printed")
 
 
-class LabelTooLongError(PrinterError):
+class TapeLabelTooLongError(PrinterError):
     """A rendered label is longer than the tape allows (``TapeSpec.max_length_mm``, R26-2).
 
     Refused before anything is sent: the printer would cut it off or refuse it, and the hub could
