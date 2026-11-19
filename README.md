@@ -45,7 +45,7 @@ Website: <https://labelyard.app>
 - **Print queue** per printer: pause, resume, cancel, retry; an interrupted tape run stops at the unknown part and offers continue or reprint
 
 **Label sheets**
-- **36 sheet types included** (Avery, Avery Zweckform, Herma, Endisch; A4 and US Letter), more can be created or imported
+- **39 sheet types included** (Avery, Avery Zweckform, Herma, Endisch; A4 and US Letter), more can be created or imported
 - **Partly used sheets** — every sheet gets a code; the hub remembers which cells are used and prints only onto free ones
 - **Calibration** per printer and tray: print a test page, read the offsets, the hub corrects every print
 
@@ -242,10 +242,10 @@ Other Brother PT and QL models that share the command reference will likely work
 
 ## Supported label sheets
 
-The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
+The hub ships with these sheet types. Avery Zweckform 3490, 6121, L4731REV and L4737REV are verified on real sheets. The measurements of the others come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
 
 <details>
-<summary>36 sheet types (A4 and US Letter)</summary>
+<summary>39 sheet types (A4 and US Letter)</summary>
 
 | Vendor | Product codes | Labels | Label size | Per sheet | Page |
 |---|---|---|---|---|---|
@@ -257,13 +257,16 @@ The hub ships with these sheet types. Their measurements come from the [gLabels 
 | Avery | L4732 | Mini labels | 35.6 × 16.9 mm | 5 × 16 = 80 | A4 |
 | Avery Zweckform | 3474 | Address labels | 70 × 37 mm | 3 × 8 = 24 | A4 |
 | Avery Zweckform | 3481 | Multipurpose labels | 70 × 41 mm | 3 × 7 = 21 | A4 |
+| Avery Zweckform | 3490 | Universal labels, square cut | 70 × 36 mm | 3 × 8 = 24 | A4 |
 | Avery Zweckform | 3669 | Rectangular labels | 70 × 50.8 mm | 3 × 5 = 15 | A4 |
 | Avery Zweckform | 4760 | Lever arch file labels | 192 × 38 mm | 1 × 7 = 7 | A4 |
 | Avery Zweckform | 4761 | Lever arch file labels | 192 × 61 mm | 1 × 4 = 4 | A4 |
 | Avery Zweckform | 4780 | Multipurpose labels | 48.5 × 25.4 mm | 4 × 10 = 40 | A4 |
 | Avery Zweckform | 6021 | Multipurpose labels | 46 × 16.9 mm | 4 × 16 = 64 | A4 |
-| Avery Zweckform | L4731REV-25, L4731REV-10, L4731REV-65, L4731 | Mini labels, removable | 25.4 × 10 mm | 7 × 27 = 189 | A4 |
+| Avery Zweckform | 6121, 6121-65 | Universal labels | 38.1 × 21.18 mm | 5 × 13 = 65 | A4 |
+| Avery Zweckform | L4731REV-25, L4731REV-10, L4731REV-65, L4731 | Mini labels, removable | 25.4 × 9.98 mm | 7 × 27 = 189 | A4 |
 | Avery Zweckform | L4736REV-25, L4736REV-10, L4736REV-65, L4736REV-100 (+1 more) | Mini labels, removable | 45.7 × 21.2 mm | 4 × 12 = 48 | A4 |
+| Avery Zweckform | L4737REV-25, L4737REV-10, L4737REV-100, L4737 | Universal labels, removable | 63.5 × 29.6 mm | 3 × 9 = 27 | A4 |
 | Endisch | 6500040x | Round labels | 40 × 40 mm | 4 × 6 = 24 | A4 |
 | Endisch | 6500060x | Round labels | 60 × 60 mm | 3 × 4 = 12 | A4 |
 | Herma | 10001 | Rectangular labels | 25.4 × 10 mm | 7 × 27 = 189 | A4 |
