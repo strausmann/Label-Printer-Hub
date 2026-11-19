@@ -277,3 +277,19 @@ def test_the_tape_length_code_is_not_the_sheet_text_code() -> None:
 
     tape = describe_print_error(TapeLabelTooLongError(length_mm=1601, max_mm=1000)).code
     assert tape != TextTooLongError.error_code
+
+
+async def test_a_360_dpi_model_measures_its_labels_at_360_dpi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Review round 3: the resolution comes from the model's entry, not a fixed 180 dpi.
+    async def preflight(host: str, **_: Any) -> PreflightStatus:
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, media_raw="12mm")
+
+    monkeypatch.setattr("app.printer_backends.ptouch_backend.query_preflight", preflight)
+    monkeypatch.setattr("app.printer_backends.ptouch_backend._ptouch_print", lambda *a, **k: None)
+    spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
+    backend = PTouchBackend(host="192.0.2.90", model_id="PT-P900W", ipp_transport=_refusing())
+    # 700 mm at 360 dpi: 1400 mm if it were measured at 180 dpi, over the 1000 mm of TZe tape.
+    await backend.print_image(Image.new("1", (round(700 / 25.4 * 360), 152), 1), spec)
+    assert backend.send_state.length_mm == pytest.approx(700.0, abs=0.5)

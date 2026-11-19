@@ -45,9 +45,6 @@ from app.services.status_block import StatusBlock
 
 _logger = logging.getLogger(__name__)
 
-PT_DPI = 180
-"""The resolution the hub renders P-touch labels at (``printer_models/pt.py``: 180 dpi); a
-high-resolution print doubles the dots, not the length."""
 
 _RETRY_BACKOFFS: tuple[float, ...] = (0.0, 1.0, 2.0)
 
@@ -296,6 +293,13 @@ class PTouchBackend:
         # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
         self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
 
+    @property
+    def dpi(self) -> int:
+        """The resolution of this model's raster along the tape, from its ``ptouch`` entry
+        (``RESOLUTION_DPI``: 180 on the PT-P750W, 360 on the PT-P900 family). A high-resolution
+        print doubles the dots, not the length (R26-2, review round 3)."""
+        return int(getattr(_PTOUCH_PRINTER_CLASSES[self._model_id], "RESOLUTION_DPI", 180))
+
     @classmethod
     def from_settings(cls, settings: Any) -> PTouchBackend:
         host = getattr(settings, "pt750w_host", "") or ""
@@ -431,7 +435,7 @@ class PTouchBackend:
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
         # / PrinterOfflineError on detected issues.
         self.last_send_status = None
-        length = label_length_mm(image, PT_DPI)
+        length = label_length_mm(image, self.dpi)
         check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
         if detect_confirmation:
             self.send_state.reset_counter_gate()  # R3-2: the read below asks for the counter
@@ -520,7 +524,7 @@ class PTouchBackend:
             raise ValueError("print_images requires at least one image")
 
         self.last_send_status = None
-        lengths = [label_length_mm(image, PT_DPI) for image in images]
+        lengths = [label_length_mm(image, self.dpi) for image in images]
         check_label_lengths(lengths, tape_spec.max_length_mm)  # R26-2: the whole batch or none
         try:
             _require_tape_class(tape_spec.width_mm)
