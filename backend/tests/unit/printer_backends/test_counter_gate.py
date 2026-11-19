@@ -325,3 +325,15 @@ async def test_after_the_retry_window_one_refusal_does_not_switch_it_off_again(
     assert agent.asked[-COUNTER_REFUSALS_TO_STOP:] == [True] * COUNTER_REFUSALS_TO_STOP
     await backend.read_status()
     assert agent.asked[-1] is False  # three fresh refusals switched it off again
+
+
+async def test_a_read_that_did_not_ask_for_the_counter_does_not_break_the_streak() -> None:
+    """Review round 4, L1: a read that left the counter out has no answer about it. One that was
+    started while the counter was off and ends after it is asked again must not count as
+    "another answer" and break the fresh streak."""
+    state = tape_confirmation.TapeSendState("192.0.2.37", tape_confirmation.TapeIppTransport("x"))
+    for _ in range(COUNTER_REFUSALS_TO_STOP - 1):
+        await state.note_counter(refused=True, answered=False)
+    await state.note_counter(refused=False, answered=False, asked=False)
+    await state.note_counter(refused=True, answered=False)
+    assert state.counter_off_at is not None
