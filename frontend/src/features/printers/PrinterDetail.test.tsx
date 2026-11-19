@@ -77,7 +77,7 @@ describe("PrinterDetail", () => {
   });
 
   it("a tape printer shows how it confirms a print (#393), read-only", async () => {
-    const print_confirmation = { channel: "label_counter", confirm_transport: "raw", label_counter: true, counter_read: true, confirmed_at: "2026-11-18T09:00:00Z" };
+    const print_confirmation = { channel: "label_counter", confirm_transport: "raw", label_counter: true, counter_read: true, ipp_incomplete: false, confirmed_at: "2026-11-18T09:00:00Z" };
     mockApi(routes({ ...PRINTER_B, print_confirmation }));
     const first = await renderApp({ path: `/printers/${PRINTER_B.id}` });
     const connection = await screen.findByRole("region", { name: "Connection" });

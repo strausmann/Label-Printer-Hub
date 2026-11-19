@@ -48,6 +48,13 @@ class PrintConfirmationRead(BaseModel):
             "after an hour and with every test print"
         )
     )
+    ipp_incomplete: bool = Field(
+        description=(
+            "``true`` when the printer took a test print's IPP job and did not complete it "
+            "without a fault to explain it; test prints then stay on TCP 9100 until the host or "
+            "port changes"
+        )
+    )
     confirmed_at: datetime = Field(description="When the test print found it")
 
     @field_serializer("confirmed_at")
@@ -65,6 +72,7 @@ class PrintConfirmationRead(BaseModel):
             confirm_transport=record.confirm_transport,
             label_counter=record.label_counter,
             counter_read=not record.counter_off,
+            ipp_incomplete=record.ipp_incomplete,
             confirmed_at=record.confirmed_at,
         )
 

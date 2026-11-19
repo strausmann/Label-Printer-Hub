@@ -158,3 +158,11 @@ def test_a_record_reads_back_with_its_counter_state() -> None:
     legacy = {"confirm_transport": "raw", "label_counter": True, "confirmed_at": _AT.isoformat()}
     assert ConfirmationRecord.from_json(legacy) == ConfirmationRecord("raw", True, _AT)
     assert ConfirmationRecord.from_json({**legacy, "counter_off": 1}) is None
+
+
+def test_the_printer_view_shows_why_ipp_is_not_tried() -> None:
+    # Hardening note 3 of run 26: the sticky flag is visible, not hidden.
+    shown = PrintConfirmationRead.from_stored(
+        ConfirmationRecord("raw", True, _AT, ipp_incomplete=True).to_json()
+    )
+    assert shown is not None and shown.ipp_incomplete is True

@@ -10,6 +10,17 @@ import type { Translate } from "./printErrorText";
  * never test-printed has no record yet; the hub then asks the printer each time it sends.
  */
 export function printConfirmationText(confirmation: Printer["print_confirmation"], t: Translate): string {
+  const channel = channelText(confirmation, t);
+  // Run 26, hardening note 3: say why test prints no longer try IPP.
+  if (confirmation?.channel !== "ipp" && confirmation?.ipp_incomplete) {
+    return confirmation.channel === "none"
+      ? t(msg`Not confirmed — IPP is not tried: the printer did not finish a test print's IPP job`)
+      : t(msg`Label counter — IPP is not tried: the printer did not finish a test print's IPP job`);
+  }
+  return channel;
+}
+
+function channelText(confirmation: Printer["print_confirmation"], t: Translate): string {
   switch (confirmation?.channel) {
     case "ipp":
       return t(msg`Printer reports the job state (IPP)`);

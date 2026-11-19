@@ -13,6 +13,7 @@ const record = (channel: "ipp" | "label_counter" | "none") => ({
   confirm_transport: channel === "ipp" ? ("ipp" as const) : ("raw" as const),
   label_counter: channel !== "none",
   counter_read: true,
+  ipp_incomplete: false,
   confirmed_at: "2026-11-18T09:00:00Z",
 });
 // R26-1: the test print found the counter, but the printer stopped answering it.
@@ -35,6 +36,12 @@ describe("printConfirmationText (#393)", () => {
     expect(printConfirmationText(counterOff, t)).toBe("Not confirmed — the label counter does not answer; a test print checks again");
   });
 
+  it("says why IPP is not tried when an earlier test print's IPP job did not finish", () => {
+    expect(printConfirmationText({ ...record("label_counter"), ipp_incomplete: true }, t)).toBe(
+      "Label counter — IPP is not tried: the printer did not finish a test print's IPP job",
+    );
+  });
+
   it("says a printer without a record has not been tested yet", () => {
     expect(printConfirmationText(null, t)).toBe("Not tested yet — a test print finds out");
     expect(printConfirmationText(undefined, t)).toBe("Not tested yet — a test print finds out");
@@ -50,5 +57,8 @@ describe("printConfirmationText in German (#393)", () => {
     expect(printConfirmationText(record("label_counter"), t)).toBe("Etikettenzähler");
     expect(printConfirmationText(record("ipp"), t)).toBe("Drucker meldet den Auftragsstatus (IPP)");
     expect(printConfirmationText(counterOff, t)).toBe("Nicht bestätigt – der Etikettenzähler antwortet nicht; ein Testdruck prüft es erneut");
+    expect(printConfirmationText({ ...record("none"), ipp_incomplete: true }, t)).toBe(
+      "Nicht bestätigt – IPP wird nicht versucht: Der Drucker hat den IPP-Auftrag eines Testdrucks nicht fertig gedruckt",
+    );
   });
 });

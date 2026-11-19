@@ -2991,6 +2991,11 @@ export interface components {
              */
             counter_read: boolean;
             /**
+             * Ipp Incomplete
+             * @description ``true`` when the printer took a test print's IPP job and did not complete it without a fault to explain it; test prints then stay on TCP 9100 until the host or port changes
+             */
+            ipp_incomplete: boolean;
+            /**
              * Label Counter
              * @description The label counter rose by exactly the labels sent
              */

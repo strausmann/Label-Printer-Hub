@@ -3111,6 +3111,11 @@
             "title": "Counter Read",
             "type": "boolean"
           },
+          "ipp_incomplete": {
+            "description": "``true`` when the printer took a test print's IPP job and did not complete it without a fault to explain it; test prints then stay on TCP 9100 until the host or port changes",
+            "title": "Ipp Incomplete",
+            "type": "boolean"
+          },
           "label_counter": {
             "description": "The label counter rose by exactly the labels sent",
             "title": "Label Counter",
@@ -3122,6 +3127,7 @@
           "confirm_transport",
           "label_counter",
           "counter_read",
+          "ipp_incomplete",
           "confirmed_at"
         ],
         "title": "PrintConfirmationRead",

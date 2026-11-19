@@ -2304,6 +2304,10 @@ msgstr "Etikett"
 msgid "Label counter"
 msgstr "Etikettenzähler"
 
+#: src/features/printers/printConfirmation.ts
+msgid "Label counter — IPP is not tried: the printer did not finish a test print's IPP job"
+msgstr "Etikettenzähler – IPP wird nicht versucht: Der Drucker hat den IPP-Auftrag eines Testdrucks nicht fertig gedruckt"
+
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Label fields"
 msgstr "Etikettenfelder"
@@ -2968,6 +2972,10 @@ msgstr "nicht bestätigt"
 #: src/features/printers/printConfirmation.ts
 msgid "Not confirmed"
 msgstr "Nicht bestätigt"
+
+#: src/features/printers/printConfirmation.ts
+msgid "Not confirmed — IPP is not tried: the printer did not finish a test print's IPP job"
+msgstr "Nicht bestätigt – IPP wird nicht versucht: Der Drucker hat den IPP-Auftrag eines Testdrucks nicht fertig gedruckt"
 
 #: src/features/printers/printConfirmation.ts
 msgid "Not confirmed — the label counter does not answer; a test print checks again"
