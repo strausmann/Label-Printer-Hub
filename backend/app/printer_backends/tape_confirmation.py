@@ -465,7 +465,6 @@ class TapeSendState:
     counter_refusals: int = 0
     counter_off_at: float | None = None
     _counter_streak_at: float | None = None
-    _counter_retrying: bool = False
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _store_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -489,23 +488,15 @@ class TapeSendState:
         self.counter_refusals = 0
         self.counter_off_at = None
         self._counter_streak_at = None
-        self._counter_retrying = False
 
     def ask_counter(self) -> bool:
         """Whether the next status read asks for the label counter (R26-1).
 
-        Once the retry window after a switch-off has passed, it is asked again with a fresh
-        streak: the refusals that switched it off do not count again (audit run 27, note 1).
+        Once the retry window after a switch-off has passed, it is asked again. The refusals
+        that switched it off do not count again: their streak began at least the window ago, so
+        ``note_counter`` starts a fresh one (audit run 27, note 1).
         """
-        if self.counter_off_at is None:
-            return True
-        if _monotonic() - self.counter_off_at < COUNTER_RETRY_S:
-            return False
-        if not self._counter_retrying:
-            self._counter_retrying = True
-            self.counter_refusals = 0
-            self._counter_streak_at = None
-        return True
+        return self.counter_off_at is None or _monotonic() - self.counter_off_at >= COUNTER_RETRY_S
 
     async def note_counter(self, *, refused: bool, answered: bool, asked: bool = True) -> None:
         """Count a read's answer for the label counter (R26-1).
@@ -540,7 +531,6 @@ class TapeSendState:
                     COUNTER_RETRY_S,
                 )
             self.counter_off_at = now
-            self._counter_retrying = False
             await self._mark_counter_off(True)
             return
         self.counter_refusals = 0
@@ -549,7 +539,6 @@ class TapeSendState:
             if self.counter_off_at is not None:
                 _logger.info("Tape printer answers the label counter again")
             self.counter_off_at = None
-            self._counter_retrying = False
             await self._mark_counter_off(False)
 
     async def _mark_counter_off(self, off: bool) -> None:
