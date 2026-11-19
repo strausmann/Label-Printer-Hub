@@ -20,3 +20,7 @@ If a script with a read or print key reads the host of a tape printer, use an ad
 ## Limits on request size and field length
 
 Request bodies above 2 MiB are refused with `413` and the error code `body_too_large`, for every route and before authentication (a declared `Content-Length` before the body is read, a body without one as soon as it passes 2 MiB). Webhook ids and event types above 64 characters (`spool_id`, `product_id`, `type`) and lookup identifiers above 120 characters are refused with `422`; a lookup `app` above 32 characters too. Nothing sends values of that size in normal use. See [request body size](/install/reverse-proxy/#request-body-size) for the matching proxy limits.
+
+## Queued labels after a restart
+
+After a restart the hub no longer draws every queued label before it starts, so startup no longer grows with the queue. A queued label is drawn when its turn comes: a label that cannot be drawn again now fails at that moment, with the same error (`recovery_rerender_failed: …`), not during startup. On a printer that was paused when the hub stopped, such a label stays `queued` until you resume the printer.

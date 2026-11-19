@@ -376,7 +376,7 @@ async def test_render_failure_whose_row_write_fails_keeps_the_worker(
     store: JobStore, renders: _Renders, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The store refusing the ``failed`` write does not end the worker: the next job prints."""
-    await _rows(store, 2)
+    ids = await _rows(store, 2)
     renders.fail = {"r1"}
     real = store.mark_failed
 
@@ -391,6 +391,10 @@ async def test_render_failure_whose_row_write_fails_keeps_the_worker(
     await queue.start()
     try:
         await _until(lambda: fake.printed == ["r2"])
+        # The row stays ``queued``; the in-memory claim is gone, so a later recovery of this
+        # printer (a remove and re-add) takes the row again instead of skipping it.
+        assert await _state(store, ids[0]) == "queued"
+        assert str(ids[0]) not in queue._jobs
     finally:
         await queue.stop()
 
@@ -406,7 +410,8 @@ async def test_pause_during_the_render_holds_the_job(store: JobStore, renders: _
         await _until(renders.entered.is_set)
         await queue.pause_printer(_TAPE_ID, reason="user", source="user")
         renders.release.set()
-        await asyncio.sleep(0.3)
+        await _until(lambda: queue._jobs[str(ids[0])].image_payload is not None)
+        await asyncio.sleep(0.1)  # the worker had its chance to take the job
         assert fake.printed == []
         assert await _state(store, ids[0]) == "queued"
         await queue.resume_printer(_TAPE_ID)
@@ -439,11 +444,59 @@ async def test_removal_during_the_render_keeps_the_job_queued(
         await queue.stop()
 
 
-async def test_removal_during_a_run_members_render_keeps_the_rest_queued(
+async def test_pause_during_a_run_members_render_holds_the_group(
     store: JobStore, renders: _Renders
 ) -> None:
-    """#224 with #168: removed while a later member of a recovered run is drawn, the members
-    already taken print together; that member and the rest stay ``queued``."""
+    """A pause that lands while a member of a recovered run is drawn is honoured before the
+    group is taken; after the resume the whole group prints as one batch."""
+    ids = await _rows(store, 3, run_id=uuid4())
+    renders.hold = {"r2"}
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    await queue.start()
+    try:
+        await _until(renders.entered.is_set)
+        await queue.pause_printer(_TAPE_ID, reason="user", source="user")
+        renders.release.set()
+        await _until(lambda: queue._jobs[str(ids[2])].image_payload is not None)
+        await asyncio.sleep(0.1)  # the worker had its chance to take the group
+        assert fake.batches == []
+        assert [await _state(store, i) for i in ids] == ["queued"] * 3
+        await queue.resume_printer(_TAPE_ID)
+        await _until(lambda: _done(store, ids[2], "done"))
+        assert fake.batches == [[101, 102, 103]]
+    finally:
+        renders.release.set()
+        await queue.stop()
+
+
+async def test_removal_during_the_first_members_render_keeps_the_run_queued(
+    store: JobStore, renders: _Renders
+) -> None:
+    """#224 with #168: a printer removed while the first member of a recovered run is drawn
+    prints nothing of the run; every row stays ``queued``."""
+    ids = await _rows(store, 3, run_id=uuid4())
+    renders.hold = {"r1"}
+    fake = _TapePrinter()
+    queue = PrintQueue([fake], store=store)
+    await queue.start()
+    try:
+        await _until(renders.entered.is_set)
+        removal = asyncio.create_task(queue.remove_printer(_TAPE_ID, timeout_s=TEST_TIMEOUT_S))
+        await _until(lambda: queue._removing(_TAPE_ID))
+        renders.release.set()
+        await asyncio.wait_for(removal, TEST_TIMEOUT_S)
+        assert fake.batches == []
+        assert [await _state(store, i) for i in ids] == ["queued"] * 3
+    finally:
+        renders.release.set()
+        await queue.stop()
+
+
+async def test_removal_during_a_later_members_render_keeps_the_run_queued(
+    store: JobStore, renders: _Renders
+) -> None:
+    """As above, with the removal during the render of the second member."""
     ids = await _rows(store, 3, run_id=uuid4())
     renders.hold = {"r2"}
     fake = _TapePrinter()
@@ -455,8 +508,8 @@ async def test_removal_during_a_run_members_render_keeps_the_rest_queued(
         await _until(lambda: queue._removing(_TAPE_ID))
         renders.release.set()
         await asyncio.wait_for(removal, TEST_TIMEOUT_S)
-        assert fake.batches == [[101]]
-        assert [await _state(store, i) for i in ids] == ["done", "queued", "queued"]
+        assert fake.batches == []
+        assert [await _state(store, i) for i in ids] == ["queued"] * 3
     finally:
         renders.release.set()
         await queue.stop()

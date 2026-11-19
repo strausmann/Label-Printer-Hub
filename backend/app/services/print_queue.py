@@ -1005,10 +1005,13 @@ class PrintQueue:
             )
             try:
                 await self._store.mark_failed(UUID(job.id), error)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # The worker goes on; the row stays ``queued`` and the next start recovers it.
+            except BaseException as write_exc:
+                # The row stays ``queued``: drop the in-memory claim, or a recovery of this
+                # printer after a remove and re-add would skip the row (its id is known). The
+                # worker goes on; a cancel (removal timeout, stop) propagates.
+                self._jobs.pop(job.id, None)
+                if not isinstance(write_exc, Exception):
+                    raise
                 logger.exception("Recovered job %s: its failure could not be stored", job.id)
             return False
         return True
@@ -3082,13 +3085,26 @@ class PrintQueue:
 
         try:
             for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
-                if start > 0 and (
+                group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
+                # #168: the recovered members of the group are drawn first, so the check below
+                # sees a stop, a removal or a pause that came during their renders. A run whose
+                # members all have their pictures awaits nothing here (unchanged path).
+                drew = False
+                for idx in group:
+                    member = self._jobs.get(str(batch.job_ids[idx]))
+                    if (
+                        member is not None
+                        and member.image_payload is None
+                        and member.rerender is not None
+                    ):
+                        drew = True
+                        await self._materialise(member)
+                if (start > 0 or drew) and (
                     self._stopping
                     or self._removing(printer_id)
                     or not await self._wait_until_active(printer_id)
                 ):
                     return  # the labels not taken stay ``queued``
-                group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
                 active, payloads = await self._take_group(printer_id, batch, group)
                 if not active:
                     continue
@@ -3222,13 +3238,11 @@ class PrintQueue:
             if job is None:
                 logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
                 continue
-            # #168: a recovered member is drawn now; one that failed to draw is terminal and
-            # skipped like a cancelled one. No await from here to its PRINTING transition: a
-            # member cancelled during its render fails that transition and is skipped below.
+            # #168: ``_process_batch`` drew the recovered members already, so this awaits nothing;
+            # a member that failed to draw is terminal and skipped like a cancelled one. A member
+            # cancelled during its render fails the PRINTING transition and is skipped below.
             if not await self._materialise(job):
                 continue
-            if idx > group.start and self._removing(printer_id):
-                break  # removed during the render: the rest stays ``queued`` (#224)
             try:
                 JobStateMachine.transition(job, JobState.PRINTING)
                 if not await self._store.mark_printing(UUID(job.id)):

@@ -20,3 +20,7 @@ Liest ein Skript mit einem Lese- oder Druckschlüssel den Host eines Banddrucker
 ## Grenzen für Anfragegröße und Feldlänge
 
 Anfragekörper über 2 MiB werden für jede Route und vor der Anmeldung (eine angegebene `Content-Length` vor dem Lesen des Körpers, ein Körper ohne Angabe sobald er 2 MiB überschreitet) mit `413` und dem Fehlercode `body_too_large` abgewiesen. Webhook-IDs und Ereignistypen über 64 Zeichen (`spool_id`, `product_id`, `type`) und Lookup-Kennungen über 120 Zeichen werden mit `422` abgewiesen, ebenso ein Lookup-`app` über 32 Zeichen. Im normalen Betrieb sendet nichts Werte dieser Größe. Passende Proxy-Grenzen: [Größe des Anfragekörpers](/de/install/reverse-proxy/#größe-des-anfragekörpers).
+
+## Wartende Etiketten nach einem Neustart
+
+Nach einem Neustart zeichnet der Hub nicht mehr jedes wartende Etikett, bevor er startet; der Start dauert damit bei einer langen Warteschlange nicht mehr länger. Ein wartendes Etikett wird gezeichnet, wenn es an der Reihe ist: Ein Etikett, das sich nicht mehr zeichnen lässt, schlägt erst dann fehl, mit demselben Fehler (`recovery_rerender_failed: …`), nicht schon beim Start. Auf einem Drucker, der beim Beenden des Hubs pausiert war, bleibt ein solches Etikett `queued`, bis du den Drucker fortsetzt.
