@@ -11,39 +11,103 @@ import { FIELD, PRIMARY_BUTTON } from "../../shell/SignIn";
 import { LayoutPicker } from "../layout/LayoutPicker";
 import { tapeMmOfStatus, useLabelLayout, type LayoutOptions } from "../layout/ql";
 import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/api";
+import { notePrintError } from "../printers/coverRefusals";
 import { HINT } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
-import { useAppName } from "./apps";
+import { useAppName, useContentTypeLabel } from "./apps";
 import { useLookup, usePreviewImage, type LookupResult } from "./api";
 import { BatchStatusError, MAX_COPIES, useCart, type BatchRead, type CartItem, type ContentType } from "./cart";
+import { distinctPreviews, itemKey } from "./cartPreviews";
 import { LabelPreview } from "./LabelPreview";
-import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
+import { useCartCheck, type RenderCheckResult } from "./useCartCheck";
+import { usePrintErrorText } from "../printers/printErrorText";
+import { unsupportedRoll } from "../printers/roll";
+import { PrinterPicker, usePrinterChoice } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
 
 const cartApi = getRouteApi("/cart");
 
-/** The first item of the cart as the layout will print it: every label of the batch shares the choice. */
-function CartPreview({ first, tapeMm, layout }: { first: CartItem; tapeMm: number; layout: LayoutOptions | undefined }) {
+/** One item of the cart as the layout will print it. The print looks the item up again, so this is a close picture. */
+function CartPreview({ item, tapeMm, layout }: { item: CartItem; tapeMm: number; layout: LayoutOptions | undefined }) {
   const { t } = useLingui();
-  const lookup = useLookup(first.app, first.id);
-  const name = first.name;
+  const contentTypeLabel = useContentTypeLabel();
+  const lookup = useLookup(item.app, item.id);
+  const name = item.name;
+  const kind = contentTypeLabel(item.content_type);
   return (
     <section aria-label={t`Preview of ${name}`} className="flex flex-col gap-2">
-      <h3 className="font-bold">{t`Preview`}</h3>
       {lookup.data ? (
-        <CartPreviewImage item={lookup.data} contentType={first.content_type} tapeMm={tapeMm} layout={layout} />
+        <CartPreviewImage
+          item={lookup.data}
+          contentType={item.content_type}
+          tapeMm={tapeMm}
+          layout={item.content_type === "spool_swatch" ? undefined : layout}
+        />
       ) : (
         <p role={lookup.isError ? undefined : "status"} className="text-ink-2">
           {lookup.isError ? t`No preview available.` : t`Drawing the label…`}
         </p>
       )}
-      <p className="text-small text-ink-2">{t`Shows the first item: ${name}.`}</p>
+      <p className="text-small text-ink-2">{t`${kind}, for example ${name}.`}</p>
     </section>
   );
 }
 
 function CartPreviewImage({ item, contentType, tapeMm, layout }: { item: LookupResult; contentType: ContentType; tapeMm: number; layout: LayoutOptions | undefined }) {
   return <LabelPreview preview={usePreviewImage(item, contentType, tapeMm, true, layout)} layout={layout} />;
+}
+
+/** One preview per content type: the labels of one type look alike, so the batch is shown by its different layouts. */
+function CartPreviews({ items, tapeMm, layout }: { items: CartItem[]; tapeMm: number; layout: LayoutOptions | undefined }) {
+  const { t } = useLingui();
+  const { shown, hiddenTypes } = distinctPreviews(items);
+  return (
+    <div className="flex flex-col gap-4">
+      <h3 className="font-bold">{t`Preview`}</h3>
+      {shown.map((item) => (
+        <CartPreview key={item.content_type} item={item} tapeMm={tapeMm} layout={layout} />
+      ))}
+      {hiddenTypes > 0 && <p className="text-small text-ink-2">{plural(hiddenTypes, { one: "# more layout is not shown.", other: "# more layouts are not shown." })}</p>}
+    </div>
+  );
+}
+
+/** What is wrong with one item, in words; the server's English sentence is only the last resort. */
+function useFlagText(): (result: RenderCheckResult) => string {
+  const { t } = useLingui();
+  return (result) => {
+    switch (result.error_code) {
+      case "qr_payload_too_long": {
+        const length = Number(result.error_detail?.length);
+        const max = Number(result.error_detail?.max_bytes);
+        return Number.isFinite(length) && Number.isFinite(max)
+          ? t`The QR code does not fit this tape: ${length} of at most ${max} bytes.`
+          : t`The QR code does not fit this tape.`;
+      }
+      case "content_type_data_mismatch":
+        return t`This item has no data for this layout.`;
+      case "unsupported_tape": {
+        // #346: a DK width only the spool label has; the other layouts follow with #258.
+        const tapeMm = Number(result.error_detail?.tape_mm);
+        if (result.error_detail?.spool_label_only === true && Number.isFinite(tapeMm)) {
+          return t`Only the spool label prints on ${tapeMm} mm tape. Remove this label or load 62 mm tape.`;
+        }
+        return result.error_message ?? t`This label cannot be drawn.`;
+      }
+      case "render_failed":
+        return t`The label could not be drawn for this tape.`;
+      case "integration_item_not_found":
+        return t`This item no longer exists in its app.`;
+      case "integration_not_configured":
+        return t`The app of this item is not set up.`;
+      case "integration_unknown_app":
+        return t`The app of this item is not known.`;
+      case "integration_lookup_failed":
+        return t`The app of this item did not answer.`;
+      default:
+        return result.error_message ?? t`This label cannot be drawn.`;
+    }
+  };
 }
 
 type Outcome = { kind: "sent"; labels: number; printer: string; batch: BatchRead | null } | { kind: "failed"; error: unknown };
@@ -57,20 +121,28 @@ export function CartPage() {
   const readOnly = useSession().scope === "read";
   const cart = useCart();
   const printers = usePrinters();
-  const { usable, selected, choose } = usePrinterChoice(printers.data);
-  const statuses = usePrinterStatuses(usable);
+  const enabled = (printers.data ?? []).filter((x) => x.enabled);
+  const statuses = usePrinterStatuses(enabled);
+  const { usable, selected, choose } = usePrinterChoice(printers.data, statuses);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   // `/cart?sheet=<code>` (the link from a sheet's page) preselects that sheet in the sheet section.
-  const { sheet: linkedSheet } = cartApi.useSearch();
+  const { sheet: linkedSheet, tray: linkedTray } = cartApi.useSearch();
   // The cart empties when the hub accepts a sheet print, or queues all of it before a partial failure; the section
   // stays to show where the labels went (the result, or the partial-result note with the links to the queued jobs).
   const [sheetPrinted, setSheetPrinted] = useState(false);
   const pagePrinter = selected?.backend === "ipp";
   const status = usePrinterStatus(selected?.id ?? "", !!selected && !pagePrinter);
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
+  const rollBlocked = !pagePrinter && unsupportedRoll(selected ? status.data : undefined) !== null;
   const layout = useLabelLayout(selected, tapeMm);
+  // A check needs a tape the printer reported; the 12 mm fallback of `tapeMmOfStatus` would flag items against a guess.
+  const tapeKnown = !!selected && !pagePrinter && (typeof status.data?.tape_width_mm === "number" || !!status.data?.tape_loaded);
+  const check = useCartCheck(cart.items, tapeKnown ? tapeMm : null, layout.active ? layout.options : undefined);
+  const flagText = useFlagText();
+  const failing = cart.items.filter((i) => check.flags.get(itemKey(i))?.ok === false);
   const labels = cart.items.reduce((sum, i) => sum + i.copies, 0);
+  const allSwatch = cart.items.length > 0 && cart.items.every((i) => i.content_type === "spool_swatch");
 
   const send = async () => {
     if (!selected) return;
@@ -80,6 +152,8 @@ export function CartPage() {
       const batch = await cart.print(selected.id, layout.options);
       setOutcome({ kind: "sent", labels: count, printer: selected.name, batch });
     } catch (error) {
+      // A refusal on the open cover makes the cover a problem at once (#376); one item names its label.
+      notePrintError(selected.id, cart.items.length === 1 ? (cart.items[0]?.name ?? "") : "", error);
       // The labels are queued even though their status could not be read.
       setOutcome(error instanceof BatchStatusError ? { kind: "sent", labels: count, printer: selected.name, batch: null } : { kind: "failed", error });
     } finally {
@@ -116,8 +190,11 @@ export function CartPage() {
           {cart.items.length > 0 && <ul aria-label={t`Cart`} className="flex flex-col gap-2">
             {cart.items.map((item) => {
               const itemName = item.name;
+              const flag = check.flags.get(itemKey(item));
+              const flagged = flag && !flag.ok ? flag : null;
+              const flagId = `cart-flag-${item.app}-${item.id}`;
               return (
-              <li key={`${item.app}:${item.id}`} className="grid gap-3 rounded-r3 border border-line bg-surface p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
+              <li key={`${item.app}:${item.id}`} aria-describedby={flagged ? flagId : undefined} className="grid gap-3 rounded-r3 border border-line bg-surface p-4 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
                 <span className="flex min-w-0 flex-col">
                   <Link
                     to="/lookup/$app/$id"
@@ -127,8 +204,9 @@ export function CartPage() {
                     {item.name}
                   </Link>
                   <span className="text-small text-ink-2">
-                    {appName(item.app)} · <code className="text-ink">{item.id}</code>
+                    {appName(item.app)} · <code className="break-all text-ink">{item.id}</code>
                   </span>
+                  {flagged && <span id={flagId} className="mt-1 text-small text-bad">{flagText(flagged)}</span>}
                 </span>
                 <label className="flex items-center gap-2 text-small">
                   <span>{t`Copies`}</span>
@@ -156,20 +234,29 @@ export function CartPage() {
             <PrinterPicker printers={usable} value={selected?.id ?? null} onChange={choose} loading={printers.isPending} statuses={statuses} />
             {layout.active && (
               <>
-                <LayoutPicker
-                  orientation={layout.choice.orientation}
-                  preset={layout.choice.preset}
-                  onOrientation={layout.setOrientation}
-                  onPreset={layout.setPreset}
-                />
-                {cart.items[0] && <CartPreview first={cart.items[0]} tapeMm={tapeMm} layout={layout.options} />}
+                {/* A cart of spool labels only has nothing to turn or arrange (#346). */}
+                {!allSwatch && (
+                  <LayoutPicker
+                    orientation={layout.choice.orientation}
+                    preset={layout.choice.preset}
+                    onOrientation={layout.setOrientation}
+                    onPreset={layout.setPreset}
+                  />
+                )}
+                {cart.items.length > 0 && <CartPreviews items={cart.items} tapeMm={tapeMm} layout={layout.options} />}
               </>
             )}
+            {failing.length > 0 && (
+              <p role="status" className="m-0 font-bold text-bad">
+                {plural(failing.length, { one: "# item will not print.", other: "# items will not print." })}
+              </p>
+            )}
+            {check.isError && <p className={`${HINT} m-0`}>{t`Could not check the items; the print still checks them.`}</p>}
             <div className="flex flex-wrap gap-2">
               {/* A page printer prints through the sheet section below. */}
               {/* An emptied cart (a sheet print took everything out) leaves nothing to send. */}
               {!pagePrinter && cart.items.length > 0 && (
-                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy || readOnly} onPress={() => void send()}>
+                <Button className={PRIMARY_BUTTON} isDisabled={!selected || busy || readOnly || rollBlocked} onPress={() => void send()}>
                   {plural(labels, { one: "Print # label", other: "Print # labels" })}
                 </Button>
               )}
@@ -188,6 +275,7 @@ export function CartPage() {
               items={cart.items}
               printer={selected}
               preselectedSheet={linkedSheet}
+              preselectedTray={linkedTray}
               onQueued={(queued) => {
                 cart.removeItems(queued);
                 setSheetPrinted(true);

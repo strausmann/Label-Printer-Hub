@@ -108,7 +108,7 @@ Browser melden sich mit einem API-Schlüssel (oder über SSO am Proxy) an und be
 6. Die Oberfläche hält für den ganzen Tab schon eine SSE-Verbindung zu `/api/v1/events`
 7. Der Worker der Warteschlange im Backend nimmt den Auftrag, öffnet TCP/9100 zum Drucker und schickt die Rasterdaten
 8. Das Backend legt die Ereignisse `job` und `status` auf den EventBus → SSE (JSON-Frames) → die Oberfläche aktualisiert ihre Daten an Ort und Stelle
-9. Der Auftrag ist fertig; sein Zustand auf der Seite ändert sich durch das SSE-Ereignis. Der Hub schickt keine Benachrichtigung im Browser (eine Benachrichtigungszentrale ist in [#255](https://github.com/strausmann/labelyard/issues/255) geplant)
+9. Der Auftrag ist fertig; sein Zustand auf der Seite ändert sich durch das SSE-Ereignis. Der Auftrag erscheint auch in der [Benachrichtigungszentrale](/de/using/notifications/) hinter der Glocke in der oberen Leiste ([#255](https://github.com/strausmann/labelyard/issues/255)); eine Benachrichtigung des Browsers oder des Betriebssystems schickt der Hub nicht
 
 ### Push-Modus – Webhooks von Spoolman und Grocy
 
@@ -116,7 +116,7 @@ Der Hub nimmt Webhooks für Spulen aus Spoolman (`POST /api/v1/webhook/spoolman`
 
 1. Grocy schickt an `https://labelyard.example.com/api/v1/webhook/grocy` (ein Ereignis aus Spoolman geht an `/api/v1/webhook/spoolman`)
 2. Der Reverse Proxy leitet die Webhook-Unterroute **ohne SSO** an den Hub
-3. Das Backend prüft `X-API-Key` und das Ratenlimit je Schlüssel (`LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`, Standard 120) und gibt dann ein Etikett `qr_two_lines` für die Spule oder das Produkt über den Druckdienst an den ersten eingeschalteten Banddrucker, auf demselben Weg wie `POST /api/v1/print`: Vorprüfung, Nachschlagen, Zeichnen, Speichern, Einreihen. Fehler am Drucker und beim Nachschlagen beantwortet er wie die Druck-Route mit 409/422/502/503, eine unbekannte Spule oder ein unbekanntes Produkt mit 404 `app-lookup-not-found` und eine nicht eingerichtete Integration mit 503 `integration_not_configured` (beide im Format eines Problem-Details); eingereiht wird dann nichts. Es wird ein Etikett gedruckt; `quantity` wird angenommen, aber nicht gedruckt ([#284](https://github.com/strausmann/labelyard/issues/284))
+3. Das Backend prüft `X-API-Key` und das Ratenlimit je Schlüssel (`LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`, Standard 120) und gibt dann ein QR-Etikett für die Spule oder das Produkt über den Druckdienst an den ersten eingeschalteten Banddrucker, auf demselben Weg wie `POST /api/v1/print`: Vorprüfung, Nachschlagen, Zeichnen, Speichern, Einreihen. Fehler am Drucker und beim Nachschlagen beantwortet er wie die Druck-Route mit 409/422/502/503, eine unbekannte Spule oder ein unbekanntes Produkt mit 404 `app-lookup-not-found` und eine nicht eingerichtete Integration mit 503 `integration_not_configured` (beide im Format eines Problem-Details); eingereiht wird dann nichts. Je Ereignis wird ein Etikett gedruckt: `qr_two_lines`, oder `qr_three_lines`, wenn eine `quantity` im gültigen Bereich als dritte Zeile in der Sprache des Hubs dazukommt; `quantity` ist nie eine Zahl von Kopien ([#284](https://github.com/strausmann/labelyard/issues/284))
 4. Die Antwort ist `202` mit der Nummer des Auftrags; der Aufrufer wartet nicht auf das Ende des Drucks (Webhook-Aufträge haben keinen Besitzer, deshalb sehen sie nur Admins und SSO-Aufrufer)
 5. Das Backend druckt; jeder offene SSE-Strom sieht die Zustandswechsel live
 

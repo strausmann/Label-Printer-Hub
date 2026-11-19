@@ -17,9 +17,14 @@ class PrinterError(Exception):
     ``nothing_sent`` (#277): the backend refused before any byte of the job reached the
     printer (its own preflight said no). The print queue then knows the labels did not print;
     without the flag a failure may have happened while sending, and the outcome is unknown.
+
+    ``printed`` (#393): raised after sending, the first labels of the send the printer confirmed
+    before the error (label counter or IPP impressions); ``None`` when that is not known. A run
+    then keeps those labels done and fails only the rest.
     """
 
     nothing_sent: bool = False
+    printed: int | None = None
 
 
 def refused_before_sending[E: PrinterError](exc: E) -> E:
@@ -54,6 +59,72 @@ class PrinterCoverOpenError(PrinterError):
 
 class PrintFailedError(PrinterError):
     """Encoding or transport failure during print()."""
+
+
+class MediaTypeMismatchError(PrinterError):
+    """The loaded media is not the kind the hub prints on (#389).
+
+    The hub renders and sends continuous tape only. A loaded roll the printer names as die-cut
+    labels (``media_raw`` with a label length, e.g. ``29mm x 90mm``) is refused before anything
+    is rendered or sent instead of letting the printer reject it.
+    """
+
+    def __init__(self, *, loaded_kind: str, media_raw: str | None) -> None:
+        self.loaded_kind = loaded_kind
+        self.media_raw = media_raw
+        super().__init__(f"Loaded media is {loaded_kind}; the hub prints on continuous tape only")
+
+
+class PrinterReportedError(PrinterError):
+    """The printer reports an error state in its status (#389), e.g. after a job was sent.
+
+    ``flags`` are the RFC 3805 ``hrPrinterDetectedErrorState`` bit names that count as an error
+    (``app.printer_backends.post_send.HARD_ERROR_FLAGS``), in bit order.
+    """
+
+    def __init__(self, flags: list[str]) -> None:
+        self.flags = list(flags)
+        super().__init__(f"The printer reports an error: {', '.join(self.flags)}")
+
+
+class LabelsNotConfirmedError(PrinterError):
+    """The printer did not confirm every label that was sent (#393): "x of y labels printed".
+
+    Raised when the IPP job of a tape print ends ``aborted``/``canceled`` or does not finish in
+    time, or when the label counter (``prtMarkerLifeCount``) did not rise by the labels sent
+    before the timeout. ``printed`` is what the printer confirmed (the first labels of the send),
+    ``expected`` the labels sent. Not a pause reason of its own: a blocking error bit the printer
+    reports at the same time raises that error instead.
+    """
+
+    def __init__(self, printed: int, expected: int) -> None:
+        self.printed = max(0, min(int(printed), int(expected)))
+        self.expected = int(expected)
+        super().__init__(f"{self.printed} of {self.expected} labels printed")
+
+
+class TapeLabelTooLongError(PrinterError):
+    """A rendered label is longer than the tape allows (``TapeSpec.max_length_mm``, R26-2).
+
+    Refused before anything is sent: the printer would cut it off or refuse it, and the hub could
+    not confirm it in a sensible time. HTTP 422 (the client has to shorten the label).
+    """
+
+    def __init__(self, *, length_mm: int, max_mm: int) -> None:
+        self.length_mm = length_mm
+        self.max_mm = max_mm
+        super().__init__(f"The label is {length_mm} mm long; this tape allows at most {max_mm} mm")
+
+
+class ConfirmationUnknownError(PrinterError):
+    """The printer did not confirm the labels in time, and its IPP job could not be cancelled
+    (#393): the labels may still print. The job's outcome is unknown, never "x of y"."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "The printer did not confirm the labels in time and may still print them; check the "
+            "printer before you reprint"
+        )
 
 
 class StatusQueryFailedError(PrinterError):
@@ -101,6 +172,23 @@ class UnsupportedTapeError(PrinterError):
         supported = (4, 6, 9, 12, 18, 24, 62)
         super().__init__(
             f"Tape width {tape_mm}mm is not supported by the layout engine. Supported: {supported}"
+        )
+
+
+class SpoolLabelOnlyTapeError(UnsupportedTapeError):
+    """A batch on a DK width only the spool label has (29, 38, 50, 54 mm, #346) holds other
+    labels: those layouts need 62 mm QL tape or a P-touch (other DK widths follow with #258).
+
+    HTTP-Status: 409, ``unsupported_tape`` with ``content_types`` naming the other layouts.
+    """
+
+    def __init__(self, *, tape_mm: int, content_types: tuple[str, ...]) -> None:
+        super().__init__(tape_mm=tape_mm)
+        self.content_types = content_types
+        Exception.__init__(
+            self,
+            f"Only the spool label prints on {tape_mm}mm tape; the other labels "
+            f"({', '.join(content_types)}) need 62mm QL tape.",
         )
 
 

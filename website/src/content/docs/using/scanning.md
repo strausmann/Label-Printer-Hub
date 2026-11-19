@@ -9,6 +9,7 @@ The web UI can scan with the camera of your phone or laptop. Install it on the p
 
 - **A barcode or ID of an item**, for example a Snipe-IT asset tag or a Grocy product barcode. The hub looks it up in the app that owns it and shows its label, ready to print or to put into the cart.
 - **A label the hub printed.** Its QR code is a label link (`/asset/…`, `/loc/…`, `/spool/…`, `/product/…`) that opens the item again.
+- **A Grocycode**, the code Grocy prints on its own labels (`grcy:p:13`). A product code opens that product in the hub, ready to print. A battery or chore code (`grcy:b:4`, `grcy:c:7`) opens a page with the facts from Grocy: the name and description, when it was last charged or done, when it is next due, and the charge cycles (battery) or the assigned person (chore). A date Grocy does not have reads "Never" for the last charge or run and "Not scheduled" for the next one. The page links to the item in Grocy; the link needs no earlier lookup, because Grocy's answer carries it.
 - **A sheet code**, to choose that physical sheet when you print onto a sheet.
 
 You can type an ID instead of scanning it: an asset tag (`AT-0042`), a numeric ID (`42`) or a printed label link. Locations need the `loc:` prefix, for example `loc:17`.

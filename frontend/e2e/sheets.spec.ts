@@ -10,8 +10,11 @@ const TYPE_48 = "avery-zweckform-l4736rev";
 const TYPE_189 = "avery-zweckform-l4731rev"; // the edge sheet type: 189 cells
 const FULL = "L4736-0002";
 const DISCARDED = "L4736-0003";
+const WAITING = "L4736-0004"; // full, its last two cells wait for confirmation
 const EDGE = "L4731-0001"; // the 189-cell sheet, 120 cells used with purposes of 120 characters
 
+/** API writes of the cleanup go with the admin key: the browser session's cookie needs the page's CSRF header. */
+const KEY = () => ({ "X-Label-Hub-Key": mainKey() });
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
@@ -72,6 +75,122 @@ test.describe.serial("sheets", () => {
     const gone = page.getByRole("row").filter({ has: page.getByRole("link", { name: DISCARDED }) });
     await expect(gone).toContainText("discarded");
     await expect(gone.getByRole("button", { name: /Discard/ })).toHaveCount(0);
+  });
+
+  // #350: 3490 has no usable margin, so its code goes on the back of the liner.
+  test("a 3490 sheet gets its code on the back", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    await page.goto("/sheets");
+    await page.getByRole("button", { name: "New sheet" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add a sheet" });
+    await chooseType(dialog, /Sheet type/, /avery-zweckform-3490/);
+    await choose(dialog, /Printer/, /Office page printer/);
+    await expect(dialog.getByRole("radio", { name: /On the back of the liner/ })).toBeChecked();
+    await dialog.getByRole("button", { name: "Continue" }).click();
+
+    const steps = page.getByRole("dialog", { name: "Activate new sheet" });
+    await expect(steps.getByRole("listitem").and(steps.locator('[aria-current="step"]'))).toContainText("Turn over");
+    // The tray is not set up yet: the guided test comes first.
+    await expect(steps.getByRole("button", { name: "Print sheet code" })).toBeDisabled();
+    await steps.getByRole("button", { name: "Print test page" }).click();
+    // React Aria's radio input is visually hidden: a person taps the label.
+    await steps.getByRole("radiogroup", { name: "Is the print on the side with the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("radiogroup", { name: "Is “TOP” next to the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("button", { name: "Save for this tray" }).click();
+    await expect(steps.getByText(/liner side up$/)).toBeVisible();
+    await steps.getByRole("button", { name: "Print sheet code" }).click();
+
+    await expect(steps.getByRole("heading", { name: "Did it print?" })).toBeVisible({ timeout: 20_000 });
+    const code = /A3490-\d{4}/.exec((await steps.getByText(/sheet code A3490-\d{4}/).textContent())!)![0];
+    // Newest first: the list defaults to the oldest jobs, and earlier specs of the run leave more than 20.
+    const jobs = (await (await page.request.get("/api/v1/jobs?limit=20&order=newest", { headers: KEY() })).json()) as { payload: { kind?: string; detail?: { sheet_code?: string } } }[];
+    expect(jobs.some((j) => j.payload.kind === "sheet_back_page" && j.payload.detail?.sheet_code === code)).toBe(true);
+    await steps.getByRole("button", { name: "Yes, it is printed" }).click();
+    await expect(steps).toHaveCount(0);
+
+    await page.goto(`/sheets/${code}`);
+    await expect(page.getByTestId("sheet-code-state")).toHaveText("On the back of the liner · printed");
+    // Leave the hub as it was found: the tray unset, the sheet retired.
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    expect((await page.request.post(`/api/v1/sheets/${code}/discard`, { headers: KEY() })).ok()).toBe(true);
+  });
+
+  // 1.7.0 acceptance: a printed margin sheet gets an extra code on the back; "Back side missing" until confirmed.
+  test("a printed margin sheet gets a back side from the sheet code panel", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    // One label onto a new L4736 sheet: its page carries the margin code, so the code counts as printed.
+    const items = [{ content_type: "text_two_lines", data: { title: "E2E panel", primary_id: "P-1" } }];
+    const printed = await page.request.post("/api/v1/print/office-page/sheet", { data: { items, placements: [{ new_sheet: { type: TYPE_48 } }] }, headers: KEY() });
+    expect(printed.ok()).toBe(true);
+    const code = ((await printed.json()) as { pages: { sheet_code: string }[] }).pages[0]!.sheet_code;
+    await expect
+      .poll(async () => ((await (await page.request.get(`/api/v1/sheets/${code}`, { headers: KEY() })).json()) as { id_printed: boolean }).id_printed, { timeout: 20_000 })
+      .toBe(true);
+
+    await page.goto(`/sheets/${code}`);
+    const panel = page.getByRole("region", { name: "Sheet code" });
+    await expect(panel.getByTestId("sheet-code-state")).toHaveText("In the margin · printed");
+    await expect(panel.getByTestId("sheet-code-back")).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: "Reprint margin code" })).toBeVisible();
+    await panel.getByRole("button", { name: "Print back side" }).click();
+
+    const steps = page.getByRole("dialog", { name: "Print back side" });
+    await steps.getByRole("button", { name: "Print test page" }).click();
+    await steps.getByRole("radiogroup", { name: "Is the print on the side with the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("radiogroup", { name: "Is “TOP” next to the cross?" }).getByText("Yes", { exact: true }).click();
+    await steps.getByRole("button", { name: "Save for this tray" }).click();
+    await steps.getByRole("button", { name: "Print sheet code" }).click();
+    await expect(steps.getByRole("heading", { name: "Did it print?" })).toBeVisible({ timeout: 20_000 });
+    // Left without confirming: the back side stays missing.
+    await page.goto(`/sheets/${code}`);
+    await expect(panel.getByTestId("sheet-code-state")).toHaveText("In the margin · printed");
+    await expect(panel.getByTestId("sheet-code-back")).toContainText("missing");
+
+    await page.goto("/sheets?back_missing=true");
+    await expect(page.getByRole("link", { name: code })).toBeVisible();
+
+    await page.goto(`/sheets/${code}`);
+    await panel.getByRole("button", { name: "Yes, the back side is printed" }).click();
+    await expect(panel.getByTestId("sheet-code-back")).toContainText("confirmed");
+    await page.goto("/sheets?back_missing=true");
+    await expect(page.getByRole("heading", { level: 1, name: "Sheets" })).toBeVisible();
+    await expect(page.getByRole("link", { name: code })).toHaveCount(0);
+
+    await page.request.post(`${MAIN.url}/__e2e/tray-loading/reset`);
+    await expect
+      .poll(async () => (await page.request.post(`/api/v1/sheets/${code}/discard`, { headers: KEY() })).status(), { timeout: 20_000 })
+      .toBe(200);
+  });
+
+  test("a reserved cell is left out of a print", async () => {
+    const type = "avery-zweckform-3490";
+    const patch = (data: object) => page.request.patch(`/api/v1/sheet-types/${type}`, { data, headers: KEY() });
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/sheets/archive?type=${type}`);
+    await page.getByRole("tab", { name: "Where the code goes" }).click();
+    await page.getByText("Reserved cell", { exact: true }).click();
+    await choose(page.getByRole("tabpanel"), / Cell$/, /^2$/);
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Saved.")).toBeVisible();
+
+    const items = [1, 2, 3].map((i) => ({ content_type: "text_two_lines", data: { title: `E2E ${i}`, primary_id: `R-${i}` } }));
+    const printed = await page.request.post("/api/v1/print/office-page/sheet", { data: { items, placements: [{ new_sheet: { type } }] }, headers: KEY() });
+    expect(printed.ok()).toBe(true);
+    const [result] = ((await printed.json()) as { pages: { sheet_code: string; cells: number[]; id_cell: number | null }[] }).pages;
+    expect(result!.id_cell).toBe(2);
+    expect(result!.cells).toEqual([1, 3, 4]);
+    await page.goto(`/sheets/${result!.sheet_code}`);
+    await expect(page.getByRole("gridcell", { name: /^Cell 2,.*sheet code/ })).toBeVisible();
+
+    expect((await patch({ id_placement: "auto", id_cell: null })).ok()).toBe(true);
+    await expect
+      .poll(async () => (await page.request.post(`/api/v1/sheets/${result!.sheet_code}/discard`, { headers: KEY() })).status(), { timeout: 20_000 })
+      .toBe(200);
   });
 
   test("adds a sheet with three used cells, lists it with 45 free, and discards it again", async () => {
@@ -202,11 +321,104 @@ test.describe.serial("sheets", () => {
     await expect(page.getByRole("list", { name: "Cells in use" })).not.toContainText("e2e probe");
   });
 
+  // This test leaves L4736-0004 resolved: there is no way to un-resolve cells, so no restore step. The sheet has its own
+  // seeded copy for short-viewport.spec.ts. A retry after a late failure finds no unconfirmed cells and fails at the
+  // first expectation; that only hides nothing, the first failure is the one to read.
+  test("resolve all unconfirmed cells as printed", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/sheets/${WAITING}`);
+    const section = page.getByRole("region", { name: "Unconfirmed cells" });
+    await expect(section).toBeVisible();
+    await expect(section.getByRole("listitem")).toHaveCount(2);
+    await section.getByRole("button", { name: "Resolve all as printed" }).click();
+    const dialog = page.getByRole("alertdialog", { name: "Resolve 2 cells as printed?" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Resolve as printed" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Unconfirmed cells" })).toHaveCount(0);
+    await expect(page.getByText("48 of 48 used")).toBeVisible();
+  });
+
+  test("sheet filter switches stay tappable on a narrow tablet", async ({ browser }) => {
+    // A portrait tablet with larger text: the content column is narrow, and the old five-column filter row let the
+    // code search and the type combobox paint over the switch tracks (a tap then landed in the combobox).
+    const context = await browser.newContext({
+      baseURL: MAIN.url,
+      viewport: { width: 1232, height: 1970 },
+      hasTouch: true,
+      isMobile: true,
+      storageState: await page.context().storageState(),
+    });
+    try {
+      const tablet = await context.newPage();
+      await tablet.addInitScript(() => localStorage.setItem("lph.lang", "en"));
+      await tablet.goto("/sheets");
+      await expect(tablet.getByRole("heading", { level: 1, name: "Sheets" })).toBeVisible();
+      await tablet.evaluate(() => {
+        document.documentElement.style.zoom = "1.5";
+      });
+      for (const name of ["Hide used-up sheets", "Show discarded sheets", "Back side missing"]) {
+        const input = tablet.getByRole("switch", { name });
+        const label = tablet.locator("label").filter({ has: input });
+        const track = label.locator("span[aria-hidden='true']").first();
+        await track.scrollIntoViewIfNeeded();
+        // Measured in the page, in the same coordinate space `elementFromPoint` and a tap use (the zoom skews `boundingBox`).
+        // Three points along the track: the left end is where a wide neighbour reaches first.
+        const { x, y, insideLabel } = await track.evaluate((el, text) => {
+          const r = el.getBoundingClientRect();
+          const py = r.top + r.height / 2;
+          const xs = [r.left + 6, r.left + r.width / 2, r.right - 6];
+          const inside = xs.every((px) => {
+            const owner = document.elementFromPoint(px, py)?.closest("label");
+            return !!owner && (owner.textContent ?? "").includes(text);
+          });
+          return { x: xs[1]!, y: py, insideLabel: inside };
+        }, name);
+        expect(insideLabel, `${name}: the point on its track belongs to its own label`).toBe(true);
+        const before = await input.isChecked();
+        await tablet.touchscreen.tap(x, y);
+        await expect.poll(() => input.isChecked(), { message: `${name} toggles on tap` }).toBe(!before);
+      }
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("the sheet filter controls do not overlap at 1440 px", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/sheets");
+    await expect(page.getByRole("heading", { level: 1, name: "Sheets" })).toBeVisible();
+    const boxes = await page.evaluate(() => {
+      const form = document.querySelector("#sheet-filters");
+      if (!form) return [];
+      const controls = [
+        form.querySelector("input[type='text'], input:not([role])"),
+        form.querySelector("[role='combobox']"),
+        ...Array.from(form.querySelectorAll("label")),
+      ];
+      return controls.filter(Boolean).map((el) => {
+        const r = (el as Element).getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      });
+    });
+    expect(boxes.length).toBeGreaterThanOrEqual(5);
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        const apart = a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1;
+        expect(apart, `filter controls ${i} and ${j} do not intersect`).toBe(true);
+      }
+    }
+  });
+
   test("says that a discarded sheet is discarded, and that an unknown code does not exist", async () => {
     await setLanguage(page, "en");
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/sheets/${DISCARDED}`);
-    await expect(page.getByText(/^Discarded on .+, this ID is not used again\.$/)).toBeVisible();
+    await expect(page.getByText(/^Discarded on .+, this code is not used again\.$/)).toBeVisible();
     await expect(page.getByRole("button", { name: "Mark cells as used" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Discard sheet" })).toHaveCount(0);
     await page.goto("/sheet/L4736-9999");

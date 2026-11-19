@@ -25,6 +25,8 @@ from sqlmodel import col
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.repositories import sheet_types as repo
 from app.sheets.errors import (
+    BackingDesignPageSizeMismatchError,
+    IdCellOutOfRangeError,
     InvalidFieldError,
     InvalidGeometryError,
     PrefixLockedError,
@@ -60,8 +62,12 @@ _EDITABLE = frozenset(
         "source_url",
         "notes",
         "prefix",
+        "id_placement",
+        "id_cell",
+        "backing_design",
     }
 )
+TYPE_PLACEMENTS = frozenset({"auto", "margin", "back_side", "cell"})
 
 
 @dataclass
@@ -243,6 +249,16 @@ def _check_patch_value(name: str, value: object) -> None:
             raise InvalidFieldError(name, "must be a list of strings")
     elif name == "prefix":
         _check_prefix(value)
+    elif name == "id_placement":
+        if value not in TYPE_PLACEMENTS:
+            raise InvalidFieldError(name, "unknown placement")
+    elif name == "id_cell":
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+        ):
+            raise InvalidFieldError(name, "must be a cell number or null")
+    elif name == "backing_design" and value is not None and not isinstance(value, str):
+        raise InvalidFieldError(name, "must be a key or null")
 
 
 async def get_type(session: AsyncSession, key: str) -> SheetType:
@@ -357,6 +373,7 @@ async def patch_type(
             raise InvalidFieldError(name, "not editable")
         _check_patch_value(name, value)
     changes = {name: _clean_patch_value(name, value) for name, value in changes.items()}
+    names = sorted(changes)
     async with write_transaction(session):
         t = await get_type(session, key)
         new_prefix = changes.get("prefix")
@@ -366,6 +383,13 @@ async def patch_type(
             if await repo.get_by_prefix(session, new_prefix) is not None:
                 raise PrefixTakenError()
         changed = False
+        if "id_cell" in changes and changes["id_cell"] is not None:
+            check_id_cell(changes["id_cell"], await current_version(session, t.id))
+        if "backing_design" in changes:
+            design_id = await _design_id_for(session, t, changes.pop("backing_design"))
+            if t.backing_design_id != design_id:
+                t.backing_design_id = design_id
+                changed = True
         for name, value in changes.items():
             new = list(value) if name == "product_codes" else value
             if getattr(t, name) != new:
@@ -374,8 +398,27 @@ async def patch_type(
         if changed:
             t.updated_at = _now()
         await session.commit()
-    logger.info("sheet type %s edited: %s", log_value(key), log_value(sorted(changes)))
+    logger.info("sheet type %s edited: %s", log_value(key), log_value(names))
     return t
+
+
+def check_id_cell(cell: int, version: SheetTypeVersion) -> None:
+    """The preferred ID cell lies on the version's grid (R-350-7)."""
+    total = version.cols * version.rows
+    if cell < 1 or cell > total:
+        raise IdCellOutOfRangeError(cell, total)
+
+
+async def _design_id_for(session: AsyncSession, t: SheetType, key: str | None) -> UUID | None:
+    """The design a type may link: it exists and has the page size of the current version."""
+    if key is None:
+        return None
+    from app.sheets import backing_design_service  # deferred: it imports this module
+
+    design = await backing_design_service.get(session, key)
+    if design.page_size != (await current_version(session, t.id)).page_size:
+        raise BackingDesignPageSizeMismatchError()
+    return design.id
 
 
 async def add_version_locked(

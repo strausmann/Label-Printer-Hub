@@ -188,6 +188,14 @@ describe("apiFetch", () => {
       expect(err).toMatchObject({ code: "printer-unavailable", errorDetail: { printer: "p1" } });
     });
 
+    it("a wrapped problem's extensions become the error detail", async () => {
+      fetchMock.mockResolvedValue(
+        respond(409, { detail: { type: "unsupported-tape", title: "Not this width.", status: 409, extensions: { tape_mm: 70 } } }),
+      );
+      const err = await apiFetch("/api/v1/printers/p1/test-print").catch((e: unknown) => e);
+      expect(err).toMatchObject({ code: "unsupported-tape", errorDetail: { tape_mm: 70 } });
+    });
+
     it("is null when the body carries no detail object", async () => {
       fetchMock.mockResolvedValueOnce(respond(404, { detail: "Not Found" }));
       expect(await apiFetch("/x").catch((e: unknown) => e)).toMatchObject({ errorDetail: null });

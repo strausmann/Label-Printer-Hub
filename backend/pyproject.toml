@@ -33,7 +33,7 @@ dependencies = [
     "jinja2>=3.1",
     "python-multipart>=0.0.12",
     "httpx>=0.28",
-    "pillow>=11.0",
+    "pillow>=11.3",
     "qrcode[pil]>=8.0",
     "brother-ql>=0.9.4",
     "ptouch>=1.1.0",
@@ -140,6 +140,7 @@ addopts = [
 markers = [
     "hardware: requires real Brother printer hardware (skipped by default; opt in with --hardware)",
     "slow: flush-timing integration tests; excluded from fast CI run (opt in with -m slow)",
+    "swatch_reference: drawn ink widths of the swatch label against the committed reference; run only in the swatch-text-metrics CI job (#346)",
 ]
 
 [tool.coverage.run]

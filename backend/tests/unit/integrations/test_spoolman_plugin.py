@@ -276,3 +276,147 @@ async def test_malformed_env_url_does_not_break_startup(
     assert plugin.is_configured() is False
     assert any("spoolman" in r.message and "invalid URL" in r.message for r in caplog.records)
     assert "[::1" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Swatch label data (#346)
+# ---------------------------------------------------------------------------
+
+_SWATCH_SPOOL = {
+    "id": 27,
+    "filament": {
+        "vendor": {"name": "Sunlu"},
+        "name": "Grau",
+        "material": "PLA+",
+        "color_hex": "C2C1C0",
+        "settings_bed_temp": 60,
+    },
+    "remaining_weight": 410,
+    "location": "Shelf A2",
+}
+
+
+def _mock_spool(payload: dict[str, object] | None = None) -> None:
+    respx.get("https://spoolman.example/api/v1/spool/27").mock(
+        return_value=httpx.Response(200, json=payload or _SWATCH_SPOOL)
+    )
+
+
+async def _store_lookup(
+    monkeypatch: pytest.MonkeyPatch, values: dict[str, object] | None = None
+) -> object:
+    client = bound(SpoolmanPlugin)
+    for key, value in (values or {}).items():
+        client._store._values[key] = value  # type: ignore[attr-defined]
+    return await client.lookup("27")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_fills_swatch_in_the_hub_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_spool()
+    data = await _store_lookup(monkeypatch, {"general.language": "de"})
+    swatch = data.swatch  # type: ignore[attr-defined]
+    assert swatch is not None
+    assert swatch.language == "de"
+    assert (swatch.vendor, swatch.title, swatch.color_name) == ("Sunlu", "PLA+", "Grau")
+    assert swatch.bed_c == 60
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_unknown_hub_language_becomes_english(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_spool()
+    data = await _store_lookup(monkeypatch, {"general.language": "fr"})
+    assert data.swatch.language == "en"  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_reads_the_title_source_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_spool()
+    data = await _store_lookup(monkeypatch, {"integrations.spoolman.label.title_source": "name"})
+    swatch = data.swatch  # type: ignore[attr-defined]
+    assert (swatch.title, swatch.color_name) == ("Grau", "PLA+")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_title_source_env_locks_the_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.config import get_settings
+
+    monkeypatch.setenv("LABELYARD_SPOOLMAN_LABEL_TITLE_SOURCE", "name")
+    get_settings.cache_clear()
+    _mock_spool()
+    data = await _store_lookup(
+        monkeypatch, {"integrations.spoolman.label.title_source": "material"}
+    )
+    assert data.swatch.title == "Grau"  # type: ignore[attr-defined]
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_reads_the_configured_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = {**_SWATCH_SPOOL, "extra": {"pa": "0.027"}}
+    _mock_spool(payload)
+    data = await _store_lookup(
+        monkeypatch, {"integrations.spoolman.label.pressure_advance_field": "pa"}
+    )
+    assert data.swatch.pressure_advance == pytest.approx(0.027)  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_still_returns_title_when_the_swatch_cannot_be_built(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    from pydantic import BaseModel, ValidationError
+
+    _mock_spool()
+    with patch("app.integrations.spoolman.plugin.build_swatch", return_value=None):
+        data = await _store_lookup(monkeypatch)
+    assert data.swatch is None  # type: ignore[attr-defined]
+    assert data.title == "Sunlu Grau"  # type: ignore[attr-defined]
+    assert data.primary_id == "#27"  # type: ignore[attr-defined]
+    assert data.qr_payload == "https://spoolman.example/spool/show/27"  # type: ignore[attr-defined]
+
+    class _Strict(BaseModel):
+        x: int
+
+    try:
+        _Strict.model_validate({"x": "not a number"})
+    except ValidationError as exc:
+        error = exc
+
+    def _raise(**_kw: object) -> object:
+        raise error
+
+    with (
+        patch("app.integrations.spoolman.swatch.SpoolSwatch", side_effect=_raise),
+        caplog.at_level(logging.INFO, logger="app.integrations.spoolman.swatch"),
+    ):
+        data = await _store_lookup(monkeypatch)
+    assert data.swatch is None  # type: ignore[attr-defined]
+    assert data.title == "Sunlu Grau"  # type: ignore[attr-defined]
+    assert data.primary_id == "#27"  # type: ignore[attr-defined]
+    record = next(r for r in caplog.records if r.levelno == logging.INFO)
+    assert "27" in record.getMessage()
+    assert "ValidationError" in record.getMessage()
+    assert "Sunlu" not in caplog.text
+    assert "Shelf" not in caplog.text
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_lookup_keeps_title_primary_id_and_secondary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _mock_spool()
+    data = await _store_lookup(monkeypatch)
+    assert data.title == "Sunlu Grau"  # type: ignore[attr-defined]
+    assert data.primary_id == "#27"  # type: ignore[attr-defined]
+    assert data.secondary == ("410g remaining",)  # type: ignore[attr-defined]
+    assert data.swatch is not None  # type: ignore[attr-defined]

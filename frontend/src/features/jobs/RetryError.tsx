@@ -30,6 +30,19 @@ export function RetryError({ error, sheetCode }: { error: unknown; sheetCode: st
       const cells = taken.cells.join(", ");
       return <>{t`Cells ${cells} are in use by something else now. Print the labels again as a new page.`}</>;
     }
+    if (error.code === "job_not_retryable" && error.errorDetail?.reason === "margin_code_only") {
+      const code = typeof error.errorDetail.sheet_code === "string" ? error.errorDetail.sheet_code : sheetCode;
+      return (
+        <>
+          {t`This job printed only the sheet code in the margin. Print it again with Reprint margin code on the sheet page.`}{" "}
+          {code && (
+            <Link to="/sheets/$code" params={{ code }} className="font-bold text-link underline underline-offset-2">
+              {t`Open ${code}`}
+            </Link>
+          )}
+        </>
+      );
+    }
     if (error.code === "job_not_retryable") return <>{t`This job cannot be retried: nothing is left to print.`}</>;
     // The same refusal in the problem shape (hyphen): the stored page can no longer be drawn.
     if (error.code === "job-not-retryable") return <>{t`This job cannot be retried: its stored page can no longer be drawn.`}</>;

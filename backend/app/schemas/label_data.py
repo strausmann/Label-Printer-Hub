@@ -26,6 +26,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict
 
 from app.schemas.label_data_item import LabelDataItem
+from app.schemas.spool_swatch import SpoolSwatch
 
 
 class LabelData(BaseModel):
@@ -54,3 +55,6 @@ class LabelData(BaseModel):
 
     items: tuple[LabelDataItem, ...] = ()
     """Child items for qr_with_listing aggregation labels (Kallax-Regal-Uebersicht etc.)."""
+
+    swatch: SpoolSwatch | None = None
+    """Spoolman spool data of the swatch label (#346); required by spool_swatch only."""

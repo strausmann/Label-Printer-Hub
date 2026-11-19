@@ -57,6 +57,7 @@ module.exports = {
         'integrations',
         'plans',
         'license',
+        'spoolman',
       ],
     ],
     'subject-case': [2, 'never', ['upper-case', 'pascal-case', 'start-case']],

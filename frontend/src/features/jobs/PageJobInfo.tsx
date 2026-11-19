@@ -59,19 +59,29 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
   const page = pageInfoOf(job);
   const status = usePageJobStatus(job);
   const typeLabel = useTypeLabel(page?.kind === "calibration_page" ? page.typeKey : null);
-  const trayLabel = useTrayLabel(job.printer_id, page?.kind === "test_page" ? page.tray : null);
-  const code = page?.kind === "sheet_page" ? page.sheetCode : null;
+  const trayLabel = useTrayLabel(job.printer_id, page?.kind === "test_page" || page?.kind === "tray_loading_page" ? page.tray : null);
+  const code = page?.kind === "sheet_page" || page?.kind === "sheet_back_page" ? page.sheetCode : null;
   const sheet = useSheet(code !== null && SETTLED_BY_HAND.has(job.state) ? code : "");
   if (!page) return null;
   const unconfirmed = (sheet.data?.cells ?? []).filter((c) => c.state === "unconfirmed" && c.job_id === job.id).map((c) => c.cell);
   const discarded = sheet.data?.state === "discarded";
   const calibration = page.kind === "calibration_page";
-  const testPage = page.kind === "test_page";
+  const testPage = page.kind === "test_page" || page.kind === "tray_loading_page";
+  const backPage = page.kind === "sheet_back_page";
+  const heading = calibration
+    ? t`Calibration page`
+    : page.kind === "tray_loading_page"
+      ? t`Tray loading test`
+      : testPage
+        ? t`Test page`
+        : backPage
+          ? t`Sheet code on the back`
+          : t`Sheet page`;
 
   return (
     <section aria-labelledby="page-h" className={`${PANEL} flex flex-col gap-3`}>
       <h2 id="page-h" className={SECTION_HEADING}>
-        {calibration ? t`Calibration page` : testPage ? t`Test page` : t`Sheet page`}
+        {heading}
       </h2>
       {(status || cancelRequested) && (
         <div role="status" className="flex flex-col gap-1">
@@ -88,6 +98,16 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
             <Row label={t`Tray`}>{trayLabel ?? page.tray ?? "—"}</Row>
             <Row label={t`Paper size`}>{page.media ?? "—"}</Row>
           </>
+        ) : backPage ? (
+          <Row label={t`Sheet`}>
+            {code ? (
+              <Link to="/sheets/$code" params={{ code }} className="code font-bold text-link underline underline-offset-2">
+                {code}
+              </Link>
+            ) : (
+              "—"
+            )}
+          </Row>
         ) : calibration ? (
           <Row label={t`Sheet type`}>{page.typeKey ? `${typeLabel ?? page.typeKey}${page.version === null ? "" : ` v${page.version}`}` : "—"}</Row>
         ) : (
@@ -103,7 +123,7 @@ export function PageJobInfo({ job, cancelRequested, printer }: { job: Job; cance
             </Row>
             <Row label={t`Labels`}>{page.cellCount}</Row>
             <Row label={t`Cells`}>{page.cells.length > 0 ? <CellNumbers cells={page.cells} /> : "—"}</Row>
-            {page.idCell !== null && <Row label={t`Sheet ID in cell`}><span className="code">{page.idCell}</span></Row>}
+            {page.idCell !== null && <Row label={t`Sheet code in cell`}><span className="code">{page.idCell}</span></Row>}
           </>
         )}
       </dl>

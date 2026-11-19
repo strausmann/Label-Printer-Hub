@@ -52,7 +52,10 @@ test.describe("integrations", () => {
     await expect(options.first()).toHaveText("Look up HH-AK0042 in Snipe-IT");
     await shot(page, "eint-search-desktop.png");
 
+    // On a phone the search is a magnifier that opens a dialog (#320).
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator("header").getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByRole("dialog", { name: "Search" }).getByRole("combobox", { name: "Search" }).fill("HH-AK0042");
     await expect(options).toHaveCount(3);
     await shot(page, "eint-search-phone.png");
     expect(await noSideScroll(page)).toBe(true);
@@ -84,5 +87,34 @@ test.describe("integrations", () => {
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/lookup\/spoolman\/7$/);
     await expect(page.getByRole("heading", { level: 1, name: "Spoolman item" })).toBeVisible();
+  });
+});
+
+
+test.describe("Spoolman label fields", () => {
+  test("the Spoolman label fields keep a changed key", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/settings/integrations");
+    const card = page.getByRole("group", { name: "Spoolman" });
+    await card.getByRole("button", { name: "Label fields" }).click();
+    const field = card.getByRole("textbox", { name: "Pressure advance field" });
+    await expect(field).toHaveValue("flowdynamics");
+    await field.fill("pa_k");
+    await card.getByRole("button", { name: "Save" }).click();
+    await expect(card.getByText("Saved")).toBeVisible();
+    await shot(page, "t15h-spoolman-fields-1280.png", true);
+
+    await page.reload();
+    await card.getByRole("button", { name: "Label fields" }).click();
+    await expect(card.getByRole("textbox", { name: "Pressure advance field" })).toHaveValue("pa_k");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await shot(page, "t15h-spoolman-fields-390.png", true);
+    expect(await noSideScroll(page)).toBe(true);
+
+    // Back to the default, so other specs see the shipped key.
+    await card.getByRole("textbox", { name: "Pressure advance field" }).fill("flowdynamics");
+    await card.getByRole("button", { name: "Save" }).click();
+    await expect(card.getByText("Saved")).toBeVisible();
   });
 });

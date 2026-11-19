@@ -132,6 +132,9 @@ class Settings(BaseSettings):
     # Spoolman integration (no API key needed)
     spoolman_url: str = ""
     spoolman_timeout: float = 5.0
+    spoolman_label_title_source: Literal["material", "name"] = "material"
+    """What the swatch label's black bar shows (#346): the filament's ``material`` (default)
+    or its ``name``; the colour line under it shows the other one."""
 
     # Server
     server_port: int = 8000
@@ -139,6 +142,14 @@ class Settings(BaseSettings):
     """Python-Loglevel — auf die fünf dokumentierten Werte beschränkt
     (Issue #46). Ungültige Werte (Tippfehler, lowercase) erzeugen einen
     ValidationError beim Startup statt lautlos defaulten."""
+
+    access_log: bool = True
+    """#366: one line per HTTP request on stdout in nginx combined format (for CrowdSec and
+    other log tools). Off: no access log at all, uvicorn's lines stay off too."""
+
+    access_log_probes: bool = False
+    """#366: also log successful ``/healthz`` and ``/readiness`` calls (2xx or 503; left out by
+    default). A refused key on ``/readiness`` is logged either way."""
 
     sign_in_limit_per_minute: int = Field(default=10, gt=0)
     """Browser sign-in attempts per minute and client address (default 10). Keep the default

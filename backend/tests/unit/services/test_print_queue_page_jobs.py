@@ -714,3 +714,129 @@ async def test_a_cancel_whose_write_fails_during_the_end_keeps_the_job_known(
         assert env.queue.has_job(jid)
         assert (await env.queue.get(jid)).state == JobState.CANCELLED
         assert env.queue.forget_job(jid) is False
+
+
+# ---------------------------------------------------------------------------- stored rows (#281)
+
+
+async def _stored_row(store: MemoryJobStore, printer_id: UUID, state: str = "queued") -> UUID:
+    """A deferred Grocy row as the webhook stores it: ``queued``, no page payload yet."""
+    from app.models.job import Job as DbJob
+
+    row = DbJob(
+        printer_id=printer_id,
+        template_key=None,
+        state=state,
+        payload={"deferred": True, "deferred_kind": "sheet_page", "label_data": {}},
+    )
+    await store.save_queued(row)
+    return row.id
+
+
+async def test_submit_stored_page_job_prints(env: _Env, handler: RecordingHandler) -> None:
+    jid = await _stored_row(env.store, env.page.id)
+    assert (
+        await env.queue.submit_stored_page_job(env.page.id, payload(), api_key_id=None, job_id=jid)
+        == jid
+    )
+    job = await env.wait_terminal(jid)
+    assert job.state == JobState.COMPLETED
+    await env.wait_db(jid, DbJobState.DONE.value)
+    row = await env.store.get(jid)
+    assert row is not None and row.payload["kind"] == "calibration_page"
+    assert "deferred" not in row.payload
+    assert handler.names(jid) == ["started", "completed"]
+
+
+async def test_submit_stored_page_job_refuses_a_cancelled_row(
+    env: _Env, handler: RecordingHandler
+) -> None:
+    from app.services.print_queue import JobNoLongerQueuedError
+
+    jid = await _stored_row(env.store, env.page.id, state=DbJobState.CANCELLED.value)
+    with pytest.raises(JobNoLongerQueuedError):
+        await env.queue.submit_stored_page_job(env.page.id, payload(), api_key_id=None, job_id=jid)
+    assert env.queue.has_job(jid) is False  # the registration is dropped
+    row = await env.store.get(jid)
+    assert row is not None and row.state == DbJobState.CANCELLED.value
+    assert row.payload["deferred"] is True  # nothing written
+    canary = await _submit(env)
+    await env.wait_terminal(canary)
+    assert len(env.ops("Print-Job")) == 1  # the canary only
+
+
+class _SwapGatedStore(MemoryJobStore):
+    """``set_queued_payload`` commits, then stops at a gate before it returns."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.swapped = asyncio.Event()
+        self.gate = asyncio.Event()
+
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        done = await super().set_queued_payload(job_id, payload)
+        self.swapped.set()
+        await self.gate.wait()
+        return done
+
+
+async def test_submit_stored_page_job_cancelled_after_swap_is_not_enqueued(
+    handler: RecordingHandler,
+) -> None:
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        gated = _SwapGatedStore()
+        env.queue._store = gated  # type: ignore[assignment]
+        jid = await _stored_row(gated, env.page.id)
+        worker_queue = env.queue._queues[env.page.id]
+        put = worker_queue.put
+        enqueued: list[Any] = []
+
+        async def recording_put(item: Any) -> None:
+            enqueued.append(item)
+            await put(item)
+
+        worker_queue.put = recording_put  # type: ignore[method-assign]
+        submit = asyncio.create_task(
+            env.queue.submit_stored_page_job(env.page.id, payload(), api_key_id=None, job_id=jid)
+        )
+        async with asyncio.timeout(TEST_TIMEOUT_S):
+            await gated.swapped.wait()
+        # Registered before the swap: the cancel reaches the queue, not just the row.
+        assert await env.queue.cancel(str(jid)) is True
+        gated.gate.set()
+        assert await submit == jid
+        row = await gated.get(jid)
+        assert row is not None and row.state == DbJobState.CANCELLED.value
+        assert handler.ended(jid)["state"] == "cancelled"
+        assert enqueued == []  # never handed to the worker
+        await asyncio.sleep(0.05)
+        assert env.ops("Print-Job") == []
+
+
+class _SwapFails(MemoryJobStore):
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        raise RuntimeError("db down")
+
+
+async def test_submit_stored_page_job_store_error_drops_the_registration(
+    handler: RecordingHandler,
+) -> None:
+    async with _env(FakeIppPrinter(job_script=[9])) as env:
+        failing = _SwapFails()
+        env.queue._store = failing  # type: ignore[assignment]
+        jid = await _stored_row(failing, env.page.id)
+        with pytest.raises(RuntimeError, match="db down"):
+            await env.queue.submit_stored_page_job(
+                env.page.id, payload(), api_key_id=None, job_id=jid
+            )
+        assert env.queue.has_job(jid) is False
+        assert env.ops("Print-Job") == []
+
+
+async def test_submit_stored_page_job_refuses_unknown_and_tape_printers(env: _Env) -> None:
+    jid = await _stored_row(env.store, env.page.id)
+    with pytest.raises(KeyError):
+        await env.queue.submit_stored_page_job(uuid4(), payload(), api_key_id=None, job_id=jid)
+    with pytest.raises(MediaKindMismatchError):
+        await env.queue.submit_stored_page_job(env.tape.id, payload(), api_key_id=None, job_id=jid)
+    assert env.queue.has_job(jid) is False

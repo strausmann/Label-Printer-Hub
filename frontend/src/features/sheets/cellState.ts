@@ -124,7 +124,7 @@ export function cellStateWord(state: GridCellState, t: Translate): string {
 export function cellLabel(cell: GridCell, t: Translate): string {
   const state = cellStateWord(cell.state, t);
   const parts = [t(msg`Cell ${cell.cell}, ${state}`)];
-  if (cell.isId) parts.push(t(msg`sheet ID`));
+  if (cell.isId) parts.push(t(msg`sheet code`));
   if (cell.hwMargin) parts.push(t(msg`in the printer's unprintable margin`));
   if (cell.truncated) parts.push(t(msg`text shortened`));
   if (cell.purpose) parts.push(cell.purpose);

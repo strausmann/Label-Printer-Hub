@@ -33,10 +33,14 @@ def _columns(db: Path) -> dict[str, dict[str, object]]:
         eng.dispose()
 
 
-def test_the_revision_is_the_single_head(tmp_path: Path) -> None:
+def test_the_history_has_a_single_head_that_contains_the_revision(tmp_path: Path) -> None:
+    """A later migration moves the head; the revision must stay on its one line of history."""
     from alembic.script import ScriptDirectory
 
-    assert ScriptDirectory.from_config(_cfg(tmp_path / "x.db")).get_heads() == [_REV]
+    script = ScriptDirectory.from_config(_cfg(tmp_path / "x.db"))
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert _REV in {r.revision for r in script.walk_revisions(base="base", head=heads[0])}
 
 
 def test_upgrade_adds_the_column_and_keeps_rows_downgrade_drops_it(tmp_path: Path) -> None:

@@ -1,0 +1,69 @@
+---
+title: Grocy
+description: Produktetiketten aus Grocy drucken, auf Abruf oder wenn sich der Bestand ändert.
+---
+
+import Screenshot from "../../../../components/Screenshot.astro";
+
+Das Grocy-Plugin schlägt Produkte in deinem Grocy nach und druckt ihre Etiketten, mit einem QR-Code, der zurück zum Produkt führt.
+
+## Einrichtung
+
+1. Leg in Grocy über das Benutzermenü einen API-Schlüssel an.
+2. Öffne in Labelyard **Einstellungen > Integrationen > Grocy**, trag die Adresse von Grocy und den Schlüssel ein und teste die Verbindung. Oder setz `LABELYARD_GROCY_URL` und `LABELYARD_GROCY_API_KEY`.
+
+## Drucken
+
+Scanne oder tippe auf der Suchseite eine Produkt-ID oder einen Produkt-Barcode, oder einen Etikettenlink, den der Hub früher gedruckt hat (`/product/…`). Aus einem Skript nimmst du `{"lookup": {"app": "grocy", "identifier": "<produkt-id>"}}` mit `POST /api/v1/print`.
+
+## Drucken, wenn sich der Bestand ändert
+
+Grocy kann den Hub aufrufen, wenn Bestand hinzukommt oder entnommen wird, und der Hub druckt ein Etikett für das Produkt, mit der Bestandsänderung als dritter Zeile (zum Beispiel `Bestandsänderung: +2`), wenn das Ereignis eine mitbringt. Siehe [Webhooks](/de/integrations/webhooks/).
+
+## Grocys eigene Etiketten drucken
+
+Grocy hat eine eigene Etikettendrucker-Funktion: einen Druckknopf für Produkte, Bestandseinträge, Hausarbeiten, Batterien und Rezepte. Labelyard kann der Drucker hinter diesem Knopf sein.
+
+<Screenshot shot="grocy-labels" lang="de" alt="Grocy-Etiketten: der Schalter, der Standarddrucker und je Etikettenart ein Layout und ein Drucker." />
+
+1. Öffne **Einstellungen > Integrationen**. Der Bereich **Grocy-Etiketten** steht unter den Integrationen.
+2. Schalte **Grocys Etiketten drucken** ein. Solange das aus ist, lehnt der Hub Grocys Etiketten mit `503` ab.
+3. Wähl den **Standarddrucker**. **Erster eingeschalteter Banddrucker** nimmt den ersten Banddrucker, der eingeschaltet ist. Ein Seitendrucker braucht zusätzlich einen **Bogentyp**, siehe [Grocy-Etiketten auf Bögen drucken](#grocy-etiketten-auf-bögen-drucken).
+4. Wähl je Etikettenart ein Layout und einen Drucker. Eine Art auf **Wie Standard** geht an den Standarddrucker, mit dessen Bogentyp. Das Layout mit Detailzeile braucht eine zweite Zeile von Grocy. Die schickt Grocy nur für einen Bestandseintrag mit Mindesthaltbarkeitsdatum. Jedes andere Etikett mit diesem Layout wird ohne Detailzeile gedruckt, und der Auftrag hält das gedruckte Layout fest.
+5. Drück **Speichern**.
+6. Leg unter **Einstellungen > Zugang und Schlüssel** einen API-Schlüssel mit dem Bereich `print` an, beschränkt auf die Drucker dieser Etiketten (siehe [Schlüssel in einer Adresse](/de/admin/api-keys/#schlüssel-in-einer-adresse)).
+7. Kopier die Zeilen, die der Bereich zeigt, in Grocys `data/config.php` und ersetze `<print-key>` durch diesen Schlüssel:
+
+```php
+Setting('FEATURE_FLAG_LABEL_PRINTER', true);
+Setting('LABEL_PRINTER_WEBHOOK', 'https://hub.example.invalid/api/v1/webhook/grocy/label?token=<print-key>');
+Setting('LABEL_PRINTER_RUN_SERVER', true);
+Setting('LABEL_PRINTER_HOOK_JSON', true);
+```
+
+Die Adresse füllt der Bereich aus `LABELYARD_PUBLIC_URL`. `LABEL_PRINTER_RUN_SERVER` muss `true` sein: Dann ruft Grocy den Hub von seinem Server aus auf, nicht aus dem Browser. `LABEL_PRINTER_HOOK_JSON` lässt Grocy das Etikett als JSON schicken, und das verlangt der Hub.
+
+Nimm einen Schlüssel mit dem Bereich `print`, beschränkt auf den Drucker für diese Etiketten. Grocy schreibt die Adresse mit dem Schlüssel in sein eigenes Protokoll. Außerdem zeigt Grocy sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet.
+
+Der Hub antwortet innerhalb von zwei Sekunden mit `202` und der ID eines neuen Auftrags; gedruckt wird nach dieser Antwort. Grocy meldet also auch dann Erfolg, wenn das Etikett nicht drucken kann. Ein Drucker ohne Verbindung oder ohne Band endet als **fehlgeschlagener** Auftrag, ebenso ein Etikett, das der Hub nicht lesen kann. Fehlgeschlagene Etiketten stehen mit dem Grund auf der Seite **Aufträge** und lassen sich dort erneut drucken; ein Bogenetikett, das vor der Übergabe an den Seitendrucker fehlgeschlagen ist, nimmt dabei eine freie Zelle wie ein neues Etikett. Ein Etikett, das der Hub nicht lesen konnte, hat nichts zum erneuten Drucken: Sende es noch einmal aus Grocy.
+
+Ein Proxy mit Single Sign-on muss `/api/v1/webhook/` durchlassen, wie bei den anderen [Webhooks](/de/integrations/webhooks/#hinter-einem-proxy-mit-sso).
+
+Laufen Grocy und der Hub als Container im selben Docker-Netz, nimm statt der öffentlichen Adresse die Adresse des Hubs in diesem Netz, zum Beispiel `http://labelyard:8000/api/v1/webhook/grocy/label?token=<print-key>` (der Hostname ist der Container- oder Dienstname des Hubs). Der Aufruf geht dann nicht über den Reverse Proxy: Weder Single Sign-on noch ein Ausfall des Proxys kann ein Etikett aufhalten, und der Schlüssel läuft nicht über die öffentliche Adresse. Der Bereich zeigt immer die öffentliche Adresse; den Teil vor `/api/v1/` ersetzt du selbst.
+
+## Grocy-Etiketten auf Bögen drucken
+
+Ein Etikett kann auch an einen Seitendrucker gehen, auf einen Etikettenbogen. Die Druckerauswahl zeigt Banddrucker und Seitendrucker in zwei Gruppen.
+
+1. Wähl einen Seitendrucker als Standarddrucker oder als Drucker einer Etikettenart.
+2. Wähl seinen **Bogentyp**. Die Liste zeigt die Bogentypen, die nicht archiviert sind. Solange ein Seitendrucker keinen Bogentyp hat, kannst du nicht speichern.
+3. Drück **Speichern**.
+
+Jedes Grocy-Etikett belegt eine Zelle. Der Hub nimmt den angefangenen Bogen dieses Bogentyps mit den wenigsten freien Zellen und darin die erste freie Zelle. Zellen, die auf eine Bestätigung warten, zählen nicht als frei. Hat kein Bogen eine freie Zelle, fängt der Hub einen neuen Bogen an und druckt seine ID auf den Rand, wo sie hinpasst. Kann ein Bogen das Etikett doch nicht nehmen, versucht der Hub den nächsten Bogen, spätestens einen neuen. Zwei Etiketten, die gleichzeitig kommen, belegen verschiedene Zellen und fangen nie zwei neue Bögen an. Die Zelle hält das Etikett als `grocy` mit seinem Grocycode fest, so findest du es später auf dem Bogen.
+
+Eine Etikettenart mit eigenem Seitendrucker nimmt ihren eigenen Bogentyp. Eine Art auf **Wie Standard** nimmt den Standarddrucker und dessen Bogentyp. Stellst du einen Drucker zurück auf einen Banddrucker oder auf **Wie Standard**, wird sein Bogentyp geleert. Das Layout der Etikettenart gilt auch auf dem Bogen; die Größe bestimmt die Zelle des Bogentyps.
+
+Der Hub lehnt ein Etikett mit `503` ab, wenn der Bogentyp nicht gesetzt ist, nicht mehr existiert oder archiviert ist. Der Bereich warnt bei einem gespeicherten Bogentyp, der archiviert oder weg ist. Ein Etikett, das die Zelle nicht zeigen kann, etwa ein QR-Code, der zu groß für sie ist, endet als **fehlgeschlagener** Auftrag, ohne eine Zelle zu belegen. Hält der Hub an, bevor das Etikett beim Drucker ist, endet der Auftrag **fehlgeschlagen**, und die Zelle ist wieder frei.
+
+Druckst du von der Druckseite auf denselben Bogen, während ein Grocy-Etikett unterwegs ist, plant der Hub neu. Ein Druck, der seine Vorschau mitgeschickt hat, kann dann melden, dass sich der Plan geändert hat: Prüf die Vorschau und druck erneut.
+

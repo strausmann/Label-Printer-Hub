@@ -111,7 +111,7 @@ describe("cellLabel", () => {
     expect(cellLabel({ ...base, state: "new" }, t)).toBe("Cell 2, new");
     expect(cellLabel({ ...base, state: "skipped" }, t)).toBe("Cell 2, skipped");
     expect(cellLabel({ cell: 3, state: "new", isId: true, hwMargin: true, truncated: true }, t)).toBe(
-      "Cell 3, new, sheet ID, in the printer's unprintable margin, text shortened",
+      "Cell 3, new, sheet code, in the printer's unprintable margin, text shortened",
     );
   });
 

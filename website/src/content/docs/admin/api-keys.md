@@ -13,12 +13,12 @@ Everything that is not a browser behind an SSO proxy signs in with an API key: t
 | `print` | Reading and printing | Apps and scripts that print |
 | `admin` | Everything, including settings and keys | People who manage the hub |
 
-Each scope includes the ones above it. A key can also be limited to some printers; an empty list allows all of them.
+Each scope includes the ones above it. A `read` or `print` key can also be limited to some printers; an empty list allows all of them. A key with the `admin` scope always acts on every printer, so it cannot be limited: a printer list on an admin key is refused with `422` and `admin_key_not_restrictable`.
 
 ## Creating a key
 
 1. Sign in with an admin key and open **Settings > Access and keys**.
-2. Create a key with a name that says who uses it, its scope, printers and rate limit.
+2. Create a key with a name that says who uses it and its scope. The form sets no printer list or rate limit; set `allowed_printer_ids` (not for `admin`) and `rate_limit_per_minute` through the API, with `POST /api/v1/admin/api-keys` or `PATCH /api/v1/admin/api-keys/{id}`.
 3. Copy the key. It is shown **once**; the hub stores only a bcrypt hash of it.
 
 Create one key per caller, so you can revoke one without touching the others.
@@ -37,9 +37,21 @@ curl -X POST https://labelyard.example.com/api/v1/print \
 
 Requests authenticated by a key header are not subject to the CSRF check; that check only guards browser sessions.
 
+## Keys in a URL
+
+One route accepts a key in the address instead of the header: Grocy's label printer webhook, `POST /api/v1/webhook/grocy/label?token=<key>`, because Grocy cannot send headers ([ADR 0027](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0027-url-token-for-the-grocy-label-webhook.md)). Every other route ignores a `token` parameter.
+
+A key in an address is seen by more than the hub. Grocy writes the address to its own log. It also shows it to the Grocy user when the hub refuses a label or does not answer within 2 seconds, and proxies may log it too. The hub hides the value in its own logs. So:
+
+- Only a `print` key works there. A `read` key answers `403` with `insufficient_scope`, an `admin` key `403` with `token_scope_too_wide`.
+- Create a key for Grocy alone and limit it to the printers of Grocy's labels. A label mapped to another printer then answers `403` with `printer_not_allowed`.
+- If the address was seen where it should not be, revoke the key and create a new one.
+
 ## Rate limits
 
 The default is 60 requests per minute and key, adjustable from 1 to 10,000. Above it the hub answers `429` with a `Retry-After` header and the error code `rate_limit_exceeded`.
+
+A request that looks up several items counts for more than one request: the request itself pays for the first lookup, every further lookup takes one more request from the budget (never more than a full minute's budget). This applies to tape batches (`POST /api/v1/print/{printer}/batch`, items with a `lookup`) and to `POST /api/v1/render/check` (every distinct item). If the remaining budget cannot cover them, the hub answers `429` with `rate_limit_exceeded` before any lookup; a batch refused before its first lookup gives the budget back.
 
 ## Sheets
 

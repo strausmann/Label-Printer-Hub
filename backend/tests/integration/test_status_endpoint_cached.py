@@ -251,3 +251,32 @@ async def test_status_endpoint_returns_cached_tape_data(api_client_with_warm_cac
     # error_flags=[] → error_state=None.
     assert body["tape_loaded"] == "12mm"
     assert body["error_state"] is None
+
+
+@pytest.mark.parametrize(
+    "media_raw",
+    ["29mm x " + "9" * 5000 + "mm", "9" * 5000 + "mm", "29 x 90 mm" + "x" * 5000],
+)
+async def test_status_endpoint_survives_an_overlong_media_name(media_raw: str) -> None:
+    """R25-1: a printer (or a stored cache row) naming a 5000-digit roll must not answer 500.
+
+    Python refuses ``int()`` on more than 4300 digits; the parser caps the text and bounds the
+    digit groups, so the status reads as an unknown or sane roll instead.
+    """
+    import app.db.engine as _eng
+    from httpx import ASGITransport, AsyncClient
+
+    factory = _eng.async_session
+    printer_id = await _insert_printer(factory)
+    parsed = {"online": True, "loaded_tape_mm": 29, "hr_printer_status": "idle"}
+    await _insert_cache(factory, printer_id, {**parsed, "error_flags": [], "media_raw": media_raw})
+    async with factory() as s:
+        app = _build_test_app(s)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            resp = await c.get(
+                f"/api/v1/printers/{printer_id}/status", headers={"X-Pangolin-User": "test"}
+            )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["media_kind"] in (None, "continuous", "die_cut")
+    assert body["label_length_mm"] is None or 0 < body["label_length_mm"] < 10000

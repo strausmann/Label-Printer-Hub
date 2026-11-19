@@ -26,6 +26,24 @@ async function api(page: Page, method: string, path: string): Promise<number> {
   );
 }
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
+/** `PUT /api/v1/settings` the way the page sends it; answers the status. */
+async function putSettings(page: Page, values: Record<string, unknown>): Promise<number> {
+  return page.evaluate(async (v) => {
+    const session = await (await fetch("/api/v1/auth/session")).json();
+    const response = await fetch("/api/v1/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrf_token },
+      body: JSON.stringify({ values: v }),
+    });
+    return response.status;
+  }, values);
+}
+/** The registry defaults of the settings the Grocy label test changes. */
+const GROCY_LABEL_DEFAULTS = {
+  "integrations.grocy.label.enabled": false,
+  "integrations.grocy.label.stock_entry.content_type": "qr_three_lines",
+  "integrations.grocy.label.stock_entry.printer": "",
+};
 
 // One sign-in for the whole file: the hub limits sign-ins per minute, and every
 // test of every file that signs in counts against the same limit.
@@ -67,6 +85,104 @@ test.describe.serial("settings", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(() => noSideScroll(page)).toBe(true);
     await shot(page, "task-13-integrations-phone.png", true);
+  });
+
+  test("integrations: enable the Grocy label webhook and map the stock entry layout", async () => {
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/integrations");
+      const panel = page.getByRole("group", { name: "Grocy labels" });
+      const enabled = panel.getByRole("switch", { name: "Print Grocy's labels" });
+      await expect(enabled).not.toBeChecked();
+      const stock = panel.getByRole("group", { name: "Stock entry" });
+      const layout = stock.getByRole("button", { name: /Layout$/ });
+      const printer = stock.getByRole("button", { name: /Printer$/ });
+      await expect(layout).toContainText("QR code, code, title and detail");
+      await expect(printer).toContainText("Same as default");
+      await expect(panel.getByRole("button", { name: /Default printer$/ })).toContainText("First enabled tape printer");
+      await expect(panel.getByRole("region", { name: "Lines for Grocy's config.php" })).toContainText("/api/v1/webhook/grocy/label?token=<print-key>");
+
+      await panel.getByText("Print Grocy's labels", { exact: true }).click();
+      await layout.click();
+      await page.getByRole("option", { name: "QR code only" }).click();
+      await printer.click();
+      await page.getByRole("option", { name: "Workshop PT-P750W" }).click();
+      await panel.getByRole("button", { name: "Save" }).click();
+      await expect(panel.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+      await shot(page, "t9-grocy-labels-desktop.png", true);
+
+      await page.reload();
+      await expect(page.getByRole("group", { name: "Grocy labels" }).getByRole("switch", { name: "Print Grocy's labels" })).toBeChecked();
+      await expect(layout).toContainText("QR code only");
+      await expect(printer).toContainText("Workshop PT-P750W");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => noSideScroll(page)).toBe(true);
+      await shot(page, "t9-grocy-labels-phone.png", true);
+
+      // Put the defaults back so later tests (and the README screenshots) see them.
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await panel.getByText("Print Grocy's labels", { exact: true }).click();
+      await layout.click();
+      await page.getByRole("option", { name: "QR code, code, title and detail" }).click();
+      await printer.click();
+      await page.getByRole("option", { name: "Same as default" }).click();
+      await panel.getByRole("button", { name: "Save" }).click();
+      await expect(panel.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+      await page.reload();
+      await expect(enabled).not.toBeChecked();
+      await expect(layout).toContainText("QR code, code, title and detail");
+      await expect(printer).toContainText("Same as default");
+    } finally {
+      // Whatever happened above, the next tests and the README screenshots see the defaults again.
+      expect(await putSettings(page, GROCY_LABEL_DEFAULTS)).toBe(200);
+    }
+  });
+
+  test("integrations: map Grocy batteries to a sheet type on a page printer", async () => {
+    // The seeded page printer and sheet type of the e2e hub; nothing is created, the keys are put back.
+    const keys = {
+      "integrations.grocy.label.battery.printer": "",
+      "integrations.grocy.label.battery.sheet_type": "",
+    };
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/integrations");
+      const panel = page.getByRole("group", { name: "Grocy labels" });
+      const battery = panel.getByRole("group", { name: "Battery" });
+      await expect(battery.getByRole("button", { name: /Sheet type$/ })).toHaveCount(0);
+      await battery.getByRole("button", { name: /Printer$/ }).click();
+      await expect(page.getByRole("group", { name: "Page printers" })).toBeVisible();
+      await page.getByRole("option", { name: "Office page printer" }).click();
+      const sheetType = battery.getByRole("button", { name: /Sheet type$/ });
+      await expect(sheetType).toBeVisible();
+      await expect(battery.getByText("Choose a sheet type for this page printer.")).toBeVisible();
+      const save = panel.getByRole("button", { name: "Save" });
+      await expect(save).toBeDisabled();
+      await sheetType.click();
+      await page.locator('[role="option"]').filter({ hasText: "avery-zweckform-l4736rev" }).click();
+      await expect(save).toBeEnabled();
+      await save.click();
+      await expect(panel.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+      await shot(page, "t8b-grocy-sheet-target-desktop.png", true);
+
+      await page.reload();
+      const again = page.getByRole("group", { name: "Grocy labels" }).getByRole("group", { name: "Battery" });
+      await expect(again.getByRole("button", { name: /Printer$/ })).toContainText("Office page printer");
+      await expect(again.getByRole("button", { name: /Sheet type$/ })).not.toContainText("Choose a sheet type");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => noSideScroll(page)).toBe(true);
+      await shot(page, "t8b-grocy-sheet-target-phone.png", true);
+
+      // "Same as default" hides the sheet type and clears it.
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await again.getByRole("button", { name: /Printer$/ }).click();
+      await page.getByRole("option", { name: "Same as default" }).click();
+      await expect(again.getByRole("button", { name: /Sheet type$/ })).toHaveCount(0);
+      await page.getByRole("group", { name: "Grocy labels" }).getByRole("button", { name: "Save" }).click();
+      await expect(page.getByRole("group", { name: "Grocy labels" }).getByRole("status").filter({ hasText: "Saved" })).toBeVisible();
+    } finally {
+      expect(await putSettings(page, keys)).toBe(200);
+    }
   });
 
   test("general: change the display name and see it saved", async () => {
@@ -183,6 +299,64 @@ test.describe.serial("settings", () => {
       await expect(row.getByText(uri)).toBeVisible();
       await row.getByRole("button", { name: `Disable ${name}` }).click();
       await expect(row.getByText("Disabled", { exact: true })).toBeVisible();
+    } finally {
+      // 404 when the printer was never created; both are fine.
+      await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`);
+    }
+  });
+
+  test("printers: create a PT printer with status discovery on", async () => {
+    // The hub never returns the community, so the check reads `community_set`. There is no delete route: the printer is
+    // switched off again, whatever happens (it is wired at once, so it must not stay on for later specs).
+    test.setTimeout(60_000);
+    const stamp = `${test.info().retry}-${Date.now().toString(36)}`;
+    const slug = `snmp-pt-${stamp}`;
+    const name = `SNMP bench ${stamp}`;
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto("/settings/printers");
+      await page.getByRole("button", { name: "Add printer" }).click();
+      const form = page.getByRole("form", { name: "Add a printer" });
+      await form.getByRole("textbox", { name: "Name" }).fill(name);
+      await form.getByRole("textbox", { name: "Slug" }).fill(slug);
+      await form.getByRole("textbox", { name: "Host" }).fill("192.0.2.31");
+      const community = form.getByLabel("SNMP community");
+      await expect(community).toHaveAttribute("type", "password");
+      // The switch input is visually hidden: a person clicks its label.
+      await form.getByText("Status discovery", { exact: true }).click();
+      await expect(form.getByRole("switch", { name: "Status discovery" })).toBeChecked();
+      await community.fill("bench-community");
+      await shot(page, "task-2-snmp-form-desktop.png", true);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect.poll(() => noSideScroll(page)).toBe(true);
+      await shot(page, "task-2-snmp-form-phone.png", true);
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await form.getByRole("button", { name: "Create printer" }).click();
+      await expect(page.getByRole("listitem").filter({ hasText: name })).toBeVisible();
+
+      const response = await page.request.get(`/api/v1/admin/printers/${slug}`);
+      expect(response.status()).toBe(200);
+      const text = await response.text();
+      const connection = (JSON.parse(text) as { connection: { snmp: { discover: boolean; community_set: boolean } } }).connection;
+      expect(connection.snmp.discover).toBe(true);
+      expect(connection.snmp.community_set).toBe(true);
+      expect(text).not.toContain("bench-community");
+
+      // Editing: the field starts empty and says a community is stored; a new host asks for it again before the submit.
+      await page.getByRole("button", { name: `Edit ${name}` }).click();
+      const edit = page.getByRole("form", { name: `Edit ${name}` });
+      await expect(edit.getByLabel("SNMP community")).toHaveValue("");
+      await expect(edit.getByText("A community is stored. Leave the field empty to keep it.")).toBeVisible();
+      await expect(edit.getByRole("switch", { name: "Status discovery" })).toBeChecked();
+      await edit.getByRole("textbox", { name: "Host" }).fill("192.0.2.32");
+      const hint = "The address changed, so the stored community is not reused. Enter it again.";
+      // The same words sit in a screen-reader-only live region after the visible hint.
+      await expect(edit.getByText(hint).first()).toBeVisible();
+      await expect(edit.locator('[aria-live="polite"]')).toHaveText(hint);
+      await shot(page, "task-2-snmp-form-new-host-desktop.png", true);
+      await edit.getByRole("button", { name: "Save printer" }).click();
+      await expect(edit.getByRole("alert")).toContainText("Enter the SNMP community again");
+      expect((await (await page.request.get(`/api/v1/admin/printers/${slug}`)).json()).connection.host).toBe("192.0.2.31");
     } finally {
       // 404 when the printer was never created; both are fine.
       await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`);

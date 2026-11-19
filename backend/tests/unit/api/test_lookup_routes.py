@@ -11,7 +11,7 @@ Test mapping:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from app.api.routes.lookup import router
@@ -110,3 +110,116 @@ async def test_lookup_invalid_app_returns_422() -> None:
     client = TestClient(_build_app(), raise_server_exceptions=True)
     r = client.get("/api/v1/lookup/unknown/123")
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Grocy battery and chore details
+# ---------------------------------------------------------------------------
+
+from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult  # noqa: E402
+from app.services.errors import IntegrationNotConfiguredError  # noqa: E402
+from app.services.lookup_service import LookupFailedError, UnknownAppError  # noqa: E402
+
+_BATTERY = GrocyBatteryResult(
+    id="4", name="Remote AAA", url="https://grocy.example.invalid/battery/4", charge_cycles=3
+)
+_CHORE = GrocyChoreResult(
+    id="7",
+    name="Water the plants",
+    url="https://grocy.example.invalid/chore/7",
+    assigned_to="Anna B.",
+)
+
+
+def test_grocy_battery_route_returns_the_dto() -> None:
+    with patch(
+        "app.api.routes.lookup._lookup_service.grocy_battery", new=AsyncMock(return_value=_BATTERY)
+    ) as svc:
+        r = TestClient(_build_app()).get("/api/v1/lookup/grocy/batteries/4")
+    assert r.status_code == 200
+    assert r.json() == {
+        "id": "4",
+        "name": "Remote AAA",
+        "description": None,
+        "url": "https://grocy.example.invalid/battery/4",
+        "last_charged": None,
+        "next_estimated_charge": None,
+        "charge_cycles": 3,
+    }
+    svc.assert_awaited_once_with("4")
+
+
+def test_grocy_chore_route_returns_the_dto() -> None:
+    with patch(
+        "app.api.routes.lookup._lookup_service.grocy_chore", new=AsyncMock(return_value=_CHORE)
+    ):
+        r = TestClient(_build_app()).get("/api/v1/lookup/grocy/chores/7")
+    assert r.status_code == 200
+    assert r.json()["assigned_to"] == "Anna B."
+    assert r.json()["url"].endswith("/chore/7")
+
+
+_LEAKY = "ConnectError to https://grocy.internal.example.invalid:9283/api/batteries/4 key=hunter2"
+_ROUTES = [
+    ("lookup", "/api/v1/lookup/grocy/4"),
+    ("grocy_battery", "/api/v1/lookup/grocy/batteries/4"),
+    ("grocy_chore", "/api/v1/lookup/grocy/chores/7"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), _ROUTES)
+def test_all_lookup_routes_map_the_errors_alike(method: str, path: str) -> None:
+    cases = [
+        (AppLookupNotFoundError("nope"), 404, None),
+        (IntegrationNotConfiguredError("Grocy is not configured"), 503, None),
+        (
+            UnknownAppError(f"Unknown integration. Registered: {_LEAKY}"),
+            422,
+            "integration_unknown_app",
+        ),
+        (LookupFailedError(_LEAKY), 502, "integration_lookup_failed"),
+    ]
+    for error, status, code in cases:
+        with patch(
+            f"app.api.routes.lookup._lookup_service.{method}", new=AsyncMock(side_effect=error)
+        ):
+            r = TestClient(_build_app(), raise_server_exceptions=False).get(path)
+        assert r.status_code == status, (method, error)
+        if code:
+            assert r.json()["detail"]["error_code"] == code
+            # A fixed message: the exception text carries an address and a key.
+            assert "grocy.internal" not in r.text
+            assert "hunter2" not in r.text
+
+
+@pytest.mark.parametrize("bad", ["abc", "4x", "-1", "1" * 19])
+def test_grocy_object_routes_reject_non_numeric_ids(bad: str) -> None:
+    with patch("app.api.routes.lookup._lookup_service.grocy_battery", new=AsyncMock()) as svc:
+        r = TestClient(_build_app()).get(f"/api/v1/lookup/grocy/batteries/{bad}")
+    assert r.status_code == 422
+    svc.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_service_wraps_unexpected_plugin_errors_and_lets_known_ones_through() -> None:
+    from app.services.lookup_service import AppLookupService
+
+    # A stand-in registered nowhere: the global registry is other tests' to clear.
+    plugin = MagicMock()
+    plugin.battery = AsyncMock(side_effect=RuntimeError("boom"))
+    plugin.chore = AsyncMock(side_effect=AppLookupNotFoundError("x"))
+    service = AppLookupService()
+    registry = "app.services.lookup_service.IntegrationRegistry.get"
+    with patch(registry, return_value=plugin), pytest.raises(LookupFailedError):
+        await service.grocy_battery("4")
+    with patch(registry, return_value=plugin), pytest.raises(AppLookupNotFoundError):
+        await service.grocy_chore("7")
+
+
+@pytest.mark.asyncio
+async def test_service_rejects_an_integration_that_cannot_read_batteries() -> None:
+    from app.services.lookup_service import AppLookupService, UnknownAppError
+
+    registry = "app.services.lookup_service.IntegrationRegistry.get"
+    with patch(registry, return_value=object()), pytest.raises(UnknownAppError):
+        await AppLookupService().grocy_battery("4")

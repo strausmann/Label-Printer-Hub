@@ -136,15 +136,25 @@ class PageImage:
 class PageText:
     """A single line of literal text; ``baseline_y_hmm`` is measured from the top of the page.
 
-    ``rotation`` 90 turns the line a quarter turn clockwise as seen on the page, about the text
-    origin ``(x_hmm, baseline_y_hmm)``: it then reads from top to bottom.
+    ``rotation`` turns the line clockwise as seen on the page, about the text origin
+    ``(x_hmm, baseline_y_hmm)``: 90 reads from top to bottom, 180 upside down (right to left),
+    270 from bottom to top.
     """
 
     x_hmm: int
     baseline_y_hmm: int
     size_pt: float
     text: str
-    rotation: Literal[0, 90] = 0
+    rotation: Literal[0, 90, 180, 270] = 0
+
+
+# The text matrix of each rotation in PDF space (y up), without the translation. Clockwise on
+# the page is counter-clockwise in PDF space: 90 on the page is -90 there.
+_ROTATIONS: dict[int, tuple[int, int, int, int]] = {
+    90: (0, -1, 1, 0),
+    180: (-1, 0, 0, -1),
+    270: (0, 1, -1, 0),
+}
 
 
 class VectorPen:
@@ -295,10 +305,10 @@ def write_pdf(
         c.setFont(font_name(), t.size_pt)
         x_pt = t.x_hmm * PT_PER_MM / 100
         y_pt = h_pt - t.baseline_y_hmm * PT_PER_MM / 100
-        if t.rotation == 90:
-            # One matrix (translate and rotate by -90 degrees in PDF space): a separate
-            # translate would look like an image placement to anything counting ``cm``.
-            c.transform(0, -1, 1, 0, x_pt, y_pt)
+        if t.rotation in _ROTATIONS:
+            # One matrix (translate and rotate in PDF space): a separate translate would look
+            # like an image placement to anything counting ``cm``.
+            c.transform(*_ROTATIONS[t.rotation], x_pt, y_pt)
             c.drawString(0, 0, t.text)
         else:
             c.drawString(x_pt, y_pt, t.text)

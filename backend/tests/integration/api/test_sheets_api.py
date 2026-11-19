@@ -162,7 +162,7 @@ async def test_list_sheets_filters_and_order(ready, printer, reader, admin):
     assert [r["code"] for r in rows] == [second["code"], first["code"], third["code"]]
     assert set(rows[0]) == {
         "code", "type_key", "type_label", "version", "label_w", "label_h", "total", "used",
-        "reserved", "unconfirmed", "free", "state", "last_used_at",
+        "reserved", "unconfirmed", "free", "state", "last_used_at", "back_side_missing",
     }  # fmt: skip
     assert "cells" not in rows[0]
 
@@ -603,3 +603,115 @@ async def test_openapi_lists_the_sheet_routes(ready):
         p for p in paths["/api/v1/sheets/{code}"]["get"]["parameters"] if p["name"] == "code"
     )
     assert code_param["schema"]["pattern"] == r"^[A-Z][A-Z0-9]{1,9}-[0-9]{4,}$"
+
+
+# ---------------------------------------------------------------------------
+# Resolve all unconfirmed cells (#282)
+# ---------------------------------------------------------------------------
+
+
+async def _with_unconfirmed(ready, printer, cells=(2, 5)) -> str:
+    code = (await _sheet(ready, printer))["code"]
+    for n in cells:
+        await _insert_cell(code, n, "unconfirmed", source="grocy", job_id=uuid4())
+    return code
+
+
+async def test_resolve_all_route_print_key(ready, printer):
+    code = await _with_unconfirmed(ready, printer)
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "printed", "expected_count": 2},
+        headers=printer,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["unconfirmed"] == 0
+    assert {c["cell"]: c["state"] for c in body["cells"]} == {2: "used", 5: "used"}
+
+
+async def test_resolve_all_route_restricted_print_key_allowed(ready, printer):
+    """Sheets are shared (#264): a printer-restricted print key may settle cells too."""
+    code = await _with_unconfirmed(ready, printer)
+    restricted = {
+        "X-Label-Hub-Key": await _insert_key(["print"], allowed_printer_ids=[str(uuid4())])
+    }
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "not_printed"},
+        headers=restricted,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["cells"] == []
+
+
+async def test_resolve_all_route_read_key_403(ready, printer, reader):
+    code = await _with_unconfirmed(ready, printer)
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all", json={"outcome": "printed"}, headers=reader
+    )
+    assert resp.status_code == 403
+    after = await ready.get(f"/api/v1/sheets/{code}", headers=reader)
+    assert after.json()["unconfirmed"] == 2
+
+
+async def test_resolve_all_route_nothing_unconfirmed_409(ready, printer):
+    code = (await _sheet(ready, printer))["code"]
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all", json={"outcome": "printed"}, headers=printer
+    )
+    assert resp.status_code == 409 and _err(resp)["error_code"] == "no_unconfirmed_cells"
+
+
+async def test_resolve_all_route_changed_count_409(ready, printer):
+    code = await _with_unconfirmed(ready, printer)
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "printed", "expected_count": 5},
+        headers=printer,
+    )
+    assert resp.status_code == 409
+    assert _err(resp)["error_code"] == "unconfirmed_count_changed"
+    assert _err(resp)["error_detail"] == {"unconfirmed": 2}
+
+
+async def test_resolve_all_route_changed_cells_409(ready, printer):
+    code = await _with_unconfirmed(ready, printer)  # cells 2 and 5
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "printed", "expected_count": 2, "expected_cells": [2, 6]},
+        headers=printer,
+    )
+    assert resp.status_code == 409
+    assert _err(resp)["error_code"] == "unconfirmed_count_changed"
+    after = await ready.get(f"/api/v1/sheets/{code}", headers=printer)
+    assert after.json()["unconfirmed"] == 2
+
+
+async def test_resolve_all_route_takes_the_cells_shown(ready, printer):
+    code = await _with_unconfirmed(ready, printer)
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "not_printed", "expected_cells": [5, 2]},
+        headers=printer,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["unconfirmed"] == 0
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"outcome": "maybe"},
+        {},
+        {"outcome": "printed", "expected_count": 0},
+        {"outcome": "printed", "expected_cells": []},
+        {"outcome": "printed", "expected_cells": [0]},
+    ],
+)
+async def test_resolve_all_route_bad_body_422(ready, printer, body):
+    code = await _with_unconfirmed(ready, printer)
+    resp = await ready.post(f"/api/v1/sheets/{code}/cells/resolve-all", json=body, headers=printer)
+    assert resp.status_code == 422
+    after = await ready.get(f"/api/v1/sheets/{code}", headers=printer)
+    assert after.json()["unconfirmed"] == 2

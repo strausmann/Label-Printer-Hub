@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING, Any
 
 # Must run before brother_ql is used: restores Image.ANTIALIAS (removed in Pillow 10),
 # which brother_ql 0.9.x calls in its resize branch. See _pillow_compat and issue #254.
@@ -25,19 +26,32 @@ from brother_ql.labels import ALL_LABELS
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
+if TYPE_CHECKING:
+    import httpx
+
 from app.models.tape import TapeSpec
 from app.printer_backends.batch_helper import default_print_images_loop
 from app.printer_backends.exceptions import (
-    PrinterCoverOpenError,
+    MediaTypeMismatchError,
+    NoTapeLoadedError,
+    PrinterError,
     PrinterOfflineError,
     PrintFailedError,
-    TapeEmptyError,
+    TapeMismatchError,
     refused_before_sending,
 )
+from app.printer_backends.post_send import raise_for_error_flags
 from app.printer_backends.snmp_helper import (
     PreflightStatus,
     SnmpQueryError,
     query_preflight,
+    roll_record,
+)
+from app.printer_backends.tape_confirmation import (
+    TapeIppTransport,
+    TapeSendState,
+    check_label_lengths,
+    label_length_mm,
 )
 from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import StatusBlock
@@ -110,6 +124,26 @@ def _fit_to_printable_width(
     return image
 
 
+def _ql_dpi(high_resolution: bool) -> int:
+    """The resolution of a fitted QL raster image along the tape (R26-2): 300 dpi, doubled for a
+    600 dpi print (``_fit_to_printable_width`` doubles both axes)."""
+    return 600 if high_resolution else 300
+
+
+def _ql_label_of(tape_spec: TapeSpec) -> str:
+    """The brother_ql label identifier of the tape; a width without one is refused before
+    anything is sent (#277)."""
+    try:
+        return _TAPE_MM_TO_QL_LABEL[tape_spec.width_mm]
+    except KeyError as exc:
+        raise refused_before_sending(
+            PrintFailedError(
+                f"No QL label mapping for {tape_spec.width_mm}mm — "
+                f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
+            )
+        ) from exc
+
+
 class BrotherQLBackend:
     """PrinterBackend backed by the brother_ql library (v0.9.x).
 
@@ -120,13 +154,52 @@ class BrotherQLBackend:
     backend_id = "brother_ql"
     half_cut_supported: bool = False
 
-    def __init__(self, host: str, *, port: int = 9100, model_id: str = "QL-820NWB") -> None:
+    def __init__(
+        self,
+        host: str,
+        *,
+        port: int = 9100,
+        model_id: str = "QL-820NWB",
+        community: str = "public",
+        ipp_transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         if not host:
             raise ValueError("BrotherQLBackend requires a non-empty host")
         self.host = host
         self._port = port
         self._model_id = model_id
+        # The stored SNMP community (#296): the preflight asks with it, like discovery does.
+        self._community = community
         self._identifier = f"tcp://{host}:{port}"
+        # #389: the status read right before the last send (``None``: none was read for it).
+        self.last_send_status: PreflightStatus | None = None
+        # #393: IPP or TCP 9100, the labels sent and the IPP jobs to confirm after sending.
+        self.send_state = TapeSendState(host, TapeIppTransport(host, transport=ipp_transport))
+
+    def check_label_lengths(
+        self,
+        images: list[Image.Image],
+        tape_spec: TapeSpec,
+        *,
+        high_resolution: bool = False,
+        orientation: LabelOrientation | None = None,
+        **_options: Any,
+    ) -> list[float]:
+        """The tape length of each label as it would be sent (fitted to the roll); raises
+        ``TapeLabelTooLongError`` (``nothing_sent``) for one longer than the tape allows
+        (R26-2). The print service calls it when a job is submitted, the send checks again."""
+        ql_label = _ql_label_of(tape_spec)
+        lengths = [
+            label_length_mm(
+                _fit_to_printable_width(
+                    image, ql_label, dpi_600=high_resolution, orientation=orientation
+                ),
+                _ql_dpi(high_resolution),
+            )
+            for image in images
+        ]
+        check_label_lengths(lengths, tape_spec.max_length_mm)
+        return lengths
 
     async def print_image(
         self,
@@ -138,8 +211,15 @@ class BrotherQLBackend:
         half_cut: bool = False,
         last_page: bool = True,  # noqa: ARG002
         orientation: LabelOrientation | None = None,
+        media_checked: bool = False,
+        detect_confirmation: bool = False,
     ) -> None:
-        """Convert *image* to QL raster data and send to the printer.
+        """Check the loaded roll, convert *image* to QL raster data and send it to the printer.
+
+        #389: before anything is sent, one SNMP preflight checks that the loaded roll is the
+        one the image was drawn for (``TapeMismatchError``) and is not die-cut
+        (``MediaTypeMismatchError``); both are refusals before sending. ``media_checked`` skips
+        the check when the caller (``print_images``) made it for the whole batch already.
 
         ``half_cut`` is silently ignored with a WARNING — QL-Series hardware
         does not support half-cut (PT-Series only).
@@ -149,6 +229,10 @@ class BrotherQLBackend:
         ``convert``).
         ``orientation`` (#258) decides the rotation: ``along`` rotates, ``across`` never
         does, ``None`` falls back to the 1.4.1 size heuristic.
+
+        #393: the raster bytes go out as an IPP Print-Job when the printer takes them that way
+        (``TapeSendState``), else over TCP 9100 as before. ``detect_confirmation`` (the test
+        print) tries IPP and lets the check after sending store what works.
         """
         if half_cut:
             _logger.warning(
@@ -157,24 +241,24 @@ class BrotherQLBackend:
                 self.host,
             )
 
-        try:
-            ql_label = _TAPE_MM_TO_QL_LABEL[tape_spec.width_mm]
-        except KeyError as exc:
-            # #277: refused before anything was sent: the label did not print.
-            raise refused_before_sending(
-                PrintFailedError(
-                    f"No QL label mapping for {tape_spec.width_mm}mm — "
-                    f"supported widths: {sorted(_TAPE_MM_TO_QL_LABEL)}"
-                )
-            ) from exc
+        if not media_checked:
+            self.last_send_status = None
+        ql_label = _ql_label_of(tape_spec)
+        image = _fit_to_printable_width(
+            image, ql_label, dpi_600=high_resolution, orientation=orientation
+        )
+        length = label_length_mm(image, _ql_dpi(high_resolution))
+        check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
+        if not media_checked:
+            if detect_confirmation:
+                self.send_state.reset_counter_gate()  # R3-2: the read below asks for the counter
+            await self._check_loaded_media(tape_spec)
+            self.send_state.begin(detect=detect_confirmation)
 
         # Build raster instructions. convert() populates qlr.data.
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
         # accept this without error — they only require red=False not to raise.
         qlr = BrotherQLRaster(self._model_id)
-        image = _fit_to_printable_width(
-            image, ql_label, dpi_600=high_resolution, orientation=orientation
-        )
         convert(
             qlr,
             [image],
@@ -184,14 +268,61 @@ class BrotherQLBackend:
             dpi_600=high_resolution,
         )
 
+        await self.send_state.send(
+            qlr.data,
+            1,
+            lambda: self._send_raw(qlr.data),
+            length_mm=length,
+        )
+
+    async def _send_raw(self, data: bytes) -> None:
+        """Send *data* over TCP 9100 (``brother_ql.backends.helpers.send``), as before #393."""
         # _helpers_send is synchronous and performs blocking I/O.
         # Wrap in to_thread to avoid blocking the event loop.
-        await asyncio.to_thread(
+        result = await asyncio.to_thread(
             _helpers_send,
-            qlr.data,
+            data,
             self._identifier,
             blocking=True,
         )
+        # #389: brother_ql 0.9.4 reads nothing back over the network backend (``outcome`` stays
+        # ``sent``); a backend that does read back reports ``error``. The queue's status check
+        # after sending covers the network case.
+        if isinstance(result, dict) and result.get("outcome") == "error":
+            raise PrintFailedError("The printer reported an error while printing")
+
+    async def _check_loaded_media(self, tape_spec: TapeSpec) -> None:
+        """One status read right before sending: no blocking error bit, a roll is loaded, it is
+        continuous and of ``tape_spec``'s width.
+
+        The read is kept (``last_send_status``, ``flags_before_send``): the check after sending
+        counts only bits that are new, and the job records the roll it was sent to. Every error
+        is a refusal before sending (#277): nothing of the job reached the printer.
+        """
+        try:
+            status = await self.preflight_check()  # refuses on every blocking bit
+            self.last_send_status = status
+            if status.loaded_tape_mm is None:
+                raise NoTapeLoadedError()
+            if status.media_kind == "die_cut":
+                raise MediaTypeMismatchError(loaded_kind="die_cut", media_raw=status.media_raw)
+            if status.loaded_tape_mm != tape_spec.width_mm:
+                raise TapeMismatchError(
+                    expected_mm=tape_spec.width_mm, loaded_mm=status.loaded_tape_mm
+                )
+        except PrinterError as exc:
+            refused_before_sending(exc)
+            raise
+
+    @property
+    def flags_before_send(self) -> frozenset[str]:
+        """The error bits of the read before the last send (``post_send.check_after_send``)."""
+        status = self.last_send_status
+        return frozenset(status.error_flags) if status is not None else frozenset()
+
+    def roll_at_send(self) -> dict[str, object] | None:
+        """The roll the last send was checked against (#389), for the job record."""
+        return roll_record(self.last_send_status)
 
     async def print_images(
         self,
@@ -211,6 +342,34 @@ class BrotherQLBackend:
         default_print_images_loop mit half_cut=False (QL ignoriert das Argument).
         ``orientation`` (#258) applies to every image of the batch.
         """
+        # #389: one media check for the whole batch, not one per label (no probe storm).
+        self.last_send_status = None
+        ql_label = _ql_label_of(tape_spec)
+        fitted = [
+            _fit_to_printable_width(
+                image, ql_label, dpi_600=high_resolution, orientation=orientation
+            )
+            for image in images
+        ]
+        lengths = [label_length_mm(image, _ql_dpi(high_resolution)) for image in fitted]
+        check_label_lengths(lengths, tape_spec.max_length_mm)  # R26-2: the whole batch or none
+        await self._check_loaded_media(tape_spec)
+        self.send_state.begin()
+        if images and await self.send_state.use_ipp():
+            # #393: one IPP job for the whole batch; the printer reports its impressions.
+            qlr = BrotherQLRaster(self._model_id)
+            convert(qlr, fitted, ql_label, cut=auto_cut, red=False, dpi_600=high_resolution)
+            try:
+                await self.send_state.send(
+                    qlr.data,
+                    len(images),
+                    lambda: self._send_raw(qlr.data),
+                    length_mm=sum(lengths),
+                )
+            except PrinterError as exc:
+                exc.nothing_sent = False
+                raise
+            return
         # QL-Series: half_cut existiert nicht. Backend-Capability-Flag erzwingt False.
         await default_print_images_loop(
             self,
@@ -220,31 +379,30 @@ class BrotherQLBackend:
             high_resolution=high_resolution,
             half_cut=False,
             orientation=orientation,
+            media_checked=True,
         )
 
-    async def preflight_check(
+    async def read_status(
         self,
         *,
-        community: str = "public",
+        community: str | None = None,
         timeout_s: float = 3.0,
     ) -> PreflightStatus:
-        """SNMP-based preflight: hrPrinterStatus + error bitmap + loaded tape.
+        """One SNMP read: hrPrinterStatus, error bitmap, loaded tape. Never refuses on a bit.
 
         QL-820NWB nutzt dieselbe Printer MIB wie PT-Series — query_preflight()
         funktioniert identisch auf beiden Gerätereihen.
 
-        Raises:
-            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
-            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
-            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
-
-        Does NOT raise TapeMismatchError — caller compares loaded_tape_mm.
+        Raises ``PrinterOfflineError`` when the printer does not answer.
         """
+        asked = self.send_state.ask_counter()
         try:
-            preflight = await query_preflight(
+            status = await query_preflight(
                 self.host,
-                community=community,
+                community=self._community if community is None else community,
                 timeout_s=timeout_s,
+                # Only passed once it is off: older callers' fakes take no such argument.
+                **({} if asked else {"ask_counter": False}),
             )
         except SnmpQueryError as exc:
             # Issue #105: query_preflight() kann bereits "preflight SNMP failed: …"
@@ -253,11 +411,31 @@ class BrotherQLBackend:
             if not msg.startswith("preflight SNMP failed:"):
                 msg = f"preflight SNMP failed: {msg}"
             raise PrinterOfflineError(msg) from exc
+        # #393, R26-1: consecutive refusals stop asking for the label counter; an answer turns
+        # it back on.
+        await self.send_state.note_counter(
+            refused=status.counter_refused, answered=status.marker_count is not None, asked=asked
+        )
+        return status
 
-        if "noPaper" in preflight.error_flags:
-            raise TapeEmptyError()
-        if "doorOpen" in preflight.error_flags:
-            raise PrinterCoverOpenError()
+    async def preflight_check(
+        self,
+        *,
+        community: str | None = None,
+        timeout_s: float = 3.0,
+    ) -> PreflightStatus:
+        """``read_status`` plus a refusal on every blocking error bit (#389, ``post_send``).
+
+        Raises:
+            PrinterOfflineError: SNMP query failed (host unreachable or timeout)
+            TapeEmptyError: hrPrinterDetectedErrorState has noPaper bit
+            PrinterCoverOpenError: hrPrinterDetectedErrorState has doorOpen bit
+            PrinterReportedError: any other bit of ``post_send.HARD_ERROR_FLAGS``
+
+        Does NOT raise TapeMismatchError — caller compares loaded_tape_mm.
+        """
+        preflight = await self.read_status(community=community, timeout_s=timeout_s)
+        raise_for_error_flags(preflight.error_flags)
         return preflight
 
     async def query_status(self) -> StatusBlock:

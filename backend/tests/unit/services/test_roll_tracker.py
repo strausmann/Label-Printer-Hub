@@ -239,3 +239,18 @@ async def test_no_tape_is_not_counted_while_the_stored_roll_has_no_tape(
     for _ in range(3):
         await tracker.observe(pid, None, None)
     assert pid not in tracker._no_tape_streak
+
+
+async def test_colour_of_the_loaded_roll(async_session_factory) -> None:
+    """#389: the colour recorded on a job is the one of the roll with the same identity."""
+    pid = uuid4()
+    async with async_session_factory() as s:
+        s.add(PrinterRoll(printer_id=pid, width_mm=29, media_raw="29mm", colour="white"))
+        await s.commit()
+    tracker = RollTracker(EventBus(), async_session_factory)
+
+    assert await tracker.colour_of(pid, 29, " 29mm ") == "white"
+    # A roll the probe has not seen yet never gets the previous roll's colour.
+    assert await tracker.colour_of(pid, 62, "62mm") is None
+    assert await tracker.colour_of(pid, 29, "29mm x 90mm") is None
+    assert await tracker.colour_of(uuid4(), 29, "29mm") is None

@@ -211,3 +211,24 @@ describe("the German page", () => {
     expect(document.body.textContent).toContain("+ = zu weit rechts gedruckt");
   });
 });
+
+describe("the reading guide in step 2", () => {
+  it("step 2 starts with the reading guide for the chosen type", async () => {
+    await open();
+    const step2 = await screen.findByRole("region", { name: "Step 2: Enter the deviation" });
+    const trigger = within(step2).getByRole("button", { name: "How to read the calibration page" });
+    // The first thing in the step, before the readings helper.
+    const heading = await within(step2).findByRole("heading", { name: "Measure with the readings helper" });
+    expect(trigger.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(trigger);
+    expect(within(step2).getByRole("img", { name: "The crossings to read on Example Labels L4736REV-25 (L4736REV)" })).toBeVisible();
+  });
+
+  it("the current values end with the still-off card and its link to the guide", async () => {
+    await open();
+    const current = await screen.findByRole("region", { name: "Current values" });
+    expect(within(current).getByRole("heading", { name: "Still off after the check print?" })).toBeVisible();
+    expect(within(current).getByRole("link", { name: /More in the guide/ })).toHaveAttribute("href", expect.stringContaining("/using/calibration/#printer-or-sheet-type"));
+  });
+});

@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { PRINTER_A, status } from "../test-api";
+import { job, PRINTER_A, status } from "../test-api";
+import { deriveNotifications } from "../notifications/derive";
+import type { Job, Printer, PrinterStatus } from "./api";
+import { printerWaiting } from "./flags";
 import { describePrinter, staleAgeSeconds, tapeWidthOf } from "./model";
 
 describe("tapeWidthOf", () => {
@@ -152,5 +155,36 @@ describe("staleAgeSeconds", () => {
     expect(staleAgeSeconds(status(PRINTER_A.id, { polled: false, last_probe_age_s: 30 }))).toBe(30);
     expect(staleAgeSeconds(status(PRINTER_A.id, { stale: true, last_probe_age_s: null }))).toBeNull();
     expect(staleAgeSeconds(undefined)).toBeNull();
+  });
+});
+
+describe("describePrinter for a tape printer's flags (#376)", () => {
+  const P = PRINTER_A as unknown as Printer;
+  const cover = status(PRINTER_A.id, { error_flags: ["doorOpen"], error_state: "doorOpen" }) as unknown as PrinterStatus;
+  const queued = job("aaaaaaaa-0000-4000-8000-000000000001", PRINTER_A.id, "queued") as unknown as Job;
+
+  it("the card agrees with the entry", () => {
+    for (const [jobs, kind, badge, severity] of [
+      [[queued], "error", "bad", "error"],
+      [[], "attention", "warn", "warning"],
+    ] as const) {
+      const waiting = printerWaiting(P.id, jobs, {});
+      const view = describePrinter(P, cover, false, waiting);
+      expect(view).toMatchObject({ kind, badge, detail: null, flags: ["doorOpen"] });
+      const [entry] = deriveNotifications({ jobs: [...jobs], printers: [P], statuses: { [P.id]: cover }, sheets: [], firstSeen: {}, now: Date.now() }).filter(
+        (e) => e.kind === "printer",
+      );
+      expect(entry?.severity).toBe(severity);
+    }
+  });
+
+  it("an older hub's error_state still shows as a problem", () => {
+    const old = { ...status(PRINTER_A.id, { error_state: "doorOpen" }), error_flags: undefined } as unknown as PrinterStatus;
+    expect(describePrinter(P, old, false)).toMatchObject({ kind: "error", badge: "bad", detail: "doorOpen", flags: [] });
+  });
+
+  it("a page printer's view has no flags", () => {
+    const view = describePrinter({ ...P, backend: "ipp" }, status(PRINTER_A.id, { kind: "page", error_flags: ["doorOpen"] }) as unknown as PrinterStatus, false);
+    expect(view.flags).toEqual([]);
   });
 });

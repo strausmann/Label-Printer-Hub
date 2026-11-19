@@ -10,6 +10,7 @@ from typing import Literal
 import pytest
 from app.page_render.transform import Deviation
 from app.printer_backends.ipp.attributes import Margins
+from app.seed.sheet_seed import load_seed
 from app.sheets.errors import (
     CellOutOfRangeError,
     CellsTakenError,
@@ -17,6 +18,7 @@ from app.sheets.errors import (
     InvalidPlacementsError,
     SheetDiscardedError,
 )
+from app.sheets.exchange import geometry_from_doc
 from app.sheets.geometry import Geometry
 from app.sheets.planner import (
     MarginContext,
@@ -24,7 +26,10 @@ from app.sheets.planner import (
     PlacementIn,
     SheetView,
     band_length_hmm,
+    choose_feed_mark,
     choose_margin_placement,
+    decide_margin_and_mark,
+    feed_mark_text,
     margin_bands_hmm,
     margin_qr_allowed,
     plan,
@@ -1017,3 +1022,34 @@ def test_free_cells_for_explicit_list() -> None:
             "shortfall": 1,
         }
     )
+
+
+def _seeded_3490() -> Geometry:
+    doc = next(d for d in load_seed().docs if d.type.key == "avery-zweckform-3490")
+    return geometry_from_doc(doc.version.geometry)
+
+
+@pytest.mark.parametrize("hw", [None, Margins(top=0, left=0, bottom=0, right=0)])
+def test_seeded_3490_plans_without_margin_id(hw: Margins | None) -> None:
+    """3490 has a 4.5 mm top band and no side margin: no printer leaves a usable band (#334, #350).
+
+    Every printer, those that report no unprintable margin and those that report none at all
+    included: neither the margin ID nor the feed-direction mark has a band to sit in.
+    """
+    g = _seeded_3490()
+    assert g.margin_top == 450 and g.margin_left == 0
+    assert choose_margin_placement(g, hw=hw, dev=Deviation(), payload=PAYLOAD, dpi=600) is None
+    assert choose_feed_mark(g, hw=hw, dev=Deviation(), text=feed_mark_text("en")) is None
+    decision = decide_margin_and_mark(sheet(g, id_placement="margin"), margin_ctx(), hw)
+    assert decision.margin_id is False and decision.placement is None
+    assert decision.id_not_printed is True and decision.feed_mark is None
+
+
+def test_a_deeper_top_band_than_3490_does_choose_a_band() -> None:
+    """Counter-test: 3490 with a 10.5 mm top margin and 7 rows (a valid page) gets a top band."""
+    g = replace(_seeded_3490(), margin_top=1050, rows=7)
+    assert (
+        choose_margin_placement(g, hw=None, dev=Deviation(), payload=PAYLOAD, dpi=600) is not None
+    )
+    decision = decide_margin_and_mark(sheet(g, id_placement="margin"), margin_ctx(), None)
+    assert decision.margin_id is True

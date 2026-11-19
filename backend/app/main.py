@@ -102,9 +102,11 @@ from app.api.routes import auth_session as auth_session_routes
 from app.api.routes import batch as batch_routes
 from app.api.routes import batches as batches_routes
 from app.api.routes import events_v1 as events_v1_routes
+from app.api.routes import grocy_label as grocy_label_routes
 from app.api.routes import info as info_routes
 from app.api.routes import jobs as jobs_routes
 from app.api.routes import lookup as lookup_routes
+from app.api.routes import notices as notices_routes
 from app.api.routes import printer_roll as printer_roll_routes
 from app.api.routes import printers as printers_routes
 from app.api.routes import qr as qr_routes
@@ -113,6 +115,7 @@ from app.api.routes import test_print as test_print_routes
 from app.api.routes import webhooks as webhooks_routes
 from app.api.routes.admin_api_keys import router as admin_api_keys_router
 from app.api.routes.admin_printers_api import router as admin_printers_api_router
+from app.api.routes.backing_designs import router as backing_designs_router
 from app.api.routes.calibration import router as calibration_router
 from app.api.routes.capabilities import router as capabilities_router
 from app.api.routes.print import render_router
@@ -120,6 +123,7 @@ from app.api.routes.print import router as print_router
 from app.api.routes.settings_api import router as settings_api_router
 from app.api.routes.sheet_types import router as sheet_types_router
 from app.api.routes.sheets import router as sheets_router
+from app.api.routes.tray_loading import router as tray_loading_router
 from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_read
 from app.auth.sessions import purge_expired as purge_expired_sessions
@@ -136,7 +140,9 @@ from app.db.lifespan import (
 )
 from app.db.session import get_session
 from app.integrations.registry import IntegrationRegistry
+from app.observability.access_log import install_access_log
 from app.observability.log_buffer import install_log_buffer
+from app.observability.redact_query import install_query_token_redaction
 from app.page_render.pdf import register_pdf_font
 from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
@@ -160,6 +166,8 @@ from app.services.producers.print_queue_producer import PrintQueueProducer
 from app.services.producers.printer_pause_producer import PrinterPauseProducer
 from app.services.readiness import build_readiness_response
 from app.settings_store import SettingsStore
+from app.sheets.back_side import render_sheet_back_page, render_tray_loading_page
+from app.sheets.grocy_sheet import GrocySheetLabels
 from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
 from app.sheets.sweep import SheetReservationSweep
@@ -364,6 +372,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         on_run_change=pq_producer.handle_run_change,
     )
     app.state.print_queue = queue
+    # #281 R-281-16: Grocy labels onto the sheets of page printers (deferred, tracked tasks).
+    grocy_sheet_labels = GrocySheetLabels(
+        async_session, queue, job_store, event_bus, settings_store
+    )
+    app.state.grocy_sheet_labels = grocy_sheet_labels
 
     # Browser sessions: purge those expired for more than a day on every cleanup run.
     cleanup_task = CleanupTask(
@@ -415,6 +428,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # The sweep first: it asks the queue, which the runtime stops. Then the producers, the
         # queue (once, longest attached timeout), then the page clients.
         await reservation_sweep.stop()
+        # Before the runtime and the outcome handler go: a Grocy sheet label not handed off
+        # yet ends ``deferred_interrupted`` and frees its cell (R-281-16).
+        await grocy_sheet_labels.cancel_pending()
         await runtime.stop()
         await cleanup_task.stop()
         unregister_outcome_handler("sheet_page", sheet_outcome)
@@ -589,6 +605,8 @@ class _LifespanManager:
 register_page_renderer("calibration_page", render_calibration_page)
 register_page_renderer("sheet_page", render_sheet_page)
 register_page_renderer("test_page", render_test_page)
+register_page_renderer("sheet_back_page", render_sheet_back_page)
+register_page_renderer("tray_loading_page", render_tray_loading_page)
 
 
 def _may_name_default_printer(auth: AuthContext | None, state: Any) -> bool:
@@ -602,6 +620,8 @@ def _may_name_default_printer(auth: AuthContext | None, state: Any) -> bool:
 def create_app() -> _LifespanManager:
     """Build the FastAPI app. Kept as a factory so tests can re-instantiate."""
     install_log_buffer()
+    # #281: a print key may arrive as ?token=… (Grocy's webhook); uvicorn logs the URL.
+    install_query_token_redaction()
     # aiosqlite logs every statement and bound parameter at DEBUG; with the root logger at
     # DEBUG that would put device serials and key hashes into the log buffer (263-50).
     logging.getLogger("aiosqlite").setLevel(logging.INFO)
@@ -698,18 +718,22 @@ def create_app() -> _LifespanManager:
     app.include_router(jobs_routes.router)
     app.include_router(lookup_routes.router)
     app.include_router(webhooks_routes.router)
+    app.include_router(grocy_label_routes.router)
     app.include_router(qr_routes.router)
     app.include_router(admin_api_keys_router)
     app.include_router(auth_session_routes.router)
     app.include_router(admin_printers_api_router)
     app.include_router(settings_api_router)
     app.include_router(sheet_types_router)
+    app.include_router(backing_designs_router)
     app.include_router(sheets_router)
     app.include_router(sheet_print_routes.router)
     app.include_router(calibration_router)
+    app.include_router(tray_loading_router)
     app.include_router(test_print_routes.router)
     app.include_router(capabilities_router)
     app.include_router(info_routes.router)
+    app.include_router(notices_routes.router)
 
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.
@@ -717,6 +741,8 @@ def create_app() -> _LifespanManager:
     add_version_header(app, HUB_VERSION)
     mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
+    # #366: last, so it is the outermost of the hub's middlewares and logs the final status.
+    install_access_log(app, get_settings())
 
     return _LifespanManager(app)
 

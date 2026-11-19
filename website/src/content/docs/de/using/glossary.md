@@ -18,6 +18,9 @@ Das sind die Wörter, die Labelyard in der Oberfläche, in der Dokumentation und
 | <a id="template"></a>**Vorlage** | template | Ein gespeichertes Design, aus dem ein Etikett gedruckt wird. | `Template` |
 | <a id="printer"></a>**Drucker** | printer | Ein Gerät, auf dem Labelyard druckt. | - |
 | <a id="tray"></a>**Fach** | tray | Ein Papierfach eines Seitendruckers, in dem Bögen liegen. | `Schacht` |
+| <a id="sheet-code"></a>**Bogencode** | sheet code | Der Code, der einen Bogen erkennt, zum Beispiel A3490-0001. Er wird in den Rand, auf die Rückseite des Trägerpapiers oder in eine reservierte Zelle gedruckt. | - |
+| <a id="liner"></a>**Trägerpapier** | liner | Das Papier, auf dem die Etiketten eines Bogens kleben. | - |
+| <a id="backing-design"></a>**Trägerdesign** | backing design | Der Herstelleraufdruck auf der Rückseite des Trägerpapiers, mit den freien Streifen, in die der Bogencode passt. | - |
 | <a id="calibration"></a>**Kalibrierung** | calibration | Die Korrektur, damit ein Druck genau auf die Zellen eines Fachs trifft. | - |
 | <a id="preview"></a>**Vorschau** | preview | Das Bild eines Etiketts, so wie es gedruckt wird. | - |
 | <a id="job"></a>**Auftrag** | print job | Eine Anfrage zu drucken, von der Warteschlange bis zum Ergebnis verfolgt. | `Job`, `Druckjob` |

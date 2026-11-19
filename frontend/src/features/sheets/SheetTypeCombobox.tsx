@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import type { components } from "../../api/schema.gen";
 import { FIELD } from "../../shell/SignIn";
-import { listRoom, perFrame, readViewport, sameRoom, subscribeViewport, type ListRoom } from "../../shell/viewport";
+import { useListRoom } from "../../shell/useListRoom";
 import { LABEL } from "../settings/controls";
 import { foldForSearch, foldWithMap, matchSheetType } from "./matchSheetType";
 import { typePickerLabel } from "./typeLabel";
@@ -33,9 +33,6 @@ export interface SheetTypeComboboxProps {
   labelFor?: (type: SheetType, locale: string) => string;
 }
 
-/** The tallest the list gets (px) and the gap it keeps to the screen edge and the tab bar. */
-const LIST_MAX = 384;
-const LIST_GAP = 12;
 /** How long the dialog frame must have stopped scrolling before a list that its scroll closed is opened again (ms). */
 const QUIET = 150;
 /** A close this soon after Escape, a choice or a press on the arrow is the person's, not a scroll's (ms). */
@@ -98,21 +95,10 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
   useEffect(() => {
     typedRef.current = typed;
   }, [typed]);
-  // Where the list goes and how tall it may get. React Aria measures against the whole page, not the screen, so the list
-  // would run past the bottom edge, under the fixed tab bar of a phone and under the on-screen keyboard. This measures what
-  // is visible: when the list opens, and again while it is open, because the keyboard comes up after the focus opened it.
+  // Where the list goes and how tall it may get, measured against what is visible (see useListRoom).
   const field = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState<ListRoom>({ placement: "bottom start", maxHeight: LIST_MAX });
   const [open, setOpen] = useState(false);
-  const measure = () => {
-    if (!field.current) return;
-    // The tab bar of a phone limits the list, but not inside a dialog: the dialog covers it, and with the keyboard open
-    // the bar sits right above the keyboard, so counting it would take a strip of the room off for nothing.
-    const bar = field.current.closest(DIALOG) ? null : document.querySelector("[data-tabbar]");
-    const lowest = bar && getComputedStyle(bar).display !== "none" ? bar.getBoundingClientRect().top : undefined;
-    const next = listRoom(field.current.getBoundingClientRect(), readViewport(), { lowest, gap: LIST_GAP, max: LIST_MAX, option: 44 });
-    setRoom((prev) => (sameRoom(prev, next) ? prev : next));
-  };
+  const { room, measure } = useListRoom(field, open);
   // React Aria closes a list that is not modal when an ancestor of the field scrolls. Inside a dialog that ancestor is the
   // dialog's own frame, and the browser scrolls it when it brings the field above the keyboard, so the list would close
   // the moment the keyboard comes up. A close that comes with such a scroll is undone, but only
@@ -184,22 +170,6 @@ export function SheetTypeCombobox({ label, types, value, onChange, disabled, non
       settle();
     }, 20);
   };
-  const measureRef = useRef(measure);
-  useEffect(() => {
-    measureRef.current = measure;
-  });
-  // While the list is open: measure again when the visible area changes (the keyboard comes up after the focus opened the
-  // list). A scroll needs no measuring of its own: it closes the list, and opening it again measures (see above).
-  useEffect(() => {
-    if (!open) return;
-    const again = perFrame(() => measureRef.current());
-    const stop = subscribeViewport(again.run);
-    return () => {
-      stop();
-      again.cancel();
-    };
-  }, [open]);
-
   return (
     <ComboBox
       className="group flex min-w-0 flex-col gap-1.5"

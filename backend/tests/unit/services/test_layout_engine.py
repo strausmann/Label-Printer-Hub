@@ -101,3 +101,60 @@ class TestLayoutEngineValidation:
         )
         assert img is not None
         assert img.height == 70  # 12mm printable_px
+
+
+# ---------------------------------------------------------------------------
+# #346: the swatch label on tape
+# ---------------------------------------------------------------------------
+
+
+def _swatch_data() -> LabelData:
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row
+
+    return LabelData(source_app="spoolman", qr_payload=SAMPLE_URL, swatch=every_row())
+
+
+def test_swatch_on_62_is_696_by_425() -> None:
+    from app.services.spool_swatch import render_tape_swatch
+
+    image = LayoutEngine().render(62, ContentType.SPOOL_SWATCH, _swatch_data())
+    assert image.size == (696, 425)
+    data = _swatch_data()
+    assert image.tobytes() == render_tape_swatch(data.swatch, data.qr_payload).tobytes()  # type: ignore[arg-type]
+
+
+def test_swatch_ignores_orientation_and_preset() -> None:
+    from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
+
+    engine = LayoutEngine()
+    plain = engine.render(62, ContentType.SPOOL_SWATCH, _swatch_data())
+    turned = engine.render(
+        62,
+        ContentType.SPOOL_SWATCH,
+        _swatch_data(),
+        orientation=LabelOrientation.ALONG,
+        preset=QlLayoutPreset.STANDARD,
+    )
+    assert turned.tobytes() == plain.tobytes()
+
+
+@pytest.mark.parametrize("tape_mm", [29, 38, 50, 54])
+def test_swatch_on_the_other_dk_widths(tape_mm: int) -> None:
+    from app.services.spool_swatch import render_tape_swatch
+
+    data = _swatch_data()
+    image = LayoutEngine().render(tape_mm, ContentType.SPOOL_SWATCH, data)
+    assert image.tobytes() == render_tape_swatch(data.swatch, data.qr_payload, tape_mm).tobytes()  # type: ignore[arg-type]
+
+
+def test_swatch_on_12mm_is_unsupported() -> None:
+    with pytest.raises(UnsupportedTapeError) as exc:
+        LayoutEngine().render(12, ContentType.SPOOL_SWATCH, _swatch_data())
+    assert exc.value.tape_mm == 12
+
+
+def test_swatch_without_swatch_data_is_a_mismatch() -> None:
+    data = LabelData(source_app="manual", qr_payload="https://x.example/1", title="t")
+    with pytest.raises(ContentTypeDataMismatchError) as exc:
+        LayoutEngine().render(62, ContentType.SPOOL_SWATCH, data)
+    assert exc.value.missing_fields == ("swatch",)

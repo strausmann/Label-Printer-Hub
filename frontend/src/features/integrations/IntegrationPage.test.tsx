@@ -150,6 +150,17 @@ describe("recently opened", () => {
     expect(screen.getByRole("link", { name: "Cart (1)" })).toBeVisible();
   });
 
+  // A recent entry carries no swatch data and the page has no printer: it starts on the default (#346).
+  it("adding a recent Spoolman item starts on the default layout", async () => {
+    recordRecent("spoolman", { id: "7", name: "TecBears Orange" });
+    mockApi({});
+    await renderApp({ path: "/integrations/spoolman" });
+    await userEvent.click(screen.getByRole("button", { name: "Print TecBears Orange" }));
+    expect(JSON.parse(localStorage.getItem(CART_KEY) ?? "[]")).toEqual([
+      { app: "spoolman", id: "7", name: "TecBears Orange", content_type: "qr_two_lines", copies: 1 },
+    ]);
+  });
+
   it("opening an item records it, a failed lookup does not", async () => {
     mockApi({ "GET /api/v1/lookup/grocy/118": item("grocy", "118"), "GET /api/v1/printers": [] });
     await renderApp({ path: "/lookup/grocy/118" });

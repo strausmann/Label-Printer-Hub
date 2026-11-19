@@ -4,6 +4,9 @@
 import { useLingui } from "@lingui/react/macro";
 import { useState } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";
+import { useCapabilities } from "../calibration/api";
+import type { TrayLoadingRead } from "../sheets/api";
+import { TrayLoadingTest } from "../sheets/backSide/TrayLoadingTest";
 import { SECONDARY_BUTTON } from "../ui";
 import { useProbeIpp, type AdminPrinter, type IppProbeSummary, type TrayIn } from "./api";
 import { HINT, LABEL, SwitchField, TextInput } from "./controls";
@@ -290,7 +293,37 @@ function Summary({ summary }: { summary: IppProbeSummary }) {
   );
 }
 
-function TrayCard({ tray, draft }: { tray: TrayDraft; draft: IppDraft }) {
+/** "Liner side up, top edge first": how the tray takes paper, in words. */
+export function useLoadingWords(): (loading: TrayLoadingRead) => string {
+  const { t } = useLingui();
+  return (loading) => {
+    const side = loading.print_side === "up" ? t`prints on the side facing up` : t`prints on the side facing down`;
+    const edge = loading.leading_edge === "top" ? t`top of the print first` : t`bottom of the print first`;
+    return `${side}, ${edge}`;
+  };
+}
+
+/** How a stored tray takes paper (#350), and the guided test to set it up. */
+function TrayLoadingRow({ printerId, tray, loading }: { printerId: string; tray: TrayDraft; loading: TrayLoadingRead | null }) {
+  const { t } = useLingui();
+  const words = useLoadingWords();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="min-w-0 text-small [overflow-wrap:anywhere]">
+          <span className="font-bold">{t`How it takes paper`}:</span> {loading ? words(loading) : <span className="text-ink-2">{t`Not set`}</span>}
+        </p>
+        <Button onPress={() => setOpen(!open)} aria-expanded={open} className={SECONDARY_BUTTON}>
+          {open ? t`Close` : loading ? t`Test again` : t`Loading test`}
+        </Button>
+      </div>
+      {open ? <TrayLoadingTest printerId={printerId} trayKey={tray.key} trayLabel={tray.label || tray.key} onSaved={() => setOpen(false)} /> : null}
+    </div>
+  );
+}
+
+function TrayCard({ tray, draft, printerId, loading }: { tray: TrayDraft; draft: IppDraft; printerId?: string; loading: TrayLoadingRead | null }) {
   const { t } = useLingui();
   return (
     <fieldset className="grid min-w-0 gap-3 rounded-r2 border border-line p-3">
@@ -321,13 +354,17 @@ function TrayCard({ tray, draft }: { tray: TrayDraft; draft: IppDraft }) {
           <span>{t`Default`}</span>
         </Radio>
       </div>
+      {printerId ? <TrayLoadingRow printerId={printerId} tray={tray} loading={loading} /> : null}
     </fieldset>
   );
 }
 
 /** The form part that belongs to a page printer: address, certificate, "Read printer", trays. */
-export function IppPrinterFields({ draft }: { draft: IppDraft }) {
+export function IppPrinterFields({ draft, printerId }: { draft: IppDraft; printerId?: string }) {
   const { t } = useLingui();
+  // The loading lives with the stored printer's trays (#350): a printer not saved yet has none.
+  const caps = useCapabilities(printerId ?? "");
+  const loadings = new Map((caps.data?.trays ?? []).map((tray) => [tray.key, tray.loading ?? null]));
   const errorText = useErrorText();
   const uriText = useUriProblemText();
   const shownProblem = draft.uri.trim() === "" ? null : draft.problem;
@@ -376,7 +413,7 @@ export function IppPrinterFields({ draft }: { draft: IppDraft }) {
           <p className={HINT}>{t`Turn off the trays you do not use, and mark the one that should be used when none is chosen.`}</p>
           <RadioGroup aria-label={t`Default tray`} value={defaultKey} onChange={draft.setDefault} className="grid min-w-0 gap-3">
             {draft.trays.map((tray) => (
-              <TrayCard key={tray.key} tray={tray} draft={draft} />
+              <TrayCard key={tray.key} tray={tray} draft={draft} printerId={printerId} loading={loadings.get(tray.key) ?? null} />
             ))}
           </RadioGroup>
           {inlineProblem ? (

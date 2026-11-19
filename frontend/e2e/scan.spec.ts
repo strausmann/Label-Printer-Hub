@@ -110,9 +110,15 @@ test.describe.serial("scan", () => {
     const jobs = (await (await page.request.get("/api/v1/jobs?limit=50")).json()) as Array<{ id: string }>;
     expect(jobs.length).toBeGreaterThan(0);
     const id = jobs[0]!.id;
-    await page.keyboard.press("/");
-    await search.fill(id.slice(0, 6));
+    // On a phone the search is a magnifier that opens a dialog (#320): a new field, so the code is typed again.
     await page.setViewportSize({ width: 390, height: 844 });
+    // The layout switches a moment after the resize: `/` belongs to the dialog only once the magnifier has replaced the field.
+    await expect(page.locator("header").getByRole("button", { name: "Search", exact: true })).toBeVisible();
+    await expect(search).toHaveCount(0);
+    await page.keyboard.press("/");
+    const phoneField = page.getByRole("dialog", { name: "Search" }).getByRole("combobox", { name: "Search" });
+    await expect(phoneField).toBeFocused();
+    await phoneField.fill(id.slice(0, 6));
     await expect(page.getByRole("option", { name: new RegExp(id.slice(0, 8)) })).toBeVisible();
     await shot(page, "task-14-search-phone.png");
     expect(await noSideScroll(page)).toBe(true);
@@ -167,6 +173,31 @@ test.describe.serial("scan", () => {
     await shot(page, "task-6-scan-opens-sheet.png");
     // The camera is off again once the screen is left.
     await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
+  });
+
+  test("@grocycode a scanned Grocycode opens the Grocy product", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Scan" }).click();
+    await expect(page).toHaveURL(/\/product\/13$/, { timeout: 20_000 });
+    expect(await noSideScroll(page)).toBe(true);
+    await shot(page, "task-10-scan-opens-grocy-product.png");
+    // The camera is off again once the screen is left.
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
+  });
+
+  test("@grocy-battery a scanned battery code shows the battery's name and facts", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Scan" }).click();
+    await expect(page).toHaveURL(/\/grocycode\/b\/4$/, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { level: 1, name: "Remote AAA" })).toBeVisible();
+    await expect(page.getByText("Warranty ends 2027")).toBeVisible();
+    await expect(page.getByText("Charge cycles")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open in Grocy/ })).toHaveAttribute("href", "https://grocy.example.invalid/battery/4");
+    await expect(page.getByRole("link", { name: "Scan again" })).toBeVisible();
+    expect(await noSideScroll(page)).toBe(true);
+    await shot(page, "task-10b-scan-grocy-battery.png");
   });
 
   test("@data-matrix zxing worker decodes a data-matrix image under the production CSP", async () => {

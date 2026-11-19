@@ -5,15 +5,16 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import delete, exists, select, update
+from sqlalchemy import delete, exists, func, literal_column, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.job import Job, JobState, is_page_payload
+from app.models.job import PAGE_KIND_EXPR, Job, JobState, is_page_payload, json_at
 from app.models.sheet import SheetCell
 
 
@@ -31,6 +32,7 @@ async def list_by_filter(
     limit: int = 50,
     allowed_printer_ids: list[UUID] | None = None,
     api_key_id: UUID | None = None,
+    order: Literal["oldest", "newest"] = "oldest",
 ) -> list[Job]:
     """Return jobs matching the optional filters, ordered by creation time.
 
@@ -38,6 +40,8 @@ async def list_by_filter(
     ``allowed_printer_ids`` restricts to those printers (``None`` or empty = no
     restriction); it is applied in SQL so ``limit`` counts only visible jobs.
     ``api_key_id`` keeps only the jobs that key submitted (``None`` = no restriction).
+    ``order`` is ``oldest`` (default: the first ``limit`` jobs) or ``newest`` (the latest
+    ``limit`` jobs, newest first); every filter above applies before the cut.
     """
     stmt = select(Job)
     if state is not None:
@@ -50,7 +54,14 @@ async def list_by_filter(
         stmt = stmt.where(col(Job.api_key_id) == api_key_id)
     if since is not None:
         stmt = stmt.where(col(Job.created_at) >= since)
-    stmt = stmt.order_by(col(Job.created_at)).limit(limit)
+    created = col(Job.created_at)
+    # ``id`` breaks ties, so equal timestamps keep one stable order and a ``limit`` cut is exact.
+    ident = col(Job.id)
+    if order == "newest":
+        stmt = stmt.order_by(created.desc(), ident.desc())
+    else:
+        stmt = stmt.order_by(created, ident)
+    stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars())
 
@@ -86,18 +97,33 @@ async def _get_or_raise(session: AsyncSession, job_id: UUID) -> Job:
     return job
 
 
-async def mark_printing(session: AsyncSession, job_id: UUID) -> Job:
-    """Transition QUEUED → PRINTING. Sets started_at."""
-    job = await _get_or_raise(session, job_id)
-    if job.state != JobState.QUEUED.value:
-        raise ValueError(
-            f"Cannot mark_printing: job {job_id} is in state '{job.state}', expected 'queued'"
-        )
-    job.state = JobState.PRINTING.value
-    job.started_at = datetime.now(UTC)
-    session.add(job)
+async def mark_printing_if_queued(session: AsyncSession, job_id: UUID) -> bool:
+    """QUEUED -> PRINTING in one guarded statement; ``False``: the row is unknown or no longer
+    ``queued``, nothing written.
+
+    The test and the write are one statement, so a cancel that commits between a caller's
+    read and this write is never overwritten (re-review R2-1): the worker must not print then.
+    """
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value)
+        .values(state=JobState.PRINTING.value, started_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
     await session.commit()
-    await session.refresh(job)
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
+
+async def mark_printing(session: AsyncSession, job_id: UUID) -> Job:
+    """Transition QUEUED → PRINTING. Sets started_at. Raises ``ValueError`` otherwise."""
+    if not await mark_printing_if_queued(session, job_id):
+        current = await _get_or_raise(session, job_id)
+        raise ValueError(
+            f"Cannot mark_printing: job {job_id} is in state '{current.state}', expected 'queued'"
+        )
+    job = await session.get(Job, job_id, populate_existing=True)
+    assert job is not None  # just written
     return job
 
 
@@ -153,6 +179,119 @@ async def set_result(session: AsyncSession, job_id: UUID, result: dict[str, Any]
     await session.commit()
     await session.refresh(job)
     return job
+
+
+async def set_loaded_roll(session: AsyncSession, job_id: UUID, roll: dict[str, Any]) -> bool:
+    """Set ``payload.loaded_roll`` of a job (any state, #389): the roll it was sent to.
+
+    ``False`` when the job is unknown. The rest of the payload is kept.
+    """
+    job = await session.get(Job, job_id)
+    if job is None:
+        return False
+    job.payload = {**(job.payload or {}), "loaded_roll": dict(roll)}
+    session.add(job)
+    await session.commit()
+    return True
+
+
+async def set_queued_payload(session: AsyncSession, job_id: UUID, payload: dict[str, Any]) -> bool:
+    """Replace the payload of a QUEUED job (a deferred job completed, #281). ``False``: the job
+    is unknown or no longer QUEUED (cancelled meanwhile), nothing written."""
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value)
+        .values(payload=dict(payload))
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
+
+async def mark_queued_failed_restart(session: AsyncSession, job_id: UUID, error: str) -> bool:
+    """One QUEUED job -> FAILED_RESTART with *error* (a deferred job a restart interrupted)."""
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value)
+        .values(
+            state=JobState.FAILED_RESTART.value,
+            error=error,
+            finished_at=datetime.now(UTC),
+        )
+        .execution_options(synchronize_session="fetch")
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    return int(result.rowcount) > 0  # type: ignore[attr-defined]
+
+
+async def mark_queued_many_failed_restart(
+    session: AsyncSession, job_ids: list[UUID], error: str
+) -> list[UUID]:
+    """The QUEUED ones of ``job_ids`` -> FAILED_RESTART with *error*, in one statement.
+
+    Returns the ids that changed (a job cancelled meanwhile is left alone).
+    """
+    if not job_ids:
+        return []
+    stmt = (
+        update(Job)
+        .where(col(Job.id).in_(job_ids), col(Job.state) == JobState.QUEUED.value)
+        .values(
+            state=JobState.FAILED_RESTART.value,
+            error=error,
+            finished_at=datetime.now(UTC),
+        )
+        .returning(col(Job.id))
+        .execution_options(synchronize_session=False)
+    )
+    changed = [row[0] for row in (await session.execute(stmt)).all()]
+    await session.commit()
+    return changed
+
+
+def _handed_off() -> Any:
+    """A row the queue holds or is about to hold, so only the queue may cancel it.
+
+    A page payload (``kind``: a Grocy sheet row after its payload swap, #281, or any page job,
+    which the queue registers before its row exists), or a deferred tape row whose payload is
+    complete (``rendered_tape_mm``). An ordinary untracked row (a webhook row the queue never
+    saw) stays cancellable here.
+    """
+    # COALESCE: a payload without ``deferred`` must read as false, not NULL (``NOT NULL`` would
+    # exclude every ordinary row from the guarded update).
+    deferred = func.coalesce(literal_column(json_at("$.deferred")), 0) == 1
+    page = literal_column(json_at("$.kind")).is_not(None)
+    rendered = literal_column(json_at("$.rendered_tape_mm")).is_not(None)
+    return page | (deferred & rendered)
+
+
+async def cancel_queued_unhanded(
+    session: AsyncSession, job_id: UUID, *, unhanded_only: bool = True
+) -> Job | None:
+    """QUEUED -> CANCELLED for a job the queue does not hold, in one guarded statement.
+
+    Not written (``None``) when the row is no longer ``queued`` or, with ``unhanded_only``, is
+    a row the queue holds or is about to hold (review I-1): the cancel then has to go through
+    the queue, or the in-memory job would print a row that says ``cancelled``. Without it only
+    the state is checked (the last resort after the wait). Either way the statement is the
+    test and the write at once: of two cancels, one writes.
+    """
+    guards = [col(Job.id) == job_id, col(Job.state) == JobState.QUEUED.value]
+    if unhanded_only:
+        guards.append(~_handed_off())
+    stmt = (
+        update(Job)
+        .where(*guards)
+        .values(state=JobState.CANCELLED.value, finished_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+    if int(result.rowcount) == 0:  # type: ignore[attr-defined]
+        return None
+    return await session.get(Job, job_id, populate_existing=True)
 
 
 async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:
@@ -336,3 +475,58 @@ async def evict_terminal_older_than(
     result = await session.execute(stmt)
     await session.commit()
     return int(result.rowcount)  # type: ignore[attr-defined]
+
+
+class LastPageTrays(NamedTuple):
+    """The trays the newest sheet and calibration page jobs of one printer used."""
+
+    sheet_tray: str | None
+    calibration_tray: str | None
+    calibration_at: datetime | None
+
+
+# Jobs that count as "the tray just used": a failed or cancelled job may never have reached
+# the tray.
+_TRAY_STATES = (JobState.QUEUED.value, JobState.PRINTING.value, JobState.DONE.value)
+
+
+async def last_page_trays(session: AsyncSession, printer_id: UUID) -> LastPageTrays:
+    """The tray of the newest sheet page job and the tray and time of the newest calibration page.
+
+    One statement, scalar subqueries that each seek ``ix_jobs_printer_kind_created`` (printer,
+    kind, created_at) and read the newest row without a sort. The kind is compared through
+    ``PAGE_KIND_EXPR`` (the index text, or SQLite scans). No ``id`` tiebreak: two jobs of one
+    printer and kind with the same ``created_at`` are a harmless tie, either tray is one just
+    used, and a tiebreak outside the index would add a partial sort. The jobs of every API key
+    count: the tray describes the printer's recent use, not the caller's.
+    """
+
+    def newest(kind: str, value: Any) -> Any:
+        return (
+            select(value)
+            .where(
+                col(Job.printer_id) == printer_id,
+                literal_column(PAGE_KIND_EXPR) == kind,
+                col(Job.state).in_(_TRAY_STATES),
+            )
+            .order_by(col(Job.created_at).desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+
+    tray = json_at("$.tray")
+    # Tray and time of the calibration page come out of ONE subquery, so equal ``created_at``
+    # values cannot name two different jobs.
+    calibration = newest(
+        "calibration_page", literal_column(f"json_object('tray', {tray}, 'at', created_at)")
+    )
+    row = (
+        await session.execute(select(newest("sheet_page", literal_column(tray)), calibration))
+    ).one()
+    cal: dict[str, Any] = json.loads(row[1]) if isinstance(row[1], str) else {}
+    at = cal.get("at")
+    return LastPageTrays(
+        sheet_tray=row[0] if isinstance(row[0], str) else None,
+        calibration_tray=cal["tray"] if isinstance(cal.get("tray"), str) else None,
+        calibration_at=datetime.fromisoformat(at) if isinstance(at, str) else None,
+    )

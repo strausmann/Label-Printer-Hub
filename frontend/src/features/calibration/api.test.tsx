@@ -83,6 +83,14 @@ describe("calibration writes", () => {
     expect(answer.job_id).toBe("j1");
     expect(JSON.parse(calls[0]!.body!)).toEqual({ type: "L4736REV", corrected: true });
   });
+
+  it("usePrintCalibrationPage refreshes the printer status, which names the tray of the newest page (#344)", async () => {
+    mockApi({ [`POST /api/v1/printers/${P}/calibration/main/page`]: respond(202, { job_id: "j1" }) });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePrintCalibrationPage(P), { wrapper });
+    await act(() => result.current.mutateAsync({ tray: "main", request: { type: "L4736REV", corrected: true } }));
+    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["printers", P, "status"]);
+  });
 });
 
 describe("useResetCalibration", () => {

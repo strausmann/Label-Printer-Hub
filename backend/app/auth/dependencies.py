@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import csrf
 from app.auth import sessions as ui_sessions
+from app.auth.key_generator import KEY_PREFIX_LENGTH, key_prefix
 from app.auth.verifier import verify_api_key_async
 from app.config import Settings, get_settings
 from app.db.session import get_session
@@ -69,6 +70,10 @@ _SCOPE_HIERARCHY: dict[str, list[str]] = {
     "read": ["read"],
 }
 
+# #321: no key is longer than this; a longer value is refused before lookup and bcrypt
+# (bcrypt >= 5 raises on more than 72 bytes). The URL token uses the same limit.
+MAX_KEY_LENGTH = 128
+
 # Scope → HTTP status for insufficient scope
 _SCOPE_ORDER = ["read", "print", "admin"]
 
@@ -97,6 +102,8 @@ class AuthContext(BaseModel):
     allowed_printer_ids: list[str] = []
     user: str | None = None
     session_id: UUID | None = None
+    rate_limit_per_minute: int | None = None
+    """The key's limit; set for key and key-derived session contexts."""
 
 
 def _scope_satisfies(key_scope: str, required_scope: str) -> bool:
@@ -197,31 +204,92 @@ def enforce_key_rate_limit(key_id: Hashable, limit_per_minute: int, key_name: st
         )
 
 
+def charge_lookup_fan_out(auth: AuthContext, lookups: int) -> int:
+    """Charge the key's bucket for the integration lookups one request fans out into.
+
+    The request's own token (taken by the auth dependency) pays for the first lookup, so
+    ``lookups - 1`` more are taken, but never more than a full bucket holds (``limit - 1``):
+    a request costs at most one whole bucket and is retryable once it has refilled; it is never
+    refused outright, so for N above the limit N lookups cost less than N single GET lookups.
+    All or nothing: 429 ``rate_limit_exceeded`` with Retry-After when the bucket cannot cover
+    it, raised before any lookup starts. Contexts without a key limit (SSO, bypass) are not
+    charged. Returns the tokens actually taken, for :func:`refund_lookup_fan_out`.
+    """
+    if auth.api_key_id is None or auth.rate_limit_per_minute is None:
+        return 0
+    allowed, retry_after, taken = _rate_limiter.try_consume(
+        auth.api_key_id, lookups - 1, limit_per_minute=auth.rate_limit_per_minute
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error_code": "rate_limit_exceeded",
+                "error_message": (
+                    f"This request needs {lookups} lookups, more than the key's rate limit "
+                    f"has left. Retry after {retry_after} seconds."
+                ),
+                "retry_after_seconds": retry_after,
+            },
+            headers={"Retry-After": str(retry_after)},
+        )
+    return taken
+
+
+def refund_lookup_fan_out(auth: AuthContext, charged: int) -> None:
+    """Give back what :func:`charge_lookup_fan_out` took when the request ended before any
+    lookup ran, so a client that retries does not pay twice."""
+    if auth.api_key_id is not None and charged > 0:
+        _rate_limiter.refund(auth.api_key_id, charged)
+
+
+class ScopeRefusedError(Exception):
+    """A valid key whose effective scope the caller refuses (``refuse_scopes``)."""
+
+    def __init__(self, scope: str) -> None:
+        super().__init__(scope)
+        self.scope = scope
+
+
 async def _validate_api_key(
     session: AsyncSession,
     key_header: str,
     required_scope: str,
     client_ip: str,
+    *,
+    refuse_scopes: frozenset[str] = frozenset(),
 ) -> AuthContext:
     """Validate the X-Label-Hub-Key header.
 
-    1. Extract prefix (first 16 chars) to look up the key row.
+    1. Extract the prefix (``key_prefix``, first 16 chars) to look up the key row.
     2. bcrypt-verify the full plaintext against the stored hash.
     3. Check the key is enabled and not expired.
     4. Check the key's scopes satisfy ``required_scope``.
     5. Update last_used_at asynchronously (best-effort, no transaction wait).
 
+    ``refuse_scopes`` lists effective scopes the caller refuses (the URL token refuses
+    ``admin``). Such a key raises :class:`ScopeRefusedError` before it uses a rate-limit
+    slot or is marked as used, so a refused key never looks used in the key list.
+
     Raises:
         HTTPException 401: key not found / bcrypt mismatch / disabled
         HTTPException 403: key valid but insufficient scope
+        ScopeRefusedError: key valid but its effective scope is in ``refuse_scopes``
     """
-    if len(key_header) < 16:
+    if len(key_header) < KEY_PREFIX_LENGTH:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"error_code": "invalid_key_format", "error_message": "Invalid key format"},
         )
 
-    prefix = key_header[:16]
+    if len(key_header) > MAX_KEY_LENGTH:
+        # #321: same answer as an unknown key, before the lookup and bcrypt.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error_code": "invalid_key", "error_message": "Invalid or unknown API key"},
+        )
+
+    prefix = key_prefix(key_header)
     key_row = await api_keys_repo.get_by_prefix(session, prefix)
 
     if key_row is None:
@@ -249,7 +317,12 @@ async def _validate_api_key(
                 detail={"error_code": "key_expired", "error_message": "API key has expired"},
             )
 
-    if not await verify_api_key_async(key_header, key_row.key_hash):
+    try:
+        key_matches = await verify_api_key_async(key_header, key_row.key_hash)
+    except ValueError:
+        # #321: bcrypt >= 5 refuses more than 72 bytes; no key is that long.
+        key_matches = False
+    if not key_matches:
         _log.debug("bcrypt mismatch for prefix %s", _loggable(prefix))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -300,12 +373,18 @@ async def _validate_api_key(
             },
         )
 
+    # #281: refused before the rate-limit slot and the last-used write.
+    if effective_scope in refuse_scopes:
+        raise ScopeRefusedError(effective_scope)
+
     # Rate limit check — after bcrypt verify to avoid info leak on exhaustion
     enforce_key_rate_limit(key_row.id, key_row.rate_limit_per_minute, key_row.name)
 
     # Read before the update: a rollback expires the row's attributes.
     key_id = key_row.id
-    allowed_printer_ids = key_row.allowed_printer_ids or []
+    key_rate_limit = key_row.rate_limit_per_minute
+    # #283: an admin key acts on every printer; a list stored by an older version is ignored.
+    allowed_printer_ids = [] if effective_scope == "admin" else key_row.allowed_printer_ids or []
 
     # Best-effort last-used update (don't fail auth if this errors)
     try:
@@ -320,6 +399,7 @@ async def _validate_api_key(
         api_key_id=key_id,
         ip=client_ip,
         allowed_printer_ids=allowed_printer_ids,
+        rate_limit_per_minute=key_rate_limit,
     )
 
 
@@ -370,9 +450,11 @@ def _session_context(
         scope=cast(Scope, row.scope),
         api_key_id=row.api_key_id,
         ip=client_ip,
-        allowed_printer_ids=valid.allowed_printer_ids,
+        # #283: an admin session is never restricted, whatever a stored copy says.
+        allowed_printer_ids=[] if row.scope == "admin" else valid.allowed_printer_ids,
         user=row.user,
         session_id=row.id,
+        rate_limit_per_minute=valid.rate_limit_per_minute,
     )
 
 

@@ -38,7 +38,13 @@ describe("the sheet section replaces the tape preview for page printers", () => 
     expect(screen.queryByRole("img", { name: "Label preview" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Print now" })).toBeNull();
     expect(calls.some((c) => c.path === "/api/v1/render/preview")).toBe(false);
-    expect(screen.getByRole("button", { name: "Add to cart" })).toBeVisible();
+    // Two Add to cart buttons: the item's own in the Print panel, and the sheet section's.
+    expect(screen.getAllByRole("button", { name: "Add to cart" })).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" })).toBeVisible();
+    expect(within(screen.getByRole("region", { name: "Print onto a sheet" })).getByRole("button", { name: "Add to cart" })).toBeVisible();
+    // A screen reader tells them apart by the heading each is described by.
+    expect(within(screen.getByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" })).toHaveAccessibleDescription("Print");
+    expect(within(screen.getByRole("region", { name: "Print onto a sheet" })).getByRole("button", { name: "Add to cart" })).toHaveAccessibleDescription("Print onto a sheet");
   });
 
   it("the printer list names kind and state", async () => {
@@ -154,7 +160,7 @@ describe("tray, sheet type and the sheet", () => {
   it("a new sheet is requested without cells of its own and with the ID in the margin", async () => {
     const { calls } = await itemView(routes({ sheets: [] , preview: previewFor(null, NEW_9, [])}));
     await waitFor(() => expect(previews(calls).length).toBeGreaterThan(0));
-    expect(body(previews(calls)[0]!).placements).toEqual([{ new_sheet: { type: "L4736REV", id_placement: "margin" }, cells: "first_free" }]);
+    expect(body(previews(calls)[0]!).placements).toEqual([{ new_sheet: { type: "L4736REV" }, cells: "first_free" }]);
     expect(await screen.findByText(/become.*L4736-0005|L4736-0005/)).toBeVisible();
   });
 });

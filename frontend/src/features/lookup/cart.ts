@@ -131,7 +131,8 @@ const setCopies = (key: CartKey, copies: number): void =>
 /** The body item the batch endpoint takes: the server looks the item up again when it prints. */
 export const toBatchItem = (item: CartItem, layout?: LayoutOptions) => ({
   content_type: item.content_type,
-  options: { copies: item.copies, ...layout },
+  // The spool label ignores every direction; it is sent without one, so a mixed batch never conflicts (#346).
+  options: { copies: item.copies, ...(item.content_type === "spool_swatch" ? {} : layout) },
   lookup: { app: item.app, identifier: item.id },
 });
 

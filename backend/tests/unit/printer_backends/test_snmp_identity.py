@@ -10,6 +10,7 @@ from app.printer_backends.snmp_helper import (
     HR_PRINTER_DETECTED_ERROR_STATE_OID,
     HR_PRINTER_STATUS_OID,
     PRT_INPUT_MEDIA_TYPE_OID,
+    PRT_MARKER_LIFE_COUNT_OID,
     ObservedIdentity,
     query_identity,
     query_preflight,
@@ -100,6 +101,12 @@ async def test_preflight_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.printer_backends.snmp_helper.get_cmd", fake_get_cmd)
     status = await query_preflight("192.0.2.10")
     assert status.loaded_tape_mm == 12
+    # #393 added the label counter to the same round trip; the identity OIDs stay out.
     assert sent == [
-        [HR_PRINTER_STATUS_OID, HR_PRINTER_DETECTED_ERROR_STATE_OID, PRT_INPUT_MEDIA_TYPE_OID]
+        [
+            HR_PRINTER_STATUS_OID,
+            HR_PRINTER_DETECTED_ERROR_STATE_OID,
+            PRT_INPUT_MEDIA_TYPE_OID,
+            PRT_MARKER_LIFE_COUNT_OID,
+        ]
     ]

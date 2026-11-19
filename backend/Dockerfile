@@ -260,7 +260,8 @@ VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl --fail --silent --show-error "http://localhost:${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}/healthz" || exit 1
 
-# tini reaps zombies and propagates SIGTERM to uvicorn cleanly. Shell-form
+# tini reaps zombies and propagates SIGTERM to uvicorn cleanly. --no-access-log: the hub writes
+# its own access line in nginx combined format (LABELYARD_ACCESS_LOG, #366). Shell-form
 # CMD expands the port (same order as the healthcheck) and $FORWARDED_ALLOW_IPS at start so
 # deployments can change them without rebuilding the image.
 ENTRYPOINT ["/usr/bin/tini", "--"]
@@ -269,4 +270,5 @@ CMD ["sh", "-c", "exec uvicorn app.main:app \
     --port \"${LABELYARD_SERVER_PORT:-${PRINTER_HUB_SERVER_PORT:-${PORT:-8000}}}\" \
     --proxy-headers \
     --forwarded-allow-ips=\"${FORWARDED_ALLOW_IPS}\" \
+    --no-access-log \
     --no-server-header"]

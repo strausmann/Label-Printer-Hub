@@ -1,0 +1,37 @@
+---
+title: Warenkorb und Sammeldruck
+description: Etiketten aus mehreren Abfragen sammeln und gemeinsam drucken, auf Band oder auf einen Bogen.
+---
+
+import Screenshot from "../../../../components/Screenshot.astro";
+
+Der **Warenkorb** sammelt Etiketten, bevor du sie druckst, wie beim Einkaufen. Nimm ihn, wenn du mehrere Etiketten auf einmal brauchst: ein Regal voller Assets, die Produkte einer Lieferung, eine Kiste Spulen.
+
+## Den Warenkorb füllen
+
+Schlag einen Eintrag nach oder scanne ihn und wähle **In den Warenkorb**, statt sofort zu drucken. Der Warenkorb liegt in dem Browser, den du gerade nutzt; ein anderes Gerät hat seinen eigenen.
+
+Im Bereich **Auf einen Bogen drucken** eines Eintrags legt **In den Warenkorb** den Eintrag für einen Bogen-Lauf zur Seite; **Warenkorb öffnen** behält den Bogen und das Fach, die du gewählt hast.
+
+## Das Warenkorb-Symbol
+
+Das Warenkorb-Symbol steht auf jeder Seite in der oberen Leiste, am Rechner wie am Telefon, neben der Benachrichtigungsglocke. Eine Markierung zeigt, wie viele **Einträge** der Warenkorb enthält, also die Zeilen der Warenkorb-Seite, nicht die Zahl der Kopien: Zwei Einträge mit drei und vier Kopien zählen als 2. Über 99 steht dort **99+**. Ein leerer Warenkorb hat keine Markierung, das Symbol öffnet ihn trotzdem. Bildschirmleser sagen „Warenkorb, 2 Einträge“ oder „Warenkorb, leer“. Die Zahl folgt dem Warenkorb sofort, auch wenn du ihn in einem anderen Tab desselben Browsers änderst.
+
+## Vorschauen und Warnungen
+
+Bei einem Brother QL mit 62-mm-Band zeigt der Warenkorb für jedes Layout darin eine Vorschau, nicht nur für den ersten Eintrag. Etiketten mit demselben Layout sehen gleich aus, deshalb zeichnet der Warenkorb den ersten Eintrag jedes Layouts, in der Reihenfolge des Warenkorbs. Er zeigt höchstens vier Vorschauen und sagt, wie viele weitere Layouts er weglässt.
+
+<Screenshot shot="cart-check" lang="de" alt="Der Warenkorb mit Vorschauen zweier Layouts und einer Warnung bei einem Eintrag, dessen QR-Code nicht aufs Band passt." />
+
+Sobald der Drucker sein Band meldet, prüft der Warenkorb außerdem jeden Eintrag gegen dieses Band und die gewählte Anordnung, ohne etwas zu drucken. Ein Eintrag, der sich nicht zeichnen lässt, bekommt einen roten Hinweis unter seinem Namen, zum Beispiel **Der QR-Code passt nicht auf dieses Band: 812 von höchstens 122 Bytes.** Über dem Druckknopf steht, wie viele Einträge nicht gedruckt werden.
+
+Die Warnung hält dich nicht auf: Der Druckknopf bleibt an. Nimm den Eintrag heraus, wähle eine andere Anordnung oder einen kürzeren Link und prüfe erneut; oder drucke trotzdem: Dann lehnt der Hub den ganzen Stapel ab, und der Warenkorb bleibt, wie er war. Ein Eintrag, der sich nicht zeichnen lässt, genügt; nimm die markierten Einträge also zuerst heraus. Schlägt die Prüfung selbst fehl oder ist gerade zu viel los, schreibt der Warenkorb **Die Einträge konnten nicht geprüft werden; der Druck prüft sie trotzdem.** und zeigt keine Warnungen. Der Druck prüft jeden Eintrag immer noch einmal.
+
+## Den Warenkorb drucken
+
+Öffne den Warenkorb und druck alles darin:
+
+- **Auf einem Banddrucker** kommen die Etiketten gemeinsam als ein Stapel in die Warteschlange des Druckers (siehe [Druckwarteschlange](/de/using/queue/)).
+- **Auf einen Bogen** verteilt die Vorschau die Etiketten auf die freien Felder. Was nicht passt, bleibt für den nächsten Bogen im Warenkorb (siehe [Bögen](/de/using/sheets/)).
+
+Wurde ein Eintrag in seiner App gelöscht, seit du ihn hinzugefügt hast, kann der Hub ihn nicht drucken und sagt dir das. Nimm ihn aus dem Warenkorb und druck noch einmal.

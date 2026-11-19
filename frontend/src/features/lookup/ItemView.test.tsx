@@ -5,7 +5,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
-import { mockApi, pngResponse, PRINTER_A, PRINTER_B, respond, status } from "../test-api";
+import { job, mockApi, PAGE_PRINTER, pageStatus, pngResponse, PRINTER_A, PRINTER_B, respond, status } from "../test-api";
 import { CART_KEY, reloadCart } from "./cart";
 
 beforeEach(() => {
@@ -85,6 +85,31 @@ describe("ItemView", () => {
     expect(JSON.parse(preview.body!)).toMatchObject({ content_type: "qr_two_lines", tape_mm: 12, data: { title: "Cordless drill", primary_id: "42" } });
   });
 
+  it("the printer option says Problem for an open cover while a job waits, Warning without (#376)", async () => {
+    const cover = status(PRINTER_A.id, { error_flags: ["doorOpen"], error_state: "doorOpen" });
+    mockApi(routes("snipeit", "42", { [`GET /api/v1/printers/${PRINTER_A.id}/status`]: cover, "GET /api/v1/jobs": [job("aaaaaaaa-0000-4000-8000-000000000009", PRINTER_A.id, "queued")] }));
+    await renderApp({ path: "/asset/42" });
+    const picker = await screen.findByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(within(picker).getAllByRole("option")[0]).toHaveTextContent("Workshop PT-P750W · Tape printer · Problem"));
+  });
+
+  it("a print refused on the open cover turns the printer option into a problem at once (#376)", async () => {
+    const cover = status(PRINTER_A.id, { error_flags: ["doorOpen"], error_state: "doorOpen" });
+    mockApi(
+      routes("snipeit", "42", {
+        [`GET /api/v1/printers/${PRINTER_A.id}/status`]: cover,
+        "GET /api/v1/jobs": [],
+        [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "printer_cover_open", error_message: "The printer cover is open." } }),
+      }),
+    );
+    await renderApp({ path: "/asset/42" });
+    const picker = await screen.findByRole("combobox", { name: "Printer" });
+    await waitFor(() => expect(within(picker).getAllByRole("option")[0]).toHaveTextContent("Workshop PT-P750W · Tape printer · Warning"));
+    await screen.findByRole("img", { name: "Label preview" });
+    await userEvent.click(screen.getByRole("button", { name: "Print now" }));
+    await waitFor(() => expect(within(picker).getAllByRole("option")[0]).toHaveTextContent("Workshop PT-P750W · Tape printer · Problem"));
+  });
+
   it("does not turn a script URL from the integration into a link", async () => {
     mockApi(routes("snipeit", "42", { "GET /api/v1/lookup/snipeit/42": item("snipeit", "42", { url: "javascript:alert(1)" }) }));
     await renderApp({ path: "/asset/42" });
@@ -116,13 +141,26 @@ describe("ItemView", () => {
     mockApi(routes("snipeit", "42", { [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, { detail: { error_code: "printer_offline", error_message: "The printer is offline." } }) }));
     await renderApp({ path: "/asset/42" });
     await userEvent.click(await screen.findByRole("button", { name: "Print now" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The printer is offline.");
+    // #378: a known code reads in the app's own words, not the server's English.
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The printer is not reachable. Check that it is switched on and connected, then try again.",
+    );
+  });
+
+  it("a disabled printer reads in the app's words, without the server's id", async () => {
+    const refusal = { detail: { error_code: "printer_disabled", error_message: "Printer tape-a (0000-uuid) is disabled" } };
+    mockApi(routes("snipeit", "42", { [`POST /api/v1/print/${PRINTER_A.id}/batch`]: respond(409, refusal) }));
+    await renderApp({ path: "/asset/42" });
+    await userEvent.click(await screen.findByRole("button", { name: "Print now" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The printer is switched off in the hub. Switch it on in the printer settings.");
+    expect(alert).not.toHaveTextContent("0000-uuid");
   });
 
   it("Add to cart stores the item and shows the cart link", async () => {
     mockApi(routes());
     await renderApp({ path: "/asset/42" });
-    await userEvent.click(await screen.findByRole("button", { name: "Add to cart" }));
+    await userEvent.click(within(await screen.findByRole("region", { name: "Print" })).getByRole("button", { name: "Add to cart" }));
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toEqual([
       { app: "snipeit", id: "42", name: "Cordless drill", content_type: "qr_two_lines", copies: 1 },
     ]);
@@ -135,5 +173,154 @@ describe("ItemView", () => {
     await screen.findByRole("option", { name: /Office QL-820NWB/ });
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_B.id);
     await waitFor(() => expect(localStorage.getItem("lph.printer")).toBe(PRINTER_B.id));
+  });
+});
+
+describe("the spool label of a Spoolman item (#346)", () => {
+  const SWATCH = { spool_id: 7, language: "en", vendor: "TecBears", title: "PETG", color_name: "Orange", color_hexes: ["FF5F00"] };
+  const spool = (swatch: Record<string, unknown> = SWATCH) => ({
+    app: "spoolman",
+    id: "7",
+    name: "TecBears Orange",
+    url: "https://spoolman.example.invalid/spool/show/7",
+    extra: { secondary: ["640g remaining"], swatch },
+  });
+  const QL = (layout_defaults: Record<string, unknown> = {}) => ({ ...PRINTER_B, paused: false, layout_defaults });
+  function spoolRoutes(over: Record<string, unknown> = {}) {
+    return {
+      "GET /api/v1/lookup/spoolman/7": spool(),
+      "GET /api/v1/printers": [PRINTER_A, QL()],
+      [`GET /api/v1/printers/${PRINTER_A.id}/status`]: status(PRINTER_A.id),
+      [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "62mm", tape_width_mm: 62 }),
+      "POST /api/v1/render/preview": () => pngResponse(),
+      [`POST /api/v1/print/${PRINTER_B.id}/batch`]: { batch_id: BATCH, printer_id: PRINTER_B.id, queued_at: "x", job_ids: ["j"] },
+      ...over,
+    };
+  }
+  const previews = (calls: { path: string; body?: string | null }[]) =>
+    calls.filter((c) => c.path === "/api/v1/render/preview").map((c) => JSON.parse(c.body!) as Record<string, unknown>);
+  beforeEach(() => localStorage.setItem("lph.printer", PRINTER_B.id));
+
+  it("a Spoolman item previews the spool label with its swatch", async () => {
+    const { calls } = mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    await screen.findByRole("img", { name: "Label preview" });
+    const body = previews(calls).at(-1)!;
+    expect(body).toMatchObject({ content_type: "spool_swatch", tape_mm: 62, data: { swatch: SWATCH, qr_payload: "https://spoolman.example.invalid/spool/show/7" } });
+    expect(screen.getByRole("combobox", { name: "Layout" })).toHaveValue("spool_swatch");
+  });
+
+  it("a stored along default does not reach the swatch preview", async () => {
+    const { calls } = mockApi(spoolRoutes({ "GET /api/v1/printers": [PRINTER_A, QL({ "62": { orientation: "along", preset: null } })] }));
+    await renderApp({ path: "/spool/7" });
+    await screen.findByRole("img", { name: "Label preview" });
+    for (const body of previews(calls)) {
+      expect(body).not.toHaveProperty("orientation");
+      expect(body).not.toHaveProperty("layout_preset");
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Print now" }));
+    await screen.findByText(/Sent to Office QL-820NWB/);
+    const post = calls.find((c) => c.path === `/api/v1/print/${PRINTER_B.id}/batch`)!;
+    expect(JSON.parse(post.body!)).toEqual({
+      items: [{ content_type: "spool_swatch", options: { copies: 1 }, lookup: { app: "spoolman", identifier: "7" } }],
+    });
+  });
+
+  it("the layout picker is hidden for the spool label", async () => {
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(screen.queryByRole("radiogroup", { name: "Direction" })).toBeNull();
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Layout" }), "qr_two_lines");
+    expect(await screen.findByRole("radiogroup", { name: "Direction" })).toBeVisible();
+  });
+
+  it("a changed swatch asks for a new preview", async () => {
+    const lookup = { current: spool() };
+    const { calls } = mockApi(spoolRoutes({ "GET /api/v1/lookup/spoolman/7": () => new Response(JSON.stringify(lookup.current), { headers: { "content-type": "application/json" } }) }));
+    const { queryClient } = await renderApp({ path: "/spool/7" });
+    await screen.findByRole("img", { name: "Label preview" });
+    const before = previews(calls).length;
+    lookup.current = spool({ ...SWATCH, color_name: "Grey" });
+    await queryClient.invalidateQueries({ queryKey: ["lookup"] });
+    await waitFor(() => expect(previews(calls).length).toBeGreaterThan(before));
+    expect(previews(calls).at(-1)).toMatchObject({ data: { swatch: { color_name: "Grey" } } });
+  });
+
+  it("a tape without a spool label shows the not-available message", async () => {
+    mockApi(
+      spoolRoutes({
+        [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "12mm", tape_width_mm: 12 }),
+        "POST /api/v1/render/preview": respond(409, { error_code: "unsupported_tape", error_message: "x" }),
+      }),
+    );
+    await renderApp({ path: "/spool/7" });
+    // On 12 mm the item starts on the default; picking the spool label by hand says it is not available.
+    const select = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(select).toHaveValue("qr_two_lines"));
+    await userEvent.selectOptions(select, "spool_swatch");
+    expect(await screen.findByText("No preview for this tape.")).toBeVisible();
+  });
+
+  it("a P-touch starts on the default, and switching to the QL brings the spool label", async () => {
+    localStorage.setItem("lph.printer", PRINTER_A.id);
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(layout).toHaveValue("qr_two_lines");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_B.id);
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_A.id);
+    await waitFor(() => expect(layout).toHaveValue("qr_two_lines"));
+  });
+
+  it("a QL with 38 mm tape starts on the spool label", async () => {
+    mockApi(spoolRoutes({ [`GET /api/v1/printers/${PRINTER_B.id}/status`]: status(PRINTER_B.id, { tape_loaded: "38mm", tape_width_mm: 38 }) }));
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
+  });
+
+  it("the user's own choice survives a printer change", async () => {
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
+    await userEvent.selectOptions(layout, "qr_one_line");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_A.id);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Printer" }), PRINTER_B.id);
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(layout).toHaveValue("qr_one_line");
+  });
+
+  it("an item without swatch data starts on the default even on the QL", async () => {
+    const { calls } = mockApi(spoolRoutes({ "GET /api/v1/lookup/spoolman/7": { ...spool(), extra: { secondary: ["640g remaining"] } } }));
+    await renderApp({ path: "/spool/7" });
+    await screen.findByRole("img", { name: "Label preview" });
+    expect(screen.getByRole("combobox", { name: "Layout" })).toHaveValue("qr_two_lines");
+    expect(previews(calls).every((b) => b.content_type === "qr_two_lines")).toBe(true);
+  });
+
+  it("a sheet printer starts on the spool label", async () => {
+    localStorage.setItem("lph.printer", PAGE_PRINTER.id);
+    mockApi(spoolRoutes({ "GET /api/v1/printers": [PRINTER_A, QL(), PAGE_PRINTER], [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: pageStatus(PAGE_PRINTER.id) }));
+    await renderApp({ path: "/spool/7" });
+    const layout = await screen.findByRole("combobox", { name: "Layout" });
+    await waitFor(() => expect(layout).toHaveValue("spool_swatch"));
+  });
+
+  it("the content type label reads Spool label", async () => {
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7" });
+    const select = await screen.findByRole("combobox", { name: "Layout" });
+    expect(within(select).getAllByRole("option")[0]).toHaveTextContent("Spool label");
+  });
+
+  it("the content type label reads Spulenetikett in German", async () => {
+    mockApi(spoolRoutes());
+    await renderApp({ path: "/spool/7", language: "de" });
+    const select = await screen.findByRole("combobox", { name: "Layout" });
+    expect(within(select).getAllByRole("option")[0]).toHaveTextContent("Spulenetikett");
   });
 });

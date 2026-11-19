@@ -32,7 +32,9 @@ from app.sheets.errors import (
     CellsNotMarkedByHandError,
     CellsNotUnconfirmedError,
     CellsTakenError,
+    IdPlacementMismatchError,
     InvalidFieldError,
+    NoUnconfirmedCellsError,
     SheetBusyError,
     SheetDiscardedError,
     SheetNotFoundError,
@@ -40,6 +42,7 @@ from app.sheets.errors import (
     SheetTypeNotFoundError,
     SheetTypeVersionNotFoundError,
     TextTooLongError,
+    UnconfirmedCountChangedError,
 )
 from app.sheets.events import publish_sheet_updated
 from app.sheets.text import log_value, sanitise_text
@@ -52,7 +55,9 @@ NOTE_MAX = 500
 DEFAULT_HAND_PURPOSE = "marked by hand"
 HUB_SOURCE = "hub"  # the source of the cell the hub fills itself: the sheet ID label
 ID_CELL_PURPOSE = "Sheet ID"
-_ID_PLACEMENTS = ("margin", "manual")  # "cell" is created by create_sheet_with_id_label
+# "cell" is created by create_sheet_with_id_label; "back_side" by create_sheet_with_back_label,
+# which queues the back-side job after this function committed the sheet (#350).
+_ID_PLACEMENTS = ("margin", "manual", "back_side")
 _STATE_FILTERS = ("active", "full", "discarded", "all")
 
 
@@ -303,6 +308,7 @@ class NewSheetBatch:
         marks: dict[int, str],
         note: str | None,
         actor: str,
+        id_cell_no: int | None = None,
     ) -> tuple[Sheet, SheetType, SheetTypeVersion]:
         """Add one sheet pinned to a version (C8); ``marks`` and ``note`` are already sanitised."""
         t = await self._type(type_key)
@@ -313,6 +319,7 @@ class NewSheetBatch:
             type_id=t.id,
             type_version_id=v.id,
             id_placement=id_placement,
+            id_cell_no=id_cell_no,
             note=note,
             created_by=actor,
             last_used_at=_now() if marks else None,
@@ -334,6 +341,7 @@ async def create_sheet_locked(
     marks: dict[int, str],
     note: str | None,
     actor: str,
+    id_cell_no: int | None = None,
 ) -> tuple[Sheet, SheetType, SheetTypeVersion]:
     """Create a sheet pinned to a version in the caller's write transaction (C8).
 
@@ -348,6 +356,7 @@ async def create_sheet_locked(
         marks=marks,
         note=note,
         actor=actor,
+        id_cell_no=id_cell_no,
     )
     await batch.flush()
     return created
@@ -358,11 +367,12 @@ async def create_sheet(
     *,
     type_key: str,
     version: int | None,
-    id_placement: Literal["margin", "manual"] = "margin",
+    id_placement: Literal["margin", "manual", "back_side"] = "margin",
     used_cells: list[MarkedCell],
     note: str | None,
     actor: str,
     bus: EventBus | None = None,
+    id_cell_no: int | None = None,
 ) -> Sheet:
     """Create a sheet pinned to a version, with the cells already used marked by hand."""
     if id_placement not in _ID_PLACEMENTS:
@@ -377,6 +387,7 @@ async def create_sheet(
             marks=marks,
             note=clean_note,
             actor=actor,
+            id_cell_no=id_cell_no,
         )
         detail = await _detail(session, sheet)
         await session.commit()
@@ -464,6 +475,45 @@ async def unmark_cells(
     return detail
 
 
+async def _settle_unconfirmed(
+    session: AsyncSession,
+    before: SheetDetail,
+    wanted: list[int],
+    outcome: Literal["printed", "not_printed"],
+    actor: str,
+) -> SheetDetail:
+    """Settle ``wanted`` (all unconfirmed) inside the caller's write transaction.
+
+    Flushes but never commits: the caller commits once, so a failure on any cell leaves
+    every cell untouched.
+    """
+    rows = {c.cell_no: c for c in before.cells}
+    now = _now()
+    margin_jobs: dict[UUID, Job] = {}
+    if outcome == "printed":  # a job row already purged by retention carries no margin ID
+        job_ids = sorted({jid for n in wanted if (jid := rows[n].job_id) is not None})
+        margin_jobs = await repo.jobs_by_id(session, job_ids)
+    for n in wanted:
+        row = rows[n]
+        if outcome == "not_printed":
+            await session.delete(row)
+            continue
+        before.sheet.last_used_at = now
+        row.state = "used"  # source, purpose, ref and job id stay
+        row.updated_at = now
+        row.updated_by = actor
+        if row.source == "hub":  # the ID label is on the sheet now (spec 7.1)
+            before.sheet.id_printed = True
+        elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
+            before.sheet.id_printed = True  # the job carried the margin ID
+        # A separate check, not a third ``elif``: the ID-cell job of a ``cell`` sheet
+        # carries the mark too, and its hub cell must set both flags.
+        if row.job_id is not None and repo.feed_mark_sheet(margin_jobs.get(row.job_id)):
+            before.sheet.feed_mark_printed = True
+    await session.flush()
+    return await _detail(session, before.sheet)
+
+
 async def resolve_cells(
     session: AsyncSession,
     code: str,
@@ -486,33 +536,50 @@ async def resolve_cells(
         bad = [n for n in wanted if n not in rows or rows[n].state != "unconfirmed"]
         if bad:
             raise CellsNotUnconfirmedError(bad)
-        now = _now()
-        margin_jobs: dict[UUID, Job] = {}
-        if outcome == "printed":  # a job row already purged by retention carries no margin ID
-            job_ids = sorted({jid for n in wanted if (jid := rows[n].job_id) is not None})
-            margin_jobs = await repo.jobs_by_id(session, job_ids)
-        for n in wanted:
-            row = rows[n]
-            if outcome == "not_printed":
-                await session.delete(row)
-                continue
-            before.sheet.last_used_at = now
-            row.state = "used"  # source, purpose, ref and job id stay
-            row.updated_at = now
-            row.updated_by = actor
-            if row.source == "hub":  # the ID label is on the sheet now (spec 7.1)
-                before.sheet.id_printed = True
-            elif row.job_id is not None and repo.margin_id_sheet(margin_jobs.get(row.job_id)):
-                before.sheet.id_printed = True  # the job carried the margin ID
-            # A separate check, not a third ``elif``: the ID-cell job of a ``cell`` sheet
-            # carries the mark too, and its hub cell must set both flags.
-            if row.job_id is not None and repo.feed_mark_sheet(margin_jobs.get(row.job_id)):
-                before.sheet.feed_mark_printed = True
-        await session.flush()
-        detail = await _detail(session, before.sheet)
+        detail = await _settle_unconfirmed(session, before, wanted, outcome, actor)
         await session.commit()
     logger.info(
         "sheet %s: %d cells resolved as %s", log_value(code), len(wanted), log_value(outcome)
+    )
+    _publish(bus, detail, wanted)
+    return detail
+
+
+async def resolve_all_cells(
+    session: AsyncSession,
+    code: str,
+    outcome: Literal["printed", "not_printed"],
+    *,
+    expected_count: int | None,
+    actor: str,
+    bus: EventBus | None = None,
+    expected_cells: list[int] | None = None,
+) -> SheetDetail:
+    """Settle every unconfirmed cell of a sheet in one transaction (#282).
+
+    The unconfirmed set is read under the write lock. ``expected_count`` lets a caller
+    that showed a number to a person refuse the call when the number has changed since;
+    ``expected_cells`` (the cells shown) refuses it when the set changed, also with the same
+    number.
+    """
+    if outcome not in ("printed", "not_printed"):
+        raise InvalidFieldError("outcome", "must be printed or not_printed")
+    async with write_transaction(session):
+        before = await _writable(session, code)
+        wanted = sorted(c.cell_no for c in before.cells if c.state == "unconfirmed")
+        if not wanted:
+            raise NoUnconfirmedCellsError()
+        if expected_count is not None and expected_count != len(wanted):
+            raise UnconfirmedCountChangedError(len(wanted))
+        if expected_cells is not None and sorted(set(expected_cells)) != wanted:
+            raise UnconfirmedCountChangedError(len(wanted))
+        detail = await _settle_unconfirmed(session, before, wanted, outcome, actor)
+        await session.commit()
+    logger.info(
+        "sheet %s: all %d unconfirmed cells resolved as %s",
+        log_value(code),
+        len(wanted),
+        log_value(outcome),
     )
     _publish(bus, detail, wanted)
     return detail
@@ -586,3 +653,131 @@ async def find_cells(session: AsyncSession, *, source: str, ref: str) -> list[Ce
         )
         for code, c in await repo.cells_by_ref(session, source=source, ref=ref)
     ]
+
+
+# ---------------------------------------------------------------- the code on the back (#350)
+
+_SWITCHABLE = ("margin",)
+"""Placements whose unprinted code moves to the back (R-350-11). A ``manual`` sheet is not one of
+them since 1.7.0 (fix round 1 of the sheet code panel): its code was stuck on by hand, so it
+counts as present and gets an extra code on the back instead."""
+_BACK_SIDE_STATES = ("pending", "confirmed")
+
+
+async def confirm_back_side(
+    session: AsyncSession, code: str, *, actor: str, bus: EventBus | None = None
+) -> SheetDetail:
+    """The person saw the code on the back and says it is printed (R-350-6).
+
+    Only this sets ``id_printed`` of a ``back_side`` sheet: a finished job says nothing about
+    smeared toner. On a sheet whose code is printed elsewhere it confirms the extra code on the
+    back (``back_side_state`` ``pending`` -> ``confirmed``); such a sheet without one asked for is
+    refused. A second confirmation changes nothing and is not an error.
+    """
+    del actor  # not logged (CodeQL treats it as sensitive); kept for the call contract
+    async with write_transaction(session):
+        before = await _writable(session, code)
+        sheet = before.sheet
+        if sheet.id_placement == "back_side":
+            changed = not sheet.id_printed
+            sheet.id_printed = True
+        elif sheet.back_side_state in _BACK_SIDE_STATES:
+            changed = sheet.back_side_state != "confirmed"
+            sheet.back_side_state = "confirmed"
+        else:
+            raise IdPlacementMismatchError()
+        await session.flush()
+        detail = await _detail(session, sheet)
+        await session.commit()
+    if changed:
+        logger.info("sheet %s: code on the back confirmed", log_value(code))
+        _publish(bus, detail, [])
+    return detail
+
+
+@dataclass(frozen=True)
+class BackSideTarget:
+    """The sheet a back-side job prints onto and what the request changed on it.
+
+    ``change``: ``switched`` (an unprinted margin sheet now has its code on the back, R-350-11),
+    ``extra`` (a printed or ``manual`` sheet gets its code on the back as well;
+    ``back_side_state`` is ``pending``) or ``None`` (a ``back_side`` sheet, nothing changed).
+    ``previous_state`` is the ``back_side_state`` before an ``extra`` change, for
+    ``undo_extra_back_side``.
+    """
+
+    sheet: Sheet
+    change: Literal["switched", "extra"] | None
+    previous_state: str | None = None
+
+
+async def back_side_sheet_locked(
+    session: AsyncSession, code: str, *, margin_in_flight: bool, actor: str
+) -> BackSideTarget:
+    """The sheet a back-side job prints onto, read under the caller's write lock.
+
+    An ``active`` ``back_side`` sheet is returned as it is. An unprinted ``margin`` sheet whose
+    margin ID is not in flight switches to ``back_side`` (R-350-11; the caller commits and
+    publishes) and records who switched it. A ``manual`` sheet (its code was stuck on by hand)
+    and a sheet whose code is printed (``margin``, ``cell``) keep their placement and get
+    ``back_side_state`` ``pending``: an extra code on the back that the person confirms. Every
+    other sheet (an unprinted ``cell`` sheet, an unprinted ``margin`` sheet whose margin ID is in
+    flight) is refused.
+    """
+    sheet = await _sheet(session, code)
+    if sheet.state == "discarded":
+        raise SheetDiscardedError()
+    if sheet.id_placement == "back_side":
+        return BackSideTarget(sheet, None)
+    if sheet.id_placement in _SWITCHABLE and not sheet.id_printed and not margin_in_flight:
+        sheet.id_placement = "back_side"
+        sheet.placement_changed_at = datetime.now(UTC)
+        sheet.placement_changed_by = actor  # stored like created_by/discarded_by, never logged
+        await session.flush()
+        return BackSideTarget(sheet, "switched")
+    if sheet.id_printed or sheet.id_placement == "manual":
+        previous = sheet.back_side_state
+        sheet.back_side_state = "pending"
+        await session.flush()
+        return BackSideTarget(sheet, "extra", previous)
+    raise IdPlacementMismatchError()
+
+
+async def undo_extra_back_side(
+    session: AsyncSession, code: str, previous: str | None, bus: EventBus | None = None
+) -> None:
+    """Put ``back_side_state`` back after the extra back-side job could not be queued.
+
+    Only a ``pending`` state is put back: a confirmation that came in meanwhile stays, and so does
+    the ``pending`` of a second request whose back-side job is queued or printing (review M2).
+    """
+    async with write_transaction(session):
+        sheet = await repo.get_by_code(session, code)
+        if sheet is None or sheet.back_side_state != "pending":
+            return
+        if await repo.back_side_job_active(session, sheet.id):
+            return
+        sheet.back_side_state = previous
+        await session.flush()
+        detail = await _detail(session, sheet)
+        await session.commit()
+    _publish(bus, detail, [])
+
+
+def back_side_missing(sheet: Sheet) -> bool:
+    """Whether a wanted code on the back is not confirmed yet (1.7.0 acceptance, decision 2).
+
+    A ``back_side`` sheet whose code is not confirmed, or an extra code on the back of another
+    sheet that is still ``pending``. A margin sheet that never asked
+    for a code on the back is complete. A discarded sheet misses nothing.
+    """
+    if sheet.state != "active":
+        return False
+    if sheet.id_placement == "back_side":
+        return not sheet.id_printed
+    return sheet.back_side_state == "pending"
+
+
+async def publish_detail(session: AsyncSession, sheet: Sheet, bus: EventBus | None) -> None:
+    """Publish ``sheet.updated`` for a committed change that touched no cell."""
+    _publish(bus, await _detail(session, sheet), [])

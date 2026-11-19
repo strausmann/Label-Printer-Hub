@@ -14,6 +14,19 @@ export type SheetItem = SheetPrintRequest["items"][number];
 /** Where the labels go: a sheet that exists, or a new one of the chosen type. */
 export type Target = { kind: "sheet"; code: string } | { kind: "new" };
 
+/** The cart link that keeps the sheet and tray chosen here: `sheet` only for an existing sheet, `tray` only where there is a choice of trays. */
+export function cartLink(target: Target | null, tray: string | null, trayCount: number): { to: "/cart"; search: { sheet?: string; tray?: string } } {
+  const search: { sheet?: string; tray?: string } = {};
+  if (target?.kind === "sheet") search.sheet = target.code;
+  if (tray && trayCount > 1) search.tray = tray;
+  return { to: "/cart", search };
+}
+
+/** The tray the section uses: the choice, then the one in the address, then the printer's default, then the first. */
+export function pickTray<T extends { key: string; is_default: boolean }>(trays: readonly T[], choice: string | null, preselected?: string): T | null {
+  return trays.find((x) => x.key === choice) ?? trays.find((x) => x.key === preselected) ?? trays.find((x) => x.is_default) ?? trays[0] ?? null;
+}
+
 export interface Fill {
   /** `first_free` takes the free cells in order; `choose` takes exactly the cells picked by hand. */
   mode: "first_free" | "choose";
@@ -45,10 +58,10 @@ export function expandItems(lines: readonly CartItem[]): SheetItem[] {
 export const freeOf = (s: Pick<SheetSummary, "total" | "used" | "reserved" | "unconfirmed">): number =>
   Math.max(0, s.total - s.used - s.reserved - s.unconfirmed);
 
-/** The placement for one target. `choose` cells and `skip` never go together; a new sheet prints its ID in the margin (the server's default, which takes no cell). */
+/** The placement for one target. `choose` cells and `skip` never go together; a new sheet leaves its ID to the sheet type (#350, R-350-9). */
 export function placementFor(target: Target, typeKey: string, fill: Fill, count?: number): PlacementIn {
   const withCount = count === undefined ? {} : { count };
-  if (target.kind === "new") return { new_sheet: { type: typeKey, id_placement: "margin" }, cells: "first_free", ...withCount };
+  if (target.kind === "new") return { new_sheet: { type: typeKey }, cells: "first_free", ...withCount };
   if (fill.mode === "choose") return { sheet: target.code, cells: [...fill.chosen].sort((a, b) => a - b), ...withCount };
   return {
     sheet: target.code,

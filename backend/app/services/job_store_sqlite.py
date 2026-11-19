@@ -53,19 +53,20 @@ class SQLiteJobStore(JobStore):
         False if the row exists but is no longer QUEUED (the worker must not print).
         """
         async with self._session_factory() as session:
+            # One guarded statement: a cancel that commits meanwhile is never overwritten
+            # (re-review R2-1). Only when nothing was written is the row read, for the answer.
+            if await jobs_repo.mark_printing_if_queued(session, job_id):
+                return True
             job = await jobs_repo.get(session, job_id)
             if job is None:
                 return True  # nothing could have cancelled it (Protocol contract)
-            if job.state != JobState.QUEUED.value:
-                logger.warning(
-                    "mark_printing refused for job %s in state %s (expected queued); "
-                    "the worker will not print it",
-                    job_id,
-                    job.state,
-                )
-                return False
-            await jobs_repo.mark_printing(session, job_id)
-            return True
+            logger.warning(
+                "mark_printing refused for job %s in state %s (expected queued); "
+                "the worker will not print it",
+                job_id,
+                job.state,
+            )
+            return False
 
     async def mark_done(self, job_id: UUID) -> None:
         """Transition PRINTING -> DONE.
@@ -145,7 +146,7 @@ class SQLiteJobStore(JobStore):
         detail: dict[str, Any] | None,
         *,
         result: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> bool:
         """Non-terminal -> FAILED with ``"<code>: <message>"``; ``detail`` into ``result``.
 
         One commit: the result (``result`` or the stored one, plus ``error_detail``) and the
@@ -154,12 +155,12 @@ class SQLiteJobStore(JobStore):
         async with self._session_factory() as session:
             job = await jobs_repo.get(session, job_id)
             if job is None:
-                return
+                return False
             if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
                 logger.warning(
                     "mark_failed_code called on job %s in terminal state %s", job_id, job.state
                 )
-                return
+                return False
             merged = dict(result) if result is not None else dict(job.result or {})
             if detail is not None:
                 merged["error_detail"] = dict(detail)
@@ -169,6 +170,27 @@ class SQLiteJobStore(JobStore):
                 f"{code}: {message}",
                 result=merged if (result is not None or detail is not None) else None,
             )
+            return True
+
+    async def set_loaded_roll(self, job_id: UUID, roll: dict[str, Any]) -> bool:
+        """Record the roll a job was sent to (``payload.loaded_roll``, #389)."""
+        async with self._session_factory() as session:
+            return await jobs_repo.set_loaded_roll(session, job_id, roll)
+
+    async def set_queued_payload(self, job_id: UUID, payload: dict[str, Any]) -> bool:
+        """Replace the payload of a QUEUED job; False when unknown or no longer QUEUED."""
+        async with self._session_factory() as session:
+            return await jobs_repo.set_queued_payload(session, job_id, payload)
+
+    async def mark_queued_failed_restart(self, job_id: UUID, error: str) -> None:
+        """QUEUED -> FAILED_RESTART with *error*. Silently no-op otherwise."""
+        async with self._session_factory() as session:
+            await jobs_repo.mark_queued_failed_restart(session, job_id, error)
+
+    async def mark_queued_many_failed_restart(self, job_ids: list[UUID], error: str) -> list[UUID]:
+        """The QUEUED ones of ``job_ids`` -> FAILED_RESTART in one statement; the changed ids."""
+        async with self._session_factory() as session:
+            return await jobs_repo.mark_queued_many_failed_restart(session, job_ids, error)
 
     async def mark_interrupted(self, printer_id: UUID) -> int:
         """Recovery: mark all PRINTING tape jobs of this printer as FAILED_RESTART."""

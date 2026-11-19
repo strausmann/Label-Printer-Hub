@@ -20,10 +20,16 @@ export const FAKE_CAMERA = {
   qr: resolve(import.meta.dirname, ".tmp", "camera-qr.y4m"),
   dataMatrix: resolve(import.meta.dirname, ".tmp", "camera-data-matrix.y4m"),
   sheet: resolve(import.meta.dirname, ".tmp", "camera-sheet.y4m"),
+  grocycode: resolve(import.meta.dirname, ".tmp", "camera-grocycode.y4m"),
+  grocyBattery: resolve(import.meta.dirname, ".tmp", "camera-grocy-battery.y4m"),
   qrText: "https://hub.example.invalid/asset/42",
   dataMatrixText: "https://hub.example.invalid/spool/5",
   /** The sheet ID cell of the first seeded L4736REV sheet, as the scanner reads it. */
   sheetText: "sheet:L4736-0001",
+  /** A Grocy product label, as Grocy prints it. */
+  grocycodeText: "grcy:p:13",
+  /** A Grocy battery label; the e2e hub's Grocy fake knows battery 4. */
+  grocyBatteryText: "grcy:b:4",
 };
 
 /** The throw-away hub the README screenshots are taken from (`playwright.screenshots.config.ts`). */

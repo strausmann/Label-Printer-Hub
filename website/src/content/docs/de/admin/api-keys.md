@@ -13,12 +13,12 @@ Alles, was kein Browser hinter einem SSO-Proxy ist, meldet sich mit einem API-Sc
 | `print` | Lesen und drucken | Apps und Skripte, die drucken |
 | `admin` | Alles, auch Einstellungen und Schlüssel | Menschen, die den Hub verwalten |
 
-Jeder Bereich schließt die darüber ein. Ein Schlüssel lässt sich außerdem auf einzelne Drucker beschränken; eine leere Liste erlaubt alle.
+Jeder Bereich schließt die darüber ein. Ein `read`- oder `print`-Schlüssel lässt sich außerdem auf einzelne Drucker beschränken; eine leere Liste erlaubt alle. Ein Schlüssel mit dem Bereich `admin` wirkt immer auf jeden Drucker und lässt sich deshalb nicht beschränken: Eine Druckerliste an einem Admin-Schlüssel lehnt der Hub mit `422` und `admin_key_not_restrictable` ab.
 
 ## Einen Schlüssel anlegen
 
 1. Melde dich mit einem Admin-Schlüssel an und öffne **Einstellungen > Zugang und Schlüssel**.
-2. Leg einen Schlüssel an, mit einem Namen, der sagt, wer ihn nutzt, mit Bereich, Druckern und Ratenlimit.
+2. Leg einen Schlüssel an, mit einem Namen, der sagt, wer ihn nutzt, und einem Bereich. Das Formular setzt weder eine Druckerliste noch ein Ratenlimit; setze `allowed_printer_ids` (nicht bei `admin`) und `rate_limit_per_minute` über die API, mit `POST /api/v1/admin/api-keys` oder `PATCH /api/v1/admin/api-keys/{id}`.
 3. Kopier den Schlüssel. Er wird **einmal** angezeigt; der Hub speichert nur einen bcrypt-Hash davon.
 
 Leg einen Schlüssel je Aufrufer an, damit du einen widerrufen kannst, ohne die anderen anzufassen.
@@ -37,9 +37,21 @@ curl -X POST https://labelyard.example.com/api/v1/print \
 
 Anfragen, die sich mit einem Schlüssel im Header anmelden, laufen nicht durch die CSRF-Prüfung; die schützt nur Browsersitzungen.
 
+## Schlüssel in einer Adresse
+
+Eine Route nimmt einen Schlüssel in der Adresse statt im Header an: Grocys Etikettendrucker-Webhook, `POST /api/v1/webhook/grocy/label?token=<schlüssel>`, weil Grocy keine Header schicken kann ([ADR 0027](https://github.com/strausmann/labelyard/blob/main/docs/decisions/0027-url-token-for-the-grocy-label-webhook.md)). Alle anderen Routen ignorieren einen Parameter `token`.
+
+Einen Schlüssel in einer Adresse sieht mehr als nur der Hub. Grocy schreibt die Adresse in sein eigenes Protokoll. Außerdem zeigt Grocy sie dem Grocy-Nutzer, wenn der Hub ein Etikett ablehnt oder nicht innerhalb von 2 Sekunden antwortet. Auch Proxys protokollieren sie oft. Der Hub verbirgt den Wert in seinen eigenen Protokollen. Deshalb:
+
+- Dort geht nur ein `print`-Schlüssel. Ein `read`-Schlüssel antwortet mit `403` und `insufficient_scope`, ein `admin`-Schlüssel mit `403` und `token_scope_too_wide`.
+- Leg einen Schlüssel nur für Grocy an und beschränke ihn auf die Drucker von Grocys Etiketten. Ein Etikett, das einem anderen Drucker zugeordnet ist, antwortet dann mit `403` und `printer_not_allowed`.
+- Wurde die Adresse gesehen, wo sie nicht hingehört, widerruf den Schlüssel und leg einen neuen an.
+
 ## Ratenlimits
 
 Standard sind 60 Anfragen pro Minute und Schlüssel, einstellbar von 1 bis 10.000. Darüber antwortet der Hub mit `429`, einem Header `Retry-After` und dem Fehlercode `rate_limit_exceeded`.
+
+Eine Anfrage, die mehrere Objekte nachschlägt, zählt mehr als eine Anfrage: Die Anfrage selbst bezahlt das erste Nachschlagen, jedes weitere nimmt eine weitere Anfrage vom Kontingent (nie mehr als das Kontingent einer vollen Minute). Das gilt für Band-Stapel (`POST /api/v1/print/{printer}/batch`, Einträge mit `lookup`) und für `POST /api/v1/render/check` (jedes verschiedene Objekt). Reicht das übrige Kontingent dafür nicht, antwortet der Hub vor dem ersten Nachschlagen mit `429` und `rate_limit_exceeded`; ein Stapel, der vor dem ersten Nachschlagen abgelehnt wird, gibt das Kontingent zurück.
 
 ## Bögen
 

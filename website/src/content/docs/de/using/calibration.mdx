@@ -1,0 +1,110 @@
+---
+title: Seitendrucker kalibrieren
+description: Drucke die Kalibrierseite auf einen echten Bogen, lies die Abweichung an fünf Kreuzungen ab und lass Labelyard jeden Druck korrigieren.
+---
+
+import Crossing from "../../../../assets/guide/crossing.svg";
+import SheetCrossings from "../../../../assets/guide/sheet-crossings.svg";
+import Screenshot from "../../../../components/Screenshot.astro";
+
+Ein Seitendrucker druckt selten genau dorthin, wo die Seite es vorgibt. Das Papier verschiebt sich im Fach ein wenig, der Druck ist einen Hauch zu groß oder zu klein, und ein Etikettenbogen lässt dafür keinen Spielraum: Ein Druck, der einen halben Millimeter daneben liegt, trifft schon den Rand eines Etiketts. Die **Kalibrierung** misst, wie weit ein Fach danebenliegt. Labelyard verschiebt dann jeden Druck aus diesem Fach um das Gegenteil.
+
+Das machst du einmal je Drucker und Fach und noch einmal, wenn du das Papier oder das Fach wechselst. Es dauert etwa zehn Minuten. Öffne **Kalibrierung** in der Web-App; sie führt dich durch drei Schritte: Kalibrierseite drucken, Abweichung eingeben, Ergebnis prüfen.
+
+## Was du brauchst
+
+- Den Seitendrucker, hinzugefügt als **Seitendrucker (IPP)** mit seinen Fächern. Siehe [Drucker](/de/install/printers/#seitendrucker).
+- Einen echten Bogen des Bogentyps, auf den du drucken wirst. Drucke auf den Bogen selbst, nicht auf Normalpapier: Die Schnitte der Etiketten sind das, woran du misst.
+- Den richtigen **Bogentyp**. Stimmen seine Maße nicht, kann die Kalibrierung nicht stimmen; siehe [Bögen und Layouts](/de/using/sheets/).
+
+## Schritt 1: Kalibrierseite drucken
+
+Wähle den Drucker, das Fach und den Bogentyp und drücke **Kalibrierseite drucken** (oder lade das PDF herunter und drucke es selbst). Die Seite zeigt die Schnittlinien des Bogentyps und an jeder Kreuzung zwischen vier Etiketten eine kleine Skala.
+
+Die Seite startet mit dem Fach, aus dem deine Bogen zuletzt gedruckt wurden. Kalibriere dieses Fach; die Seite warnt, wenn die Kalibrierseite aus einem anderen Fach kam.
+
+Du kannst auf jedes Feld eine Nummer schreiben, Zeile für Zeile; das ist freiwillig und hilft bei Fotos vom Bogen.
+
+## Schritt 2: Abweichung eingeben
+
+### Eine Kreuzung
+
+<div class="ly-guide-figure">
+<Crossing role="img" aria-label="So liest du eine Kreuzung ab" />
+</div>
+
+1. Die beiden Kanten der Lücke zwischen zwei Spalten: die Seiten der Etiketten.
+2. Die Mitte dieser Lücke (Strich-Punkt-Linie). Hier sollte die gedruckte Linie liegen.
+3. Der Schnitt zwischen zwei Zeilen.
+
+- Dicke durchgezogene Linie: die gedruckte **S-Linie**. Dicke gestrichelte Linie: die gedruckte **Z-Linie** (punktiert bei einem Bogen ohne Lücke zwischen den Zeilen, wie in der Zeichnung). S zählt die Lücken zwischen den Spalten, Z die Lücken zwischen den Zeilen.
+- Die Zahlen auf der Skala sind der Wert, den du eingibst, wenn die Mitte der Lücke (quer) oder der Schnitt (abwärts) dort liegt.
+- Die Skala liegt auf beiden Linien: 0 auf der gedruckten Linie, ein langer Strich alle 1 mm, ein kurzer alle 0,5 mm, bis ±2 mm.
+- Beispiel: Die Mitte der Lücke liegt 0,6 mm links von der gedruckten Linie und der Schnitt 0,4 mm darüber. Die Skala zeigt dort +0,6 und +0,4, also ist quer +0,6 und abwärts +0,4.
+
+Sieh an einer Kreuzung nach, wo die Mitte der Lücke (quer) oder der Schnitt (abwärts) auf der Skala liegt, und zähle den Abstand zur gedruckten Linie ab. Zwischen zwei Strichen schätzt du auf 0,1 mm nach Augenmaß. Die Vorzeichen:
+
+- **+ quer** = die Farbe liegt rechts von der Mitte der Lücke, **− quer** = links davon.
+- **+ abwärts** = die Farbe liegt unterhalb des Schnitts, **− abwärts** = darüber.
+
+Hat der Bogen keine Lücke zwischen den Zeilen, liegt die Z-Linie auf dem Schnitt. Zieh nur dann jedes zweite Etikett ab (Schachbrett), wenn der Schnitt schwer zu sehen ist.
+
+### Welche Kreuzungen
+
+Lies mindestens die vier äußeren Kreuzungen und die in der Mitte ab. Die Zeichnung zeigt sie für einen Bogen mit 4 Spalten und 12 Zeilen; die Web-App zeichnet die deines Bogentyps.
+
+<div class="ly-guide-figure ly-guide-sheet">
+<SheetCrossings role="img" aria-label="Die abzulesenden Kreuzungen auf einem Bogen mit 4 Spalten und 12 Zeilen" />
+</div>
+
+1. S1 · Z1
+2. S3 · Z1
+3. S1 · Z11
+4. S3 · Z11
+5. S2 · Z6 (Mitte)
+
+Die Nummern in der Zeichnung folgen dieser Liste. S zählt die Lücken zwischen den Spalten von links, Z die Lücken zwischen den Zeilen von oben.
+
+### Messwerte eingeben
+
+Gib die Messwerte im **Messwert-Helfer** ein: Wähle zu jedem die Kreuzung, tippe die Werte für quer und abwärts ein (Dezimalkomma oder -punkt gehen beide) und drücke **Berechnen**. Labelyard berechnet aus deinen Messwerten Versatz, Maßstab und Drehung des Fachs und trägt die Werte unten ein. Noch ist nichts gespeichert: Prüfe die Werte und speichere sie dann. Ein Messwert, der nicht zu den anderen passt, ist mit **diesen Messwert prüfen** markiert; lies diese Kreuzung noch einmal ab.
+
+Auf einem Bogen mit nur zwei Spalten oder zwei Zeilen liegen alle Kreuzungen auf einer Linie; die Messwerte lassen sich dann nicht berechnen, und der Messwert-Helfer wird nicht angeboten. Gib die Werte direkt in das Formular darunter ein.
+
+<div>
+<Screenshot shot="calibration" lang="de" alt="Die Kalibrierseite der Web-App: die drei Schritte, der gewählte Bogentyp und darunter der Messwert-Helfer." />
+</div>
+
+## Schritt 3: Ergebnis prüfen
+
+Drucke die Kontrollseite. Es ist dieselbe Seite, jetzt mit der Korrektur. Liegt jede Kreuzung innerhalb von ±0,5 mm, bist du fertig. Wenn nicht, miss noch einmal und stell nach.
+
+## Drucker oder Bogentyp?
+
+Liegt die Seite danach immer noch daneben, sagt dir die Abweichung, wo du suchen musst. Vergleiche, was du siehst, mit dieser Tabelle:
+
+<div class="ly-causes">
+
+| Was du siehst | Ursache | Was tun |
+|---|---|---|
+| Überall der gleiche Versatz in eine Richtung, auf jedem Bogentyp | Versatz von Drucker oder Fach | Kalibrieren, die Korrektur gleicht es aus |
+| Die Abweichung wächst mit dem Abstand, auf jedem Bogentyp, quer und abwärts möglicherweise unterschiedlich stark | Maßstab des Druckers (er druckt zu groß oder zu klein) | Kalibrieren |
+| Eine senkrechte Linie wandert nach unten seitlich weg, oder die Zeilen stehen schief (eine Seite höher als die andere) | Drehung (der Drucker druckt schief) | Kalibrieren |
+| Gleicher Versatz oder Wandern nur bei einem Bogentyp, andere Bögen mit derselben Korrektur sitzen | Maße des Bogentyps (Rand, Abstand, Etikettenhöhe) | Bogentyp korrigieren (neue Fassung), nicht den Drucker |
+| Sprung zwischen zwei benachbarten Lücken | Bogentyp (Lücke, Spalten- oder Zeilenzahl) | Bogentyp korrigieren |
+| Seitlicher Versatz, der von Blatt zu Blatt anders ist | Papiereinzug | Blatt an der Führung anlegen, ein zweites Blatt drucken; die Korrektur erst bei Wiederholung ändern |
+| Gleichmäßiger Rest unter etwa 0,2 mm | Messgenauigkeit | Nichts tun |
+
+</div>
+
+Ein falscher Abstand zeigt sich nicht als Sprung, sondern als stetiges Wandern, ähnlich einem Maßstabsfehler des Druckers. Deshalb kommt es auf die Bogentypen an: Wandert ein Typ, während andere mit derselben Korrektur sitzen, sieh dir diesen Typ an. Ein echter Fall war ein Bogentyp, dessen Zeilenabstand 9,98 statt 10,0 mm betrug.
+
+Für den Kontrolldruck gilt dieselbe Regel: Liegt jede Kreuzung innerhalb von ±0,5 mm, bist du fertig. Ein größerer Rest oder einer, der zu einem Rand hin wächst, gehört zu einer der Zeilen oben.
+
+### Hinweise zum Ablesen
+
+- Lies quer und abwärts an jeder Kreuzung getrennt ab, jeweils als Zahl. „Sieht mittig aus“ ist kein Messwert.
+- Lies Kreuzungen in der ersten, mittleren und letzten Zeile und Spalte ab; sonst bleibt ein Wandern unsichtbar.
+- Ist die Skala schwer zu lesen, dient die bekannte Lückenbreite (Spaltenabstand minus Etikettenbreite) als Lineal.
+- Datenblätter der Hersteller können danebenliegen. Miss einen Abstand mit dem Lineal über zehn Etiketten und teile durch zehn.
+- Für Fotos: volle Auflösung, an jede Kreuzung heranzoomen, und flaches Licht macht den Schnitt sichtbar. Gebogenes Papier lässt Linien krumm wirken, beurteile deshalb nur an der Kreuzung.

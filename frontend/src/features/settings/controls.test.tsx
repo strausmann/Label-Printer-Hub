@@ -7,7 +7,7 @@ import userEvent from "@testing-library/user-event";
 import { ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { describe, expect, it, vi } from "vitest";
 import { i18n, initI18n } from "../../i18n";
-import { ModalDialog } from "./controls";
+import { ModalDialog, SelectField } from "./controls";
 
 async function open(props: Partial<React.ComponentProps<typeof ModalDialog>> = {}, lang: "en" | "de" = "en") {
   await initI18n(lang);
@@ -103,5 +103,49 @@ describe("ModalDialog dim area (#318)", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
     // The press kept the focus where it was: the field was not given it again, so its list (and a phone's keyboard) did not reopen.
     expect(input).toHaveFocus();
+  });
+});
+
+describe("SelectField without a selected option", () => {
+  const options = [{ id: "a", label: "Tray A" }];
+
+  it("shows React Aria's own placeholder when the field names none", async () => {
+    await initI18n("en");
+    render(<SelectField label="Tray" value="" options={options} onChange={() => {}} />);
+    expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Select an item");
+  });
+
+  it("shows the field's placeholder when it names one, and the label of a chosen option", async () => {
+    await initI18n("en");
+    const { rerender } = render(<SelectField label="Tray" value="" options={options} onChange={() => {}} placeholder="Choose a tray" />);
+    expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Choose a tray");
+    rerender(<SelectField label="Tray" value="a" options={options} onChange={() => {}} placeholder="Choose a tray" />);
+    expect(screen.getByRole("button", { name: /Tray$/ })).toHaveTextContent("Tray A");
+  });
+});
+
+describe("SelectField list placement", () => {
+  it("opens its list above the trigger when the visible area is short", async () => {
+    await initI18n("en");
+    const view = Object.assign(new EventTarget(), { height: 400, offsetTop: 0 });
+    Object.defineProperty(window, "visualViewport", { configurable: true, value: view });
+    try {
+      render(
+        <I18nProvider i18n={i18n}>
+          <SelectField label="Printer" value="a" onChange={() => {}} options={[{ id: "a", label: "Alpha" }, { id: "b", label: "Beta" }]} />
+        </I18nProvider>,
+      );
+      const trigger = screen.getByRole("button", { name: /Printer/ });
+      // Sits at 330-374 in a visible area of 400: 26 px below it, 318 above.
+      trigger.getBoundingClientRect = () => ({ top: 330, bottom: 374, left: 0, right: 200, width: 200, height: 44, x: 0, y: 330, toJSON() {} });
+      await userEvent.click(trigger);
+      const popover = document.querySelector<HTMLElement>('[data-trigger="Select"]')!;
+      expect(popover).not.toBeNull();
+      expect(popover.getAttribute("data-placement")).toBe("top");
+      // Not an exact number: jsdom has no layout, so React Aria sets its own max-height here; the exact room is the hook tests' job.
+      expect(parseFloat(popover.style.maxHeight)).toBeLessThanOrEqual(318);
+    } finally {
+      Reflect.deleteProperty(window, "visualViewport");
+    }
   });
 });

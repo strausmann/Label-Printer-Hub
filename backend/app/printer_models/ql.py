@@ -23,6 +23,7 @@ from PIL import Image
 
 from app.models.tape import TapeSpec
 from app.printer_backends.base import PrinterBackend
+from app.printer_backends.post_send import POST_SEND_SETTLE_S, check_after_send
 from app.printer_models.base import PrinterModel
 from app.printer_models.registry import ModelRegistry
 from app.schemas.label_layout import LabelOrientation
@@ -223,12 +224,15 @@ class _QLQueuePrinter:
         tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
         # The PrinterBackend protocol has no ``orientation``; the QL backend does.
         backend: Any = self._backend
+        # #393: the test print decides how this printer confirms its prints.
+        detect = bool(options.pop("detect_confirmation", False))
         await backend.print_image(
             image,
             tape_spec,
             auto_cut=bool(options.pop("auto_cut", True)),
             high_resolution=bool(options.pop("high_resolution", False)),
             orientation=_orientation(options.pop("orientation", None)),
+            **({"detect_confirmation": True} if detect else {}),
         )
 
     async def print_images(
@@ -266,16 +270,56 @@ class _QLQueuePrinter:
             orientation=_orientation(options.pop("orientation", None)),
         )
 
-    async def check_status(self) -> None:
-        """#277: the status check after each group of a tape run: the SNMP preflight.
+    def check_label_lengths(
+        self, images: list[Image.Image], *, tape_mm: int, **options: Any
+    ) -> None:
+        """Audit run 27: refuse labels longer than the tape allows when they are submitted
+        (``TapeLabelTooLongError``), measured by this printer's backend as it would send them.
+        A tape without a spec is left to the send, which refuses it there."""
+        from app.services.tape_registry import UnknownTapeError
 
-        Not verified on hardware whether the QL-820NWB sets ``noPaper`` when a DK roll ends;
-        the brother_ql network backend reads nothing back while printing. Without that bit
-        the check catches only an unreachable printer (``PrinterOfflineError``) and an open
-        cover.
+        media_type = options.get("media_type", self._default_media_type)
+        try:
+            tape_spec = self._tape_registry.lookup_ql(tape_mm, media_type)
+        except UnknownTapeError:
+            return
+        check = getattr(self._backend, "check_label_lengths", None)
+        if check is None:
+            return
+        check(
+            images,
+            tape_spec,
+            high_resolution=bool(options.get("high_resolution", False)),
+            orientation=_orientation(options.get("orientation")),
+        )
+
+    post_send_settle_s: float | None = None
+    """Wait before the status is read after sending (#389). ``None``: the backend's own
+    ``post_send_settle_s`` (the mock backend has no printer to wait for), else
+    ``POST_SEND_SETTLE_S``."""
+
+    def roll_at_send(self) -> dict[str, object] | None:
+        """#389: the roll the backend's last send was checked against, for the job record."""
+        get = getattr(type(self._backend), "roll_at_send", None)
+        return None if get is None else get(self._backend)
+
+    async def check_status(self) -> None:
+        """#277: the status check after each group of a tape run (``check_after_send``)."""
+        await self.check_after_send()
+
+    async def check_after_send(self) -> None:
+        """#389: after a job was sent, read the status once; an error state fails the job.
+
+        Raises ``TapeEmptyError``, ``PrinterCoverOpenError``, ``PrinterReportedError`` (any
+        other error bit) or ``PrinterOfflineError`` when the status cannot be read.
+        Not verified on hardware whether the QL-820NWB sets ``noPaper`` when a DK roll ends, or
+        which bit it sets for a wrong roll type; the brother_ql network backend reads nothing
+        back while printing.
         """
-        backend: Any = self._backend  # the PrinterBackend protocol has no preflight_check
-        await backend.preflight_check()
+        settle_s = self.post_send_settle_s
+        if settle_s is None:
+            settle_s = float(getattr(self._backend, "post_send_settle_s", POST_SEND_SETTLE_S))
+        await check_after_send(self._backend, settle_s=settle_s)
 
 
 def _orientation(value: object) -> LabelOrientation | None:

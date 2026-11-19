@@ -12,14 +12,15 @@ import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { Badge } from "../archive/fields";
 import { isLookupApp, useAppName } from "../lookup/apps";
-import { TextInput } from "../settings/controls";
+import { ModalDialog, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
-import { useMarkCells, useResolveCells, useSheet, useUnmarkCells, type SheetRead } from "./api";
+import { useMarkCells, useResolveAllCells, useResolveCells, useSheet, useUnmarkCells, type SheetRead } from "./api";
 import { cellStateWord, formatMm, type GridCell, type Translate } from "./cellState";
 import { useSheetErrorText } from "./errors";
 import { sheetKey } from "./keys";
 import { SheetGrid, SheetLegend } from "./SheetGrid";
 import { DiscardDialog, Usage } from "./SheetsPage";
+import { SheetCodePanel } from "./SheetCodePanel";
 
 /** The server's limit for the purpose of one cell (`MarkedCellIn.purpose`). */
 const MAX_PURPOSE = 120;
@@ -47,7 +48,7 @@ function useCellLine(): (cell: CellData) => string {
   return (cell) => {
     const n = cell.cell;
     const purpose = cell.purpose && cell.purpose.trim() !== "" ? cell.purpose : t`no purpose`;
-    const source = cell.is_id_cell ? t({ message: "Sheet ID", context: "cell source" }) : sourceName(cell.source);
+    const source = cell.is_id_cell ? t({ message: "Sheet code", context: "cell source" }) : sourceName(cell.source);
     return t`Cell ${n} → ${purpose} · ${source}`;
   };
 }
@@ -90,12 +91,17 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const mark = useMarkCells();
   const unmark = useUnmarkCells();
   const resolve = useResolveCells();
+  const resolveAll = useResolveAllCells();
+  // The cells are frozen when the question opens: they are the ones the person read (the question names their
+  // number), and the ones the server checks.
+  const [resolvingAll, setResolvingAll] = useState<{ outcome: "printed" | "not_printed"; cells: number[] } | null>(null);
   const [chosenMode, setChosenMode] = useState<Mode>("view");
   const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
   const [purpose, setPurpose] = useState("");
   const [inspected, setInspected] = useState<number | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const unconfirmedHeading = useRef<HTMLHeadingElement>(null);
+  const sheetHeading = useRef<HTMLHeadingElement>(null);
 
   const discarded = sheet.state === "discarded";
   const byNumber = useMemo(() => new Map(sheet.cells.map((c) => [c.cell, c])), [sheet.cells]);
@@ -121,6 +127,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const selectable = (c: GridCell) => (mode === "mark" ? !byNumber.has(c.cell) : mode === "unmark" ? handMarked.has(c.cell) : false);
 
   function enter(next: Mode) {
+    resolveAll.reset();
     mark.reset();
     unmark.reset();
     setPicked(new Set());
@@ -140,6 +147,29 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   /** A refused write often means the sheet changed under us: show its current state. */
   const reload = () => void client.invalidateQueries({ queryKey: sheetKey(code) });
 
+  function askResolveAll(outcome: "printed" | "not_printed") {
+    resolveAll.reset();
+    setResolvingAll({ outcome, cells: unconfirmed.map((c) => c.cell).sort((a, b) => a - b) });
+  }
+  function confirmResolveAll() {
+    if (!resolvingAll) return;
+    const { outcome, cells } = resolvingAll;
+    resolveAll.mutate(
+      { code, outcome, expectedCells: cells },
+      {
+        onSuccess: () => {
+          setResolvingAll(null);
+          // The button that was pressed is gone with its section: focus the page's own heading instead of dropping to the body.
+          setTimeout(() => sheetHeading.current?.focus(), 0);
+        },
+        onError: () => {
+          setResolvingAll(null);
+          reload();
+        },
+      },
+    );
+  }
+
   function submitMark() {
     const text = purpose.trim();
     mark.mutate({ code, cells: chosen.map((cell) => (text ? { cell, purpose: text } : { cell })) }, { onSuccess: leave, onError: reload });
@@ -148,9 +178,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
     unmark.mutate({ code, cells: chosen }, { onSuccess: leave, onError: reload });
   }
 
-  const idNotPrinted = !discarded && sheet.id_placement !== "manual" && !sheet.id_printed;
   const sizeLine = `${formatMm(sheet.label_w, i18n.locale).replace(/ mm$/, "")} × ${formatMm(sheet.label_h, i18n.locale)}`;
-  const placementWord = { cell: t`in a cell`, margin: t`in the margin`, manual: t`added by hand` }[sheet.id_placement];
   const writing = mode === "mark" ? mark : unmark;
   const inspectedCell = inspected === null ? null : byNumber.get(inspected);
   // What the grid draws wins: a cell chosen to mark shows as used, one chosen to un-mark as free.
@@ -171,20 +199,16 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
     <div className="flex min-w-0 flex-col gap-6">
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="min-w-0 font-mono text-title font-bold [overflow-wrap:anywhere]">{code}</h1>
+          <h1 ref={sheetHeading} tabIndex={-1} className="min-w-0 font-mono text-title font-bold outline-none [overflow-wrap:anywhere]">
+            {code}
+          </h1>
           {discarded ? <Badge tone="warn">{t({ message: "discarded", context: "sheet state" })}</Badge> : null}
         </div>
         <p className="text-ink-2 [overflow-wrap:anywhere]">
           {sheet.type_label} · {sizeLine}
         </p>
         {discarded && sheet.discarded_at ? (
-          <p className="font-bold">{t`Discarded on ${discardedOn}, this ID is not used again.`}</p>
-        ) : null}
-        {idNotPrinted ? (
-          <div className="flex flex-col gap-0.5">
-            <p className="font-bold">{t`Sheet ID not printed yet`}</p>
-            {sheet.unconfirmed > 0 ? <p className="text-ink-2">{t`Resolve the unconfirmed cells first; the sheet ID waits for them`}</p> : null}
-          </div>
+          <p className="font-bold">{t`Discarded on ${discardedOn}, this code is not used again.`}</p>
         ) : null}
       </div>
 
@@ -196,9 +220,6 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             </h2>
             <Usage sheet={sheet} />
             <dl className="m-0 flex flex-col gap-1.5 text-small">
-              <Fact label={t`Sheet ID`}>
-                {sheet.id_printed ? t`printed` : t`not printed yet`}, {placementWord}
-              </Fact>
               <Fact label={t`Feed mark printed`}>{sheet.feed_mark_printed ? t`yes` : t`no`}</Fact>
               <Fact label={t`Last used`}>{sheet.last_used_at ? <Time iso={sheet.last_used_at} withTime /> : t`Not used yet`}</Fact>
               <Fact label={t`Sheet type`}>
@@ -207,6 +228,8 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
               {sheet.note ? <Fact label={t`Note`}>{sheet.note}</Fact> : null}
             </dl>
           </section>
+
+          <SheetCodePanel sheet={sheet} canWrite={canWrite} />
 
           {canEdit && mode === "view" ? (
             <section aria-label={t`Actions`} className="flex flex-wrap items-center gap-3">
@@ -235,12 +258,29 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             </section>
           ) : null}
 
+          {/* Outside the section: when the last unconfirmed cell is settled elsewhere the section goes, the words stay. */}
+          {canEdit && resolveAll.isError ? (
+            <p role="alert" className="font-bold text-bad">
+              {errorText(resolveAll.error, t`The cells could not be resolved.`)}
+            </p>
+          ) : null}
+
           {canEdit && unconfirmed.length > 0 ? (
             <section aria-labelledby="unconfirmed-heading" className={`${PANEL} flex flex-col gap-3`}>
               <h2 id="unconfirmed-heading" ref={unconfirmedHeading} tabIndex={-1} className={`${SECTION_HEADING} outline-none`}>
                 {t`Unconfirmed cells`}
               </h2>
               <p className="text-small text-ink-2">{t`These labels were sent to the printer, but nobody confirmed the result. Say what became of each one.`}</p>
+              {unconfirmed.length >= 2 ? (
+                <span className="flex flex-wrap gap-2">
+                  <Button isDisabled={resolve.isPending || resolveAll.isPending} onPress={() => askResolveAll("printed")} className={SECONDARY_BUTTON}>
+                    {t`Resolve all as printed`}
+                  </Button>
+                  <Button isDisabled={resolve.isPending || resolveAll.isPending} onPress={() => askResolveAll("not_printed")} className={SECONDARY_BUTTON}>
+                    {t`Resolve all as not printed`}
+                  </Button>
+                </span>
+              ) : null}
               <ul className="m-0 flex list-none flex-col gap-3 p-0">
                 {unconfirmed.map((c) => {
                   const n = c.cell;
@@ -249,17 +289,17 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
                       <span className="text-small [overflow-wrap:anywhere]">{cellLine(c)}</span>
                       <span className="flex flex-wrap gap-2">
                         <Button
-                          isDisabled={resolve.isPending}
+                          isDisabled={resolve.isPending || resolveAll.isPending}
                           aria-label={t`Printed, cell ${n}`}
-                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "printed" }, { onError: reload })}
+                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "printed" }, { onSuccess: () => resolveAll.reset(), onError: reload })}
                           className={SECONDARY_BUTTON}
                         >
                           {t({ message: "Printed", context: "resolve an unconfirmed cell" })}
                         </Button>
                         <Button
-                          isDisabled={resolve.isPending}
+                          isDisabled={resolve.isPending || resolveAll.isPending}
                           aria-label={t`Not printed, cell ${n}`}
-                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "not_printed" }, { onError: reload })}
+                          onPress={() => resolve.mutate({ code, cells: [n], outcome: "not_printed" }, { onSuccess: () => resolveAll.reset(), onError: reload })}
                           className={SECONDARY_BUTTON}
                         >
                           {t({ message: "Not printed", context: "resolve an unconfirmed cell" })}
@@ -371,6 +411,38 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
           </details>
         </div>
       </div>
+
+      {canEdit ? (
+        <ModalDialog
+          title={
+            !resolvingAll
+              ? ""
+              : resolvingAll.outcome === "not_printed"
+                ? plural(resolvingAll.cells.length, { one: "Resolve # cell as not printed?", other: "Resolve # cells as not printed?" })
+                : plural(resolvingAll.cells.length, { one: "Resolve # cell as printed?", other: "Resolve # cells as printed?" })
+          }
+          isOpen={resolvingAll !== null}
+          // A request in flight is not taken back by closing the question: it stays until the answer is in.
+          onClose={() => {
+            if (!resolveAll.isPending) setResolvingAll(null);
+          }}
+          alert
+        >
+          <p>
+            {resolvingAll?.outcome === "not_printed"
+              ? t`These labels are not on the sheet. The cells become free again.`
+              : t`These labels are on the sheet. The cells stay marked as used.`}
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button isDisabled={resolveAll.isPending} onPress={confirmResolveAll} className={PRIMARY_BUTTON}>
+              {resolvingAll?.outcome === "not_printed" ? t`Resolve as not printed` : t`Resolve as printed`}
+            </Button>
+            <Button isDisabled={resolveAll.isPending} onPress={() => setResolvingAll(null)} className={SECONDARY_BUTTON}>
+              {t`Cancel`}
+            </Button>
+          </div>
+        </ModalDialog>
+      ) : null}
 
       {canEdit ? (
         <DiscardDialog

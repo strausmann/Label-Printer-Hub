@@ -72,3 +72,19 @@ def test_printer_status_last_error_round_trips():
     data = s.model_dump()
     assert data["last_error"] == "timed out after 5s"
     assert data["online"] is False
+
+
+def test_printer_status_last_trays_default_to_none():
+    s = PrinterStatus(printer_id=uuid4())
+    assert s.last_sheet_tray is None
+    assert s.last_calibration_print is None
+
+
+def test_calibration_print_time_is_utc_rfc3339():
+    """A naive ``at`` (SQLite hands back no zone) is read as UTC and ends in ``Z``."""
+    from app.schemas.printer import CalibrationPrintRead
+
+    naive = CalibrationPrintRead(tray="manual", at=datetime(2026, 11, 15, 8, 30, 0))
+    assert naive.model_dump(mode="json")["at"] == "2026-11-15T08:30:00Z"
+    aware = CalibrationPrintRead(tray="manual", at=datetime(2026, 11, 15, 8, 30, tzinfo=UTC))
+    assert aware.model_dump(mode="json")["at"] == "2026-11-15T08:30:00Z"

@@ -3,11 +3,12 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { useInfo } from "../app/session";
+import { useInfo, useSession } from "../app/session";
 import { IntegrationNavEntries } from "./IntegrationNav";
-import { NAV_GROUPS, visibleGroups, type NavGroup } from "./features";
+import { navGroups } from "./features";
 import { useNavLabels } from "./labels";
-import { StatusBadge } from "./StatusBadge";
+import { ConnectionStatus } from "./ConnectionStatus";
+import { UpdateSidebarNotice } from "./UpdateNotice";
 import { SourceLink } from "../features/about/SourceLink";
 import { useConfiguredIntegrations } from "../features/integrations/api";
 import { messages } from "../i18n/messages";
@@ -25,19 +26,12 @@ export function Sidebar() {
   const info = useInfo();
   const labels = useNavLabels();
   const integrations = useConfiguredIntegrations();
-  const shown = visibleGroups((feature) => info.data?.features[feature] ?? false);
-  // The integrations come from `/api/v1/info`, not from `NAV_GROUPS`: the group exists as soon as one is visible.
-  const groups = NAV_GROUPS.flatMap((g): NavGroup[] => {
-    const entry = shown.find((v) => v.id === g.id);
-    if (entry) return [entry];
-    return g.id === "integrations" && integrations.length > 0 ? [{ ...g, entries: [] }] : [];
+  const session = useSession();
+  const groups = navGroups({
+    isOn: (feature) => info.data?.features[feature] ?? false,
+    admin: session.scope === "admin",
+    integrations,
   });
-
-  const status = info.data
-    ? { state: "ok" as const, label: t`Connected · v${info.data.version}` }
-    : info.isError
-      ? { state: "bad" as const, label: t`Server unreachable` }
-      : { state: "idle" as const, label: t`Connecting…` };
 
   return (
     <aside className="fixed inset-y-0 left-0 z-10 hidden w-64 flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface lg:flex">
@@ -80,7 +74,11 @@ export function Sidebar() {
         })}
       </nav>
       <div className="flex flex-col gap-3 border-t border-line px-6 py-4">
-        <StatusBadge state={status.state} label={status.label} />
+        {/* A waiting version (#354), above the version it replaces; it wraps instead of shortening the version. */}
+        <div className="-mx-4 empty:hidden">
+          <UpdateSidebarNotice />
+        </div>
+        <ConnectionStatus />
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-small">
           <Link to="/about" className="press text-ink-2 underline underline-offset-2 hover:text-ink">
             {t({ message: "About and licences", context: "link to the about page" })}

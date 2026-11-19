@@ -15,21 +15,53 @@ with the database (one query per table) and acts only where the database is unto
   downgraded hub) and is ignored, so it never adds a version that reverts the geometry (264-11);
 - each entry runs in its own savepoint: one that fails is logged and skipped, the others are
   stored (264-10).
+
+Two top-level maps of the seed file carry the exceptions (spec 10i, #334):
+
+- ``adopt``: a key that may already exist as a user's own type. Once per revision the type is
+  taken over as shipped (``origin="seed"``, verified); a different current geometry becomes the
+  next version, never replacing an older one. The prefix, vendor, product codes, description
+  and QR switch stay the user's.
+- ``corrections``: a shipped type whose shipped geometry changed. Only a type still on the old
+  shipped geometry gets the new one as its next version, whatever sheets use it; a locally
+  edited geometry is left alone.
+
+Both are recorded in ``app_settings`` (``internal.seed.adopted`` / ``internal.seed.corrected``,
+``{key: revision}``), so a second start does nothing; each takeover leaves one notice in
+``internal.notices`` for the notification centre. All of it happens inside the entry's savepoint.
+
+Two more maps carry the backing designs (#350, R-350-4), applied after the types, each design and
+each link in its own savepoint:
+
+- ``backing_designs``: inserted once (``internal.seed.backing_designs``, ``{key: 1}``), so a
+  design an admin deleted is not inserted again; a key that exists already is left alone.
+- ``backing_links``: a shipped type points to its design once (``internal.seed.backing``,
+  ``{type_key: revision}``), and only while it has no design. A user's later choice, a cleared
+  one included, is never overwritten.
 """
 
 from __future__ import annotations
 
 import functools
+import hashlib
 import importlib.resources
 import json
 import logging
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from importlib.resources.abc import Traversable
+from typing import Any, Final, Literal, NamedTuple
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col
 
+from app.models.app_setting import AppSetting
+from app.models.backing_design import BackingDesign
 from app.models.sheet import Sheet, SheetType, SheetTypeVersion
 from app.sheets import type_service as ts
 from app.sheets.exchange import ExportDoc, geometry_from_doc
@@ -41,23 +73,120 @@ logger = logging.getLogger(__name__)
 SEED_FILE = importlib.resources.files("app.seed") / "sheet_types.json"
 SEED_ACTOR = "system:seed"  # the "system:" prefix is reserved; API actors cannot carry it
 
+# Seeder state in ``app_settings``. The settings registry does not know these keys, so the
+# settings store ignores them and the settings API never lists them.
+ADOPTED_KEY: Final = "internal.seed.adopted"
+CORRECTED_KEY: Final = "internal.seed.corrected"
+BACKING_LINKS_KEY: Final = "internal.seed.backing"
+BACKING_DESIGNS_KEY: Final = "internal.seed.backing_designs"
+NOTICES_KEY: Final = "internal.notices"
+NOTICE_MAX_AGE: Final = timedelta(days=30)
+
+_PACK_SIZE = re.compile(r"-\d+$")
+
 
 @dataclass
 class SeedReport:
     inserted: list[str] = field(default_factory=list)
     versions_added: list[str] = field(default_factory=list)
     skipped: dict[str, str] = field(default_factory=dict)
+    adopted: list[str] = field(default_factory=list)
+    corrected: list[str] = field(default_factory=list)
+    designs_inserted: list[str] = field(default_factory=list)
+    linked: list[str] = field(default_factory=list)
 
 
-def load_seed() -> tuple[int, list[ExportDoc]]:
-    raw = json.loads(SEED_FILE.read_text(encoding="utf-8"))
-    return int(raw["seed_revision"]), [ExportDoc.model_validate(d) for d in raw["types"]]
+class SeedAdoption(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    revision: int
+    change_note: str
+
+
+class SeedCorrection(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    revision: int
+    previous_geometry_hash: str
+    previous_notes_sha256: str
+    change_note: str
+
+
+class SeedBackingDesign(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    name: str
+    page_size: Literal["A4", "Letter"]
+    strips_mm: tuple[tuple[float, float, float, float], ...]
+
+    def strips_hmm(self) -> list[dict[str, int]]:
+        return [
+            {"x": round(x * 100), "y": round(y * 100), "w": round(w * 100), "h": round(h * 100)}
+            for x, y, w, h in self.strips_mm
+        ]
+
+
+class SeedBackingLink(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    design: str
+    revision: int
+
+
+class SeedFile(NamedTuple):
+    revision: int
+    docs: list[ExportDoc]
+    adopt: dict[str, SeedAdoption]
+    corrections: dict[str, SeedCorrection]
+    backing_designs: tuple[SeedBackingDesign, ...] = ()
+    backing_links: tuple[tuple[str, SeedBackingLink], ...] = ()
+
+
+def load_seed(path: Traversable = SEED_FILE) -> SeedFile:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return SeedFile(
+        revision=int(raw["seed_revision"]),
+        docs=[ExportDoc.model_validate(d) for d in raw["types"]],
+        adopt={k: SeedAdoption.model_validate(v) for k, v in raw.get("adopt", {}).items()},
+        corrections={
+            k: SeedCorrection.model_validate(v) for k, v in raw.get("corrections", {}).items()
+        },
+        backing_designs=tuple(
+            SeedBackingDesign.model_validate(d) for d in raw.get("backing_designs", [])
+        ),
+        backing_links=tuple(
+            (k, SeedBackingLink.model_validate(v)) for k, v in raw.get("backing_links", {}).items()
+        ),
+    )
+
+
+def notice_code(product_codes: Sequence[str]) -> str:
+    """The first product code without its pack-size suffix (``L4731REV-25`` -> ``L4731REV``)."""
+    return _PACK_SIZE.sub("", product_codes[0]) if product_codes else ""
+
+
+@functools.cache
+def shipped_backing_defaults() -> dict[str, tuple[str, tuple[tuple[int, int, int, int], ...]]]:
+    """Type key -> (design key, strips in hmm) of the design the seed links it to (I4).
+
+    A shipped type still on exactly this design is untouched: its export stays a version-1 document.
+    """
+    seed = load_seed()
+    designs = {d.key: d for d in seed.backing_designs}
+    out: dict[str, tuple[str, tuple[tuple[int, int, int, int], ...]]] = {}
+    for type_key, link in seed.backing_links:
+        design = designs.get(link.design)
+        if design is not None:
+            strips = tuple((s["x"], s["y"], s["w"], s["h"]) for s in design.strips_hmm())
+            out[type_key] = (design.key, strips)
+    return out
 
 
 @functools.cache
 def shipped_source_urls() -> dict[str, str]:
     """The source URL of every seed type as shipped, by key (a type without one is left out)."""
-    return {d.type.key: d.type.source_url for d in load_seed()[1] if d.type.source_url}
+    return {d.type.key: d.type.source_url for d in load_seed().docs if d.type.source_url}
 
 
 @dataclass
@@ -97,24 +226,39 @@ async def _load_known(session: AsyncSession) -> _Known:
 
 
 async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> SeedReport:
-    revision, docs = load_seed()
+    seed = load_seed()
     report = SeedReport()
     async with session_factory() as session, ts.write_transaction(session):
         known = await _load_known(session)
-        for doc in docs:
+        for doc in seed.docs:
             try:
                 async with session.begin_nested():
-                    await _seed_one(session, doc, known, report)
+                    await _seed_one(session, doc, seed, known, report)
             except Exception:
                 key = log_value(doc.type.key)
                 logger.exception("seed type %s skipped: it could not be stored", key)
                 report.skipped[doc.type.key] = "error"
+        for design in seed.backing_designs:
+            try:
+                async with session.begin_nested():
+                    await _seed_design(session, design, report)
+            except Exception:
+                logger.exception("seed backing design %s skipped", log_value(design.key))
+        for type_key, link in seed.backing_links:
+            try:
+                async with session.begin_nested():
+                    await _seed_link(session, type_key, link, report)
+            except Exception:
+                logger.exception("seed backing link of %s skipped", log_value(type_key))
         await session.commit()
     logger.info(
-        "sheet seed revision %d: %d inserted, %d versions added, %d skipped",
-        revision,
+        "sheet seed revision %d: %d inserted, %d versions added, %d adopted, %d corrected, "
+        "%d skipped",
+        seed.revision,
         len(report.inserted),
         len(report.versions_added),
+        len(report.adopted),
+        len(report.corrected),
         len(report.skipped),
     )
     return report
@@ -136,34 +280,239 @@ def _row_edited(row: SheetType, doc: ExportDoc) -> bool:
     )
 
 
+async def _setting_map(session: AsyncSession, setting_key: str) -> dict[str, Any]:
+    row = await session.get(AppSetting, setting_key)
+    if row is None or row.value_json is None:
+        return {}
+    try:
+        value = json.loads(row.value_json)
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+async def _write_setting(session: AsyncSession, setting_key: str, value: Any) -> None:
+    row = await session.get(AppSetting, setting_key)
+    text = json.dumps(value, sort_keys=True)
+    if row is None:
+        session.add(AppSetting(key=setting_key, value_json=text))
+    else:
+        row.value_json = text
+        row.updated_at = datetime.now(UTC)
+    await session.flush()
+
+
+async def _mark(session: AsyncSession, setting_key: str, key: str, revision: int) -> None:
+    current = await _setting_map(session, setting_key)
+    current[key] = revision
+    await _write_setting(session, setting_key, current)
+
+
+def _iso(moment: datetime) -> str:
+    return moment.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+async def _append_notice(
+    session: AsyncSession,
+    *,
+    kind: Literal["sheet_type_verified", "sheet_type_updated"],
+    key: str,
+    code: str,
+    revision: int,
+    now: datetime,
+) -> None:
+    """Append one notice and drop the ones older than ``NOTICE_MAX_AGE`` in the same write."""
+    row = await session.get(AppSetting, NOTICES_KEY)
+    records: list[Any] = []
+    if row is not None and row.value_json is not None:
+        try:
+            loaded = json.loads(row.value_json)
+        except ValueError:
+            loaded = []
+        records = loaded if isinstance(loaded, list) else []
+    cutoff = now - NOTICE_MAX_AGE
+    kept = [r for r in records if _notice_is_recent(r, cutoff)]
+    kept.append(
+        {
+            "id": f"sheet-type-verified:{key}:{revision}",
+            "kind": kind,
+            "key": key,
+            "code": code,
+            "at": _iso(now),
+        }
+    )
+    await _write_setting(session, NOTICES_KEY, kept)
+
+
+def _notice_is_recent(record: object, cutoff: datetime) -> bool:
+    if not isinstance(record, dict):
+        return False
+    try:
+        at = datetime.fromisoformat(str(record["at"]))
+    except (KeyError, ValueError):
+        return False
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    return at >= cutoff
+
+
+def _type_fields(doc: ExportDoc) -> ts.TypeFields:
+    t = doc.type
+    return ts.TypeFields(
+        key=t.key,
+        prefix=t.prefix,
+        vendor=t.vendor,
+        product_codes=list(t.product_codes),
+        description=t.description,
+        allow_qr=t.allow_qr,
+        verified=t.verified,
+        source_name=t.source_name,
+        source_url=t.source_url,
+        notes=t.notes,
+    )
+
+
+async def _adopt_one(
+    session: AsyncSession,
+    doc: ExportDoc,
+    adoption: SeedAdoption,
+    known: _Known,
+    report: SeedReport,
+) -> None:
+    """Take an existing type of a shipped key over as shipped (spec 10i, R-334-3)."""
+    key = doc.type.key
+    existing = known.types[key]
+    current = known.current.get(existing.id)
+    if current is None:  # a type without a version breaks the model invariant
+        return
+    geometry = geometry_from_doc(doc.version.geometry)
+    previous_origin, previous_version = existing.origin, current.version
+    added = current.geometry_hash != geometry_hash(geometry)
+    if added:
+        current = await ts.add_version_locked(
+            session, key, geometry, actor=SEED_ACTOR, change_note=adoption.change_note
+        )
+        known.current[existing.id] = current
+    # prefix, vendor, product codes, description and the QR switch stay the user's (OC-5)
+    existing.origin = "seed"
+    existing.verified = True
+    existing.source_name = doc.type.source_name
+    existing.source_url = doc.type.source_url
+    existing.notes = doc.type.notes
+    existing.updated_at = datetime.now(UTC)
+    await session.flush()
+    await _mark(session, ADOPTED_KEY, key, adoption.revision)
+    await _append_notice(
+        session,
+        kind="sheet_type_updated" if added else "sheet_type_verified",
+        key=key,
+        code=notice_code(existing.product_codes) or key,
+        revision=adoption.revision,
+        now=datetime.now(UTC),
+    )
+    logger.warning(
+        "sheet type adopted as shipped: key=%s previous origin=%s version %d -> %d hash=%s",
+        log_value(key),
+        previous_origin,
+        previous_version,
+        current.version,
+        current.geometry_hash,
+    )
+    report.adopted.append(key)
+    if added:
+        report.versions_added.append(key)
+
+
+async def _correct_one(
+    session: AsyncSession,
+    doc: ExportDoc,
+    correction: SeedCorrection,
+    known: _Known,
+    report: SeedReport,
+) -> None:
+    """Move a type still on the old shipped geometry to the corrected one (R-334-7)."""
+    key = doc.type.key
+    existing = known.types[key]
+    current = known.current.get(existing.id)
+    if current is None:
+        return
+    geometry = geometry_from_doc(doc.version.geometry)
+    if current.geometry_hash == geometry_hash(geometry):
+        await _mark(session, CORRECTED_KEY, key, correction.revision)  # already corrected
+        return
+    if existing.origin != "seed":
+        return  # never a shipped type here: nothing to correct and nothing worth a line per start
+    if current.geometry_hash != correction.previous_geometry_hash:
+        logger.info("seed correction skipped for %s: geometry edited locally", log_value(key))
+        return
+    added = await ts.add_version_locked(
+        session, key, geometry, actor=SEED_ACTOR, change_note=correction.change_note
+    )
+    known.current[existing.id] = added
+    existing.verified = True
+    if (
+        hashlib.sha256((existing.notes or "").encode()).hexdigest()
+        == correction.previous_notes_sha256
+    ):
+        existing.source_name = doc.type.source_name  # the row still holds the revision-1 text
+        existing.source_url = doc.type.source_url
+        existing.notes = doc.type.notes
+    existing.updated_at = datetime.now(UTC)
+    await session.flush()
+    await _mark(session, CORRECTED_KEY, key, correction.revision)
+    await _append_notice(
+        session,
+        kind="sheet_type_updated",
+        key=key,
+        code=notice_code(existing.product_codes) or key,
+        revision=correction.revision,
+        now=datetime.now(UTC),
+    )
+    logger.warning(
+        "seed type corrected: key=%s version %d -> %d hash %s -> %s",
+        log_value(key),
+        current.version,
+        added.version,
+        current.geometry_hash,
+        added.geometry_hash,
+    )
+    report.corrected.append(key)
+    report.versions_added.append(key)
+
+
 async def _seed_one(
-    session: AsyncSession, doc: ExportDoc, known: _Known, report: SeedReport
+    session: AsyncSession, doc: ExportDoc, seed: SeedFile, known: _Known, report: SeedReport
 ) -> None:
     key = doc.type.key
     geometry = geometry_from_doc(doc.version.geometry)
     existing = known.types.get(key)
+    adoption = seed.adopt.get(key)
     if existing is None:
         if doc.type.prefix in known.prefixes:
             logger.warning("seed type %s skipped: prefix %s is taken", key, doc.type.prefix)
             report.skipped[key] = "prefix_taken"
             return
-        fields = ts.TypeFields(
-            key=key,
-            prefix=doc.type.prefix,
-            vendor=doc.type.vendor,
-            product_codes=list(doc.type.product_codes),
-            description=doc.type.description,
-            allow_qr=doc.type.allow_qr,
-            verified=doc.type.verified,
-            source_name=doc.type.source_name,
-            source_url=doc.type.source_url,
-            notes=doc.type.notes,
-        )
         await ts.create_type_locked(
-            session, fields, geometry, actor=SEED_ACTOR, origin="seed", change_note="seed"
-        )
+            session, _type_fields(doc), geometry, actor=SEED_ACTOR, origin="seed",
+            change_note="seed",
+        )  # fmt: skip
+        if adoption is not None:  # a fresh insert is already as shipped: nothing to adopt later
+            await _mark(session, ADOPTED_KEY, key, adoption.revision)
         known.prefixes.add(doc.type.prefix)
         report.inserted.append(key)
+        return
+    if (
+        adoption is not None
+        and (await _setting_map(session, ADOPTED_KEY)).get(key, 0) < adoption.revision
+    ):
+        await _adopt_one(session, doc, adoption, known, report)
+        return
+    correction = seed.corrections.get(key)
+    if (
+        correction is not None
+        and (await _setting_map(session, CORRECTED_KEY)).get(key, 0) < correction.revision
+    ):
+        await _correct_one(session, doc, correction, known, report)
         return
     current = known.current.get(existing.id)
     if current is None or current.geometry_hash == geometry_hash(geometry):
@@ -188,3 +537,50 @@ async def _seed_one(
         session, key, geometry, actor=SEED_ACTOR, change_note=f"seed update ({key})"
     )
     report.versions_added.append(key)
+
+
+async def _seed_design(
+    session: AsyncSession, design: SeedBackingDesign, report: SeedReport
+) -> None:
+    """Insert a shipped backing design once; a deleted one stays deleted (R-350-4)."""
+    from app.sheets import backing_design_service as bds  # deferred: it imports the type service
+
+    if (await _setting_map(session, BACKING_DESIGNS_KEY)).get(design.key):
+        return
+    query = select(col(BackingDesign.id)).where(col(BackingDesign.key) == design.key)
+    exists = (await session.execute(query)).first()
+    if exists is None:
+        await bds.create_locked(
+            session,
+            key=design.key,
+            name=design.name,
+            page_size=design.page_size,
+            strips=design.strips_hmm(),
+            origin="seed",
+        )
+        report.designs_inserted.append(design.key)
+    await _mark(session, BACKING_DESIGNS_KEY, design.key, 1)
+
+
+async def _seed_link(
+    session: AsyncSession, type_key: str, link: SeedBackingLink, report: SeedReport
+) -> None:
+    """Point a shipped type to its design once, only while it has none (R-350-4)."""
+    if (await _setting_map(session, BACKING_LINKS_KEY)).get(type_key, 0) >= link.revision:
+        return
+    t = (
+        await session.execute(select(SheetType).where(col(SheetType.key) == type_key))
+    ).scalar_one_or_none()
+    if t is None:
+        return  # the type was not stored (prefix taken): nothing to link, nothing to record
+    if t.backing_design_id is None:
+        design = (
+            await session.execute(
+                select(BackingDesign).where(col(BackingDesign.key) == link.design)
+            )
+        ).scalar_one_or_none()
+        if design is not None:
+            t.backing_design_id = design.id
+            await session.flush()
+            report.linked.append(type_key)
+    await _mark(session, BACKING_LINKS_KEY, type_key, link.revision)

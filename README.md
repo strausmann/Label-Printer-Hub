@@ -45,7 +45,7 @@ Website: <https://labelyard.app>
 - **Print queue** per printer: pause, resume, cancel, retry; an interrupted tape run stops at the unknown part and offers continue or reprint
 
 **Label sheets**
-- **36 sheet types included** (Avery, Avery Zweckform, Herma, Endisch; A4 and US Letter), more can be created or imported
+- **39 sheet types included** (Avery, Avery Zweckform, Herma, Endisch; A4 and US Letter), more can be created or imported
 - **Partly used sheets** — every sheet gets a code; the hub remembers which cells are used and prints only onto free ones
 - **Calibration** per printer and tray: print a test page, read the offsets, the hub corrects every print
 
@@ -150,6 +150,17 @@ The catalogue of sheet types: search by product code, filter by page size, vendo
   </picture>
 </p>
 
+### Sheet code on the back
+
+Where the sheet code goes is a setting of the sheet type: the margin, a reserved cell, or the back of the liner. A sheet without a usable margin, such as Avery Zweckform 3490, gets its code on the back: the hub asks you to turn the sheet over, prints the code into a free strip of the vendor print and asks you to check it before the code counts as printed.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/activate-back-side-dark.png">
+    <img src="docs/screenshots/activate-back-side-light.png" alt="Activating a 3490 sheet: turn it over, load it top edge first, and the question how the tray takes paper.">
+  </picture>
+</p>
+
 ### Calibration
 
 Page printers rarely print exactly where the page says. Choose printer and tray, print the calibration page onto a real sheet, read the offsets from its scales and enter them; the hub then moves every print on that tray by the opposite amount.
@@ -161,13 +172,48 @@ Page printers rarely print exactly where the page says. Choose printer and tray,
   </picture>
 </p>
 
+How to read the calibration page: the guide in step 2 explains one crossing, which crossings to read and what the signs mean, and links to the same page on [labelyard.app](https://labelyard.app/using/calibration/).
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/calibration-guide-dark-phone.png">
+    <img src="docs/screenshots/calibration-guide-light-phone.png" width="320" alt="The reading guide of the calibration page on a phone: the drawing of one crossing with its scale, and the legend.">
+  </picture>
+</p>
+
+### Grocy's own labels
+
+Grocy can send its own labels (products, stock entries, chores, batteries and recipes) to the hub. Under **Settings > Integrations** you switch this on, choose the default printer and a layout and printer for each label type, and copy the lines for Grocy's `config.php`.
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/grocy-labels-dark.png">
+    <img src="docs/screenshots/grocy-labels-light.png" alt="Grocy labels: the switch, the default printer and a layout and printer for each label type.">
+  </picture>
+</p>
+
+### Spoolman spool labels
+
+A Spoolman spool prints as a **Spool label**: vendor and colour codes, the material on a black bar, the filament name, print settings, spool data and a QR code back to the spool. It is made for the L4737REV sheet cell and for 62 mm QL endless tape, and drops parts in a fixed order on smaller cells. The bar can show the filament name instead of the material, and the keys of Spoolman's extra fields are settings ([details](https://labelyard.app/integrations/spoolman/)).
+
+<p>
+  <img src="docs/screenshots/spoolman-swatch-samples.png" alt="Spoolman spool labels for two sample spools on four media: L4737REV sheet without footer, 62 mm QL tape with footer, and the short label on L4736REV and 6121">
+</p>
+
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/spool-label-dark.png">
+    <img src="docs/screenshots/spool-label-light.png" alt="A Spoolman spool in the item view with the spool label previewed for 62 mm tape.">
+  </picture>
+</p>
+
 ### On a phone
 
-The same pages adapt to a phone held next to the printer.
+The same pages adapt to a phone held next to the printer. **Menu** at the top left opens every area, calibration, the settings and the integrations included. The magnifier at the top opens the search.
 
-| Overview | Printer details | Sheets |
-|:---:|:---:|:---:|
-| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png"><img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png"><img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png"><img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="240"></picture> |
+| Overview | Printer details | Sheets | Menu | Search |
+|:---:|:---:|:---:|:---:|:---:|
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark-phone.png"><img src="docs/screenshots/overview-light-phone.png" alt="The overview on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/printer-detail-dark-phone.png"><img src="docs/screenshots/printer-detail-light-phone.png" alt="One printer on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/sheets-dark-phone.png"><img src="docs/screenshots/sheets-light-phone.png" alt="The sheets on a phone." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-menu-dark-phone.png"><img src="docs/screenshots/phone-menu-light-phone.png" alt="The phone menu with every area of the hub." width="240"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/phone-search-dark-phone.png"><img src="docs/screenshots/phone-search-light-phone.png" alt="The search dialog on a phone, with a sheet type typed." width="240"></picture> |
 
 ## Roadmap
 
@@ -175,12 +221,12 @@ What comes next, by release. Each release is a [GitHub milestone](https://github
 
 | Release | Main content |
 |---|---|
-| [1.6.0](https://github.com/strausmann/labelyard/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware |
-| [1.7.0](https://github.com/strausmann/labelyard/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery in the printer form |
-| [1.8.0](https://github.com/strausmann/labelyard/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration |
-| [1.9.0](https://github.com/strausmann/labelyard/milestone/9) | Integrations: free-text search, item details before printing, links into the apps, Snipe-IT locations, **Kept**, **Paperless-ngx** ASN labels on sheets |
-| [1.10.0](https://github.com/strausmann/labelyard/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB), detection by IP address, a printer test kit, job priorities |
-| [1.11.0](https://github.com/strausmann/labelyard/milestone/11) | E-mail notifications, a redesigned tape label layout, a print inbox other apps can fill |
+| [1.6.0](https://github.com/strausmann/labelyard/milestone/2) | New name **Labelyard** with its website, licence list and SBOM in the product, page printers confirmed on hardware, clearer calibration steps |
+| [1.7.0](https://github.com/strausmann/labelyard/milestone/3) | Grocy's own label webhook, a notification centre, resolving unconfirmed sheet cells, SNMP status discovery, a swatch-style **Spoolman** spool label, verified sheet types (6121, 3490, L4731REV, L4737REV), a calibration guide with a table of causes, a phone menu and search, a cart icon, a sheet code for sheets without a margin |
+| [1.8.0](https://github.com/strausmann/labelyard/milestone/8) | Sheets and calibration: what was printed on each cell, keep-out zones for preprinted areas, probe print on plain paper, a guided calibration with history, a sheet-type catalog, labels in the unprintable margin; **Kept**; a redesigned tape label layout; a print inbox other apps can fill; release and security notices; the Brother PT-E550W and PT-P710BT (marked untested, feedback welcome) |
+| [1.9.0](https://github.com/strausmann/labelyard/milestone/9) | **Calibration from photos or scans with a prompt for your own AI assistant**, including a printer test page for calibrating the printer on plain paper and a measurement log per sheet type; integrations: free-text search and search across all integrations, item details before printing, links into the apps, Snipe-IT locations, **Paperless-ngx** ASN labels on sheets, Spoolman authentication |
+| [1.10.0](https://github.com/strausmann/labelyard/milestone/10) | Printers: more QL models and DK rolls (QL-1110NWB, across-width layouts), detection by IP address, a printer test kit, printer status in the print panel, job priorities, chunked batches |
+| [1.11.0](https://github.com/strausmann/labelyard/milestone/11) | E-mail and browser notifications, monitoring through SNMP, a device diagnostics page, regular privacy checks, an in-browser demo on labelyard.app |
 
 ## Supported hardware
 
@@ -196,10 +242,10 @@ Other Brother PT and QL models that share the command reference will likely work
 
 ## Supported label sheets
 
-The hub ships with these sheet types. Their measurements come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
+The hub ships with these sheet types. Avery Zweckform 3490, 6121, L4731REV and L4737REV are verified on real sheets. The measurements of the others come from the [gLabels templates](https://github.com/j-evins/glabels-qt) and are marked *unverified* until someone confirms them on a real sheet; please confirm or correct them with the [sheet type dimensions form](https://github.com/strausmann/labelyard/issues/new?template=sheet-type-feedback.yml) — the sheet archive in the hub opens it with the stored values filled in. Any other sheet can be added in the sheet archive (**New type**) or imported as JSON.
 
 <details>
-<summary>36 sheet types (A4 and US Letter)</summary>
+<summary>39 sheet types (A4 and US Letter)</summary>
 
 | Vendor | Product codes | Labels | Label size | Per sheet | Page |
 |---|---|---|---|---|---|
@@ -211,13 +257,16 @@ The hub ships with these sheet types. Their measurements come from the [gLabels 
 | Avery | L4732 | Mini labels | 35.6 × 16.9 mm | 5 × 16 = 80 | A4 |
 | Avery Zweckform | 3474 | Address labels | 70 × 37 mm | 3 × 8 = 24 | A4 |
 | Avery Zweckform | 3481 | Multipurpose labels | 70 × 41 mm | 3 × 7 = 21 | A4 |
+| Avery Zweckform | 3490 | Universal labels, square cut | 70 × 36 mm | 3 × 8 = 24 | A4 |
 | Avery Zweckform | 3669 | Rectangular labels | 70 × 50.8 mm | 3 × 5 = 15 | A4 |
 | Avery Zweckform | 4760 | Lever arch file labels | 192 × 38 mm | 1 × 7 = 7 | A4 |
 | Avery Zweckform | 4761 | Lever arch file labels | 192 × 61 mm | 1 × 4 = 4 | A4 |
 | Avery Zweckform | 4780 | Multipurpose labels | 48.5 × 25.4 mm | 4 × 10 = 40 | A4 |
 | Avery Zweckform | 6021 | Multipurpose labels | 46 × 16.9 mm | 4 × 16 = 64 | A4 |
-| Avery Zweckform | L4731REV-25, L4731REV-10, L4731REV-65, L4731 | Mini labels, removable | 25.4 × 10 mm | 7 × 27 = 189 | A4 |
+| Avery Zweckform | 6121, 6121-65 | Universal labels | 38.1 × 21.18 mm | 5 × 13 = 65 | A4 |
+| Avery Zweckform | L4731REV-25, L4731REV-10, L4731REV-65, L4731 | Mini labels, removable | 25.4 × 9.98 mm | 7 × 27 = 189 | A4 |
 | Avery Zweckform | L4736REV-25, L4736REV-10, L4736REV-65, L4736REV-100 (+1 more) | Mini labels, removable | 45.7 × 21.2 mm | 4 × 12 = 48 | A4 |
+| Avery Zweckform | L4737REV-25, L4737REV-10, L4737REV-100, L4737 | Universal labels, removable | 63.5 × 29.6 mm | 3 × 9 = 27 | A4 |
 | Endisch | 6500040x | Round labels | 40 × 40 mm | 4 × 6 = 24 | A4 |
 | Endisch | 6500060x | Round labels | 60 × 60 mm | 3 × 4 = 12 | A4 |
 | Herma | 10001 | Rectangular labels | 25.4 × 10 mm | 7 × 27 = 189 | A4 |

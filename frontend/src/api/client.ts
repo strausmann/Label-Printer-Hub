@@ -138,7 +138,8 @@ function parseProblem(status: number, body: unknown): ApiError {
           : typeof d.title === "string"
             ? d.title
             : fallback;
-    return new ApiError(status, code, message, isObject(d.error_detail) ? d.error_detail : null);
+    const errorDetail = isObject(d.error_detail) ? d.error_detail : isObject(d.extensions) ? d.extensions : null;
+    return new ApiError(status, code, message, errorDetail);
   }
   // The envelope returned directly (the label preview's refusals), not wrapped in `detail`.
   if (typeof body.error_code === "string") {

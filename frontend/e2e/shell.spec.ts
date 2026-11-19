@@ -3,7 +3,8 @@
 
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { BOOTSTRAP } from "./env";
+import type { Page } from "@playwright/test";
+import { BOOTSTRAP, MAIN } from "./env";
 import { bootstrapKey, expect, mainKey, signInWith, test } from "./fixtures";
 
 const SHOTS = process.env.E2E_SHOTS_DIR;
@@ -82,6 +83,117 @@ test.describe("shell", () => {
     }
     await page.goto("/");
     await expect(page.getByRole("region", { name: "Sheets", exact: true })).toBeVisible();
+  });
+
+  // #319: on a phone the sidebar is gone; the menu at the top left must reach every area of it.
+  test.describe("phone menu", () => {
+    const menuButton = (page: Page) => page.getByRole("button", { name: "Menu", exact: true });
+    const openMenu = async (page: Page) => {
+      await menuButton(page).click();
+      const dialog = page.getByRole("dialog", { name: "Menu" });
+      await expect(dialog).toBeVisible();
+      return dialog;
+    };
+
+    test("an admin reaches every sidebar destination", async ({ signedInPage: page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      // The e2e hub ships these; ASN and Kept are off there (as in the desktop sidebar test).
+      const expected = [
+        "/",
+        "/printers",
+        "/jobs",
+        "/sheets",
+        "/sheets/archive",
+        "/calibration",
+        "/integrations/snipeit",
+        "/integrations/grocy",
+        "/integrations/spoolman",
+        "/settings",
+        "/settings/printers",
+        "/settings/integrations",
+        "/settings/access",
+        "/settings/jobs",
+        "/settings/system",
+      ];
+      const menu = await openMenu(page);
+      const entries = menu.getByRole("navigation", { name: "Pages" }).getByRole("link");
+      expect(await entries.evaluateAll((links) => links.map((a) => a.getAttribute("href")))).toEqual(expected);
+      await page.keyboard.press("Escape");
+      for (const href of expected) {
+        const sheet = await openMenu(page);
+        const link = sheet.getByRole("navigation", { name: "Pages" }).locator(`a[href="${href}"]`);
+        expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+        await link.click();
+        await expect(sheet).toBeHidden();
+        await expect.poll(() => new URL(page.url()).pathname).toBe(href);
+        await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      }
+    });
+
+    test("a print key sees no settings entries", async ({ signedInPage: page, browser }) => {
+      // Net zero: the key is created through the admin API and revoked at the end.
+      const admin = await page.context().request;
+      const created = await admin.post("/api/v1/admin/api-keys", {
+        data: { name: "e2e phone menu", scopes: ["print"] },
+        headers: { "X-Label-Hub-Key": mainKey() },
+      });
+      expect(created.status(), await created.text()).toBe(201);
+      const { key_id: keyId, plaintext } = (await created.json()) as { key_id: string; plaintext: string };
+      const context = await browser.newContext({ baseURL: MAIN.url, viewport: { width: 390, height: 844 } });
+      try {
+        const guest = await context.newPage();
+        await guest.goto("/");
+        await signInWith(guest, plaintext);
+        const menu = await openMenu(guest);
+        const hrefs = await menu.getByRole("navigation", { name: "Pages" }).getByRole("link").evaluateAll((links) => links.map((a) => a.getAttribute("href")));
+        expect(hrefs).toContain("/calibration");
+        expect(hrefs.filter((h) => h?.startsWith("/settings"))).toEqual([]);
+        await expect(menu.getByText("Settings", { exact: true })).toHaveCount(0);
+      } finally {
+        await context.close();
+        const revoked = await page.context().request.delete(`/api/v1/admin/api-keys/${keyId}`, { headers: { "X-Label-Hub-Key": mainKey() } });
+        expect(revoked.status()).toBe(204);
+      }
+    });
+
+    test("the close button, the dim area and Escape close it and focus returns to Menu", async ({ signedInPage: page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      for (const how of ["button", "dim", "escape"] as const) {
+        const menu = await openMenu(page);
+        if (how === "button") await menu.getByRole("button", { name: "Close" }).click();
+        else if (how === "dim") await page.mouse.click(385, 400); // right of the 20 rem sheet
+        else await page.keyboard.press("Escape");
+        await expect(menu, how).toBeHidden();
+        await expect(menuButton(page), how).toBeFocused();
+        await expect(menuButton(page), how).toHaveAttribute("aria-expanded", "false");
+      }
+    });
+  });
+
+  test("phone: the magnifier opens the search, Escape returns focus to it", async ({ signedInPage: page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const header = page.locator("header");
+    await expect(header.getByRole("combobox", { name: "Search" })).toHaveCount(0);
+    const magnifier = header.getByRole("button", { name: "Search", exact: true });
+    await magnifier.click();
+    const dialog = page.getByRole("dialog", { name: "Search" });
+    await expect(dialog).toBeVisible();
+    const field = dialog.getByRole("combobox", { name: "Search" });
+    await expect(field).toBeFocused();
+    await field.fill("workshop");
+    await expect(dialog.getByRole("option").first()).toBeVisible();
+    // The first Escape closes the list, the second the dialog.
+    await page.keyboard.press("Escape");
+    await expect(dialog.getByRole("listbox")).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(magnifier).toBeFocused();
+    // The inline field is back from 1024 px.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(header.getByRole("combobox", { name: "Search" })).toBeVisible();
+    await expect(header.getByRole("button", { name: "Search", exact: true })).toHaveCount(0);
   });
 
   // Behind an auth proxy the manifest must be fetched with the session cookie (#225); the gate for the

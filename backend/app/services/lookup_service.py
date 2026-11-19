@@ -23,10 +23,12 @@ from __future__ import annotations
 # app.integrations yet. The discovery is idempotent (registry
 # rejects duplicates), so multiple imports are safe.
 import app.integrations  # noqa: F401
+from app.integrations.grocy.plugin import GrocyObjectReader
 from app.integrations.registry import (
     IntegrationNotFoundError,
     IntegrationRegistry,
 )
+from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
 
@@ -70,6 +72,38 @@ class AppLookupService:
             raise
         except Exception as e:
             raise LookupFailedError(f"{source_app} lookup failed: {e}") from e
+
+    async def grocy_battery(self, battery_id: str) -> GrocyBatteryResult:
+        """Read-only details of one Grocy battery; errors map exactly like :meth:`lookup`."""
+        plugin = self._grocy()
+        try:
+            return await plugin.battery(battery_id)
+        except (LookupFailedError, AppLookupNotFoundError, IntegrationNotConfiguredError):
+            raise
+        except Exception as e:
+            raise LookupFailedError(f"grocy battery lookup failed: {e}") from e
+
+    async def grocy_chore(self, chore_id: str) -> GrocyChoreResult:
+        """Read-only details of one Grocy chore; errors map exactly like :meth:`lookup`."""
+        plugin = self._grocy()
+        try:
+            return await plugin.chore(chore_id)
+        except (LookupFailedError, AppLookupNotFoundError, IntegrationNotConfiguredError):
+            raise
+        except Exception as e:
+            raise LookupFailedError(f"grocy chore lookup failed: {e}") from e
+
+    @staticmethod
+    def _grocy() -> GrocyObjectReader:
+        try:
+            plugin = IntegrationRegistry.get("grocy")
+        except IntegrationNotFoundError as e:
+            raise UnknownAppError(str(e)) from e
+        if not isinstance(plugin, GrocyObjectReader):
+            raise UnknownAppError(
+                "the registered grocy integration cannot read batteries or chores"
+            )
+        return plugin
 
     @property
     def available_apps(self) -> list[str]:

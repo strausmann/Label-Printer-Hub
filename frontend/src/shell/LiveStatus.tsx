@@ -7,17 +7,8 @@ import { StatusBadge } from "./StatusBadge";
 
 const PAUSED_AFTER_MS = 5_000;
 
-/** Non-blocking note once the live stream has been down for more than 5 s. */
-export function LiveStatus({
-  connected,
-  connecting,
-  onReconnect,
-}: {
-  connected: boolean;
-  connecting: boolean;
-  onReconnect: () => void;
-}) {
-  const { t } = useLingui();
+/** True once the live stream has been down for more than 5 s (the top bar's notification panel says it too). */
+export function useLiveDown(connected: boolean): boolean {
   // "Down for 5 s": set by the timer only; being connected overrides it, so no reset is needed.
   const [downLong, setDownLong] = useState(false);
 
@@ -30,7 +21,21 @@ export function LiveStatus({
     };
   }, [connected]);
 
-  if (connected || !downLong) return null;
+  return !connected && downLong;
+}
+
+/** Non-blocking note once the live stream has been down for more than 5 s. */
+export function LiveStatus({
+  connected,
+  connecting,
+  onReconnect,
+}: {
+  connected: boolean;
+  connecting: boolean;
+  onReconnect: () => void;
+}) {
+  const { t } = useLingui();
+  if (!useLiveDown(connected)) return null;
   return (
     <div className="mb-4 flex flex-wrap items-center gap-4">
       <div role="status">

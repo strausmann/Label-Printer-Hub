@@ -100,3 +100,34 @@ async def test_a_send_failure_is_not_flagged(monkeypatch: pytest.MonkeyPatch) ->
         await backend.print_images([_img()], TapeRegistry.lookup_pt(12, MediaType.LAMINATED))
 
     assert err.value.nothing_sent is False
+
+
+@pytest.mark.parametrize("batch", [False, True])
+async def test_a_sticky_error_bit_refuses_a_ptouch_print_before_sending(
+    monkeypatch: pytest.MonkeyPatch, batch: bool
+) -> None:
+    """#389 I3: a blocking bit before sending refuses with nothing sent (single and batch)."""
+    from app.printer_backends.exceptions import PrinterReportedError
+
+    single, multi = AsyncMock(), AsyncMock()
+    monkeypatch.setattr("app.printer_backends.ptouch_backend._ptouch_print", single)
+    monkeypatch.setattr("app.printer_backends.ptouch_backend._ptouch_print_multi", multi)
+
+    async def sticky(host: str, **_: object) -> PreflightStatus:
+        return PreflightStatus(
+            hr_printer_status="idle", loaded_tape_mm=12, error_flags=["serviceRequested"]
+        )
+
+    monkeypatch.setattr("app.printer_backends.ptouch_backend.query_preflight", sticky)
+    backend = PTouchBackend(host="192.0.2.10")
+    spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
+
+    with pytest.raises(PrinterReportedError) as err:
+        if batch:
+            await backend.print_images([_img()], spec)
+        else:
+            await backend.print_image(_img(), spec)
+
+    assert err.value.nothing_sent is True
+    single.assert_not_called()
+    multi.assert_not_called()

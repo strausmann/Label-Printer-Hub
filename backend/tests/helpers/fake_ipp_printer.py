@@ -98,6 +98,8 @@ class FakeIppPrinter:
     """Each marker: ``name`` and optional ``color``, ``level``, ``low_level``, ``type``."""
     media_sources: list[str] = field(default_factory=list)
     formats: list[str] = field(default_factory=lambda: ["application/pdf"])
+    operations: list[int] | None = None
+    """``operations-supported`` (operation ids); ``None``: not reported."""
     job_creation_attributes: list[str] = field(
         default_factory=lambda: [
             "media-col",
@@ -127,6 +129,9 @@ class FakeIppPrinter:
     cancel_steps: int = 0
     """Cancel-Job is asynchronous on real printers (spike S2): after it, this many polls report
     ``processing`` with ``processing-to-stop-point`` before ``canceled``."""
+    impressions_after_cancel: int | None = None
+    """``job-impressions-completed`` a job reports once Cancel-Job reached it: the label that
+    finished on the way to the stop point (#393). ``None``: as ``impressions_script``."""
     print_status: int = 0
     """Status answered to Print-Job and Validate-Job (0 = accept; a successful-ok-* status such
     as 0x0001 accepts the job and answers that status)."""
@@ -236,6 +241,11 @@ class FakeIppPrinter:
             Attr("printer-is-accepting-jobs", Tag.BOOLEAN, [self.accepting_jobs]),
             Attr("queued-job-count", Tag.INTEGER, [self._count(_NOT_COMPLETED)]),
             Attr("document-format-supported", Tag.MIME, list(self.formats)),
+            *(
+                [Attr("operations-supported", Tag.ENUM, list(self.operations))]
+                if self.operations is not None
+                else []
+            ),
             Attr(
                 "job-creation-attributes-supported", Tag.KEYWORD, list(self.job_creation_attributes)
             ),
@@ -327,7 +337,9 @@ class FakeIppPrinter:
         }.get(state, "none")
         if job.final is not None and job.stopping > 0:
             reasons = "processing-to-stop-point"
-        if self.impressions_script:
+        if job.final is not None and self.impressions_after_cancel is not None:
+            impressions = self.impressions_after_cancel
+        elif self.impressions_script:
             impressions = self.impressions_script[min(job.step, len(self.impressions_script) - 1)]
         else:
             impressions = 1 if state == 9 else 0

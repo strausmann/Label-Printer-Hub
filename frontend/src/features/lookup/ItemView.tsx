@@ -12,22 +12,25 @@ import { usePrinters, usePrinterStatus, usePrinterStatuses } from "../printers/a
 import { HINT } from "../settings/controls";
 import { PANEL } from "../ui";
 import {
-  DEFAULT_CONTENT_TYPE,
-  LOOKUP_CONTENT_TYPES,
+  contentTypesFor,
+  defaultContentTypeFor,
   QR_PATH_APP,
   safeHref,
   useAppName,
   useContentTypeLabel,
 } from "./apps";
-import { useLookup, usePreviewImage, usePrintNow, type LookupResult } from "./api";
+import { swatchOf, useLookup, usePreviewImage, usePrintNow, type LookupResult } from "./api";
 import { MAX_COPIES, useCart, type ContentType, type LookupApp } from "./cart";
 import { LayoutPicker } from "../layout/LayoutPicker";
 import { tapeMmOfStatus, useLabelLayout } from "../layout/ql";
 import { LabelPreview } from "./LabelPreview";
 import { lookupIdFromQrPath } from "./labelUrl";
 import { recordRecent } from "./recent";
-import { PrinterPicker, usePrinterChoice, usePrintErrorText } from "./PrinterPicker";
+import { usePrintErrorText } from "../printers/printErrorText";
+import { PrinterPicker, usePrinterChoice } from "./PrinterPicker";
 import { SheetSection } from "../sheets/print/SheetSection";
+import { notePrintError } from "../printers/coverRefusals";
+import { unsupportedRoll } from "../printers/roll";
 
 const lookupRoute = getRouteApi("/lookup/$app/$id");
 
@@ -117,17 +120,26 @@ function ItemDetail({ item }: { item: LookupResult }) {
   const readOnly = useSession().scope === "read";
   const cart = useCart();
   const printers = usePrinters();
-  const { usable, selected, choose } = usePrinterChoice(printers.data);
+  const enabled = (printers.data ?? []).filter((x) => x.enabled);
+  const statuses = usePrinterStatuses(enabled);
+  const { usable, selected, choose } = usePrinterChoice(printers.data, statuses);
   const status = usePrinterStatus(selected?.id ?? "", !!selected);
-  const statuses = usePrinterStatuses(usable);
-  const [contentType, setContentType] = useState<ContentType>(DEFAULT_CONTENT_TYPE);
+  // The user's own pick stays; until there is one, the start layout follows the printer and tape (#346).
+  const [chosen, setContentType] = useState<ContentType | null>(null);
   const [copies, setCopies] = useState(1);
   const print = usePrintNow();
   // A page printer prints onto sheets (the sheet section); only tape printers get the tape preview.
   const pagePrinter = selected?.backend === "ipp";
+  // A roll the hub cannot print on: the button is off, the picker says why (the hub refuses it with 409 too).
+  const rollBlocked = !pagePrinter && unsupportedRoll(selected ? status.data : undefined) !== null;
   const tapeMm = tapeMmOfStatus(selected ? status.data : null);
+  const contentType =
+    chosen ?? defaultContentTypeFor(item.app, { hasSwatch: swatchOf(item) !== undefined, backend: selected?.backend, tapeMm });
   const layout = useLabelLayout(selected, tapeMm);
-  const preview = usePreviewImage(item, contentType, tapeMm, !printers.isPending && !pagePrinter && !(selected && status.isPending), layout.options);
+  // The spool label has no direction or arrangement to pick (#346): the picker hides and nothing is sent.
+  const swatch = contentType === "spool_swatch";
+  const layoutOptions = swatch ? undefined : layout.options;
+  const preview = usePreviewImage(item, contentType, tapeMm, !printers.isPending && !pagePrinter && !(selected && status.isPending), layoutOptions);
 
   const appName = appNames(item.app);
   const printerName = selected?.name ?? "";
@@ -162,7 +174,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
         {!pagePrinter && (
         <section aria-labelledby="preview-h" className={`${PANEL} flex flex-col gap-3`}>
           <h2 id="preview-h" className="text-section font-bold">{t`Preview`}</h2>
-          <LabelPreview preview={preview} layout={layout.options} />
+          <LabelPreview preview={preview} layout={layoutOptions} />
         </section>
         )}
 
@@ -178,14 +190,14 @@ function ItemDetail({ item }: { item: LookupResult }) {
           <label className="flex flex-col gap-1.5">
             <span className="font-bold">{t`Layout`}</span>
             <select className={FIELD} value={contentType} onChange={(e) => setContentType(e.target.value as ContentType)}>
-              {LOOKUP_CONTENT_TYPES.map((c) => (
+              {contentTypesFor(item.app).map((c) => (
                 <option key={c} value={c}>
                   {contentLabel(c)}
                 </option>
               ))}
             </select>
           </label>
-          {layout.active && (
+          {layout.active && !swatch && (
             <LayoutPicker
               orientation={layout.choice.orientation}
               preset={layout.choice.preset}
@@ -210,14 +222,22 @@ function ItemDetail({ item }: { item: LookupResult }) {
             {!pagePrinter && (
               <Button
                 className={PRIMARY_BUTTON}
-                isDisabled={!selected || print.isPending || readOnly}
-                onPress={() => selected && print.mutate({ printerKey: selected.id, item: asItem, layout: layout.options })}
+                isDisabled={!selected || print.isPending || readOnly || rollBlocked}
+                onPress={() =>
+                  selected &&
+                  print.mutate(
+                    { printerKey: selected.id, item: asItem, layout: layoutOptions },
+                    // A refusal on the open cover makes the cover a problem at once (#376).
+                    { onError: (error) => notePrintError(selected.id, asItem.name, error) },
+                  )
+                }
               >
                 {t`Print now`}
               </Button>
             )}
             <Button
               className="press inline-flex h-11 items-center justify-center rounded-r2 border border-line-strong bg-surface px-4 text-small font-bold text-ink hover:bg-sunken data-[focus-visible]:outline-3 data-[focus-visible]:outline-offset-2 data-[focus-visible]:outline-link"
+              aria-describedby="print-h"
               onPress={() => cart.add(asItem)}
             >
               {t`Add to cart`}
@@ -239,7 +259,7 @@ function ItemDetail({ item }: { item: LookupResult }) {
           )}
         </section>
 
-        {pagePrinter && selected && <SheetSection items={[asItem]} printer={selected} />}
+        {pagePrinter && selected && <SheetSection items={[asItem]} printer={selected} addToCart />}
       </div>
     </div>
   );

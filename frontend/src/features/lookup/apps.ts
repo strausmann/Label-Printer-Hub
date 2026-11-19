@@ -24,6 +24,38 @@ export const LOOKUP_CONTENT_TYPES: readonly ContentType[] = [
 ];
 export const DEFAULT_CONTENT_TYPE: ContentType = "qr_two_lines";
 
+/** The swatch-style spool label (#346): Spoolman items only, 62 mm tape or a sheet, never turned. */
+export const SPOOL_SWATCH: ContentType = "spool_swatch";
+
+/** The layouts an item of `app` offers, in the order the choice lists them. Spoolman leads with the spool label. */
+export const contentTypesFor = (app: LookupApp): readonly ContentType[] =>
+  app === "spoolman" ? [SPOOL_SWATCH, ...LOOKUP_CONTENT_TYPES] : LOOKUP_CONTENT_TYPES;
+
+/** QL DK endless widths the spool label is drawn for (backend `SWATCH_TAPES`; it refuses the others). */
+export const SWATCH_TAPE_MM: readonly number[] = [29, 38, 50, 54, 62];
+
+/** What the start layout depends on besides the app: the item's swatch data and the printer it goes to. */
+export interface DefaultContext {
+  /** The lookup returned spool label data (`extra.swatch`). */
+  hasSwatch: boolean;
+  /** The chosen printer's backend, if one is chosen. */
+  backend?: string | null;
+  /** The loaded tape width in mm (QL only). */
+  tapeMm?: number;
+}
+
+/**
+ * The layout an item starts with (#346). A Spoolman item with swatch data starts on the spool label when it
+ * goes to a sheet printer or to a QL with a DK width the spool label is drawn for; everything else (a P-touch,
+ * no printer yet, no swatch data, another app) starts on the default. P-touch tape never carries the spool label.
+ */
+export const defaultContentTypeFor = (app: LookupApp, ctx?: DefaultContext): ContentType => {
+  if (app !== "spoolman" || !ctx?.hasSwatch) return DEFAULT_CONTENT_TYPE;
+  if (ctx.backend === "ipp") return SPOOL_SWATCH;
+  if (ctx.backend === "brother_ql" && ctx.tapeMm !== undefined && SWATCH_TAPE_MM.includes(ctx.tapeMm)) return SPOOL_SWATCH;
+  return DEFAULT_CONTENT_TYPE;
+};
+
 const APP_NAMES = { snipeit: msg`Snipe-IT`, grocy: msg`Grocy`, spoolman: msg`Spoolman` };
 
 /** For code outside React (search sources); components use `useAppName`. */
@@ -50,6 +82,8 @@ export function useContentTypeLabel(): (type: ContentType) => string {
         return t`Code and title, no QR code`;
       case "text_one_line":
         return t`Code only, no QR code`;
+      case "spool_swatch":
+        return t`Spool label`;
       default:
         return type;
     }

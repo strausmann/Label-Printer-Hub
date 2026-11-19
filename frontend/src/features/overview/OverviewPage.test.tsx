@@ -77,6 +77,44 @@ describe("Overview", () => {
     expect(within(section).getByText("Failed")).toBeVisible();
   });
 
+  it("Needs attention lists the unresolved errors", async () => {
+    const failed = "aaaaaaaa-0000-4000-8000-0000000000a1";
+    const retried = "aaaaaaaa-0000-4000-8000-0000000000a2";
+    const done = "aaaaaaaa-0000-4000-8000-0000000000a3";
+    mockApi(
+      base([
+        job(failed, PRINTER_A.id, "failed", { error: "Cover open during print", template_key: "still-broken" }),
+        job(retried, PRINTER_A.id, "failed", { error: "Jam", template_key: "got-fixed" }),
+        job(done, PRINTER_A.id, "done", { template_key: "got-fixed", payload: { retry_of: retried } }),
+      ]),
+    );
+    await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    expect(await within(section).findByText("Cover open during print")).toBeVisible();
+    expect(within(section).getByRole("link", { name: "still-broken" })).toBeVisible();
+    // Retried to done: information in the notification centre, no longer an error here.
+    expect(within(section).queryByText("Jam")).toBeNull();
+    expect(within(section).queryByRole("link", { name: "got-fixed" })).toBeNull();
+  });
+
+  it("a dismissed failed job leaves the card after a reload", async () => {
+    const id = "aaaaaaaa-0000-4000-8000-0000000000b1";
+    mockApi(base([job(id, PRINTER_A.id, "failed", { error: "Cover open during print" })]));
+    const first = await renderApp({ path: "/" });
+    const section = await screen.findByRole("region", { name: "Needs attention" });
+    const item = (await within(section).findByText("Cover open during print")).closest("li")!;
+    await userEvent.click(within(item).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(within(section).queryByText("Cover open during print")).toBeNull());
+    first.unmount();
+
+    // A reload: a fresh app on the same storage.
+    mockApi(base([job(id, PRINTER_A.id, "failed", { error: "Cover open during print" })]));
+    await renderApp({ path: "/" });
+    const again = await screen.findByRole("region", { name: "Needs attention" });
+    await within(again).findByText("Office QL-820NWB");
+    expect(within(again).queryByText("Cover open during print")).toBeNull();
+  });
+
   it("ignores failures older than a day", async () => {
     const old = "2026-01-01T00:00:00Z";
     mockApi(base([job("aaaaaaaa-0000-4000-8000-000000000003", PRINTER_A.id, "failed", { error: "Old jam", updated_at: old })]));

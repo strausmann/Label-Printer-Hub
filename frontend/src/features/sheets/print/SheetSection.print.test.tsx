@@ -35,8 +35,20 @@ describe("after printing", () => {
     const links = within(done).getAllByRole("link", { name: /View job/ });
     expect(links.map((l) => l.getAttribute("href"))).toEqual([`/jobs/${JOB}`, "/jobs/55555555-5555-4555-8555-555555555555"]);
     expect(done).toHaveTextContent("Page 1: L4736-0001, cells 18–26");
-    expect(within(done).getByText("Sheet ID not printed, add it by hand")).toBeVisible();
-    expect(within(done).getByText("Sheet ID in the bottom margin")).toBeVisible();
+    expect(within(done).getByText("Sheet code not printed, add it by hand")).toBeVisible();
+    expect(within(done).getByText("Sheet code in the bottom margin")).toBeVisible();
+  });
+
+  it("a new back-side sheet offers Print back side", async () => {
+    const pages = [
+      { job_id: JOB, sheet_code: "A3490-0001", cells: [1], id_cell: null, margin_id: false, margin_band: null, id_not_printed: false, feed_mark: true, back_side_pending: true },
+    ];
+    await itemView(routes({ print: { batch_id: BATCH, pages } }));
+    await pressPrint();
+    const done = await screen.findByRole("status", { name: "Sent to the print queue" });
+    expect(within(done).getByText("The sheet code goes on the back of this sheet.")).toBeVisible();
+    expect(within(done).getByRole("button", { name: "Print back side" })).toBeVisible();
+    expect(within(done).queryByText("Sheet code not printed, add it by hand")).toBeNull();
   });
 
   /** Two pages: items 0-4 on L4736-0001, items 5-8 on a new sheet. A request for fewer items gets one page. */

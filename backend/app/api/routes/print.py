@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""POST /api/v1/print, POST /api/v1/printer/resume and POST /api/v1/render/preview."""
+"""Print, printer resume, and the render routes (preview PNG and the cart check)."""
 
 from __future__ import annotations
 
@@ -16,23 +16,22 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.print_errors import SYNC_ERROR_TYPES, print_error_response
-from app.auth.dependencies import AuthContext, check_printer_access
+from app.api.print_errors import print_error_response, print_error_responses
+from app.auth.dependencies import AuthContext, charge_lookup_fan_out, check_printer_access
 from app.auth.scope_deps import require_print, require_read
 from app.db.session import get_session
-from app.printer_backends.exceptions import (
-    ContentTypeDataMismatchError,
-    QrPayloadTooLongError,
-    UnsupportedTapeError,
-)
 from app.repositories import printer_state as printer_state_repo
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.print_request import PrintRequest, RawLabelData
 from app.schemas.print_response import PrintJobResponse
+from app.schemas.render_check import RenderCheckRequest, RenderCheckResponse
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_service import AppLookupService
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 from app.services.print_queue import PrinterAlreadyActiveError
+from app.services.render_check import check_items, distinct_lookup_count, validate_layout
 
 _log = logging.getLogger(__name__)
 
@@ -40,6 +39,9 @@ router = APIRouter()
 # `router` spells the full path in each decorator (/api/v1/print, /api/v1/printer/resume);
 # `render_router` carries the prefix for POST /api/v1/render/preview.
 render_router = APIRouter(prefix="/api/v1")
+
+# Stateless (reads the settings at construction), like the lookup routes' instance.
+_lookup_service = AppLookupService()
 
 
 def _check_default_printer(http: Request, auth: AuthContext) -> None:
@@ -61,6 +63,10 @@ class _PrinterResumeResponse(BaseModel):
     status_code=status.HTTP_202_ACCEPTED,
     response_model=PrintJobResponse,
     tags=["print"],
+    responses=print_error_responses(
+        "envelope",
+        extra={503: "`no_tape_printer`: no tape printer is configured."},
+    ),
     summary="Submit a print job",
     description=(
         "Submit a label-print job.  The job is queued and dispatched "
@@ -90,8 +96,8 @@ async def create_print_job(
         job_id = await service.submit_print_job(
             request, api_key_id=_auth.api_key_id, source_ip=_auth.ip
         )
-    except SYNC_ERROR_TYPES as exc:
-        return print_error_response(exc)
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        return print_error_response(exc, http)
     # Phase 2: submit_print_job gibt jetzt UUID zurück; Response-Schema erwartet str.
     return PrintJobResponse(job_id=str(job_id), status="queued")
 
@@ -189,6 +195,7 @@ class _PreviewRequest(BaseModel):
 )
 async def render_preview(
     body: _PreviewRequest,
+    http: Request,
     _auth: Annotated[AuthContext, Depends(require_read)],
 ) -> Response:
     """Render a label preview without touching the printer or DB.
@@ -208,6 +215,7 @@ async def render_preview(
         source_app="preview",
         secondary=body.data.secondary,
         items=body.data.items,
+        swatch=body.data.swatch,
     )
 
     def _render() -> bytes:
@@ -231,44 +239,52 @@ async def render_preview(
     # raw exception strings may contain stack trace fragments or internal paths.
     try:
         png_bytes = await asyncio.to_thread(_render)
-    except UnsupportedTapeError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_409_CONFLICT,
-            content={
-                "error_code": "unsupported_tape",
-                "error_message": (
-                    "The currently loaded tape width is not supported by the layout engine."
-                    if exc.orientation is None
-                    else "The selected orientation is not available for this tape width."
-                ),
-                "error_detail": {"tape_mm": exc.tape_mm},
-            },
-        )
-    except ContentTypeDataMismatchError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content={
-                # R2-4: align with the print endpoint (_SYNC_ERROR_MAP) which uses
-                # "content_type_data_mismatch" — was inconsistently "data_mismatch"
-                "error_code": "content_type_data_mismatch",
-                "error_message": (
-                    "The label data is missing fields required for the selected content type."
-                ),
-                "error_detail": {"missing_fields": list(exc.missing_fields)},
-            },
-        )
-    except QrPayloadTooLongError as exc:
-        return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=_qr_too_long_body(exc),
-        )
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # The shared table (#378): fixed texts, structured detail in ``error_detail``.
+        return print_error_response(exc, http)
 
     return Response(content=png_bytes, media_type="image/png")
 
 
-def _qr_too_long_body(exc: QrPayloadTooLongError) -> dict[str, object]:
-    return {
-        "error_code": "qr_payload_too_long",
-        "error_message": "The QR payload does not fit the fixed QR code of this tape.",
-        "error_detail": {"length": exc.length, "max_bytes": exc.max_bytes},
-    }
+@render_router.post(
+    "/render/check",
+    tags=["print"],
+    summary="Check cart items against the layout before printing",
+    description=(
+        "Looks up every distinct item once (at most eight lookups at a time), draws it for "
+        "``tape_mm`` with the given ``orientation`` and ``layout_preset``, and answers one "
+        "verdict per item in request order.  A failing item does not fail the request: "
+        "its result carries ``error_code`` (``qr_payload_too_long``, "
+        "``content_type_data_mismatch``, ``integration_item_not_found``, "
+        "``integration_unknown_app``, ``integration_lookup_failed``, "
+        "``integration_not_configured``) and, where it helps, ``error_detail``.  "
+        "Returns 409 (``unsupported_tape``) before any lookup when the tape width or the "
+        "orientation is not available.  Rate limit: the request's own token pays for the first "
+        "distinct lookup, each further one takes another token from the key's bucket (never "
+        "more than a full bucket); a request the remaining budget cannot cover is refused with "
+        "429 ``rate_limit_exceeded`` before any lookup.  "
+        "Nothing is printed and no job is created."
+    ),
+    response_model=RenderCheckResponse,
+    responses={
+        409: {"description": "Unsupported tape width or orientation (`unsupported_tape`)"},
+        429: {
+            "description": "The key's rate limit cannot cover the lookups (`rate_limit_exceeded`)"
+        },
+        422: {"description": "Invalid body: no items, more than 50, or an identifier too long"},
+    },
+)
+async def render_check(
+    body: RenderCheckRequest,
+    http: Request,
+    auth: Annotated[AuthContext, Depends(require_read)],
+) -> RenderCheckResponse | JSONResponse:
+    """Per-item verdicts for a cart; the tape is checked before the first lookup."""
+    try:
+        validate_layout(body)  # a request that cannot succeed costs neither tokens nor lookups
+        # The request's token pays for one lookup; the rest is charged like GET lookups.
+        charge_lookup_fan_out(auth, distinct_lookup_count(body))
+        return await check_items(body, _lookup_service)
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # A failing item is a verdict; what escapes check_items answers from the shared table.
+        return print_error_response(exc, http)

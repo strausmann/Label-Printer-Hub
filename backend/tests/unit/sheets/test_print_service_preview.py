@@ -1457,3 +1457,166 @@ async def test_a_new_sheet_without_a_version_is_previewed_on_the_one_it_reports(
 
     (page,) = out.pages
     assert page.version == 2 and page.geometry.cols == 3
+
+
+# ---------------------------------------------------------------------------- #346 swatch cells
+
+
+def _swatch_job(cell: int = 1, **kw: Any) -> Any:
+    from tests.helpers.spool_swatch import SAMPLE_URL, every_row
+
+    swatch = every_row("de", **kw)
+    data = LabelData(source_app="spoolman", qr_payload=SAMPLE_URL, swatch=swatch)
+    return print_service._CellJob(cell, ContentType.SPOOL_SWATCH, data, 0)
+
+
+def _swatch_box(key: str) -> Any:
+    from tests.helpers.spool_swatch import seed_geometry
+
+    return content_box(seed_geometry(key), 1)
+
+
+@pytest.mark.parametrize("key", ["avery-zweckform-l4737rev", "avery-zweckform-l4736rev"])
+@pytest.mark.parametrize("render_dpi", [300, 600])
+def test_swatch_preview_is_the_job_cell_downscaled(key: str, render_dpi: int) -> None:
+    print_service.SWATCH_PREVIEW_CACHE.clear()
+    box = _swatch_box(key)
+    job = _swatch_job()
+    preview = print_service._render_cell(DEFAULT_CELL_RENDERER, box, job, render_dpi)
+    printed = DEFAULT_CELL_RENDERER.render(
+        box_w_mm=box.w / 100,
+        box_h_mm=box.h / 100,
+        dpi=render_dpi,
+        content_type=ContentType.SPOOL_SWATCH,
+        data=job.data,
+    )
+    expected = print_service.downscale_to_preview(printed.image, box)
+    assert preview.image.tobytes() == expected.tobytes()
+    assert preview.truncated is printed.truncated
+
+
+def test_swatch_preview_draws_no_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
+    print_service.SWATCH_PREVIEW_CACHE.clear()
+    calls: list[int] = []
+    monkeypatch.setattr(print_service, "_qr_placeholder", lambda *a: calls.append(1))
+    # A long payload: a symbol far too fine for 150 dpi, still printable at 600 dpi.
+    job = _swatch_job()
+    job = print_service._CellJob(
+        1,
+        job.content_type,
+        job.data.model_copy(update={"qr_payload": "https://x.example/" + "q" * 300}),
+        0,
+    )
+    preview = print_service._render_cell(
+        DEFAULT_CELL_RENDERER, _swatch_box("avery-zweckform-l4736rev"), job, 600
+    )
+    assert calls == []
+    assert preview.image.mode == "1"
+
+
+def test_swatch_preview_never_lays_out_at_150_dpi(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import spool_swatch
+
+    print_service.SWATCH_PREVIEW_CACHE.clear()
+    dpis: list[int] = []
+    original = spool_swatch.draw.render_swatch
+
+    def spy(*args: Any, **kw: Any) -> Any:
+        dpis.append(kw["dpi"])
+        return original(*args, **kw)
+
+    monkeypatch.setattr(spool_swatch.draw, "render_swatch", spy)
+    monkeypatch.setattr(cell_render, "render_swatch", spy)
+    print_service._render_cell(
+        DEFAULT_CELL_RENDERER, _swatch_box("avery-zweckform-l4737rev"), _swatch_job(), 600
+    )
+    assert dpis == [600]
+
+
+def test_swatch_preview_uses_the_jobs_mask(monkeypatch: pytest.MonkeyPatch) -> None:
+    print_service.SWATCH_PREVIEW_CACHE.clear()
+    masks: list[Any] = []
+    original = cell_render.render_swatch
+
+    def spy(*args: Any, **kw: Any) -> Any:
+        masks.append(kw.get("qr_mask"))
+        return original(*args, **kw)
+
+    monkeypatch.setattr(cell_render, "render_swatch", spy)
+    print_service._render_cell(
+        DEFAULT_CELL_RENDERER, _swatch_box("avery-zweckform-l4737rev"), _swatch_job(), 300
+    )
+    assert masks == [None]  # the job searches the best mask, and so does its preview
+
+
+@pytest.mark.parametrize("render_dpi", [240, 400])
+def test_downscale_target_is_the_box_at_preview_dpi(render_dpi: int) -> None:
+    from app.services.spool_swatch import to_px
+
+    print_service.SWATCH_PREVIEW_CACHE.clear()
+    box = _swatch_box("avery-zweckform-l4737rev")
+    cell = print_service._render_cell(DEFAULT_CELL_RENDERER, box, _swatch_job(), render_dpi)
+    assert cell.image.size == (to_px(box.w, 150), to_px(box.h, 150))
+
+
+def test_preview_cache_reuses_cells(monkeypatch: pytest.MonkeyPatch) -> None:
+    print_service.SWATCH_PREVIEW_CACHE.clear()
+    calls: list[int] = []
+    original = cell_render.render_swatch
+
+    def spy(*args: Any, **kw: Any) -> Any:
+        calls.append(kw["dpi"])
+        return original(*args, **kw)
+
+    monkeypatch.setattr(cell_render, "render_swatch", spy)
+    from tests.helpers.spool_swatch import seed_geometry
+
+    g = seed_geometry("avery-zweckform-l4737rev")
+    jobs = [_swatch_job(1), _swatch_job(2)]  # two copies of one spool
+    print_service._draw_page(DEFAULT_CELL_RENDERER, g, jobs, None, None, 300)
+    print_service._draw_page(DEFAULT_CELL_RENDERER, g, jobs, None, None, 300)
+    assert len(calls) == 1
+    print_service._draw_page(DEFAULT_CELL_RENDERER, g, [_swatch_job(1, bed_c=70)], None, None, 300)
+    assert len(calls) == 2
+    other = _swatch_job(1)
+    other = print_service._CellJob(
+        1,
+        other.content_type,
+        other.data.model_copy(update={"qr_payload": "https://y.example/2"}),
+        0,
+    )
+    print_service._draw_page(DEFAULT_CELL_RENDERER, g, [other], None, None, 300)
+    assert len(calls) == 3
+    print_service._draw_page(DEFAULT_CELL_RENDERER, g, jobs, None, None, 600)
+    assert len(calls) == 4
+
+
+class _SpoolLookup(FakeLookup):
+    async def lookup(self, source_app: str, identifier: str) -> LabelData:
+        from tests.helpers.spool_swatch import SAMPLE_URL, swatch
+
+        return LabelData(
+            source_app=source_app,
+            title="x",
+            primary_id="#12",
+            qr_payload=SAMPLE_URL,
+            swatch=swatch(vendor=("Shenzhen Example Filament Corporation International " * 2)[:64]),
+        )
+
+
+async def test_cut_swatch_cell_is_marked_shortened(session: AsyncSession) -> None:
+    from tests.helpers.spool_swatch import Z6121, seed_geometry
+
+    await ts.create_type(
+        session,
+        ts.TypeFields("acme-6121", "A6121", "Acme", ["6121"], None, True),
+        seed_geometry(Z6121),
+        actor="t",
+    )
+    printer = await make_printer(session, record())
+    code = await make_sheet(session, key="acme-6121")
+    item = grocy("12", ContentType.SPOOL_SWATCH)
+    item = item.model_copy(update={"lookup": PrintLookupRequest(app="spoolman", identifier="12")})
+    out = await run_preview(session, printer, req([item], [on(code)]), lookup=_SpoolLookup())
+    cells = [c for c in out.pages[0].cells if c.item_index == 0]
+    assert cells and cells[0].truncated is True

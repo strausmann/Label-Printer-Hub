@@ -39,9 +39,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.page_render.pdf import resolve_font_path
 from app.printer_backends.exceptions import ContentTypeDataMismatchError
-from app.schemas.content_type import ContentType
+from app.schemas.content_type import ContentType, has_qr
 from app.schemas.label_data import LabelData
 from app.services.layout_engine import REQUIRED_FIELDS
+from app.services.spool_swatch import SHEET_METRICS, layout_for_box, render_swatch
 from app.sheets.geometry import Geometry, cell_origin
 from app.sheets.text import sanitise_text
 
@@ -86,6 +87,7 @@ _MAPPED_WITHOUT_QR: Final[dict[ContentType, ContentType]] = {
     ContentType.QR_TWO_LINES: ContentType.TEXT_TWO_LINES,
     ContentType.QR_THREE_LINES: ContentType.TEXT_TWO_LINES,
     ContentType.QR_WITH_LISTING: ContentType.TEXT_TWO_LINES,
+    ContentType.SPOOL_SWATCH: ContentType.TEXT_TWO_LINES,
 }
 
 # Font sizes (em, in px) as fractions of the box height; the cap height is about 0.73 em.
@@ -361,7 +363,10 @@ def _clean(value: str | None) -> str:
 def check_required(content_type: ContentType, data: LabelData) -> None:
     def empty(name: str) -> bool:
         value = getattr(data, name)
-        if value is None or len(value) == 0:
+        if value is None:
+            return True
+        # A value without a length (the swatch model) is present once it is set.
+        if hasattr(value, "__len__") and len(value) == 0:
             return True
         # Text that is only whitespace or control characters draws nothing: also missing.
         if name in ("primary_id", "title"):
@@ -414,9 +419,11 @@ class RasterCellRenderer:
                 content_type=str(content_type), missing_fields=("label_size",)
             )
         width, height = _box_px(box_w_mm, box_h_mm, dpi)
+        if content_type is ContentType.SPOOL_SWATCH:
+            return _swatch_cell(box_w_mm, box_h_mm, width, height, dpi, data, qr_mask)
         canvas = Image.new("1", (width, height), 1)
         text_x = 0
-        if content_type.value.startswith("qr_"):
+        if has_qr(content_type):
             edge = qr_edge_px(box_w_mm, box_h_mm, dpi)
             qr = build_qr(data.qr_payload or "", edge, mask=qr_mask)
             if qr is None:
@@ -512,6 +519,35 @@ class RasterCellRenderer:
                 draw.text((x, y + cap), text, font=font, fill=0, anchor="ls")
             y += pitch(size)
         return truncated
+
+
+def _swatch_cell(
+    box_w_mm: float,
+    box_h_mm: float,
+    width: int,
+    height: int,
+    dpi: int,
+    data: LabelData,
+    qr_mask: int | None,
+) -> CellImage:
+    """The swatch label (#346) with the sheet metrics; the tier comes from the box in hmm.
+
+    Raises ``ContentTypeDataMismatchError`` (``label_size``) below the ``core`` tier and
+    ``QrDoesNotFitError`` when no QR version fits the tier's QR box at ``dpi``.
+    """
+    assert data.swatch is not None  # check_required ran first
+    layout = layout_for_box(round(box_w_mm * 100), round(box_h_mm * 100), SHEET_METRICS)
+    image, truncated = render_swatch(
+        data.swatch,
+        data.qr_payload or "",
+        layout=layout,
+        width_px=width,
+        height_px=height,
+        dpi=dpi,
+        metrics=SHEET_METRICS,
+        qr_mask=qr_mask,
+    )
+    return CellImage(image, truncated)
 
 
 DEFAULT_CELL_RENDERER: CellRenderer = RasterCellRenderer()

@@ -10,7 +10,8 @@ Refusals, in this order, all ``ProblemDetail`` bodies under ``detail``: scope (d
 unknown printer 404, restricted key 403, disabled 409, paused 409, tray 422, then for a page
 printer unpolled 409 ``printer-status-unknown``, offline/stale 409 ``printer-offline`` and
 ``media-unknown`` 409; for a tape printer the submit-time preflight decides (offline,
-no tape). A test print reserves no sheet cell and uses no calibration.
+no tape), and every other known printer or render error answers from the shared table (#378,
+``app.api.print_errors``). A test print reserves no sheet cell and uses no calibration.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.printer_runtime import get_printer_runtime
+from app.api.print_errors import print_error_problem, print_error_responses
 from app.api.routes.pause_view import pause_view
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
@@ -32,22 +34,22 @@ from app.db.session import get_session
 from app.models.printer import Printer
 from app.page_render.test_page import build_test_page_payload
 from app.printer_backends.exceptions import (
-    NoTapeLoadedError,
     PrinterDisabledError,
     PrinterOfflineError,
-    QrPayloadTooLongError,
     SnmpQueryError,
 )
 from app.repositories import printer_state as printer_state_repo
 from app.schemas.problem import ProblemDetail
+from app.services.print_error_codes import KNOWN_PRINT_ERROR_TYPES
 from app.services.print_queue import PrintQueue
 from app.services.printer_runtime import PrinterRuntime
+from app.services.test_label import test_label_band
 from app.services.test_print import (
     TestPrintRefusal,
     plan_page_test_print,
     printer_url,
     resolve_tray,
-    tape_test_label,
+    tape_test_text,
 )
 
 router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
@@ -96,27 +98,31 @@ def _version() -> str:
     "/{printer_id}/test-print",
     response_model=TestPrintAccepted,
     status_code=status.HTTP_202_ACCEPTED,
-    responses={
-        status.HTTP_404_NOT_FOUND: {"description": "Unknown printer (`printer-not-found`)."},
-        status.HTTP_409_CONFLICT: {
-            "description": (
+    responses=print_error_responses(
+        "problem",
+        extra={
+            status.HTTP_404_NOT_FOUND: "Unknown printer (`printer-not-found`).",
+            status.HTTP_409_CONFLICT: (
                 "`printer-disabled`, `printer-paused`, `printer-status-unknown` (page printer "
-                "the hub does not poll), `printer-offline`, `no-tape-loaded` (tape printer), "
-                "`media-unknown` (page printer) or `printer-unavailable`."
-            )
+                "the hub does not poll), `printer-offline` (also an SNMP failure of a tape "
+                "printer), `media-unknown` (page printer) or `printer-unavailable`. "
+                "`unsupported-tape`: the printer model does not take the loaded tape; it "
+                "carries the loaded width in `extensions.tape_mm`."
+            ),
+            status.HTTP_422_UNPROCESSABLE_CONTENT: (
+                "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray."
+            ),
         },
-        status.HTTP_422_UNPROCESSABLE_CONTENT: {
-            "description": (
-                "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. "
-                "`qr-payload-too-long`: the printer link does not fit the fixed QR code of "
-                "the loaded tape (QL 62 mm)."
-            )
+        overrides={
+            "printer_offline": (409, "printer_offline"),
+            "snmp_query_failed": (409, "printer_offline"),
         },
-    },
+    ),
     summary="Print a test label (tape) or a test page (page printer)",
     description=(
-        "Prints one test label on a tape printer (printer name, tape width, time, a QR to the "
-        "printer's page in the hub) or one test page on a page printer (a frame on the printable "
+        "Prints one test label on a tape printer (printer name, tape width, time and a 50 mm "
+        "ruler on every tape the model takes, from 29 mm also a QR to the printer's page in the "
+        "hub) or one test page on a page printer (a frame on the printable "
         "area, name, tray, time, a QR). A tape printer is asked at submit time what tape is "
         "loaded, so the answer needs no polling; a page printer needs a fresh status."
     ),
@@ -181,7 +187,10 @@ async def test_print(
         raise _unavailable(printer_id)
     try:
         job_id = await service.submit_test_label(
-            lambda width_mm: tape_test_label(printer, width_mm, now, version, url),
+            lambda width_mm: tape_test_text(printer, width_mm, now, version, url),
+            # #377: the band of the printer model on the loaded tape; a width the model does
+            # not take answers 409 ``unsupported-tape`` before anything is rendered.
+            lambda width_mm: test_label_band(printer.backend, printer.model, width_mm),
             api_key_id=auth.api_key_id,
             source_ip=auth.ip,
         )
@@ -191,16 +200,10 @@ async def test_print(
         raise _refuse(
             409, "printer-offline", "The printer is offline", "The printer did not answer"
         ) from None
-    except NoTapeLoadedError:
-        raise _refuse(409, "no-tape-loaded", "No tape is loaded", "Load a tape first") from None
-    except QrPayloadTooLongError as exc:
-        # #258: the QR of a QL 62 mm label has a fixed size; the printer URL must fit it.
-        raise _refuse(
-            422,
-            "qr-payload-too-long",
-            "The printer link does not fit the fixed QR code of this tape",
-            f"{exc.length} bytes, at most {exc.max_bytes}",
-        ) from None
+    except KNOWN_PRINT_ERROR_TYPES as exc:
+        # The shared table (#378), as a problem under ``detail`` like every refusal here.
+        problem = print_error_problem(exc, request)
+        raise HTTPException(problem.status, detail=problem.model_dump(exclude_none=True)) from None
     return TestPrintAccepted(job_id=job_id)
 
 

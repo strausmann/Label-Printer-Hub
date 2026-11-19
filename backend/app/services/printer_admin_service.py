@@ -19,6 +19,8 @@ Flattening-Helpers (top-level Funktionen fuer einfaches Unit-Testing):
 
 from __future__ import annotations
 
+import contextlib
+import ipaddress
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -37,6 +39,7 @@ from app.models.printer import Printer, PrinterAudit
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
+from app.models.printer_tray_loading import PrinterTrayLoading
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
 from app.printer_backends.ipp.client import IppClient, to_http_url
 from app.printer_backends.ipp.errors import (
@@ -136,6 +139,90 @@ class ConnectionKindMismatchError(Exception):
 
 class TraysNotAllowedError(Exception):
     """``trays`` were sent for a tape printer."""
+
+
+class SnmpCommunityRequiredError(Exception):
+    """The request needs an SNMP community it does not carry.
+
+    Either ``snmp.discover`` is on and there is no community at all, or the SNMP target
+    (host or port) changes and the stored community must not follow it.
+    """
+
+
+# ---------------------------------------------------------------------------
+# SNMP community: write-only (#296, R-296-5)
+# ---------------------------------------------------------------------------
+
+DEFAULT_SNMP_COMMUNITY = "public"
+
+
+def _stored_community(connection: Mapping[str, Any] | None) -> str | None:
+    snmp = (connection or {}).get("snmp")
+    if not isinstance(snmp, Mapping):
+        return None
+    value = snmp.get("community")
+    return value if isinstance(value, str) else None
+
+
+def _snmp_target(connection: Mapping[str, Any] | None) -> tuple[str, int | None]:
+    """Host and port a community would be sent to, normalised for comparison.
+
+    The host ignores case and surrounding blanks, but not a trailing dot: ``printer`` and
+    ``printer.`` are different DNS names (relative against absolute). An IP address compares by
+    value (``ipaddress``), so two spellings of one address are the same target.
+    """
+    conn = connection or {}
+    host = str(conn.get("host") or "").strip().lower()
+    with contextlib.suppress(ValueError):  # a name, not an address
+        host = ipaddress.ip_address(host.strip("[]")).compressed
+    port = conn.get("port")
+    try:
+        port_number: int | None = int(port) if port is not None else None
+    except (TypeError, ValueError):
+        port_number = None
+    return host, port_number
+
+
+def merge_snmp_community(
+    new_connection: dict[str, Any], stored_connection: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Resolve a write-only community: ``None`` keeps the stored one (``public`` without one).
+
+    A non-empty string replaces it. The stored community is kept only for the same SNMP
+    target: when host or port change, a request without a community is refused, because
+    the hub would otherwise send the stored secret to the new host (#296). Raises
+    ``SnmpCommunityRequiredError`` for that, and when discovery is on and the result is
+    empty (an old row that stored ``""``).
+    """
+    snmp = new_connection.get("snmp")
+    if not isinstance(snmp, dict):
+        return new_connection
+    if snmp.get("community") is None:
+        stored = _stored_community(stored_connection)
+        if stored is None:
+            snmp["community"] = DEFAULT_SNMP_COMMUNITY
+        elif _snmp_target(new_connection) != _snmp_target(stored_connection):
+            raise SnmpCommunityRequiredError()
+        else:
+            snmp["community"] = stored
+    if snmp.get("discover") and not snmp["community"]:
+        raise SnmpCommunityRequiredError()
+    return new_connection
+
+
+def snmp_view(connection: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``connection`` as a response shows it: ``snmp.community`` becomes ``community_set``.
+
+    ``community_set`` is true for a non-empty stored string. Used by every printer response
+    (admin and read routes); the value itself never leaves the hub (#296).
+    """
+    view = dict(connection)
+    snmp = view.get("snmp")
+    if isinstance(snmp, Mapping):
+        snmp_out = {k: v for k, v in snmp.items() if k != "community"}
+        snmp_out["community_set"] = bool(_stored_community(connection))
+        view["snmp"] = snmp_out
+    return view
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +358,7 @@ def _payload_to_row(
         "slug": payload.slug,
         "model": payload.model,
         "backend": payload.backend,
-        "connection": payload.connection.model_dump(mode="json"),
+        "connection": merge_snmp_community(payload.connection.model_dump(mode="json"), None),
         "queue_timeout_s": payload.queue.timeout_s,
         # Cut defaults do not apply to page printers (spec 11.1).
         "cut_defaults_half_cut": (
@@ -287,20 +374,23 @@ def _payload_to_row(
 
 
 def _apply_update_patch(
-    row: dict[str, Any],  # noqa: ARG001 — row wird nicht genutzt, aber fuer API-Konsistenz behalten
+    row: dict[str, Any],
     patch: PrinterUpdatePayload,
 ) -> dict[str, Any]:
     """Returns dict mit nur geaenderten Spalten fuer SQL-UPDATE.
 
     slug/model/backend/id werden silent ignoriert (PrinterUpdatePayload
     kennt sie ohnehin nicht).
-    connection wird ATOMAR ersetzt (kein Sub-Field-Merge).
+    connection wird ATOMAR ersetzt (kein Sub-Field-Merge) — ausser der SNMP-Community:
+    ohne ``community`` (oder ``null``) bleibt die gespeicherte aus *row* (#296).
     """
     changes: dict[str, Any] = {}
     if patch.name is not None:
         changes["name"] = patch.name
     if patch.connection is not None:
-        changes["connection"] = patch.connection.model_dump(mode="json")
+        changes["connection"] = merge_snmp_community(
+            patch.connection.model_dump(mode="json"), row.get("connection")
+        )
     if patch.queue is not None:
         changes["queue_timeout_s"] = patch.queue.timeout_s
     if patch.cut_defaults is not None:
@@ -310,6 +400,12 @@ def _apply_update_patch(
     if patch.enabled is not None:
         changes["enabled"] = patch.enabled
     return changes
+
+
+def _address(connection: Mapping[str, Any] | None) -> tuple[object, object]:
+    """Host and port of a tape printer's connection."""
+    conn = connection or {}
+    return conn.get("host"), conn.get("port", 9100)
 
 
 def _layout_json(defaults: Mapping[int, LayoutDefault]) -> dict[str, Any]:
@@ -417,6 +513,13 @@ class PrinterAdminService:
             delete(PrinterCalibration).where(
                 col(PrinterCalibration.printer_id) == printer_id,
                 col(PrinterCalibration.tray_key).not_in([t.key for t in trays]),
+            )
+        )
+        # The tray's loading (#350, R-350-5) goes the same way as its calibration.
+        await self._session.execute(
+            delete(PrinterTrayLoading).where(
+                col(PrinterTrayLoading.printer_id) == printer_id,
+                col(PrinterTrayLoading.tray_key).not_in([t.key for t in trays]),
             )
         )
         self._session.add_all(_tray_rows(printer_id, trays))
@@ -531,6 +634,11 @@ class PrinterAdminService:
             changes.pop("cut_defaults_half_cut", None)  # does not apply to page printers
             changes.pop("layout_defaults", None)  # nor do tape layouts (#258)
             changes.update(await self._ipp_update_checks(printer, patch, stored_trays))
+        elif "connection" in changes and _address(changes["connection"]) != _address(
+            printer.connection
+        ):
+            # #393: another address may be another printer; its next test print decides again.
+            changes["print_confirmation"] = None
 
         for key, value in changes.items():
             setattr(printer, key, value)
@@ -707,6 +815,12 @@ class PrinterAdminService:
                 for row in list(rows):
                     await self._session.delete(row)
                     removed += 1
+                # Another device takes paper its own way: the loading goes too (R-350-5).
+                await self._session.execute(
+                    delete(PrinterTrayLoading).where(
+                        col(PrinterTrayLoading.printer_id) == printer_id
+                    )
+                )
                 await self._session.flush()
             await self._record_audit(
                 printer_id=printer_id,

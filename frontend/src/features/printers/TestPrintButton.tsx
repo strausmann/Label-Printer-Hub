@@ -10,16 +10,24 @@ import { useSession } from "../../app/session";
 import { SelectField } from "../settings/controls";
 import { PRIMARY_BUTTON, SECONDARY_BUTTON } from "../ui";
 import type { Printer, PrinterStatus, useTestPrint } from "./api";
+import { notePrintError } from "./coverRefusals";
 import { isPagePrinter, printerStopReasons, unknownKind } from "./model";
+import { printErrorText } from "./printErrorText";
 import { useReasonWord } from "./reasons";
+import { unsupportedRoll, useRollWords } from "./roll";
 
 /** Why the button cannot be pressed, or null. Tape printers are not refused on status: the server's preflight decides. */
 function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): string | null {
   const { t } = useLingui();
   const word = useReasonWord();
+  const words = useRollWords();
   if (!printer.enabled) return t`Printer is disabled`;
   if (printer.paused) return t`Printer is paused`;
-  if (!isPagePrinter(printer, status)) return null;
+  if (!isPagePrinter(printer, status)) {
+    // A roll the hub cannot print on (die-cut): say so before the press; the hub's 409 stays the backstop.
+    const roll = unsupportedRoll(status);
+    return roll ? words(roll).unsupported : null;
+  }
   // A page printer has no preflight at submit time, so a status that is not a reading of it blocks.
   // No reading yet (still loading) is the same as none: pressing now would print blind.
   if (status === undefined || unknownKind(status) === "not_polled") return t`Printer status unknown`;
@@ -37,22 +45,19 @@ function useBlockedReason(printer: Printer, status: PrinterStatus | undefined): 
  * the API's detail for a type it does not know; a plain sentence when the answer carried none (a bare `HTTP 500`).
  */
 function useErrorText(error: unknown): string {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   if (error instanceof ApiError) {
     switch (error.code?.split("/").pop()) {
-      case "printer-offline":
-        return t`The printer is not reachable. Check that it is switched on and connected, then try again.`;
-      case "no-tape-loaded":
-        return t`No tape is loaded. Put in a tape and try again.`;
       case "media-unknown":
         return t`The printer does not report which paper is in the tray. Set the paper size on the printer or choose another tray.`;
-      case "printer-disabled":
-        return t`The printer is switched off in the hub. Switch it on in the printer settings.`;
       case "printer-paused":
         return t`The printer is paused. Resume it, then try again.`;
       case "printer-status-unknown":
         return t`The hub cannot read this printer's status, so it cannot tell whether it is ready. An admin can check its address in the printer settings, then try again.`;
     }
+    // The printer and render errors every printing route shares (#378): offline, no tape, cover open …
+    const known = printErrorText(error.code, error.errorDetail, (d) => i18n._(d));
+    if (known !== null) return known;
     if (!/^HTTP \d+$/.test(error.detail)) return error.detail;
   }
   return t`The test print could not be started.`;
@@ -73,7 +78,9 @@ export function TestPrintButton({ printer, status, mutation }: { printer: Printe
   const page = isPagePrinter(printer, status);
   if (scope !== "print" && scope !== "admin") return null;
   const reasonId = `test-print-reason-${printer.id}`;
-  const send = (tray: string | null) => mutation.mutate(tray, { onSettled: () => setOpen(false) });
+  // A refusal on the open cover escalates the cover at once, like a refused label (#376); a test page names no label.
+  const send = (tray: string | null) =>
+    mutation.mutate(tray, { onError: (error) => notePrintError(printer.id, "", error), onSettled: () => setOpen(false) });
 
   return (
     <div className="flex min-w-0 max-w-full flex-col items-start gap-1.5">

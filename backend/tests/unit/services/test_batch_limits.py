@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -36,6 +35,7 @@ from app.services.cleanup_task import CleanupTask
 from app.services.job_lifecycle import JobState
 from app.services.job_store import MemoryJobStore
 from app.services.layout_engine import LayoutEngine
+from app.services.lookup_gate import MAX_BATCH_LOOKUPS
 from app.services.print_queue import (
     MAX_HELD_RUNS_PER_KEY_PER_PRINTER,
     MAX_HELD_RUNS_PER_PRINTER,
@@ -44,7 +44,7 @@ from app.services.print_queue import (
     PrintQueue,
     TooManyQueuedRunsError,
 )
-from app.services.print_service import MAX_BATCH_LOOKUPS, PrintService
+from app.services.print_service import PrintService
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -732,6 +732,69 @@ async def test_batch_lookups_are_bounded() -> None:
     assert lookups.peak <= MAX_BATCH_LOOKUPS
 
 
+async def test_batch_and_render_check_share_one_lookup_bound() -> None:
+    """A batch print and a render check running together never exceed ``MAX_BATCH_LOOKUPS``."""
+    from app.schemas.render_check import RenderCheckItem, RenderCheckLookup, RenderCheckRequest
+    from app.services.render_check import check_items
+
+    class _Counting:
+        def __init__(self) -> None:
+            self.current = 0
+            self.peak = 0
+            self.calls = 0
+
+        async def lookup(self, app: str, identifier: str) -> LabelData:
+            self.calls += 1
+            self.current += 1
+            self.peak = max(self.peak, self.current)
+            try:
+                await asyncio.sleep(0.02)
+            finally:
+                self.current -= 1
+            return LabelData(source_app=app, title="t", primary_id=identifier, qr_payload="x")
+
+    backend = AsyncMock()
+    backend.preflight_check = AsyncMock(
+        return_value=PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, error_flags=[])
+    )
+    queue = MagicMock()
+    queue.enqueue_batch = AsyncMock()
+    store = MagicMock()
+    store.save_queued = AsyncMock()
+    lookups = _Counting()
+    svc = PrintService(
+        printer_id=uuid4(),
+        backend=backend,
+        queue=queue,
+        store=store,
+        engine=LayoutEngine(),
+        lookup_service=lookups,
+    )
+    requests = [
+        PrintRequest(
+            content_type=ContentType.QR_TWO_LINES,
+            lookup=PrintLookupRequest(app="grocy", identifier=f"B{i}"),
+            options=PrintOptions(),
+        )
+        for i in range(20)
+    ]
+    check = RenderCheckRequest(
+        tape_mm=12,
+        items=[
+            RenderCheckItem(
+                content_type=ContentType.QR_TWO_LINES,
+                lookup=RenderCheckLookup(app="grocy", identifier=f"C{i}"),
+            )
+            for i in range(20)
+        ],
+    )
+    await asyncio.gather(
+        svc.submit_batch_job(requests, half_cut=False), check_items(check, lookups)
+    )
+    assert lookups.calls == 40
+    assert 1 < lookups.peak <= MAX_BATCH_LOOKUPS
+
+
 # ---------------------------------------------------------------------------- 266-07 renders
 
 
@@ -821,23 +884,27 @@ async def test_a_cancelled_preview_keeps_its_key_slot_until_the_render_ends(
 async def test_reserve_does_not_block_loop(
     async_session_factory: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``plan`` runs in a thread under the write lock. The stand-in plan takes ``STALL`` of CPU
-    time; on the loop that is a lag of at least ``STALL``. The bound is half of it, relative to
-    the stall instead of an absolute 50 ms so a loaded runner does not fail it spuriously."""
+    """``plan`` runs in a thread under the write lock. Event-based, no clock: the stand-in plan
+    blocks on a threading event until the loop has ticked several times while the plan is
+    running. If ``plan`` ran on the loop, the loop could not tick and the wait below times out."""
+    import threading
+
     from app.sheets import reservation
     from app.sheets import sheet_service as ss
     from app.sheets import type_service as ts
 
     from tests.unit.sheets.test_reservation import G48, MARGIN, _fields, existing, meta
 
-    stall = 0.6
     real_plan = reservation.plan
+    in_plan = threading.Event()
+    release = threading.Event()
 
-    def slow_plan(*args: Any, **kwargs: Any) -> Any:
-        time.sleep(stall)  # stands in for the CPU work of a large plan
+    def blocked_plan(*args: Any, **kwargs: Any) -> Any:
+        in_plan.set()
+        release.wait(timeout=10)  # the loop must release us; the timeout only ends a hung test
         return real_plan(*args, **kwargs)
 
-    monkeypatch.setattr(reservation, "plan", slow_plan)
+    monkeypatch.setattr(reservation, "plan", blocked_plan)
     async with async_session_factory() as session:
         await ts.create_type(session, _fields(), G48, actor="t")
         sheet = await ss.create_sheet(
@@ -849,20 +916,19 @@ async def test_reserve_does_not_block_loop(
             note=None,
             actor="t",
         )
-        lags: list[float] = []
+        ticks = 0
         done = asyncio.Event()
 
         async def probe() -> None:
-            last = time.monotonic()
+            nonlocal ticks
             while not done.is_set():
-                await asyncio.sleep(0.005)
-                now = time.monotonic()
-                lags.append(now - last)
-                last = now
+                await asyncio.sleep(0.001)
+                if in_plan.is_set() and not release.is_set():
+                    ticks += 1
 
         ticker = asyncio.create_task(probe())
-        try:
-            pages = await reservation.reserve(
+        job = asyncio.create_task(
+            reservation.reserve(
                 session,
                 placements=[existing(sheet.code)],
                 items=meta(3),
@@ -872,11 +938,21 @@ async def test_reserve_does_not_block_loop(
                 required_type_key=None,
                 actor="t",
             )
+        )
+        try:
+
+            async def _loop_ticks_while_plan_runs() -> None:
+                while ticks < 5:
+                    await asyncio.sleep(0.005)
+
+            await asyncio.wait_for(_loop_ticks_while_plan_runs(), timeout=5)
         finally:
+            release.set()
+            pages = await job
             done.set()
             await ticker
     assert len(pages) == 1
-    assert max(lags) < stall / 2, max(lags)
+    assert ticks >= 5
 
 
 def test_the_pdf_font_is_registered_up_front() -> None:

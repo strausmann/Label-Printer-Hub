@@ -97,6 +97,27 @@ definition_de = "Ein Papierfach eines Seitendruckers, in dem Bögen liegen."
 reject_de = ["Schacht"]
 
 [[term]]
+id = "sheet-code"
+en = "sheet code"
+de = "Bogencode"
+definition_en = "The code that identifies a sheet, for example A3490-0001. It is printed in the margin, on the back of the liner or in a reserved cell."
+definition_de = "Der Code, der einen Bogen erkennt, zum Beispiel A3490-0001. Er wird in den Rand, auf die Rückseite des Trägerpapiers oder in eine reservierte Zelle gedruckt."
+
+[[term]]
+id = "liner"
+en = "liner"
+de = "Trägerpapier"
+definition_en = "The backing paper the labels of a sheet sit on."
+definition_de = "Das Papier, auf dem die Etiketten eines Bogens kleben."
+
+[[term]]
+id = "backing-design"
+en = "backing design"
+de = "Trägerdesign"
+definition_en = "The vendor print on the back of the liner, with the free strips where the sheet code can go."
+definition_de = "Der Herstelleraufdruck auf der Rückseite des Trägerpapiers, mit den freien Streifen, in die der Bogencode passt."
+
+[[term]]
 id = "calibration"
 en = "calibration"
 de = "Kalibrierung"

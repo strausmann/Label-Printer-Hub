@@ -23,6 +23,7 @@ import {
   useMarkCells,
   useNextCode,
   usePrintSheets,
+  useResolveAllCells,
   useResolveCells,
   useSheet,
   useSheetPreview,
@@ -176,6 +177,29 @@ describe("sheet writes", () => {
     ]);
   });
 
+  it("useResolveAllCells posts the outcome, the expected count and cells and caches the sheet", async () => {
+    const { calls } = mockApi({ "POST /api/v1/sheets/AB-12/cells/resolve-all": sheetRead("AB-12", { used: [1, 2] }) });
+    const { wrapper, client } = setup();
+    const { result } = renderHook(() => useResolveAllCells(), { wrapper });
+    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "not_printed", expectedCells: [3, 4] }));
+    expect(calls.map((c) => [c.path, JSON.parse(c.body!)])).toEqual([
+      ["/api/v1/sheets/AB-12/cells/resolve-all", { outcome: "not_printed", expected_count: 2, expected_cells: [3, 4] }],
+    ]);
+    expect(client.getQueryData<{ code: string }>(sheetKey("AB-12"))?.code).toBe("AB-12");
+  });
+
+  it("useResolveAllCells surfaces a network error as isError", async () => {
+    mockApi({
+      "POST /api/v1/sheets/AB-12/cells/resolve-all": () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => useResolveAllCells(), { wrapper });
+    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "printed", expectedCells: [3, 4] }).catch(() => undefined));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
   it("a cell write that fails keeps the cached sheet and surfaces the code", async () => {
     mockApi({ "POST /api/v1/sheets/L4736-0001/cells/mark": () => respond(409, apiErrorBody("cells_taken", "Taken.", { cells: [7] })) });
     const { wrapper, client } = setup();
@@ -263,6 +287,18 @@ describe("preview and print", () => {
     const error = await act(() => result.current.mutateAsync(request).catch((e: unknown) => e));
     expect(printInterrupted(error)).toEqual({ batchId: "b1", jobIds: ["j1"] });
     expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["jobs"]);
+  });
+
+  it("a partial sheet print refreshes the printer status", async () => {
+    mockApi({
+      [`POST /api/v1/print/${PAGE_PRINTER.id}/sheet`]: () =>
+        respond(502, apiErrorBody("print_interrupted", "Interrupted.", { batch_id: "b1", job_ids: ["j1"] })),
+    });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePrintSheets(PAGE_PRINTER.id), { wrapper });
+    await act(() => result.current.mutateAsync(request).catch(() => undefined));
+    // The status names the tray the newest sheet page used (#344): pages that were queued count.
+    expect(invalidate.mock.calls.map((c) => c[0]?.queryKey)).toContainEqual(["printers", PAGE_PRINTER.id, "status"]);
   });
 
   it("the pages of a partly printed batch get a print status entry, a plain failure does not", async () => {

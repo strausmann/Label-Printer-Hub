@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.schemas.content_type import ContentType
 from app.schemas.label_data_item import LabelDataItem
 from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
+from app.schemas.spool_swatch import SpoolSwatch
 
 
 class PrintLookupRequest(BaseModel):
@@ -81,6 +82,8 @@ class RawLabelData(BaseModel):
     qr_payload: str | None = Field(default=None, max_length=QR_PAYLOAD_MAX)
     secondary: tuple[_RawText, ...] = Field(default=(), max_length=RAW_SECONDARY_MAX)
     items: tuple[RawListingItem, ...] = Field(default=(), max_length=RAW_LISTING_MAX)
+    swatch: SpoolSwatch | None = None
+    """Spool data of the ``spool_swatch`` label (#346); bounded by the model itself."""
 
 
 class PrintRequest(BaseModel):

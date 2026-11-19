@@ -13,23 +13,27 @@ __init__; use ``await UdpTransportTarget.create((host, port), ...)`` instead.
 from __future__ import annotations
 
 __all__ = [
+    "PRT_MARKER_LIFE_COUNT_OID",
     "ObservedIdentity",
     "PreflightStatus",
     "SnmpQueryError",
     "decode_error_flags",
     "format_mac",
+    "parse_label_length_mm",
     "parse_loaded_tape_mm",
+    "parse_media_kind",
     "query_identity",
     "query_loaded_tape_mm",
     "query_model_pjl",
     "query_preflight",
+    "roll_record",
 ]
 
 import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Final, Literal
 
 from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData,
@@ -40,7 +44,7 @@ from pysnmp.hlapi.v3arch.asyncio import (
     UdpTransportTarget,
     get_cmd,
 )
-from pysnmp.proto import rfc1902
+from pysnmp.proto import rfc1902, rfc1905
 
 from app.printer_backends.exceptions import SnmpDiscoveryError, SnmpQueryError
 
@@ -87,6 +91,11 @@ HR_PRINTER_DETECTED_ERROR_STATE_OID = "1.3.6.1.2.1.25.3.5.1.2.1"
 PRT_INPUT_MEDIA_TYPE_OID = "1.3.6.1.2.1.43.8.2.1.12.1.1"
 PRT_GENERAL_SERIAL_NUMBER_OID = "1.3.6.1.2.1.43.5.1.1.17.1"
 IF_PHYS_ADDRESS_OID = "1.3.6.1.2.1.2.2.1.6.1"
+PRT_MARKER_LIFE_COUNT_OID = "1.3.6.1.2.1.43.10.2.1.4.1.1"
+"""``prtMarkerLifeCount.1.1`` (RFC 3805): the printer's life counter of printed units (#393).
+
+Measured on a QL-820NWB and a PT-P750W: unit ``8`` (sheets), one count per printed label. Optional:
+a printer without it answers ``noSuchInstance``/``noSuchObject``, read as ``None``."""
 
 _PRINTER_STATUS_MAP: dict[int, Literal["other", "unknown", "idle", "printing", "warmup"]] = {
     1: "other",
@@ -134,7 +143,18 @@ def _strip_control_characters(text: str) -> str:
     return _CONTROL_CHARACTERS_RE.sub("", text)
 
 
-_TAPE_MM_RE = re.compile(r"^\s*(\d+)\s*mm", re.IGNORECASE)
+MEDIA_RAW_MAX: Final = 64
+"""The longest media name kept (R25-1). A real one is ``62mm x 100mm`` or ``12mm(0.47")``; the text
+comes from the network, and an overlong one must not make the parsers below (or ``int()``, which
+refuses more than 4300 digits) fail the status route."""
+
+
+def _cap(text: str) -> str:
+    return text[:MEDIA_RAW_MAX]
+
+
+# The digit groups are bounded (R25-1): no roll is wider or longer than 9999 mm.
+_TAPE_MM_RE = re.compile(r"^\s*(\d{1,4})\s*mm", re.IGNORECASE)
 
 
 def parse_loaded_tape_mm(text: str) -> int | None:
@@ -144,10 +164,49 @@ def parse_loaded_tape_mm(text: str) -> int | None:
     """
     if not text:
         return None
-    match = _TAPE_MM_RE.match(text)
+    match = _TAPE_MM_RE.match(_cap(text))
     if not match:
         return None
     return int(match.group(1))
+
+
+# A media name with a second dimension (a label length): ``29mm x 90mm``, ``29 x 90 mm``,
+# ``29x90mm``. A continuous roll is named by its width only (``29mm``, ``12mm(0.47")``).
+_DIE_CUT_RE = re.compile(r"^\s*\d+\s*(?:mm)?\s*[x\u00d7]\s*\d+\s*mm", re.IGNORECASE)
+
+MediaKind = Literal["continuous", "die_cut"]
+
+
+def parse_media_kind(text: str | None) -> MediaKind | None:
+    """The kind of media a ``prtInputMediaName`` text names (#389); ``None`` when unknown.
+
+    The printer reports no media type code over SNMP, only this text. A text with a label
+    length is die-cut, a text with a width only is continuous, anything else is unknown. Which
+    text a QL printer reports for a die-cut roll is not verified on hardware; a text this
+    function does not recognise stays unknown and is not refused.
+    """
+    if not text:
+        return None
+    text = _cap(text)
+    if _DIE_CUT_RE.match(text):
+        return "die_cut"
+    if _TAPE_MM_RE.match(text):
+        return "continuous"
+    return None
+
+
+_LABEL_LENGTH_RE = re.compile(r"^\s*\d+\s*(?:mm)?\s*[x\u00d7]\s*(\d+)\s*mm", re.IGNORECASE)
+
+
+def parse_label_length_mm(text: str | None) -> int | None:
+    """The label length of a die-cut media name (``29mm x 90mm`` → 90).
+
+    ``None`` for anything else.
+    """
+    if not text:
+        return None
+    match = _LABEL_LENGTH_RE.match(_cap(text))
+    return int(match.group(1)) if match else None
 
 
 @dataclass(frozen=True)
@@ -159,6 +218,32 @@ class PreflightStatus:
     error_flags: list[str] = field(default_factory=list)
     # Trimmed ``prtInputMediaName`` text as the printer reported it; ``None`` when blank.
     media_raw: str | None = None
+    # ``prtMarkerLifeCount`` (#393): printed labels over the printer's life; ``None`` when the
+    # printer does not report it.
+    marker_count: int | None = None
+    # True when the agent said the counter does not exist: ``noSuchName`` for the whole request
+    # (asked again without it), or ``noSuchObject``/``noSuchInstance`` for the counter. The
+    # caller stops asking for it (#393). A transient error (genErr, a timeout) does not count.
+    counter_refused: bool = False
+
+    @property
+    def media_kind(self) -> MediaKind | None:
+        """Continuous or die-cut, read from ``media_raw`` (#389); ``None`` when unknown."""
+        return parse_media_kind(self.media_raw)
+
+
+def roll_record(status: PreflightStatus | None) -> dict[str, object] | None:
+    """The roll a status read saw, as a job records it (#389): width, media text, kind.
+
+    ``None`` for no read. The colour is not part of it: the printer reports none.
+    """
+    if status is None:
+        return None
+    return {
+        "width_mm": status.loaded_tape_mm,
+        "media_raw": status.media_raw,
+        "media_kind": status.media_kind,
+    }
 
 
 @dataclass(frozen=True)
@@ -239,23 +324,92 @@ async def query_loaded_tape_mm(
     return parse_loaded_tape_mm(str(var_binds[0][1]))
 
 
-async def query_preflight(
-    host: str, *, community: str = "public", timeout_s: float = 3.0
-) -> PreflightStatus:
-    """Single round-trip: status + error-state + loaded tape.
+def _counter(value: object) -> int | None:
+    """An SNMP counter as ``int``; ``None`` for ``noSuchInstance``/``noSuchObject``, a text or any
+    other value that is not a non-negative integer (#393)."""
+    if isinstance(value, (bool, str, bytes, rfc1902.OctetString)):
+        return None
+    try:
+        count = int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError):  # noSuchInstance, noSuchObject, endOfMibView
+        return None
+    return count if count >= 0 else None
 
-    Used by PTouchBackend.preflight_check() to validate before sending a
-    print job. Raises SnmpQueryError on transport failure.
-    """
+
+def _status_value(value: object) -> int:
+    """``hrPrinterStatus`` as ``int`` (run 26, hardening note 2: the agent's types are not
+    trusted). A text or any other value that is no integer raises ``SnmpQueryError``."""
+    if isinstance(value, (bool, str, bytes, rfc1902.OctetString)):
+        raise SnmpQueryError("preflight SNMP returned a status that is not an integer")
+    try:
+        status: int = int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SnmpQueryError("preflight SNMP returned a status that is not an integer") from exc
+    return status
+
+
+def _bitmap_value(value: object) -> bytes:
+    """``hrPrinterDetectedErrorState`` as bytes; only an OCTET STRING is one (``bytes()`` of an
+    integer would allocate that many bytes). Anything else raises ``SnmpQueryError``."""
+    if not isinstance(value, rfc1902.OctetString):
+        raise SnmpQueryError("preflight SNMP returned an error state that is not an octet string")
+    return bytes(value)
+
+
+_NO_SUCH_NAME: Final = 2
+"""SNMP ``error-status`` noSuchName (RFC 1157): the agent does not know an OID of the request."""
+
+
+def _error_code(error_status: object) -> int | None:
+    try:
+        code: int = int(error_status)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return None
+    return code
+
+
+async def _preflight_request(
+    host: str, community: str, timeout_s: float, *, with_counter: bool
+) -> tuple[object, object, list[object]]:
+    oids = [HR_PRINTER_STATUS_OID, HR_PRINTER_DETECTED_ERROR_STATE_OID, PRT_INPUT_MEDIA_TYPE_OID]
+    if with_counter:
+        oids.append(PRT_MARKER_LIFE_COUNT_OID)
     error_indication, error_status, _, var_binds = await get_cmd(
         _get_engine(),
         CommunityData(community, mpModel=1),
         await UdpTransportTarget.create((host, 161), timeout=timeout_s, retries=0),
         ContextData(),
-        ObjectType(ObjectIdentity(HR_PRINTER_STATUS_OID)),
-        ObjectType(ObjectIdentity(HR_PRINTER_DETECTED_ERROR_STATE_OID)),
-        ObjectType(ObjectIdentity(PRT_INPUT_MEDIA_TYPE_OID)),
+        *(ObjectType(ObjectIdentity(oid)) for oid in oids),
     )
+    return error_indication, error_status, list(var_binds)
+
+
+async def query_preflight(
+    host: str,
+    *,
+    community: str = "public",
+    timeout_s: float = 3.0,
+    ask_counter: bool = True,
+) -> PreflightStatus:
+    """Single round-trip: status + error-state + loaded tape + label counter (#393).
+
+    Used by every tape backend's preflight right before sending a print job. The counter
+    (``prtMarkerLifeCount``) is optional: a missing one is ``marker_count=None``. An agent that
+    answers the whole request with an error status because of the counter is asked once more
+    without it (``counter_refused``); ``ask_counter=False`` leaves the counter out from the
+    start. Raises SnmpQueryError on transport failure.
+    """
+    error_indication, error_status, var_binds = await _preflight_request(
+        host, community, timeout_s, with_counter=ask_counter
+    )
+    refused = False
+    if ask_counter and not error_indication and error_status:
+        # Only noSuchName names the OID as unknown; genErr and the like may be transient (a
+        # printer that boots): this read goes without the counter, the next asks again.
+        refused = _error_code(error_status) == _NO_SUCH_NAME
+        error_indication, error_status, var_binds = await _preflight_request(
+            host, community, timeout_s, with_counter=False
+        )
     if error_indication:
         raise SnmpQueryError(f"preflight SNMP failed: {error_indication}")
     if error_status:
@@ -263,15 +417,21 @@ async def query_preflight(
     if len(var_binds) < 3:
         raise SnmpQueryError("incomplete preflight reply")
 
-    raw_status = int(var_binds[0][1])
-    raw_error_blob = bytes(var_binds[1][1])
-    raw_media_text = _strip_control_characters(str(var_binds[2][1]))
+    binds: list[Any] = var_binds
+    raw_status = _status_value(binds[0][1])
+    raw_error_blob = _bitmap_value(binds[1][1])
+    raw_media_text = _cap(_strip_control_characters(str(binds[2][1])))
+    marker_count = _counter(binds[3][1]) if len(binds) > 3 else None
+    if len(binds) > 3 and isinstance(binds[3][1], (rfc1905.NoSuchObject, rfc1905.NoSuchInstance)):
+        refused = True  # the agent says the counter does not exist
 
     return PreflightStatus(
         hr_printer_status=_PRINTER_STATUS_MAP.get(raw_status, "other"),
         loaded_tape_mm=parse_loaded_tape_mm(raw_media_text),
         error_flags=decode_error_flags(raw_error_blob),
         media_raw=raw_media_text.strip() or None,
+        marker_count=marker_count,
+        counter_refused=refused and not error_status,
     )
 
 

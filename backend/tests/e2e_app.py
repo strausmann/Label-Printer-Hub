@@ -40,7 +40,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
@@ -85,12 +85,19 @@ E2E_POLLED_TAPE_PRINTER: dict[str, Any] = {
 }
 
 
+_door_open = False
+"""Set by ``POST /__e2e/tape-printer/state {door_open}``: the cover is open (#376)."""
+
+
 async def _fake_preflight(host: str, **_kwargs: Any) -> Any:
     """The fake SNMP status writer: the polled printer is idle with a 12 mm tape loaded."""
     from app.printer_backends.snmp_helper import PreflightStatus
 
     return PreflightStatus(
-        hr_printer_status="idle", loaded_tape_mm=E2E_POLLED_TAPE_MM, error_flags=[], media_raw=None
+        hr_printer_status="idle",
+        loaded_tape_mm=E2E_POLLED_TAPE_MM,
+        error_flags=["doorOpen"] if _door_open else [],
+        media_raw=None,
     )
 
 
@@ -133,6 +140,69 @@ class _FakeIntegration:
 
     def is_configured(self) -> bool:
         return True
+
+
+class _FakeGrocy(_FakeIntegration):
+    """The Grocy fake, which also reads batteries and chores (the scan page's Grocycode view)."""
+
+    async def battery(self, battery_id: str) -> Any:
+        from app.schemas.grocy_object import GrocyBatteryResult
+
+        if battery_id == "404":
+            from app.integrations.grocy.plugin import GrocyNotFoundError
+
+            raise GrocyNotFoundError("Battery not found")
+        return GrocyBatteryResult(
+            id=battery_id,
+            name="Remote AAA",
+            description="Warranty ends 2027",
+            url=f"https://grocy.example.invalid/battery/{battery_id}",
+            charge_cycles=4,
+        )
+
+    async def chore(self, chore_id: str) -> Any:
+        from app.schemas.grocy_object import GrocyChoreResult
+
+        return GrocyChoreResult(
+            id=chore_id,
+            name="Water the plants",
+            url=f"https://grocy.example.invalid/chore/{chore_id}",
+            assigned_to="Anna B.",
+        )
+
+
+class _FakeSpoolman(_FakeIntegration):
+    """Spoolman with one fictitious spool per id, carrying the swatch label's data (#346)."""
+
+    async def lookup(self, identifier: str) -> Any:
+        from app.schemas.label_data import LabelData
+        from app.schemas.spool_swatch import SpoolSwatch
+
+        url = f"https://spoolman.example.invalid/spool/show/{identifier}"
+        swatch = SpoolSwatch(
+            spool_id=int(identifier) if identifier.isdigit() and int(identifier) > 0 else 12,
+            vendor="TecBears",
+            title="PETG",
+            color_name="Orange",
+            color_hexes=("FF5F00",),
+            nozzle_c=(230, 230),
+            bed_c=80,
+            pressure_advance=0.029,
+            spool_weight_g=124,
+            net_weight_g=1000,
+            location="AMS 1 · slot 2",
+            diameter_mm=1.75,
+            density_g_cm3=1.27,
+            lot="2511-07",
+        )
+        return LabelData(
+            source_app=self.name,
+            title=f"{self.display_name} item",
+            primary_id=f"#{identifier}",
+            qr_payload=url,
+            secondary=("640g remaining",),
+            swatch=swatch,
+        )
 
 
 def _prepare_environment(workdir: Path) -> tuple[bool, Path | None]:
@@ -268,11 +338,22 @@ _TAPE_BACKENDS: list[Any] = []
 
 
 class _TapeState(BaseModel):
-    """Body of ``POST /__e2e/tape-printer/state``: the tape ends after this many more labels."""
+    """Body of ``POST /__e2e/tape-printer/state``: at least one field.
+
+    ``tape_runs_out_in``: the tape ends after this many more labels. ``door_open``: the cover
+    is open (the polled printer reports ``doorOpen``, prints are refused) or closed again.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    tape_runs_out_in: int = Field(ge=0, le=10_000)
+    tape_runs_out_in: int | None = Field(default=None, ge=0, le=10_000)
+    door_open: bool | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> _TapeState:
+        if self.tape_runs_out_in is None and self.door_open is None:
+            raise ValueError("set tape_runs_out_in or door_open")
+        return self
 
 
 def _tape_out_in(labels: int) -> None:
@@ -280,11 +361,32 @@ def _tape_out_in(labels: int) -> None:
         backend.tape_runs_out_after = len(backend.printed_images) + labels
 
 
+def _set_door_open(open_: bool) -> None:
+    """Open or close the cover: the status reports ``doorOpen``, every tape print is refused."""
+    global _door_open
+    _door_open = open_
+    for backend in _TAPE_BACKENDS:
+        backend._cover_open = open_
+
+
+def _apply_tape_state(tape: _TapeState) -> None:
+    if tape.tape_runs_out_in is not None:
+        _tape_out_in(tape.tape_runs_out_in)
+    if tape.door_open is not None:
+        _set_door_open(tape.door_open)
+
+
 def _new_tape() -> None:
     """A fresh tape in every tape printer: it no longer runs out, and it is not empty."""
     for backend in _TAPE_BACKENDS:
         backend.tape_runs_out_after = None
         backend._tape_empty = False
+
+
+def _reset_tape_state() -> None:
+    """``POST /__e2e/tape-printer/reset``: a fresh tape, and the cover closed."""
+    _new_tape()
+    _set_door_open(False)
 
 
 def _new_fake() -> Any:
@@ -419,16 +521,26 @@ class E2EApp:
         elif path == "/__e2e/page-printer/reset" and method == "POST":
             _reset_fake(self.fake)
             response = JSONResponse({"uri": self.uri, "state": _fake_state(self.fake)})
+        elif path == "/__e2e/tray-loading/reset" and method == "POST":
+            # #350: how the trays take paper, back to unset (a spec that answered the guided test).
+            from app.db.engine import async_session
+            from app.models.printer_tray_loading import PrinterTrayLoading
+            from sqlalchemy import delete
+
+            async with async_session() as session:
+                result = await session.execute(delete(PrinterTrayLoading))
+                await session.commit()
+            response = JSONResponse({"removed": getattr(result, "rowcount", 0)})
         elif path == "/__e2e/tape-printer/state" and method == "POST":
             try:
                 tape = _TapeState.model_validate(await request.json())
             except (ValueError, ValidationError) as exc:
                 response = JSONResponse({"error": str(exc)}, status_code=422)
             else:
-                _tape_out_in(tape.tape_runs_out_in)
+                _apply_tape_state(tape)
                 response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
         elif path == "/__e2e/tape-printer/reset" and method == "POST":
-            _new_tape()
+            _reset_tape_state()
             await self._resume_tape_printers()
             response = JSONResponse({"backends": len(_TAPE_BACKENDS)})
         else:
@@ -439,12 +551,15 @@ class E2EApp:
 async def _seed_page_printer_and_sheets(uri: str) -> None:
     """Create the page printer row and the seed sheets; the order of the sheets is fixed."""
     from app.db.engine import async_session
+    from app.models.sheet import SheetCell
     from app.schemas.printer_admin import PrinterCreatePayload
     from app.seed.sheet_seed import run_sheet_seed
     from app.services.printer_admin_service import PrinterAdminService
     from app.sheets import sheet_service, type_service
     from app.sheets.geometry import Geometry
     from app.sheets.sheet_service import MarkedCell
+    from sqlalchemy import update
+    from sqlmodel import col
 
     async with async_session() as session:
         # After the two tape printers (created_at order): ``usable[0]`` stays Workshop PT-P750W.
@@ -508,6 +623,17 @@ async def _seed_page_printer_and_sheets(uri: str) -> None:
             range(1, 121),
             lambda n: f"cell {n:03d} " + "a" * (120 - len(f"cell {n:03d} ")),
         )
+        # 5./6. L4736-0004 and L4736-0005: no free cell, the last two wait for confirmation
+        #    (resolve all, #282). Full, so the default lists and the picker keep their sheets.
+        #    Two: the sheets spec resolves one, the short-viewport spec needs its own.
+        for _ in range(2):
+            waiting = await _mk_sheet(session, TAPE_L4736, range(1, 49), item)
+            await session.execute(
+                update(SheetCell)
+                .where(col(SheetCell.sheet_id) == waiting.id, col(SheetCell.cell_no).in_((47, 48)))
+                .values(state="unconfirmed", source="grocy", purpose=None, marked_by_hand=False)
+            )
+            await session.commit()
         # A custom type whose corner radius is unknown (the "measure it" case).
         await type_service.create_type(
             session,
@@ -593,8 +719,10 @@ def build_e2e_app() -> ASGIApp:
 
     # No printer is reachable: every configured printer gets the in-memory backend. They are
     # kept, so ``/__e2e/tape-printer/state`` can let their tape run out (#277).
-    def _mock_backend(_cfg: Any) -> MockPrinterBackend:
-        backend = MockPrinterBackend()
+    def _mock_backend(cfg: Any) -> MockPrinterBackend:
+        # The QL fixture printer holds 62 mm endless (the swatch label, #346); the PT ones 24 mm.
+        tape = 62 if getattr(cfg, "backend", None) == "brother_ql" else 24
+        backend = MockPrinterBackend(loaded_tape_mm=tape)
         _TAPE_BACKENDS.append(backend)
         return backend
 
@@ -608,7 +736,14 @@ def build_e2e_app() -> ASGIApp:
     status_probe_producer.query_identity = _fake_identity  # type: ignore[assignment]
     IntegrationRegistry.clear()  # importing app.main discovered the real plugins
     for name, display in (("snipeit", "Snipe-IT"), ("grocy", "Grocy"), ("spoolman", "Spoolman")):
-        IntegrationRegistry.register(_FakeIntegration(name, display))  # type: ignore[arg-type]
+        fake: Any
+        if name == "grocy":
+            fake = _FakeGrocy(name, display)
+        elif name == "spoolman":
+            fake = _FakeSpoolman(name, display)
+        else:
+            fake = _FakeIntegration(name, display)
+        IntegrationRegistry.register(fake)  # type: ignore[arg-type]
 
     if key_file is not None:
         key = os.environ["LABELYARD_BOOTSTRAP_ADMIN_KEY"] if bootstrap else admin_key

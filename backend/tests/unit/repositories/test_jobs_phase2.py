@@ -102,3 +102,22 @@ async def test_evict_terminal_older_than(db_session):
     assert await jobs_repo.get(db_session, old_done.id) is None
     assert await jobs_repo.get(db_session, young_done.id) is not None
     assert await jobs_repo.get(db_session, queued.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_set_loaded_roll_keeps_the_rest_of_the_payload(db_session):
+    """#389: the roll a job is sent to replaces the recorded one; nothing else changes."""
+    job = await jobs_repo.create_queued(
+        db_session,
+        printer_id=uuid4(),
+        template_key="t",
+        payload={"k": "v", "loaded_roll": {"width_mm": 62}},
+    )
+    await jobs_repo.mark_printing(db_session, job.id)
+
+    roll = {"width_mm": 29, "media_raw": "29mm", "media_kind": "continuous", "colour": None}
+    assert await jobs_repo.set_loaded_roll(db_session, job.id, roll) is True
+    assert await jobs_repo.set_loaded_roll(db_session, uuid4(), roll) is False
+
+    await db_session.refresh(job)
+    assert job.payload == {"k": "v", "loaded_roll": roll}

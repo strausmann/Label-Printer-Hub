@@ -5,7 +5,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderApp, SIGNED_IN } from "../../test-utils";
-import { apiErrorBody, mockApi, respond, sheetRead, type Call } from "../test-api";
+import { apiErrorBody, mockApi, PAGE_CAPABILITIES, PAGE_PRINTER, respond, SHEET_TYPE, sheetRead, type Call } from "../test-api";
 import { sheetKey } from "./keys";
 import type { SheetRead } from "./api";
 
@@ -42,14 +42,14 @@ describe("the sheet detail page", () => {
     const base = sheetRead(CODE, { used: [1, 2] }, { id_placement: "cell", id_printed: true });
     // Both cells are written by the hub; only the flagged one holds the ID label.
     await open({ ...base, cells: base.cells.map((c) => ({ ...c, source: "hub", is_id_cell: c.cell === 1 })) });
-    expect(cell(1)).toHaveAccessibleName(/sheet ID/);
-    expect(cell(2)).not.toHaveAccessibleName(/sheet ID/);
+    expect(cell(1)).toHaveAccessibleName(/sheet code/);
+    expect(cell(2)).not.toHaveAccessibleName(/sheet code/);
   });
 
   it("no cell is called the ID cell when the flag is off, whatever the placement says", async () => {
     const base = sheetRead(CODE, { used: [1] }, { id_placement: "cell", id_printed: false });
     await open({ ...base, cells: base.cells.map((c) => ({ ...c, source: "hub", is_id_cell: false })) });
-    expect(cell(1)).not.toHaveAccessibleName(/sheet ID/);
+    expect(cell(1)).not.toHaveAccessibleName(/sheet code/);
   });
 
   it("is reachable under both paths (the QR code prints /sheet/<code>)", async () => {
@@ -66,7 +66,7 @@ describe("the sheet detail page", () => {
 
   it("names the discard date and that the ID is not used again, and offers no actions", async () => {
     await open(sheetRead(CODE, { used: [1] }, { state: "discarded", discarded_at: "2026-11-02T12:00:00Z" }));
-    expect(screen.getByText("Discarded on Nov 2, 2026, this ID is not used again.")).toBeVisible();
+    expect(screen.getByText("Discarded on Nov 2, 2026, this code is not used again.")).toBeVisible();
     for (const name of [/Mark cells as used/, /Un-mark cells/, /Discard sheet/, /Print onto this sheet/]) {
       expect(screen.queryByRole("button", { name })).toBeNull();
       expect(screen.queryByRole("link", { name })).toBeNull();
@@ -78,19 +78,19 @@ describe("the sheet detail page", () => {
     expect(screen.queryByRole("button", { name: /^Printed/ })).toBeNull();
   });
 
-  it("says 'Sheet ID not printed yet' for a margin sheet whose ID is not printed, and not for a manual one", async () => {
+  it("says 'not printed yet' for a margin sheet whose ID is not printed, and not for a manual one", async () => {
     const { unmount } = await open(sheetRead(CODE, { used: [1] }, { id_placement: "margin", id_printed: false }));
-    expect(screen.getByText("Sheet ID not printed yet")).toBeVisible();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("In the margin · not printed yet");
     expect(screen.queryByText(/Resolve the unconfirmed cells first/)).toBeNull();
     unmount();
     await open(sheetRead(CODE, { used: [1] }, { id_placement: "manual", id_printed: false }));
-    expect(screen.queryByText("Sheet ID not printed yet")).toBeNull();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent(/^Added by hand$/);
   });
 
   it("adds that the ID waits for the unconfirmed cells when there are some", async () => {
     await open(sheetRead(CODE, { unconfirmed: [2, 3] }, { id_placement: "cell", id_printed: false }));
-    expect(screen.getByText("Sheet ID not printed yet")).toBeVisible();
-    expect(screen.getByText("Resolve the unconfirmed cells first; the sheet ID waits for them")).toBeVisible();
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("In a cell · not printed yet");
+    expect(screen.getByText("Resolve the unconfirmed cells first; the sheet code waits for them")).toBeVisible();
   });
 
   it("shows whether the feed mark is printed", async () => {
@@ -122,7 +122,7 @@ describe("the sheet detail page", () => {
     const list = screen.getByRole("list", { name: "Cells in use" });
     expect(within(list).getByText("Cell 1 → item 1 · marked by hand")).toBeVisible();
     expect(within(list).getByText("Cell 2 → flour 1 kg · Grocy")).toBeVisible();
-    expect(within(list).getByText("Cell 3 → no purpose · Sheet ID")).toBeVisible();
+    expect(within(list).getByText("Cell 3 → no purpose · Sheet code")).toBeVisible();
     expect(within(list).getByText("Cell 4 → tag · kept-app")).toBeVisible();
   });
 
@@ -334,6 +334,136 @@ describe("resolving unconfirmed cells", () => {
   });
 });
 
+describe("resolving all unconfirmed cells at once (#282)", () => {
+  const three = () => sheetRead(CODE, { used: [1], unconfirmed: [5, 6, 7] });
+  const ALL = `${PATH}/cells/resolve-all`;
+
+  it("shows the resolve-all buttons from two unconfirmed cells", async () => {
+    await open(sheetRead(CODE, { used: [1], unconfirmed: [5, 6] }));
+    expect(screen.getByRole("button", { name: "Resolve all as printed" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Resolve all as not printed" })).toBeVisible();
+  });
+
+  it("hides them with one unconfirmed cell", async () => {
+    await open(sheetRead(CODE, { used: [1], unconfirmed: [5] }));
+    expect(screen.getByRole("button", { name: "Printed, cell 5" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Resolve all/ })).toBeNull();
+  });
+
+  it("hides them for a read key", async () => {
+    await open(three(), {}, READ_SESSION);
+    expect(screen.queryByRole("button", { name: /Resolve all/ })).toBeNull();
+  });
+
+  it.each([
+    ["Resolve all as printed", "Resolve 3 cells as printed?"],
+    ["Resolve all as not printed", "Resolve 3 cells as not printed?"],
+  ])("%s: the confirmation names the count (%s) and sends nothing yet", async (button, question) => {
+    const { calls } = await open(three());
+    await userEvent.click(screen.getByRole("button", { name: button }));
+    const dialog = await screen.findByRole("alertdialog", { name: question });
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeVisible();
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it.each([
+    ["Resolve all as printed", "printed"],
+    ["Resolve all as not printed", "not_printed"],
+  ])("%s: confirming sends the outcome %s, expected_count 3 and the cells shown", async (button, outcome) => {
+    const { calls } = await open(three(), { [`POST ${ALL}`]: sheetRead(CODE, { used: [1, 5, 6, 7] }) });
+    await userEvent.click(screen.getByRole("button", { name: button }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: outcome === "printed" ? "Resolve as printed" : "Resolve as not printed" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(body(posts(calls)[0]!)).toEqual({ outcome, expected_count: 3, expected_cells: [5, 6, 7] });
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(screen.queryByRole("heading", { name: "Unconfirmed cells" })).toBeNull();
+  });
+
+  it("Cancel sends nothing", async () => {
+    const { calls } = await open(three());
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(posts(calls)).toHaveLength(0);
+  });
+
+  it("a count change reloads the sheet and says so", async () => {
+    const { calls } = await open(three(), {
+      [`POST ${ALL}`]: () => respond(409, apiErrorBody("unconfirmed_count_changed", "The count changed.", { unconfirmed: 4 })),
+    });
+    const reads = () => calls.filter((c) => c.method === "GET" && c.path === PATH).length;
+    const before = reads();
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The unconfirmed cells changed. Check the list and try again.");
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("a network error is said in words, outside the closed dialog", async () => {
+    await open(three(), {
+      [`POST ${ALL}`]: () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server cannot be reached.");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("while the request is out Cancel, Escape and the confirm button do nothing; the title keeps its count and never says 0", async () => {
+    let release: (r: Response) => void = () => undefined;
+    const { calls } = await open(three(), {
+      [`POST ${ALL}`]: () => new Promise<Response>((resolve) => (release = resolve)),
+    });
+    const seen: string[] = [];
+    const watcher = new MutationObserver(() => seen.push(document.body.textContent ?? ""));
+    watcher.observe(document.body, { childList: true, subtree: true, characterData: true });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Resolve 3 cells as printed?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Resolve as printed" }));
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Resolve as printed" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog", { name: "Resolve 3 cells as printed?" })).toBeVisible();
+    release(new Response(JSON.stringify(sheetRead(CODE, { used: [1, 5, 6, 7] })), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    watcher.disconnect();
+    expect(seen.some((text) => /Resolve 0 cell/.test(text))).toBe(false);
+    expect(posts(calls)).toHaveLength(1);
+  });
+
+  it("moves the focus to the sheet heading after the cells are settled", async () => {
+    await open(three(), { [`POST ${ALL}`]: sheetRead(CODE, { used: [1, 5, 6, 7] }) });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1, name: CODE })).toHaveFocus());
+  });
+
+  it("a count-change message goes away with the next successful write", async () => {
+    await open(three(), {
+      [`POST ${ALL}`]: () => respond(409, apiErrorBody("unconfirmed_count_changed", "The count changed.", { unconfirmed: 4 })),
+      [`POST ${PATH}/cells/resolve`]: sheetRead(CODE, { used: [1, 5], unconfirmed: [6, 7] }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The unconfirmed cells changed.");
+    await userEvent.click(screen.getByRole("button", { name: "Printed, cell 5" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("nothing left to resolve is said in words", async () => {
+    await open(three(), { [`POST ${ALL}`]: () => respond(409, apiErrorBody("no_unconfirmed_cells", "None.")) });
+    await userEvent.click(screen.getByRole("button", { name: "Resolve all as not printed" }));
+    await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as not printed" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("No cell is waiting for confirmation any more.");
+  });
+});
+
 describe("discarding from the detail page", () => {
   it("asks first, then discards and shows the discarded state", async () => {
     const gone = sheetRead(CODE, { used: [1] }, { state: "discarded", discarded_at: "2026-11-02T12:00:00Z" });
@@ -343,7 +473,7 @@ describe("discarding from the detail page", () => {
     expect(within(dialog).getByText(/its number is never given out again/)).toBeVisible();
     expect(posts(calls)).toHaveLength(0);
     await userEvent.click(within(dialog).getByRole("button", { name: "Discard sheet" }));
-    expect(await screen.findByText("Discarded on Nov 2, 2026, this ID is not used again.")).toBeVisible();
+    expect(await screen.findByText("Discarded on Nov 2, 2026, this code is not used again.")).toBeVisible();
   });
 
   it("with unconfirmed cells the question says to resolve them first", async () => {
@@ -406,7 +536,7 @@ describe("a sheet that changes while a choice is open (break-ui)", () => {
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: sheetKey(CODE) });
     });
-    expect(await screen.findByText("Discarded on Nov 2, 2026, this ID is not used again.")).toBeVisible();
+    expect(await screen.findByText("Discarded on Nov 2, 2026, this code is not used again.")).toBeVisible();
     expect(screen.queryByRole("heading", { level: 2, name: "Mark cells as used" })).toBeNull();
   });
 });
@@ -419,5 +549,59 @@ describe("a long list of cells", () => {
     unmount();
     await open(sheetRead(CODE, { used: [1, 2, 3] }));
     expect(screen.getByRole("list", { name: "Cells in use" })).toBeVisible();
+  });
+});
+
+describe("the code on the back (#350)", () => {
+  const back = (printed: boolean) => sheetRead(CODE, { used: [] }, { id_placement: "back_side", id_printed: printed });
+
+  it("an unconfirmed back side offers Print back side", async () => {
+    const { calls } = await open(back(false), {
+      [`GET /api/v1/sheet-types/${back(false).type_key}`]: { ...SHEET_TYPE, versions: [] },
+      "GET /api/v1/printers": [PAGE_PRINTER],
+      [`GET /api/v1/printers/${PAGE_PRINTER.id}/capabilities`]: PAGE_CAPABILITIES,
+    });
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("On the back of the liner · not confirmed");
+    await userEvent.click(screen.getByRole("button", { name: "Print back side" }));
+    const dialog = await screen.findByRole("dialog", { name: "Print back side" });
+    expect(await within(dialog).findByRole("listitem", { current: "step" })).toHaveTextContent("Turn over");
+    expect(calls.filter((c) => c.method === "POST" && c.path === "/api/v1/sheets")).toHaveLength(0);
+  });
+
+  // R-350-11 (review I2): an unprinted margin or manual sheet of a type that resolves to the back side can
+  // switch from the sheet page; a type that keeps its code in the margin does not offer it.
+  const margin = (printed: boolean, placement: "margin" | "manual" = "margin") =>
+    sheetRead(CODE, { used: [] }, { id_placement: placement, id_printed: printed });
+  const typeOf = (resolved: "margin" | "back_side") => ({
+    [`GET /api/v1/sheet-types/${margin(false).type_key}`]: { ...SHEET_TYPE, id_placement: "auto", id_placement_resolved: resolved, versions: [] },
+  });
+
+  it("an unprinted margin sheet of a back-side type offers Print back side", async () => {
+    await open(margin(false), typeOf("back_side"));
+    expect(await screen.findByRole("button", { name: "Print back side" })).toBeVisible();
+  });
+
+  it("an unprinted manual sheet of a back-side type offers it too", async () => {
+    await open(margin(false, "manual"), typeOf("back_side"));
+    expect(await screen.findByRole("button", { name: "Print back side" })).toBeVisible();
+  });
+
+  it("a margin type, or a printed margin sheet, does not offer it", async () => {
+    await open(margin(false), typeOf("margin"));
+    await screen.findByTestId("sheet-code-state");
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Print back side" })).toBeNull());
+  });
+
+  it("a printed margin sheet offers an extra back side without switching (1.7.0)", async () => {
+    await open(margin(true), typeOf("margin"));
+    expect(screen.getByRole("button", { name: "Print back side" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reprint margin code" })).toBeVisible();
+  });
+
+  it("a confirmed back side says where the code is", async () => {
+    await open(back(true));
+    expect(screen.getByTestId("sheet-code-state")).toHaveTextContent("On the back of the liner · printed");
+    expect(screen.getByTestId("sheet-code-back")).toHaveTextContent(/Back side:\s*confirmed/);
+    expect(screen.getByRole("button", { name: "Print back side" })).toBeVisible();
   });
 });

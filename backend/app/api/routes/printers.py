@@ -48,6 +48,7 @@ from app.models.job import JobState
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import IppStatusRecord
+from app.printer_backends.snmp_helper import parse_label_length_mm, parse_media_kind
 from app.repositories import jobs as jobs_repo
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printer_roll as roll_repo
@@ -56,7 +57,9 @@ from app.repositories import printer_status_cache as cache_repo
 from app.repositories import printers as printers_repo
 from app.schemas.label_layout import LayoutDefault, parse_layout_defaults
 from app.schemas.printer import (
+    CalibrationPrintRead,
     MarkerRead,
+    PrintConfirmationRead,
     PrinterRead,
     PrinterStatus,
     ReasonRead,
@@ -65,6 +68,7 @@ from app.schemas.printer import (
 )
 from app.schemas.problem import DetailError
 from app.services.print_queue import PrinterAlreadyActiveError
+from app.services.printer_admin_service import snmp_view
 from app.services.printer_runtime import PrinterRuntime
 from app.services.status_block import PrinterError
 from app.services.status_freshness import backoff_of, is_stale, stale_after_s
@@ -79,10 +83,13 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     """The ``connection`` a caller may see.
 
     For an ``ipp`` printer the URI is connection detail (spec 14, 18): only admin callers
-    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows are returned unchanged.
+    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows show ``snmp.community_set``
+    instead of the SNMP community, for every caller (#296).
     """
     connection = dict(printer.connection or {})
-    if printer.backend != "ipp" or (auth is not None and auth.scope == "admin"):
+    if printer.backend != "ipp":
+        return snmp_view(connection)
+    if auth is not None and auth.scope == "admin":
         return connection
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 
@@ -227,6 +234,7 @@ async def list_printers(
                 created_at=p.created_at,
                 updated_at=p.updated_at,
                 layout_defaults=_layout_defaults_view(p),
+                print_confirmation=PrintConfirmationRead.from_stored(p.print_confirmation),
                 **_identity_fields(identities.get(p.id)),
             )
         )
@@ -272,6 +280,7 @@ async def get_printer(
         created_at=printer.created_at,
         updated_at=printer.updated_at,
         layout_defaults=_layout_defaults_view(printer),
+        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
         **await _identity_view(session, printer_id, _auth),
     )
 
@@ -386,10 +395,19 @@ async def get_printer_status(
     runtime: RuntimeDep = None,
 ) -> PrinterStatus:
     """Return the latest cached status for a printer; the cache only, no probe."""
-    await _get_printer_or_404(session, printer_id)
+    printer = await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     status_ = await _cached_status(session, printer_id, runtime)
+    if printer.backend == "ipp":
+        # #344: the trays the newest sheet and calibration pages used, on every branch of the
+        # status (also never probed, not polled, stale): they come from the hub's own jobs.
+        trays = await jobs_repo.last_page_trays(session, printer_id)
+        status_.last_sheet_tray = trays.sheet_tray
+        if trays.calibration_tray is not None and trays.calibration_at is not None:
+            status_.last_calibration_print = CalibrationPrintRead(
+                tray=trays.calibration_tray, at=trays.calibration_at
+            )
     # #231: the flag is on every branch of the status (probed, stale, not polled, never probed);
     # the identity values are not part of this response.
     identity = await identity_repo.get(session, printer_id)
@@ -451,9 +469,16 @@ async def _cached_status(
     # producer cleared it may still hold the last one).
     loaded_tape_mm = None if tape.get("online") is False else tape.get("loaded_tape_mm")
     tape_loaded = f"{loaded_tape_mm}mm" if loaded_tape_mm else None
+    # #389: the kind and label length come from the media text; only the derived values leave
+    # the hub.
+    media_raw = None if tape.get("online") is False or not loaded_tape_mm else tape.get("media_raw")
 
     error_flags = tape.get("error_flags") or []
     error_state = ", ".join(error_flags) if error_flags else None
+    # #376: the raw flags for the web UI, which puts them into words; the producer decodes them
+    # in bit order (``decode_error_flags``). A printer that does not answer reports no condition
+    # of its own.
+    flags = [] if tape.get("online") is False else list(error_flags)
     roll = await roll_repo.get(session, printer_id)
 
     return PrinterStatus(
@@ -461,6 +486,8 @@ async def _cached_status(
         online=tape.get("online"),
         tape_loaded=tape_loaded,
         tape_width_mm=loaded_tape_mm,
+        media_kind=parse_media_kind(media_raw),
+        label_length_mm=parse_label_length_mm(media_raw),
         tape_colour=roll_colour(roll, loaded_tape_mm),  # type: ignore[arg-type]
         roll_prompt=bool(
             roll is not None
@@ -469,6 +496,7 @@ async def _cached_status(
             and roll.width_mm == loaded_tape_mm
         ),
         error_state=error_state,
+        error_flags=flags,
         captured_at=row.captured_at,
         last_probe_age_s=age_s,
         last_error=tape.get("last_error"),
