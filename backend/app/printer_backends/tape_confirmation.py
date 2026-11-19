@@ -87,17 +87,22 @@ class ConfirmationRecord:
     ``confirm_transport``: ``ipp`` only when the test label went out as an IPP Print-Job and
     reached job state 9, else ``raw`` (TCP 9100). ``label_counter``: the label counter rose by
     exactly the labels sent. ``confirmed_at``: when the test print found it.
+    ``ipp_incomplete``: the printer took an IPP job of a test print but did not complete it
+    (aborted, canceled, no final state, forgotten). A later test print then stays on TCP 9100;
+    after a Print-Job the printer did not take (unreachable, a refusal) it tries IPP again.
     """
 
     confirm_transport: ConfirmTransport
     label_counter: bool
     confirmed_at: datetime
+    ipp_incomplete: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
             "confirm_transport": self.confirm_transport,
             "label_counter": self.label_counter,
             "confirmed_at": self.confirmed_at.isoformat(),
+            "ipp_incomplete": self.ipp_incomplete,
         }
 
     @classmethod
@@ -108,7 +113,10 @@ class ConfirmationRecord:
         transport = data.get("confirm_transport")
         counter = data.get("label_counter")
         at = data.get("confirmed_at")
+        incomplete = data.get("ipp_incomplete", False)  # absent in records before the field
         if transport not in ("ipp", "raw") or not isinstance(counter, bool):
+            return None
+        if not isinstance(incomplete, bool):
             return None
         if not isinstance(at, str):
             return None
@@ -118,7 +126,12 @@ class ConfirmationRecord:
             return None
         if confirmed_at.tzinfo is None:
             confirmed_at = confirmed_at.replace(tzinfo=UTC)
-        return cls(confirm_transport=transport, label_counter=counter, confirmed_at=confirmed_at)
+        return cls(
+            confirm_transport=transport,
+            label_counter=counter,
+            confirmed_at=confirmed_at,
+            ipp_incomplete=incomplete,
+        )
 
     @property
     def channel(self) -> Literal["ipp", "label_counter", "none"]:
@@ -327,7 +340,10 @@ class TapeSendState:
     ``record`` is the stored detection (``None``: none yet; the probe decides). ``sink`` stores a
     new record (the runtime writes it to the printer row). ``labels_sent`` counts the labels sent
     since the read before sending; ``ipp_jobs`` the IPP jobs of those sends. ``detecting``: the
-    current send is a test print that decides the record.
+    current send is a test print that decides the record. ``detect_ipp_failed``: its Print-Job
+    was not taken; ``detect_ipp_taken``: one of its IPP jobs was; ``detect_ipp_skipped``: it
+    did not try IPP because an earlier test print's IPP job did not complete
+    (``ConfirmationRecord.ipp_incomplete``).
     """
 
     host: str
@@ -338,6 +354,8 @@ class TapeSendState:
     ipp_jobs: list[tuple[int, int]] = field(default_factory=list)
     detecting: bool = False
     detect_ipp_failed: bool = False
+    detect_ipp_taken: bool = False
+    detect_ipp_skipped: bool = False
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
@@ -347,17 +365,25 @@ class TapeSendState:
         self.ipp_jobs = []
         self.detecting = detect
         self.detect_ipp_failed = False
+        self.detect_ipp_taken = False
+        self.detect_ipp_skipped = False
 
     async def use_ipp(self) -> bool:
         """Whether this send goes out over IPP.
 
-        A test print tries IPP, unless an earlier test print already stored ``raw`` (its IPP job
-        did not complete): then it goes over 9100 and the counter confirms it. Otherwise the
-        stored record decides; a stored ``raw`` is never overridden. Without a record the probe
-        decides once per backend instance (cached); a failing probe means 9100, logged once.
+        A test print tries IPP, also after a stored ``raw`` whose Print-Job the printer did not
+        take (it may have been asleep or briefly unreachable; a refusal again falls back to 9100
+        in the same send). Only after a stored ``raw`` whose IPP job the printer took but did
+        not complete (``ipp_incomplete``) it goes over 9100 and the counter confirms it. Any
+        other send follows the stored record; a stored ``raw`` is never overridden. Without a
+        record the probe decides once per backend instance (cached); a failing probe means
+        9100, logged once.
         """
         if self.detecting:
-            return self.record is None or self.record.confirm_transport == "ipp"
+            if self.record is not None and self.record.ipp_incomplete:
+                self.detect_ipp_skipped = True
+                return False
+            return True
         if self.record is not None:
             return self.record.confirm_transport == "ipp"
         if self._probed is None:
@@ -407,6 +433,8 @@ class TapeSendState:
                 raise PrintFailedError(f"IPP print interrupted ({type(exc).__name__})") from exc
             else:
                 self.ipp_jobs.append((job_id, labels))
+                if self.detecting:
+                    self.detect_ipp_taken = True
                 self.labels_sent += labels
                 return
         await raw()

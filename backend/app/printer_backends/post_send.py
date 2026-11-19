@@ -346,9 +346,13 @@ async def _finish(state: TapeSendState | None, ipp_completed: bool, counter_exac
     if state is None or not state.detecting:
         return
     state.detecting = False
+    ipp = ipp_completed and not state.detect_ipp_failed
+    # The printer took the IPP job but did not complete it (or an earlier test print found
+    # that): later test prints stay on TCP 9100. A Print-Job that was not taken is not this.
     record = ConfirmationRecord(
-        confirm_transport="ipp" if ipp_completed and not state.detect_ipp_failed else "raw",
+        confirm_transport="ipp" if ipp else "raw",
         label_counter=counter_exact,
         confirmed_at=datetime.now(UTC),
+        ipp_incomplete=not ipp and (state.detect_ipp_skipped or state.detect_ipp_taken),
     )
     await state.store(record)

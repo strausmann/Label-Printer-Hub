@@ -293,14 +293,16 @@ async def test_every_impression_of_a_group_without_a_bit_lets_the_run_go_on(
 # ---------------------------------------------------------------------------- N4
 
 
-async def test_a_test_print_after_a_stored_raw_goes_over_9100(
+async def test_a_test_print_after_an_incomplete_ipp_job_goes_over_9100(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The printer took an earlier test label over IPP and never completed it: IPP is not tried
+    # again, the label counter confirms the 9100 send (I1: a refused IPP is tried again).
     fake = FakeIppPrinter(formats=RASTER, job_script=[9])
     printer = _Printer(monkeypatch, _asgi(fake))
     printer.count_on_raw = True
     printer.backend.send_state.record = ConfirmationRecord(
-        "raw", False, datetime(2026, 11, 18, tzinfo=UTC)
+        "raw", False, datetime(2026, 11, 18, tzinfo=UTC), ipp_incomplete=True
     )
     stored: list[ConfirmationRecord] = []
 
@@ -313,7 +315,9 @@ async def test_a_test_print_after_a_stored_raw_goes_over_9100(
         assert job.state == JobState.COMPLETED
         assert "Print-Job" not in [op.operation for op in fake.received]
         assert printer.raw_sent == 1
-        assert [(r.confirm_transport, r.label_counter) for r in stored] == [("raw", True)]
+        assert [(r.confirm_transport, r.label_counter, r.ipp_incomplete) for r in stored] == [
+            ("raw", True, True)
+        ]
     finally:
         await queue.stop()
 

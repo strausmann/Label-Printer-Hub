@@ -344,3 +344,65 @@ def test_a_record_reads_back_from_its_json() -> None:
     assert ConfirmationRecord.from_json(None) is None
     assert ConfirmationRecord.from_json({"confirm_transport": "usb"}) is None
     assert ConfirmationRecord("raw", True, _AT).channel == "label_counter"
+
+
+def test_a_record_keeps_whether_its_ipp_job_did_not_complete() -> None:
+    record = ConfirmationRecord("raw", True, _AT, ipp_incomplete=True)
+    assert ConfirmationRecord.from_json(record.to_json()) == record
+    # A record stored before the field existed reads back as "IPP was not taken".
+    legacy = {"confirm_transport": "raw", "label_counter": True, "confirmed_at": _AT.isoformat()}
+    assert ConfirmationRecord.from_json(legacy) == ConfirmationRecord("raw", True, _AT)
+    assert ConfirmationRecord.from_json({**legacy, "ipp_incomplete": "yes"}) is None
+
+
+async def test_a_test_print_after_a_refused_ipp_tries_ipp_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One transient failure (the printer was waking up) must not pin the printer to 9100.
+    snmp = _Snmp(monkeypatch)
+    fake = FakeIppPrinter(formats=RASTER, job_script=[9])
+    backend = _backend(fake)
+    backend.send_state.record = ConfirmationRecord("raw", True, _AT)
+    sink = _Sink()
+    backend.send_state.sink = sink
+
+    await backend.print_image(_image(), _spec(), detect_confirmation=True)
+    snmp.printed(1)
+    await _confirm(backend)
+
+    assert "Print-Job" in _ops(fake)
+    assert snmp.raw_sent == []
+    assert [(r.confirm_transport, r.ipp_incomplete) for r in sink.records] == [("ipp", False)]
+
+
+async def test_a_test_print_whose_ipp_job_did_not_complete_stores_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snmp = _Snmp(monkeypatch)
+    fake = FakeIppPrinter(formats=RASTER, job_script=[8], impressions_script=[1])
+    backend = _backend(fake)
+    sink = _Sink()
+    backend.send_state.sink = sink
+
+    await backend.print_image(_image(), _spec(), detect_confirmation=True)
+    snmp.printed(1)
+    await _confirm(backend)
+
+    assert [(r.confirm_transport, r.label_counter, r.ipp_incomplete) for r in sink.records] == [
+        ("raw", True, True)
+    ]
+
+
+async def test_a_test_print_whose_ipp_is_refused_does_not_mark_it_incomplete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snmp = _Snmp(monkeypatch)
+    backend = _backend(transport=_unreachable())
+    sink = _Sink()
+    backend.send_state.sink = sink
+
+    await backend.print_image(_image(), _spec(), detect_confirmation=True)
+    snmp.printed(1)
+    await _confirm(backend)
+
+    assert [r.ipp_incomplete for r in sink.records] == [False]
