@@ -133,11 +133,15 @@ export const useResolveCells = () =>
     outcome,
   }));
 
-/** Settles every unconfirmed cell at once. `expectedCount` is the number the person was shown: a different one is refused. */
+/**
+ * Settles every unconfirmed cell at once. `expectedCells` are the cells the person was shown: when the sheet's
+ * unconfirmed cells are others now, also as many, nothing is settled. Their number goes along for an older hub.
+ */
 export const useResolveAllCells = () =>
-  useCellsWrite<{ code: string; outcome: "printed" | "not_printed"; expectedCount: number }>("resolve-all", ({ outcome, expectedCount }) => ({
+  useCellsWrite<{ code: string; outcome: "printed" | "not_printed"; expectedCells: number[] }>("resolve-all", ({ outcome, expectedCells }) => ({
     outcome,
-    expected_count: expectedCount,
+    expected_count: expectedCells.length,
+    expected_cells: expectedCells,
   }));
 
 /**

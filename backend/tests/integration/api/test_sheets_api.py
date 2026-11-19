@@ -675,9 +675,39 @@ async def test_resolve_all_route_changed_count_409(ready, printer):
     assert _err(resp)["error_detail"] == {"unconfirmed": 2}
 
 
+async def test_resolve_all_route_changed_cells_409(ready, printer):
+    code = await _with_unconfirmed(ready, printer)  # cells 2 and 5
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "printed", "expected_count": 2, "expected_cells": [2, 6]},
+        headers=printer,
+    )
+    assert resp.status_code == 409
+    assert _err(resp)["error_code"] == "unconfirmed_count_changed"
+    after = await ready.get(f"/api/v1/sheets/{code}", headers=printer)
+    assert after.json()["unconfirmed"] == 2
+
+
+async def test_resolve_all_route_takes_the_cells_shown(ready, printer):
+    code = await _with_unconfirmed(ready, printer)
+    resp = await ready.post(
+        f"/api/v1/sheets/{code}/cells/resolve-all",
+        json={"outcome": "not_printed", "expected_cells": [5, 2]},
+        headers=printer,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["unconfirmed"] == 0
+
+
 @pytest.mark.parametrize(
     "body",
-    [{"outcome": "maybe"}, {}, {"outcome": "printed", "expected_count": 0}],
+    [
+        {"outcome": "maybe"},
+        {},
+        {"outcome": "printed", "expected_count": 0},
+        {"outcome": "printed", "expected_cells": []},
+        {"outcome": "printed", "expected_cells": [0]},
+    ],
 )
 async def test_resolve_all_route_bad_body_422(ready, printer, body):
     code = await _with_unconfirmed(ready, printer)

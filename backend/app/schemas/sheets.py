@@ -264,6 +264,16 @@ class ResolveAllRequest(_Body):
             "number now, nothing is settled (409 unconfirmed_count_changed)."
         ),
     )
+    expected_cells: list[_CellNo] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=MAX_CELLS,
+        description=(
+            "The unconfirmed cells the caller showed, in any order. When the sheet's unconfirmed "
+            "cells are not exactly these now, also with the same number, nothing is settled "
+            "(409 unconfirmed_count_changed)."
+        ),
+    )
 
 
 def _drop_default(schema: dict[str, Any]) -> None:

@@ -553,11 +553,14 @@ async def resolve_all_cells(
     expected_count: int | None,
     actor: str,
     bus: EventBus | None = None,
+    expected_cells: list[int] | None = None,
 ) -> SheetDetail:
     """Settle every unconfirmed cell of a sheet in one transaction (#282).
 
     The unconfirmed set is read under the write lock. ``expected_count`` lets a caller
-    that showed a number to a person refuse the call when the set has changed since.
+    that showed a number to a person refuse the call when the number has changed since;
+    ``expected_cells`` (the cells shown) refuses it when the set changed, also with the same
+    number.
     """
     if outcome not in ("printed", "not_printed"):
         raise InvalidFieldError("outcome", "must be printed or not_printed")
@@ -567,6 +570,8 @@ async def resolve_all_cells(
         if not wanted:
             raise NoUnconfirmedCellsError()
         if expected_count is not None and expected_count != len(wanted):
+            raise UnconfirmedCountChangedError(len(wanted))
+        if expected_cells is not None and sorted(set(expected_cells)) != wanted:
             raise UnconfirmedCountChangedError(len(wanted))
         detail = await _settle_unconfirmed(session, before, wanted, outcome, actor)
         await session.commit()

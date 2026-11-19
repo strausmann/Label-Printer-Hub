@@ -92,8 +92,9 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const unmark = useUnmarkCells();
   const resolve = useResolveCells();
   const resolveAll = useResolveAllCells();
-  // The count is frozen when the question opens: it is the number the person read, and the one the server checks.
-  const [resolvingAll, setResolvingAll] = useState<{ outcome: "printed" | "not_printed"; count: number } | null>(null);
+  // The cells are frozen when the question opens: they are the ones the person read (the question names their
+  // number), and the ones the server checks.
+  const [resolvingAll, setResolvingAll] = useState<{ outcome: "printed" | "not_printed"; cells: number[] } | null>(null);
   const [chosenMode, setChosenMode] = useState<Mode>("view");
   const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
   const [purpose, setPurpose] = useState("");
@@ -148,13 +149,13 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
 
   function askResolveAll(outcome: "printed" | "not_printed") {
     resolveAll.reset();
-    setResolvingAll({ outcome, count: unconfirmed.length });
+    setResolvingAll({ outcome, cells: unconfirmed.map((c) => c.cell).sort((a, b) => a - b) });
   }
   function confirmResolveAll() {
     if (!resolvingAll) return;
-    const { outcome, count } = resolvingAll;
+    const { outcome, cells } = resolvingAll;
     resolveAll.mutate(
-      { code, outcome, expectedCount: count },
+      { code, outcome, expectedCells: cells },
       {
         onSuccess: () => {
           setResolvingAll(null);
@@ -417,8 +418,8 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
             !resolvingAll
               ? ""
               : resolvingAll.outcome === "not_printed"
-                ? plural(resolvingAll.count, { one: "Resolve # cell as not printed?", other: "Resolve # cells as not printed?" })
-                : plural(resolvingAll.count, { one: "Resolve # cell as printed?", other: "Resolve # cells as printed?" })
+                ? plural(resolvingAll.cells.length, { one: "Resolve # cell as not printed?", other: "Resolve # cells as not printed?" })
+                : plural(resolvingAll.cells.length, { one: "Resolve # cell as printed?", other: "Resolve # cells as printed?" })
           }
           isOpen={resolvingAll !== null}
           // A request in flight is not taken back by closing the question: it stays until the answer is in.

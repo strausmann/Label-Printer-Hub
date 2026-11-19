@@ -179,7 +179,7 @@ class NoUnconfirmedCellsError(SheetApiError):
 class UnconfirmedCountChangedError(SheetApiError):
     status = 409
     error_code = "unconfirmed_count_changed"
-    message = "The number of cells waiting for confirmation has changed."
+    message = "The cells waiting for confirmation have changed."
 
     def __init__(self, unconfirmed: int) -> None:
         super().__init__(detail={"unconfirmed": unconfirmed})

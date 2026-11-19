@@ -177,12 +177,14 @@ describe("sheet writes", () => {
     ]);
   });
 
-  it("useResolveAllCells posts the outcome and the expected count and caches the sheet", async () => {
+  it("useResolveAllCells posts the outcome, the expected count and cells and caches the sheet", async () => {
     const { calls } = mockApi({ "POST /api/v1/sheets/AB-12/cells/resolve-all": sheetRead("AB-12", { used: [1, 2] }) });
     const { wrapper, client } = setup();
     const { result } = renderHook(() => useResolveAllCells(), { wrapper });
-    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "not_printed", expectedCount: 2 }));
-    expect(calls.map((c) => [c.path, JSON.parse(c.body!)])).toEqual([["/api/v1/sheets/AB-12/cells/resolve-all", { outcome: "not_printed", expected_count: 2 }]]);
+    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "not_printed", expectedCells: [3, 4] }));
+    expect(calls.map((c) => [c.path, JSON.parse(c.body!)])).toEqual([
+      ["/api/v1/sheets/AB-12/cells/resolve-all", { outcome: "not_printed", expected_count: 2, expected_cells: [3, 4] }],
+    ]);
     expect(client.getQueryData<{ code: string }>(sheetKey("AB-12"))?.code).toBe("AB-12");
   });
 
@@ -194,7 +196,7 @@ describe("sheet writes", () => {
     });
     const { wrapper } = setup();
     const { result } = renderHook(() => useResolveAllCells(), { wrapper });
-    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "printed", expectedCount: 2 }).catch(() => undefined));
+    await act(() => result.current.mutateAsync({ code: "AB-12", outcome: "printed", expectedCells: [3, 4] }).catch(() => undefined));
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 

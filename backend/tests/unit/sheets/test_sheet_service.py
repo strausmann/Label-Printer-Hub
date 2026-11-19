@@ -452,6 +452,39 @@ async def test_resolve_all_refuses_changed_count(session: AsyncSession, l4736: s
     assert detail.unconfirmed == 3
 
 
+async def test_resolve_all_refuses_a_changed_set_of_the_same_size(
+    session: AsyncSession, l4736: str
+) -> None:
+    # The person confirmed cells 2, 5 and 8; cell 8 settled elsewhere and cell 9 became
+    # unconfirmed: still three cells, but not the ones the person checked.
+    code = await _three_unconfirmed(session)
+    bus = FakeBus()
+    with pytest.raises(UnconfirmedCountChangedError) as info:
+        await ss.resolve_all_cells(
+            session,
+            code,
+            "printed",
+            expected_count=3,
+            expected_cells=[2, 5, 8],
+            actor="t",
+            bus=bus,
+        )
+    assert info.value.error_code == "unconfirmed_count_changed"
+    assert info.value.detail == {"unconfirmed": 3}
+    assert bus.events == []
+    assert (await ss.get_sheet(session, code)).unconfirmed == 3
+
+
+async def test_resolve_all_takes_the_cells_shown_in_any_order(
+    session: AsyncSession, l4736: str
+) -> None:
+    code = await _three_unconfirmed(session)
+    detail = await ss.resolve_all_cells(
+        session, code, "printed", expected_count=None, expected_cells=[9, 2, 5], actor="t"
+    )
+    assert detail.unconfirmed == 0
+
+
 async def test_resolve_all_is_one_transaction(
     async_session_factory: async_sessionmaker[AsyncSession],
     l4736: str,

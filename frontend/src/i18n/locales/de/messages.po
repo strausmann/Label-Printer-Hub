@@ -65,12 +65,12 @@ msgstr "{0, plural, one {# unbestätigtes Feld} other {# unbestätigte Felder}}"
 msgid "{0, plural, one {Mark # cell as used} other {Mark # cells as used}}"
 msgstr "{0, plural, one {# Zelle als belegt markieren} other {# Zellen als belegt markieren}}"
 
-#. placeholder {0}: resolvingAll.count
+#. placeholder {0}: resolvingAll.cells.length
 #: src/features/sheets/SheetDetail.tsx
 msgid "{0, plural, one {Resolve # cell as not printed?} other {Resolve # cells as not printed?}}"
 msgstr "{0, plural, one {# Zelle als nicht gedruckt bestätigen?} other {# Zellen als nicht gedruckt bestätigen?}}"
 
-#. placeholder {0}: resolvingAll.count
+#. placeholder {0}: resolvingAll.cells.length
 #: src/features/sheets/SheetDetail.tsx
 msgid "{0, plural, one {Resolve # cell as printed?} other {Resolve # cells as printed?}}"
 msgstr "{0, plural, one {# Zelle als gedruckt bestätigen?} other {# Zellen als gedruckt bestätigen?}}"
@@ -5387,10 +5387,6 @@ msgstr "Die Spaltenzahl"
 msgid "The number of rows"
 msgstr "Die Zeilenzahl"
 
-#: src/features/sheets/errors.ts
-msgid "The number of unconfirmed cells changed. Check the list and try again."
-msgstr "Die Zahl der unbestätigten Zellen hat sich geändert. Prüfe die Liste und versuche es noch einmal."
-
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "The numbers in the drawing follow this list. S counts the gaps between columns from the left, Z the gaps between rows from the top."
 msgstr "Die Nummern in der Zeichnung folgen dieser Liste. S zählt die Lücken zwischen den Spalten von links, Z die Lücken zwischen den Zeilen von oben."
@@ -5834,6 +5830,10 @@ msgstr "Das gewählte Fach gibt es nicht: Der Drucker meldet keine Fächer."
 #: src/features/calibration/guide/ReadingGuide.tsx
 msgid "The two edges of the gap between two columns: the sides of the labels."
 msgstr "Die beiden Kanten der Lücke zwischen zwei Spalten: die Seiten der Etiketten."
+
+#: src/features/sheets/errors.ts
+msgid "The unconfirmed cells changed. Check the list and try again."
+msgstr "Die unbestätigten Zellen haben sich geändert. Prüfe die Liste und versuche es noch einmal."
 
 #: src/features/calibration/ReadingsHelper.tsx
 msgid "The values are filled in below. Nothing is saved yet."

@@ -39,7 +39,7 @@ export function useSheetErrorText(): (error: unknown, fallback?: string) => stri
         case "cells_not_unconfirmed":
           return t`Those cells are no longer waiting for confirmation.`;
         case "unconfirmed_count_changed":
-          return t`The number of unconfirmed cells changed. Check the list and try again.`;
+          return t`The unconfirmed cells changed. Check the list and try again.`;
         case "no_unconfirmed_cells":
           return t`No cell is waiting for confirmation any more.`;
         case "cell_out_of_range":

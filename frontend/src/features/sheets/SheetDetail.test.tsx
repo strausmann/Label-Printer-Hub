@@ -369,13 +369,13 @@ describe("resolving all unconfirmed cells at once (#282)", () => {
   it.each([
     ["Resolve all as printed", "printed"],
     ["Resolve all as not printed", "not_printed"],
-  ])("%s: confirming sends the outcome %s and expected_count 3", async (button, outcome) => {
+  ])("%s: confirming sends the outcome %s, expected_count 3 and the cells shown", async (button, outcome) => {
     const { calls } = await open(three(), { [`POST ${ALL}`]: sheetRead(CODE, { used: [1, 5, 6, 7] }) });
     await userEvent.click(screen.getByRole("button", { name: button }));
     const dialog = await screen.findByRole("alertdialog");
     await userEvent.click(within(dialog).getByRole("button", { name: outcome === "printed" ? "Resolve as printed" : "Resolve as not printed" }));
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(body(posts(calls)[0]!)).toEqual({ outcome, expected_count: 3 });
+    expect(body(posts(calls)[0]!)).toEqual({ outcome, expected_count: 3, expected_cells: [5, 6, 7] });
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(screen.queryByRole("heading", { name: "Unconfirmed cells" })).toBeNull();
   });
@@ -397,7 +397,7 @@ describe("resolving all unconfirmed cells at once (#282)", () => {
     const before = reads();
     await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
     await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The number of unconfirmed cells changed. Check the list and try again.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The unconfirmed cells changed. Check the list and try again.");
     await waitFor(() => expect(reads()).toBeGreaterThan(before));
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
@@ -451,7 +451,7 @@ describe("resolving all unconfirmed cells at once (#282)", () => {
     });
     await userEvent.click(screen.getByRole("button", { name: "Resolve all as printed" }));
     await userEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Resolve as printed" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("The number of unconfirmed cells changed.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The unconfirmed cells changed.");
     await userEvent.click(screen.getByRole("button", { name: "Printed, cell 5" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });

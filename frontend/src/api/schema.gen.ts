@@ -3685,6 +3685,11 @@ export interface components {
         /** ResolveAllRequest */
         ResolveAllRequest: {
             /**
+             * Expected Cells
+             * @description The unconfirmed cells the caller showed, in any order. When the sheet's unconfirmed cells are not exactly these now, also with the same number, nothing is settled (409 unconfirmed_count_changed).
+             */
+            expected_cells?: number[] | null;
+            /**
              * Expected Count
              * @description The number of unconfirmed cells the caller saw. When the sheet has a different number now, nothing is settled (409 unconfirmed_count_changed).
              */
@@ -8652,7 +8657,7 @@ export interface operations {
                     "application/json": components["schemas"]["SheetApiErrorResponse"];
                 };
             };
-            /** @description Sheet is discarded, nothing is waiting for confirmation (no_unconfirmed_cells), or the count differs from expected_count (unconfirmed_count_changed, error_detail.unconfirmed holds the current number). */
+            /** @description Sheet is discarded, nothing is waiting for confirmation (no_unconfirmed_cells), or the count differs from expected_count or the cells from expected_cells (unconfirmed_count_changed, error_detail.unconfirmed holds the current number). */
             409: {
                 headers: {
                     [name: string]: unknown;

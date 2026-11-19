@@ -623,7 +623,8 @@ async def resolve_cells(
         409: {
             "description": (
                 "Sheet is discarded, nothing is waiting for confirmation "
-                "(no_unconfirmed_cells), or the count differs from expected_count "
+                "(no_unconfirmed_cells), or the count differs from expected_count or the cells "
+                "from expected_cells "
                 "(unconfirmed_count_changed, error_detail.unconfirmed holds the current number)."
             )
         },
@@ -638,6 +639,7 @@ async def resolve_all_cells(
             code,
             body.outcome,
             expected_count=body.expected_count,
+            expected_cells=body.expected_cells,
             actor=actor(auth),
             bus=_bus(request),
         )

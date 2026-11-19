@@ -20,7 +20,7 @@ Every sheet type has its own switch **QR codes on labels**, in the details of th
 Each physical sheet gets its own code. When you add a sheet, you can print an ID label for it right away, so you can scan it later. A sheet knows which of its cells are free and which are used.
 
 - **Free cells** take the next labels.
-- **Unconfirmed cells** are cells of a job whose outcome is not known, for example when the printer failed mid-page. Check the sheet and confirm which of them were printed, one by one. When there are two or more, **Resolve all as printed** and **Resolve all as not printed** settle them in one go; the hub asks first and names how many cells it is about. If the number changed in the meantime, nothing is written and you are asked to check the list again.
+- **Unconfirmed cells** are cells of a job whose outcome is not known, for example when the printer failed mid-page. Check the sheet and confirm which of them were printed, one by one. When there are two or more, **Resolve all as printed** and **Resolve all as not printed** settle them in one go; the hub asks first and names how many cells it is about. If those cells changed in the meantime (another one became unconfirmed or one was settled elsewhere, even when the number stayed the same), nothing is written and you are asked to check the list again.
 - **Discarding** a sheet takes it out of the picker. Its code is never given out again; labels already printed stay printed.
 
 ## Where the sheet code goes
