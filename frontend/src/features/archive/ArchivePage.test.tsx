@@ -4,8 +4,13 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp, SIGNED_IN } from "../../test-utils";
+import { renderApp, SIGNED_IN, widenAppWaits } from "../../test-utils";
 import { apiErrorBody, GEOMETRY_L4736, mockApi, respond, SHEET_TYPE } from "../test-api";
+
+// Each test boots the whole app and its form tests type into it; the per-test limit is widened for this file only
+// (vi.setConfig is file-scoped), like the other whole-app test files.
+vi.setConfig({ testTimeout: 15_000 });
+widenAppWaits();
 
 const PRINT_SESSION = { ...SIGNED_IN, scope: "print" as const };
 const VERSION = {
@@ -234,7 +239,10 @@ describe("edit geometry", () => {
     const top = screen.getByRole("textbox", { name: "Top margin (mm)" });
     await userEvent.clear(top);
     await userEvent.type(top, "21,8");
-    await userEvent.type(screen.getByRole("textbox", { name: "What changed" }), "Measured with a ruler");
+    // Pasted, not typed: every keystroke re-renders the whole app, and 21 of them took longer than the test limit on a
+    // loaded runner. Typing into the field is not what this test is about.
+    await userEvent.click(screen.getByRole("textbox", { name: "What changed" }));
+    await userEvent.paste("Measured with a ruler");
     await userEvent.click(screen.getByRole("button", { name: "Save new version" }));
     await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
     const body = JSON.parse(calls.find((c) => c.method === "POST")!.body!);

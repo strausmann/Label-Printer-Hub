@@ -4,9 +4,22 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderApp, SIGNED_IN } from "../../test-utils";
+import { APP_WAIT, renderApp, SIGNED_IN, widenAppWaits } from "../../test-utils";
+import type * as Ql from "../layout/ql";
 import { mockApi, pngResponse, PRINTER_B, PRINTER_A, respond, status } from "../test-api";
 import { CART_KEY, reloadCart } from "./cart";
+
+// The check and the previews are asked for 400 ms after the last change (PREVIEW_DEBOUNCE_MS, tested in
+// layout/ql.test.ts). With the real wait a test spent 400 ms of findBy's 1 s window doing nothing, and failed on a
+// loaded runner; here it is cut to 20 ms.
+vi.mock("../layout/ql", async (importOriginal) => {
+  const real = await importOriginal<typeof Ql>();
+  return { ...real, useDebounced: <T,>(value: T, ms: number) => real.useDebounced(value, Math.min(ms, 20)) };
+});
+
+// Each test boots the whole app; the per-test limit is widened for this file only (vi.setConfig is file-scoped).
+vi.setConfig({ testTimeout: 15_000 });
+widenAppWaits();
 
 const BATCH = "cccccccc-0000-4000-8000-000000000001";
 const items = [
@@ -137,7 +150,7 @@ describe("CartPage checks and previews", () => {
   it("shows one preview per content type", async () => {
     mockApi(qlRoutes([line("1", "qr_two_lines"), line("2", "qr_two_lines"), line("3", "qr_only")]));
     await renderApp({ path: "/cart" });
-    await vi.waitFor(() => expect(screen.getAllByRole("img", { name: "Label preview" })).toHaveLength(2));
+    await vi.waitFor(() => expect(screen.getAllByRole("img", { name: "Label preview" })).toHaveLength(2), APP_WAIT);
     expect(screen.getByRole("region", { name: "Preview of Item one" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Preview of Item three" })).toBeVisible();
     expect(screen.queryByRole("region", { name: "Preview of Item two" })).toBeNull();

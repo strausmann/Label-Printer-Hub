@@ -4,7 +4,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, vi } from "vitest";
-import { renderApp } from "../../../test-utils";
+import { renderApp, widenAppWaits } from "../../../test-utils";
 import { CART_KEY, reloadCart } from "../../lookup/cart";
 import { mockApi, type Call } from "../../test-api";
 import { P, routes } from "./testkit";
@@ -16,8 +16,12 @@ import { P, routes } from "./testkit";
 export const PREVIEW = `/api/v1/print/${P}/sheet/preview`;
 export const PRINT = `/api/v1/print/${P}/sheet`;
 
-/** Registers the per-test reset every file here needs: no stored cart, no stubbed globals. Call it at the top of the file. */
+/**
+ * Registers the per-test reset every file here needs: no stored cart, no stubbed globals, and the wider wait of a
+ * whole-app test (`widenAppWaits`). Call it at the top of the file.
+ */
 export function resetBetweenTests(): void {
+  widenAppWaits();
   beforeEach(() => {
     localStorage.clear();
     reloadCart();

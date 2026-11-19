@@ -3,7 +3,8 @@
 
 import { createMemoryHistory } from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
-import { act, render } from "@testing-library/react";
+import { act, configure, getConfig, render } from "@testing-library/react";
+import { afterAll, beforeAll } from "vitest";
 import { App } from "./App";
 import { createQueryClient } from "./app/queryClient";
 import { createAppRouter } from "./app/router";
@@ -37,6 +38,29 @@ export const SIGNED_IN: SessionData = {
 };
 
 export const SIGNED_OUT: SessionData = { signed_in: false, bootstrap: false };
+
+/**
+ * How long a test waits for something a whole-app render shows only after a chain of mocked requests (cart,
+ * printers, status, check, preview). The default window of `findBy*`/`waitFor` is 1 s; on a loaded runner
+ * (coverage, other jobs) the chain alone can take longer, and the test then fails for a slow machine, not a defect.
+ * A wait that times out still fails: a missing text is still found missing, only later.
+ */
+export const APP_WAIT = { timeout: 5_000 } as const;
+
+/**
+ * Widens the `findBy*`/`waitFor` window of Testing Library to `APP_WAIT` for the tests of one file (call it at the
+ * top level). For files whose tests boot the whole app; `vi.waitFor` keeps its own default, pass `APP_WAIT` there.
+ */
+export function widenAppWaits(): void {
+  let before = 1_000;
+  beforeAll(() => {
+    before = getConfig().asyncUtilTimeout;
+    configure({ asyncUtilTimeout: APP_WAIT.timeout });
+  });
+  afterAll(() => {
+    configure({ asyncUtilTimeout: before });
+  });
+}
 
 export interface RenderOptions {
   path?: string;
