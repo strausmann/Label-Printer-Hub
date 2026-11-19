@@ -28,3 +28,9 @@ Nach einem Neustart zeichnet der Hub nicht mehr jedes wartende Etikett, bevor er
 ## Kurze Etiketten auf QL-Druckern
 
 Die QL-Bibliothek ist jetzt `brother-ql-next`. Ein QL-Etikett, das kürzer als etwa 12,7 mm (150 Punkte) ist, bekommt am Ende leeres Band, es druckt also etwas länger, als die Vorschau zeigt. Ein QL-Etikett über 1000 mm (500 mm bei 600 dpi) wird mit `422` und dem Fehlercode `tape_label_too_long` abgewiesen.
+
+## Druckbestätigung von Banddruckern
+
+- Nach einem Neustart und bei jedem Testdruck behält `print_confirmation` ein früheres `counter_read` `false` nicht mehr: Der Hub fragt den Etikettenzähler wieder ab, und der gespeicherte Eintrag sagt das nach der ersten Zustandsabfrage des Druckers. Erst wenn der Drucker den Zähler wieder dreimal hintereinander verweigert, wird er wieder `false`.
+- Einen Eintrag, den der Hub nicht speichern konnte (eine belegte Datenbank), speichert die nächste Zustandsabfrage des Druckers erneut, nicht erst die nächste Änderung.
+- Die Bandlänge eines QL-Etiketts, das breiter als die bedruckbare Breite ist, ist jetzt die Länge, die der Drucker nach dem Verkleinern auf die Rolle vorschiebt, nicht die lange Seite des Etiketts. Ein solches Etikett wird nicht mehr wegen einer Länge, die es nicht hat, mit `tape_label_too_long` abgewiesen, und die Wartezeit auf die Bestätigung richtet sich nach der echten Länge. Das leere Band am Ende eines kurzen Etiketts zählt mit.

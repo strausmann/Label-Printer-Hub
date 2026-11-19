@@ -51,7 +51,6 @@ from app.printer_backends.tape_confirmation import (
     TapeIppTransport,
     TapeSendState,
     check_label_lengths,
-    label_length_mm,
 )
 from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import StatusBlock
@@ -190,7 +189,8 @@ def _prepare_label(
     )
     prepared = _pad_to_min_length(fitted, model_id, ql_label, dpi_600=high_resolution)
     dpi = _ql_dpi(high_resolution)
-    length = label_length_mm(prepared, dpi)
+    # #398: the length the printer feeds, after convert's scaling and including the padding.
+    length = _ql_length_mm(prepared, ql_label, high_resolution)
     model = _model_of(model_id)
     label = next((x for x in ALL_LABELS if x.identifier == ql_label), None)
     if model is not None and label is not None:
@@ -204,6 +204,26 @@ def _prepare_label(
                 )
             )
     return prepared, length
+
+
+def _ql_length_mm(fitted: Image.Image, ql_label: str, high_resolution: bool) -> float:
+    """The tape length a fitted QL image takes, in mm (#398, finding 5).
+
+    ``convert`` scales an image still wider than the printable width down to it, keeping the
+    aspect ratio, so the length is the scaled height, not the long side (which overestimates a
+    wide label across the roll and can refuse a valid one). ``_fit_to_printable_width`` doubles
+    both axes for 600 dpi, so the printable width is doubled too. The confirmation wait uses
+    this length of the image as sent, so the white padding of ``_pad_to_min_length`` counts:
+    the printer feeds it.
+    """
+    label = next((x for x in ALL_LABELS if x.identifier == ql_label), None)
+    printable = int(label.dots_printable[0]) if label is not None else fitted.width
+    across = printable * (2 if high_resolution else 1)
+    if fitted.width > across:
+        length_dots = fitted.height * across / fitted.width
+    else:
+        length_dots = float(fitted.height)
+    return length_dots * 25.4 / _ql_dpi(high_resolution)
 
 
 def _ql_dpi(high_resolution: bool) -> int:
@@ -485,6 +505,7 @@ class BrotherQLBackend:
 
         Raises ``PrinterOfflineError`` when the printer does not answer.
         """
+        await self.send_state.flush()  # #398: a record write that did not get through
         asked = self.send_state.ask_counter()
         try:
             status = await query_preflight(

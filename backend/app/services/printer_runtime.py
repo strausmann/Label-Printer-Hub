@@ -85,6 +85,7 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.producers.tape_description import TapeDescription
 from app.services.roll_tracker import RollTracker
 from app.services.tape_registry import TapeRegistry
+from app.sheets.type_service import write_transaction
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -736,12 +737,13 @@ class PrinterRuntime:
 
         The sink is bound to the address the backend was wired for: a test print still running
         against the old host after an address change cannot write over the record the change
-        cleared (audit run 28, hardening note 1).
+        cleared (audit run 28, hardening note 1). A stored ``counter_off`` is cleared in memory
+        (the new backend asks for the counter) and stored by the first status read (#398).
         """
         state = getattr(backend, "send_state", None)
         if not isinstance(state, TapeSendState):
             return
-        state.record = ConfirmationRecord.from_json(printer.print_confirmation)
+        state.load(ConfirmationRecord.from_json(printer.print_confirmation))
         state.sink = functools.partial(
             self._store_confirmation, printer.id, address=_tape_address(printer.connection)
         )
@@ -754,8 +756,13 @@ class PrinterRuntime:
         address: tuple[object, object] | None = None,
     ) -> None:
         """Write *record* to the printer row (#393). A gone row is left alone, and so is a row
-        whose host or port is no longer *address*, the one the writer was wired for."""
-        async with self._sessions()() as session:
+        whose host or port is no longer *address*, the one the writer was wired for.
+
+        Read, compare and write run inside one write transaction (#398, finding 6): the lock is
+        taken before the read, so an address change that commits meanwhile is seen by the
+        compare instead of being overwritten by a record of the old address.
+        """
+        async with self._sessions()() as session, write_transaction(session):
             row = await session.get(Printer, printer_id)
             if row is None:
                 return

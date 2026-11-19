@@ -349,6 +349,7 @@ class PTouchBackend:
         parallel on UDP/161 and returns reliably. Raises ``PrinterOfflineError`` when the
         printer does not answer.
         """
+        await self.send_state.flush()  # #398: a record write that did not get through
         asked = self.send_state.ask_counter()
         try:
             status = await query_preflight(

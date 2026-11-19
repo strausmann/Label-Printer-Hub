@@ -55,7 +55,7 @@ import asyncio
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Self
+from typing import Final, Literal, Self
 from urllib.parse import urlsplit
 
 import httpx
@@ -87,6 +87,11 @@ logger = logging.getLogger(__name__)
 
 MAX_RESPONSE_BYTES = 1_048_576
 """Response body cap (spec 11.2): streamed, aborted beyond."""
+
+DECODE_IN_THREAD_BYTES: Final = 65_536
+"""Answers above this size are decoded in a worker thread (#398): decoding a worst-case answer
+near ``MAX_RESPONSE_BYTES`` blocks for about 400 ms. A smaller one, the normal case (a few KB),
+is decoded inline, where a thread hop would cost more than the decode."""
 
 GET_JOBS_LIMIT = 100
 """``limit`` sent with Get-Jobs, and the most jobs ``get_jobs`` returns.
@@ -406,7 +411,12 @@ class IppClient:
                 raw = await self._exchange(body, self._timeout(limit))
         except TimeoutError:
             raise IppTransportError(f"{operation}: no complete answer within {limit} s") from None
-        response, _ = decode(raw)
+        if len(raw) > DECODE_IN_THREAD_BYTES:
+            # #398: a worst-case answer (up to MAX_RESPONSE_BYTES) takes hundreds of ms to
+            # decode; off the event loop, it does not stall every other request meanwhile.
+            response, _ = await asyncio.to_thread(decode, raw)
+        else:
+            response, _ = decode(raw)
         status = response.code
         logger.debug("ipp %s -> %s", operation, _status_name(status))
         if not 0 <= status <= _SUCCESS_MAX:
