@@ -76,3 +76,13 @@ async def test_spa_index_unchanged(dist: Path, monkeypatch: pytest.MonkeyPatch) 
         resp = await client.get("/")
     get_settings.cache_clear()
     assert resp.headers["cache-control"] == "no-cache"
+
+
+async def test_static_asset_keeps_its_own_cache_control(
+    dist: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _app, client = await _app_client(dist, monkeypatch)
+    async with client:
+        resp = await client.get("/assets/app.js")
+    get_settings.cache_clear()
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"

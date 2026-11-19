@@ -50,6 +50,8 @@ def _copy_offenders(dockerfile: str, dockerignore: str) -> list[str]:
     for line in dockerfile.splitlines():
         if not re.match(r"\s*(COPY|ADD)\b", line, re.I):
             continue
+        if re.search(r"\s--from=", line):
+            continue  # a stage copy reads another stage, not the build context
         args = [a for a in line.split()[1:] if not a.startswith("--")]
         for source in args[:-1]:  # the last argument is the destination
             segments = source.strip("/").split("/")
@@ -76,6 +78,7 @@ def _copy_offenders(dockerfile: str, dockerignore: str) -> list[str]:
         ("ADD backend/app/ ./app/", "", False),
         ("COPY --chown=hub:hub backend/ ./", "backend/tests\n", False),
         ("COPY --from=builder /opt/venv /opt/venv", "", False),
+        ("COPY --from=builder /build/* /x", "", False),
     ],
 )
 def test_copy_guard_flags_broad_and_test_sources(

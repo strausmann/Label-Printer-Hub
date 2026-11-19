@@ -12,6 +12,9 @@ does around a small one. All addresses are documentation addresses; the key is f
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import httpx
 import pytest
 from app.config import get_settings
@@ -21,7 +24,16 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from tests.integration.api.conftest import _client_for
 
 TRUSTED = "127.0.0.1"
+DOCKERFILE = Path(__file__).resolve().parents[3] / "Dockerfile"
 BAD_KEY = {"key": "lh_pat_not-a-real-key-0123456789"}
+
+
+def _proxy_flags(dockerfile: str) -> tuple[bool, bool]:
+    """(``--proxy-headers`` given, ``--forwarded-allow-ips`` given) in the uvicorn command."""
+    return (
+        re.search(r"(?<![\w-])--proxy-headers\b", dockerfile) is not None,
+        re.search(r"--forwarded-allow-ips\b", dockerfile) is not None,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -39,8 +51,10 @@ async def hub(dist, monkeypatch):
     get_settings.cache_clear()
 
 
-def _client(app, peer: str, *, proxy_headers: bool = True) -> httpx.AsyncClient:
-    outer = ProxyHeadersMiddleware(app, trusted_hosts=TRUSTED) if proxy_headers else app
+def _client(
+    app, peer: str, *, proxy_headers: bool = True, trusted: str = TRUSTED
+) -> httpx.AsyncClient:
+    outer = ProxyHeadersMiddleware(app, trusted_hosts=trusted) if proxy_headers else app
     transport = httpx.ASGITransport(app=outer, client=(peer, 40000))
     return httpx.AsyncClient(transport=transport, base_url="http://hub.example.invalid")
 
@@ -49,6 +63,8 @@ async def _fail_sign_ins(client: httpx.AsyncClient, count: int, **headers: str) 
     codes = []
     for _ in range(count):
         resp = await client.post("/api/v1/auth/session", json=BAD_KEY, headers=headers)
+        # The response that sets the cookies is never kept by a shared cache (also 401 and 429).
+        assert resp.headers["cache-control"] == "no-store"
         codes.append(resp.status_code)
     return codes
 
@@ -72,11 +88,41 @@ async def test_trusted_peer_uses_the_right_most_untrusted_address(hub) -> None:
     assert keys == {"203.0.113.2"}
 
 
-async def test_trusted_peer_without_the_middleware_would_pool_every_client(hub) -> None:
-    """The counter-test's other face: without the middleware the key is the proxy itself."""
+async def test_without_the_middleware_the_bucket_key_is_the_proxy_address(hub) -> None:
+    """Pins what the middleware changes: without it the key is the proxy itself."""
     async with _client(hub, TRUSTED, proxy_headers=False) as client:
         await _fail_sign_ins(client, 1, **{"X-Forwarded-For": "203.0.113.1, 203.0.113.2"})
     assert set(_sign_in_rate_limiter._buckets) == {TRUSTED}
+
+
+async def test_second_trusted_proxy_in_the_chain_is_skipped(hub) -> None:
+    """With two trusted hops the key is the right-most address that is NOT trusted.
+
+    A plain "last entry" would give the second proxy, "first entry" would give the spoofed one.
+    """
+    async with _client(hub, TRUSTED, trusted=f"{TRUSTED},198.51.100.50") as client:
+        await _fail_sign_ins(
+            client, 1, **{"X-Forwarded-For": "203.0.113.66, 203.0.113.1, 198.51.100.50"}
+        )
+    assert set(_sign_in_rate_limiter._buckets) == {"203.0.113.1"}
+
+
+def test_the_image_command_keeps_the_proxy_flags() -> None:
+    """Production gets the trusted proxies from uvicorn's flags in the Dockerfile CMD."""
+    assert _proxy_flags(DOCKERFILE.read_text(encoding="utf-8")) == (True, True)
+
+
+@pytest.mark.parametrize(
+    ("cmd", "expected"),
+    [
+        ('--proxy-headers --forwarded-allow-ips="${X}"', (True, True)),
+        ('--forwarded-allow-ips="${X}"', (False, True)),
+        ("--proxy-headers", (True, False)),
+        ("--no-proxy-headers --forwarded-allow-ips=1", (False, True)),
+    ],
+)
+def test_proxy_flag_guard_notices_a_missing_flag(cmd: str, expected: tuple[bool, bool]) -> None:
+    assert _proxy_flags(f"CMD exec uvicorn app.main:app {cmd}") == expected
 
 
 async def test_two_clients_behind_one_proxy_have_separate_buckets(hub) -> None:
