@@ -343,7 +343,7 @@ jobs:
 
       - name: Check the licence files in the image
         run: |
-          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py && test -d /opt/app && test -z "$(find /opt/app \( -name e2e_app.py -o -type d -name tests \) -print 2>/dev/null)"'
+          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py && test -d /opt/app && test -z "$(find / -xdev \( -path /proc -o -path /sys \) -prune -o \( -name e2e_app.py -o -path "/opt/app/*" -type d -name tests -o -path "*/site-packages/tests/conftest.py" -o -path "*/site-packages/tests/integration" \) -print 2>/dev/null)"'
 
       # Informational only, never a gate: what the default catalogues find without the SBOM cataloger.
       - name: Default catalogue (informational)
