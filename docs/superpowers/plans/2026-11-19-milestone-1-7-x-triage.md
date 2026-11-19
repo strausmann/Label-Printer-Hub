@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Milestone 1.7.x — Triage of the Open Issues
 
-**Date:** 2026-11-19, revision 2 (after the plan review of `f4ab0a05` and the maintainer's decisions). **Checked against:** `main` = release 1.7.0, commit `d5961d04` (branch `milestone/1.7.x`).
+**Date:** 2026-11-19, revision 3 (after the plan review of `f4ab0a05`, the maintainer's decisions and the re-check of `b07c038c`). **Checked against:** `main` = release 1.7.0, commit `d5961d04` (branch `milestone/1.7.x`).
 **Plan:** [`2026-11-19-milestone-1-7-x.md`](2026-11-19-milestone-1-7-x.md) — the task numbers below refer to it.
 
 Each issue, and each finding of a collection issue (#398, #222, #221, #212, #211), gets exactly one outcome:
@@ -39,7 +39,7 @@ Two implemented issues have a feature part that is now its own issue in 1.8.0: #
 | #164 text length / body size | implement | Tape field caps done (`schemas/print_request.py:52-57`, #258). Open: no ASGI body limit (only per route, `api/bounded_body.py:17`, `settings_api.py:89`, `sheet_types.py:190`); `spool_id`, `product_id`, `type` unbounded (`schemas/webhook.py:41-66`). Limit 2 MiB (maintainer). | 2 |
 | #166 one unwireable printer aborts startup | implement (fix part; UI state is #401) | `main.py:399` attaches with `fatal=True`; `printer_runtime.py:473,511` re-raise; `_resolve_model_id_from_config` catches only `SnmpDiscoveryError` (`printer_runtime.py:153`), `find_by_pjl`'s `ModelNotFoundError` escapes (`:163`); no model validation on create (`schemas/printer_admin.py:160`). | 3 |
 | #168 large backlog blocks startup | implement (fix part; cap and `copies` count are #402) | `PrintQueue.start` re-renders every queued row before the workers exist (`services/print_queue.py:601-603`, `:902`); `main.py:410` awaits it inside the lifespan. | 4 |
-| #189 cancel windows | implement | `repositories/jobs.py:297-310` `mark_cancelled` reads, checks, updates by id, reached from `JobStore.mark_cancelled` (`job_store_sqlite.py:115-134`) after `queue.cancel` and from both clear paths; both clear paths await `list_active` before `has_job` (`api/routes/printers.py:~695-718`, `:760-770`). The worker write is conditional already (`c9aac1b`). | 7 |
+| #189 cancel windows | implement (the two clear paths) | `repositories/jobs.py:297-310` `mark_cancelled` reads, checks, updates by id; both clear paths use it for the rows the queue does not track (`api/routes/printers.py:698-718`, `:740-775`), and the admin clear filters on `has_job` only after awaiting `list_active`. A single cancel has no window in which a write is lost: `queue.cancel` and the worker each check and change the in-memory state without an `await` (`services/print_queue.py:2228-2232`, `:2592-2600`), and the worker's store write is conditional since `c9aac1b`; so only the two clear paths are fixed and tested. | 7 |
 | #206 `captured_at` on a never-answered printer | implement | New-row branch stamps `captured_at=now` (`services/producers/ipp_status_producer.py:325`); the existing-row branch stamps it too when it is null (`:315`). With `captured_at=None` the status route says "No probe yet" (`api/routes/printers.py:423-432`), so the fix also reports such a row as offline. | 12 |
 | #207 QL driver as entry point | implement | `pyproject.toml:77-78` registers only `pt-series`; fallback in `api/routes/capabilities.py:112-122`. | 3 |
 | #208 one page-printer discriminator | implement | `backend == "ipp"` and `backend == IPP_BACKEND` in 20+ places (`capabilities.py:251`, `batch.py:133`, `printer_runtime.py:179,444`, `admin_printers_api.py:200`, `printer_admin_service.py:365,368,621`, `sheets/print_service.py:1094,1736,…`); the status route decides by the cache row's `kind` (`printers.py:459,464`). Model validation moved to #166. | 12 |
@@ -126,5 +126,5 @@ Two implemented issues have a feature part that is now its own issue in 1.8.0: #
 - #398 finding 5: the measurement is already on the fitted image; the defect is the long-side rule for an image left wider than the printable width (W4).
 - #213: the integration fixtures were wrongly listed as default journal (W10).
 - #211 finding 5: five call sites, the swatch is pinned already (W5); finding 6: not done for the lookup request (W12).
-- #189: the cancel path runs through `queue.cancel` and `JobStore`, and there are two clear paths (W3).
+- #189: the cancel path runs through `queue.cancel` and `JobStore`, and there are two clear paths (W3). Revision 3: only the two clear paths can lose a write; the single cancel stays as it is (N4).
 - #247, #352 and the feature parts of #166, #168 and #212 are in 1.8.0 (#401, #402, #403); #302 is closed.
