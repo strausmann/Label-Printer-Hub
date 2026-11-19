@@ -336,6 +336,26 @@ def _counter(value: object) -> int | None:
     return count if count >= 0 else None
 
 
+def _status_value(value: object) -> int:
+    """``hrPrinterStatus`` as ``int`` (run 26, hardening note 2: the agent's types are not
+    trusted). A text or any other value that is no integer raises ``SnmpQueryError``."""
+    if isinstance(value, (bool, str, bytes, rfc1902.OctetString)):
+        raise SnmpQueryError("preflight SNMP returned a status that is not an integer")
+    try:
+        status: int = int(value)  # type: ignore[call-overload]
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SnmpQueryError("preflight SNMP returned a status that is not an integer") from exc
+    return status
+
+
+def _bitmap_value(value: object) -> bytes:
+    """``hrPrinterDetectedErrorState`` as bytes; only an OCTET STRING is one (``bytes()`` of an
+    integer would allocate that many bytes). Anything else raises ``SnmpQueryError``."""
+    if not isinstance(value, rfc1902.OctetString):
+        raise SnmpQueryError("preflight SNMP returned an error state that is not an octet string")
+    return bytes(value)
+
+
 _NO_SUCH_NAME: Final = 2
 """SNMP ``error-status`` noSuchName (RFC 1157): the agent does not know an OID of the request."""
 
@@ -398,8 +418,8 @@ async def query_preflight(
         raise SnmpQueryError("incomplete preflight reply")
 
     binds: list[Any] = var_binds
-    raw_status = int(binds[0][1])
-    raw_error_blob = bytes(binds[1][1])
+    raw_status = _status_value(binds[0][1])
+    raw_error_blob = _bitmap_value(binds[1][1])
     raw_media_text = _cap(_strip_control_characters(str(binds[2][1])))
     marker_count = _counter(binds[3][1]) if len(binds) > 3 else None
     if len(binds) > 3 and isinstance(binds[3][1], (rfc1905.NoSuchObject, rfc1905.NoSuchInstance)):
