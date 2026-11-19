@@ -10,7 +10,9 @@ import logging
 import pytest
 from app.models.tape import TapeSpec
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
+from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import MediaType
+from app.services.tape_registry import TapeRegistry
 from PIL import Image
 
 
@@ -300,3 +302,108 @@ async def test_batch_pads_short_labels_too(
         tape_spec_62,
     )
     assert [im.height for im in seen] == [150, 300]
+
+
+# --- #256 review round 1: the library's raster limits ---------------------------------------
+
+
+@pytest.fixture
+def _send_spy(monkeypatch: pytest.MonkeyPatch) -> list[bytes]:
+    out: list[bytes] = []
+    monkeypatch.setattr(
+        "app.printer_backends.brother_ql_backend._helpers_send",
+        lambda data, identifier, **kwargs: out.append(bytes(data)),
+    )
+    return out
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("high_resolution", "rows", "max_mm"),
+    [
+        (False, 11812, 1000),  # 11811 dots at 300 dpi = 1000 mm (shown rounded)
+        (True, 11812, 500),  # 11811 dots at 600 dpi = 500 mm (shown rounded)
+    ],
+)
+async def test_label_over_the_library_raster_limit_is_refused_as_too_long(
+    high_resolution: bool,
+    rows: int,
+    max_mm: int,
+    tape_spec_62: TapeSpec,
+    _send_spy: list[bytes],
+) -> None:
+    """#256 M1: brother-ql-next refuses rasters over 11811 dots; that is a 422, not a raw error."""
+    from app.printer_backends.exceptions import TapeLabelTooLongError
+
+    # At 600 dpi the fitted image is doubled, so the source has half the rows and half the width.
+    width, height = (348, rows // 2) if high_resolution else (696, rows)
+    image = Image.new("RGB", (width, height), "white")
+    backend = BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB")
+
+    with pytest.raises(TapeLabelTooLongError) as err:
+        backend.check_label_lengths(
+            [image],
+            tape_spec_62,
+            high_resolution=high_resolution,
+            orientation=LabelOrientation.ACROSS,
+        )
+    assert err.value.max_mm == max_mm
+    assert err.value.nothing_sent
+
+    with pytest.raises(TapeLabelTooLongError):  # the worker backstop refuses it too
+        await backend.print_image(
+            image,
+            tape_spec_62,
+            high_resolution=high_resolution,
+            orientation=LabelOrientation.ACROSS,
+        )
+    with pytest.raises(TapeLabelTooLongError):
+        await backend.print_images(
+            [image],
+            tape_spec_62,
+            high_resolution=high_resolution,
+            orientation=LabelOrientation.ACROSS,
+        )
+    assert _send_spy == []
+
+
+@pytest.mark.anyio
+async def test_label_at_the_library_raster_limit_still_prints(
+    tape_spec_62: TapeSpec, _send_spy: list[bytes]
+) -> None:
+    image = Image.new("RGB", (696, 11811), "white")
+    await BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB").print_image(
+        image, tape_spec_62, orientation=LabelOrientation.ACROSS
+    )
+    assert len(_send_spy) == 1
+
+
+@pytest.mark.anyio
+async def test_wide_short_image_is_padded_for_its_scaled_height(
+    tape_spec_62: TapeSpec, _send_spy: list[bytes]
+) -> None:
+    """#256 M2: 1400x200 across is scaled to 696x99 by convert; the padding is computed on that."""
+    await BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB").print_image(
+        Image.new("RGB", (1400, 200), "white"),
+        tape_spec_62,
+        orientation=LabelOrientation.ACROSS,
+    )
+    assert len(_send_spy) == 1
+
+
+def test_submit_time_length_includes_the_padding(tape_spec_62: TapeSpec) -> None:
+    """#256 L1: a 12 mm label under 150 dots is measured with the padding it is sent with."""
+    spec = TapeRegistry.lookup_ql(12, MediaType.CONTINUOUS_LENGTH_TAPE)
+    (length,) = BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB").check_label_lengths(
+        [Image.new("RGB", (106, 70), "white")], spec, orientation=LabelOrientation.ACROSS
+    )
+    assert length == pytest.approx(150 * 25.4 / 300)
+
+
+def test_die_cut_label_is_not_padded() -> None:
+    """#256 L2: only endless media are padded; a die-cut label has a fixed length."""
+    from app.printer_backends.brother_ql_backend import _pad_to_min_length
+
+    image = Image.new("RGB", (306, 100), "white")
+    assert _pad_to_min_length(image, "QL-820NWB", "17x54").size == (306, 100)
+    assert _pad_to_min_length(image, "QL-820NWB", "29").size == (306, 150)

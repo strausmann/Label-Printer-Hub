@@ -15,7 +15,7 @@ const WEB = [
   { name: "@headlessui/vue", version: "1.7.23", license: "MIT", licenseText: null },
 ];
 const SERVER = [
-  { name: "brother-ql", version: "0.9.4", license: "GPL-3.0-or-later", licenseText: "GNU GENERAL PUBLIC LICENSE" },
+  { name: "brother-ql-next", version: "0.12.0", license: "GPL-3.0-only", licenseText: "GNU GENERAL PUBLIC LICENSE" },
   { name: "anyio", version: "4.0.0", license: "MIT", licenseText: "anyio text" },
 ];
 
@@ -56,10 +56,10 @@ describe("DependencyLicences", () => {
     const table = await screen.findByRole("table");
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Package", "Version", "Licence", "Part", "Licence text"]);
     const names = within(table).getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[0]!.textContent);
-    expect(names).toEqual(["@headlessui/vue", "anyio", "brother-ql", "react"]);
-    const brother = screen.getByRole("row", { name: /brother-ql/ });
-    expect(within(brother).getByText("0.9.4")).toBeInTheDocument();
-    expect(within(brother).getByText("GPL-3.0-or-later")).toBeInTheDocument();
+    expect(names).toEqual(["@headlessui/vue", "anyio", "brother-ql-next", "react"]);
+    const brother = screen.getByRole("row", { name: /brother-ql-next/ });
+    expect(within(brother).getByText("0.12.0")).toBeInTheDocument();
+    expect(within(brother).getByText("GPL-3.0-only")).toBeInTheDocument();
     expect(within(brother).getByText("Server")).toBeInTheDocument();
     expect(within(screen.getByRole("row", { name: /^react/ })).getByText("Web")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Third-party software" })).toBeInTheDocument();
@@ -70,14 +70,14 @@ describe("DependencyLicences", () => {
     await show();
     await screen.findByRole("table");
     expect(screen.queryByText("GNU GENERAL PUBLIC LICENSE")).toBeNull();
-    const row = screen.getByRole("row", { name: /brother-ql/ });
+    const row = screen.getByRole("row", { name: /brother-ql-next/ });
     const user = userEvent.setup();
-    const button = within(row).getByRole("button", { name: "Show licence text of brother-ql" });
+    const button = within(row).getByRole("button", { name: "Show licence text of brother-ql-next" });
     expect(button).toHaveAttribute("aria-expanded", "false");
     await user.click(button);
     expect(screen.getByText("GNU GENERAL PUBLIC LICENSE")).toBeInTheDocument();
-    expect(within(row).getByRole("button", { name: "Hide licence text of brother-ql" })).toHaveAttribute("aria-expanded", "true");
-    await user.click(within(row).getByRole("button", { name: "Hide licence text of brother-ql" }));
+    expect(within(row).getByRole("button", { name: "Hide licence text of brother-ql-next" })).toHaveAttribute("aria-expanded", "true");
+    await user.click(within(row).getByRole("button", { name: "Hide licence text of brother-ql-next" }));
     expect(screen.queryByText("GNU GENERAL PUBLIC LICENSE")).toBeNull();
   });
 
@@ -117,7 +117,7 @@ describe("DependencyLicences", () => {
     const filter = screen.getByRole("searchbox", { name: "Filter packages" });
     await user.type(filter, "gpl");
     expect(await screen.findByText("1 package")).toBeInTheDocument();
-    expect(screen.getByRole("row", { name: /brother-ql/ })).toBeInTheDocument();
+    expect(screen.getByRole("row", { name: /brother-ql-next/ })).toBeInTheDocument();
     expect(screen.queryByRole("row", { name: /^react/ })).toBeNull();
     await user.clear(filter);
     await user.type(filter, "no-such-package");
@@ -131,7 +131,7 @@ describe("DependencyLicences", () => {
     expect(await screen.findByText("The licence list of the server is not included in this build.")).toBeInTheDocument();
     expect(screen.queryByText("The licence list of the web app is not included in this build.")).toBeNull();
     expect(screen.getByRole("row", { name: /^react/ })).toBeInTheDocument();
-    expect(screen.queryByRole("row", { name: /brother-ql/ })).toBeNull();
+    expect(screen.queryByRole("row", { name: /brother-ql-next/ })).toBeNull();
   });
 
   it("with both lists missing shows the two messages and the OS sentence, no table", async () => {
@@ -228,7 +228,7 @@ describe("DependencyLicences", () => {
     expect(screen.getByRole("row", { name: /^react/ })).toBeInTheDocument();
     stubLists({ body: WEB }, { body: SERVER });
     await userEvent.setup().click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByRole("row", { name: /brother-ql/ })).toBeInTheDocument();
+    expect(await screen.findByRole("row", { name: /brother-ql-next/ })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

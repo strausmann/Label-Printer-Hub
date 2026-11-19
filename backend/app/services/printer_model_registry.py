@@ -17,8 +17,8 @@ Discovery-Strategie (ptouch):
   2. ptouch.printers (Submodul) — PT*-Klassen via inspect
 
 Discovery-Strategie (brother_ql):
-  1. brother_ql.models.MODELS (dict) — Spec-Pfad, noch nicht in brother_ql 0.9.4
-  2. brother_ql.models.ALL_MODELS (list[Model]) — stabiler API-Pfad in 0.9.4
+  1. brother_ql.models.MODELS (dict) — Spec-Pfad, in brother_ql-next 0.12 nicht vorhanden
+  2. brother_ql.models.ALL_MODELS (list[Model]) — stabiler API-Pfad in brother_ql-next
 """
 
 from __future__ import annotations
@@ -89,7 +89,7 @@ def _load_brother_ql_models() -> list[PrinterModel]:
     """Laedt brother_ql-Modelle aus der brother_ql-Bibliothek.
 
     Versucht zuerst brother_ql.models.MODELS (Spec-Pfad), dann
-    brother_ql.models.ALL_MODELS (reale API in brother_ql 0.9.4).
+    brother_ql.models.ALL_MODELS (reale API in brother_ql-next).
     Gibt leere Liste zurueck bei ImportError oder fehlendem Attribut.
     """
     try:

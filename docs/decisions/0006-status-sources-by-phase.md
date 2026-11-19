@@ -93,7 +93,7 @@ A live read-only spike (#229) on a PT-P750W and a QL-820NWB found that `ESC i S`
 
 ## Amendment — 2026-11-17 (#389): the status right before and right after sending
 
-Neither print library reads anything back over the network: `brother_ql` 0.9.4 returns `outcome: "sent"` right after writing on its `network` backend ("The network backend doesn't support readback"), and `ptouch` only writes. A tape print therefore has two more SNMP reads around the send, both on UDP/161, never on the print connection:
+Neither print library reads anything back over the network: `brother_ql` returns `outcome: "sent"` right after writing on its `network` backend ("The network backend doesn't support readback"), and `ptouch` only writes. A tape print therefore has two more SNMP reads around the send, both on UDP/161, never on the print connection:
 
 | Phase | Source | What it decides |
 |---|---|---|

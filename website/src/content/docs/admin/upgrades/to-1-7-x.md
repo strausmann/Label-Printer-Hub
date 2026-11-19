@@ -24,3 +24,7 @@ Request bodies above 2 MiB are refused with `413` and the error code `body_too_l
 ## Queued labels after a restart
 
 After a restart the hub no longer draws every queued label before it starts, so startup no longer grows with the queue. A queued label is drawn when its turn comes: a label that cannot be drawn again now fails at that moment, with the same error (`recovery_rerender_failed: …`), not during startup. On a printer that was paused when the hub stopped, such a label stays `queued` until you resume the printer.
+
+## Short labels on QL printers
+
+The QL library is now `brother-ql-next`. A QL label shorter than about 12.7 mm (150 dots) gets blank tape at its end, so it prints slightly longer than the preview shows. A QL label longer than 1000 mm (500 mm at 600 dpi) is refused with `422` and the error code `tape_label_too_long`.

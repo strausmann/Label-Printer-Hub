@@ -24,3 +24,7 @@ Anfragekörper über 2 MiB werden für jede Route und vor der Anmeldung (eine an
 ## Wartende Etiketten nach einem Neustart
 
 Nach einem Neustart zeichnet der Hub nicht mehr jedes wartende Etikett, bevor er startet; der Start dauert damit bei einer langen Warteschlange nicht mehr länger. Ein wartendes Etikett wird gezeichnet, wenn es an der Reihe ist: Ein Etikett, das sich nicht mehr zeichnen lässt, schlägt erst dann fehl, mit demselben Fehler (`recovery_rerender_failed: …`), nicht schon beim Start. Auf einem Drucker, der beim Beenden des Hubs pausiert war, bleibt ein solches Etikett `queued`, bis du den Drucker fortsetzt.
+
+## Kurze Etiketten auf QL-Druckern
+
+Die QL-Bibliothek ist jetzt `brother-ql-next`. Ein QL-Etikett, das kürzer als etwa 12,7 mm (150 Punkte) ist, bekommt am Ende leeres Band, es druckt also etwas länger, als die Vorschau zeigt. Ein QL-Etikett über 1000 mm (500 mm bei 600 dpi) wird mit `422` und dem Fehlercode `tape_label_too_long` abgewiesen.

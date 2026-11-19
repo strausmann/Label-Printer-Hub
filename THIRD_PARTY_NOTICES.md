@@ -63,7 +63,7 @@ ship as `.py` source files in `/opt/venv`, so their source is part of the image 
 
 | Package | Licence | Upstream | Notes |
 |---|---|---|---|
-| brother_ql_next | GPL-3.0-only | [LunarEclipse363/brother_ql_next](https://github.com/LunarEclipse363/brother_ql_next) | QL-Series raster protocol, the maintained fork of `pklaus/brother_ql` (import name `brother_ql`). The wheel ships the GPL-3.0-only text; the image lists the package with that text in URL `/licenses/backend.json`. It brings one further dependency, `jsons` (MIT), listed there as well |
+| brother_ql_next | GPL-3.0-only | [LunarEclipse363/brother_ql_next](https://github.com/LunarEclipse363/brother_ql_next) | QL-Series raster protocol, the maintained fork of `pklaus/brother_ql` (import name `brother_ql`). The wheel ships the GPL-3.0-only text; the image lists the package with that text in URL `/licenses/backend.json`. It brings two further dependencies, `jsons` and `typish` (both MIT), listed there as well |
 | ptouch | LGPL-2.1-or-later | [ptouch on PyPI](https://pypi.org/project/ptouch/) | PT-Series protocol. The wheel ships the LGPL-2.1-or-later text; the image lists the package with that text in URL `/licenses/backend.json` |
 
 Because of `brother_ql_next` (GPL-3.0-only) the combined work is distributed under the

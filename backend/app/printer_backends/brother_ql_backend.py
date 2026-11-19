@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import TYPE_CHECKING, Any
 
 from brother_ql.backends.helpers import (
     send as _helpers_send,
 )
 from brother_ql.conversion import convert
-from brother_ql.labels import ALL_LABELS
+from brother_ql.labels import ALL_LABELS, FormFactor
 from brother_ql.models import ALL_MODELS
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
@@ -35,6 +36,7 @@ from app.printer_backends.exceptions import (
     PrinterError,
     PrinterOfflineError,
     PrintFailedError,
+    TapeLabelTooLongError,
     TapeMismatchError,
     refused_before_sending,
 )
@@ -122,22 +124,86 @@ def _fit_to_printable_width(
     return image
 
 
-def _pad_to_min_length(image: Image.Image, model_id: str) -> Image.Image:
+def _model_of(model_id: str) -> Any:
+    """The ``brother_ql`` model with this identifier, or ``None`` (the raster refuses it)."""
+    return next((m for m in ALL_MODELS if m.identifier == model_id), None)
+
+
+def _raster_height(image: Image.Image, printable: int, dpi_600: bool) -> int:
+    """The height in dots ``convert`` hands to the raster for *image* (#256).
+
+    ``convert`` halves the width at 600 dpi and, if the width is still not the printable width,
+    scales the image to it keeping the aspect ratio (the #254 degrade path), so the height
+    follows the scaling.
+    """
+    width = image.width // 2 if dpi_600 else image.width
+    if width == printable:
+        return image.height
+    return int(image.height * printable / width)
+
+
+def _pad_to_min_length(
+    image: Image.Image, model_id: str, ql_label: str, *, dpi_600: bool = False
+) -> Image.Image:
     """Pad a raster shorter than the model's minimum length with white at the end (#256).
 
     ``brother-ql-next`` refuses a raster below ``Model.min_max_length_dots[0]`` (150 dots for the
     QL-820NWB) with ``BrotherQLRasterError``; ``brother-ql`` 0.9.4 passed it on. White rows after
-    the content print as blank tape, so the label looks as before. An unknown model is left to
-    ``BrotherQLRaster``, which refuses it.
+    the content print as blank tape, so the label looks as before. The minimum is checked on the
+    height ``convert`` will produce, after its own scaling of an image that is too wide (M2).
+    Only endless media are padded: a die-cut label has a fixed length. An unknown model is left
+    to ``BrotherQLRaster``, which refuses it.
     """
-    model = next((m for m in ALL_MODELS if m.identifier == model_id), None)
-    if model is None or image.height >= model.min_max_length_dots[0]:
+    model = _model_of(model_id)
+    label = next((x for x in ALL_LABELS if x.identifier == ql_label), None)
+    if model is None or label is None or label.form_factor != FormFactor.ENDLESS:
         return image
-    padded = Image.new(
-        image.mode, (image.width, model.min_max_length_dots[0]), (255,) * len(image.mode)
-    )
+    printable = int(label.dots_printable[0])
+    minimum = int(model.min_max_length_dots[0])
+    if _raster_height(image, printable, dpi_600) >= minimum:
+        return image
+    width = image.width // 2 if dpi_600 else image.width
+    # Rows needed before the scaling so that the scaled height reaches the minimum (+1: int()).
+    rows = minimum if width == printable else math.ceil(minimum * width / printable) + 1
+    padded = Image.new(image.mode, (image.width, rows), (255,) * len(image.mode))
     padded.paste(image, (0, 0))
     return padded
+
+
+def _prepare_label(
+    image: Image.Image,
+    tape_spec: TapeSpec,
+    model_id: str,
+    *,
+    high_resolution: bool,
+    orientation: LabelOrientation | None,
+) -> tuple[Image.Image, float]:
+    """The image as it is sent and its tape length in mm; one path for submit, send and batch.
+
+    Refuses (``TapeLabelTooLongError``, nothing sent) a label that is longer than the tape allows
+    or than the library raster allows for this model at this resolution (#256: 11811 dots, which
+    is 1000 mm at 300 dpi and 500 mm at 600 dpi).
+    """
+    ql_label = _ql_label_of(tape_spec)
+    fitted = _fit_to_printable_width(
+        image, ql_label, dpi_600=high_resolution, orientation=orientation
+    )
+    prepared = _pad_to_min_length(fitted, model_id, ql_label, dpi_600=high_resolution)
+    dpi = _ql_dpi(high_resolution)
+    length = label_length_mm(prepared, dpi)
+    model = _model_of(model_id)
+    label = next((x for x in ALL_LABELS if x.identifier == ql_label), None)
+    if model is not None and label is not None:
+        dots = _raster_height(prepared, int(label.dots_printable[0]), high_resolution)
+        library_max_dots = int(model.min_max_length_dots[1])
+        if dots > library_max_dots:
+            raise refused_before_sending(
+                TapeLabelTooLongError(
+                    length_mm=math.ceil(dots * 25.4 / dpi),
+                    max_mm=min(tape_spec.max_length_mm, round(library_max_dots * 25.4 / dpi)),
+                )
+            )
+    return prepared, length
 
 
 def _ql_dpi(high_resolution: bool) -> int:
@@ -204,14 +270,14 @@ class BrotherQLBackend:
         """The tape length of each label as it would be sent (fitted to the roll); raises
         ``TapeLabelTooLongError`` (``nothing_sent``) for one longer than the tape allows
         (R26-2). The print service calls it when a job is submitted, the send checks again."""
-        ql_label = _ql_label_of(tape_spec)
         lengths = [
-            label_length_mm(
-                _fit_to_printable_width(
-                    image, ql_label, dpi_600=high_resolution, orientation=orientation
-                ),
-                _ql_dpi(high_resolution),
-            )
+            _prepare_label(
+                image,
+                tape_spec,
+                self._model_id,
+                high_resolution=high_resolution,
+                orientation=orientation,
+            )[1]
             for image in images
         ]
         check_label_lengths(lengths, tape_spec.max_length_mm)
@@ -260,11 +326,13 @@ class BrotherQLBackend:
         if not media_checked:
             self.last_send_status = None
         ql_label = _ql_label_of(tape_spec)
-        image = _fit_to_printable_width(
-            image, ql_label, dpi_600=high_resolution, orientation=orientation
+        image, length = _prepare_label(
+            image,
+            tape_spec,
+            self._model_id,
+            high_resolution=high_resolution,
+            orientation=orientation,
         )
-        image = _pad_to_min_length(image, self._model_id)
-        length = label_length_mm(image, _ql_dpi(high_resolution))
         check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
         if not media_checked:
             if detect_confirmation:
@@ -362,16 +430,18 @@ class BrotherQLBackend:
         # #389: one media check for the whole batch, not one per label (no probe storm).
         self.last_send_status = None
         ql_label = _ql_label_of(tape_spec)
-        fitted = [
-            _pad_to_min_length(
-                _fit_to_printable_width(
-                    image, ql_label, dpi_600=high_resolution, orientation=orientation
-                ),
+        prepared = [
+            _prepare_label(
+                image,
+                tape_spec,
                 self._model_id,
+                high_resolution=high_resolution,
+                orientation=orientation,
             )
             for image in images
         ]
-        lengths = [label_length_mm(image, _ql_dpi(high_resolution)) for image in fitted]
+        fitted = [image for image, _ in prepared]
+        lengths = [length for _, length in prepared]
         check_label_lengths(lengths, tape_spec.max_length_mm)  # R26-2: the whole batch or none
         await self._check_loaded_media(tape_spec)
         self.send_state.begin()
