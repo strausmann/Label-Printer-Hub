@@ -573,6 +573,10 @@ class TapeSendState:
             try:
                 job_id = await self.ipp.submit(data, labels, length_mm)
             except (IppUnreachableError, IppStatusError) as exc:
+                # Not taken, so the same bytes go out over 9100. A refusal status (busy
+                # included) is trusted to mean "nothing printed": a printer that lies, printing
+                # and then refusing, gets a second copy. That is inside the trust the hub gives
+                # its printers' answers (run 26, hardening note 6), like a forged status bit.
                 _logger.warning(
                     "IPP Print-Job not taken (%s); sending over TCP 9100", type(exc).__name__
                 )
