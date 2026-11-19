@@ -47,6 +47,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
+from pyasn1.error import PyAsn1Error
+from pysnmp.error import PySnmpError
 from sqlalchemy import select
 from sqlmodel import col
 
@@ -57,7 +59,7 @@ from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
 from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
-from app.printer_models.registry import ModelRegistry
+from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.repositories import printer_identity as identity_repo
 from app.schemas.label_layout import parse_layout_defaults
 from app.services.backend_router import (
@@ -133,8 +135,9 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
 async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
     """SNMP discovery first, fall back to ``printer_cfg.model`` on failure.
 
-    Raises ``ValueError`` when neither source has a model, ``SnmpDiscoveryError`` when the
-    discovery fails and there is no fallback.
+    Raises ``ValueError`` when neither source has a model, and the discovery error
+    (``SnmpDiscoveryError``, ``PySnmpError``, ``PyAsn1Error`` or ``ModelNotFoundError`` for a
+    device no driver claims) when the discovery fails and there is no fallback.
     """
     host: str = printer_cfg.host
     community: str = printer_cfg.snmp.community
@@ -148,19 +151,22 @@ async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
             )
         return model_fallback
 
+    ModelRegistry.ensure_discovered()
     try:
         pjl = await query_model_pjl(host, community=community)
-    except SnmpDiscoveryError as exc:
+        driver_cls = ModelRegistry.find_by_pjl(pjl)
+    except (SnmpDiscoveryError, PySnmpError, PyAsn1Error, ModelNotFoundError) as exc:
+        # Discovery failed (timeout, DNS, malformed reply) or the device names a model no
+        # driver claims: the configured model decides.
         if model_fallback:
             _log.warning(
-                "SNMP discovery failed for slug=%s (%s); falling back to model=%r",
+                "Model discovery failed for slug=%s (%s); falling back to model=%r",
                 printer_cfg.slug,
                 type(exc).__name__,
                 model_fallback,
             )
             return model_fallback
         raise
-    driver_cls = ModelRegistry.find_by_pjl(pjl)
     return driver_cls.model_id
 
 
@@ -276,12 +282,12 @@ class PrinterRuntime:
 
     # ------------------------------------------------------------------ public
 
-    async def attach(self, printer: Printer, *, fatal: bool = False) -> None:
+    async def attach(self, printer: Printer) -> None:
         """Wire *printer* (a disabled one is not wired). An attached id is re-wired.
 
-        ``fatal=True`` (lifespan only): an unresolvable tape model raises, as before #224.
-        Otherwise a wiring failure is logged (slug and error class) and the printer stays
-        detached. Re-wiring an attached id detaches it first, and a store failure there
+        A wiring failure (unknown model, unreachable discovery, a bad backend) is logged with
+        the slug and the error class and the printer stays detached, at startup as at runtime.
+        Re-wiring an attached id detaches it first, and a store failure there
         (``remove_printer`` ending the in-flight job) can still raise; ``reconcile`` catches it.
         """
         if self._closed:
@@ -289,7 +295,7 @@ class PrinterRuntime:
         async with self._serialized(printer.id):
             if self._is_closed():  # stop() may have run while this waited for the lock
                 return
-            await self._attach_locked(printer, fatal=fatal)
+            await self._attach_locked(printer)
 
     async def detach(self, printer_id: UUID) -> None:
         """Unwire a printer: stop its producer, take it out of the queue, close its clients.
@@ -359,7 +365,7 @@ class PrinterRuntime:
                 return
         await self._detach_locked(printer_id)
         if row is not None and row.enabled:
-            await self._attach_locked(row, fatal=False)
+            await self._attach_locked(row)
 
     @staticmethod
     def _producer_missing(row: Printer, wiring: _Wiring) -> bool:
@@ -434,7 +440,7 @@ class PrinterRuntime:
 
     # ------------------------------------------------------------------ attach
 
-    async def _attach_locked(self, printer: Printer, *, fatal: bool) -> None:
+    async def _attach_locked(self, printer: Printer) -> None:
         if printer.id in self._wired:
             await self._detach_locked(printer.id)
         if not printer.enabled:
@@ -444,7 +450,7 @@ class PrinterRuntime:
         if printer.backend == "ipp":
             wiring = await self._attach_page(printer, paused_since)
         else:
-            wiring = await self._attach_tape(printer, paused_since, fatal=fatal)
+            wiring = await self._attach_tape(printer, paused_since)
         if wiring is None:
             return
         self._wired[printer.id] = wiring
@@ -462,16 +468,12 @@ class PrinterRuntime:
                 await self._detach_locked(printer.id)
             raise
 
-    async def _attach_tape(
-        self, printer: Printer, paused_since: datetime | None, *, fatal: bool
-    ) -> _Wiring | None:
+    async def _attach_tape(self, printer: Printer, paused_since: datetime | None) -> _Wiring | None:
         cfg = tape_config(printer)
         try:
             model_id = await _resolve_model_id_from_config(cfg)
             driver_cls: Any = ModelRegistry.find_by_model_id(model_id)
         except Exception as exc:
-            if fatal:
-                raise
             _log.warning(
                 "Printer slug=%s not wired: tape model unresolved (%s)",
                 cfg.slug,
@@ -508,8 +510,6 @@ class PrinterRuntime:
         except Exception as exc:
             if registered:
                 self._router.unregister(cfg.slug)
-            if fatal:
-                raise
             _log.warning("Printer slug=%s not wired (%s)", cfg.slug, type(exc).__name__)
             return None
         self._slug_to_id[cfg.slug] = printer.id

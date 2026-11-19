@@ -25,8 +25,6 @@ from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import Margins, ProbeSummary
-from app.printer_models.pt import PTP750WDriver
-from app.printer_models.ql import QL820NWBDriver
 from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.schemas.capabilities import (
     Capabilities,
@@ -110,16 +108,9 @@ def _utc(value: datetime | None) -> datetime | None:
 
 
 def _driver_dpi(model: str) -> tuple[int, int]:
-    """The driver's dpi. The registry is asked first; the shipped drivers are the fallback,
-    because the QL driver is not an entry point and registers only when its module is imported."""
+    """The dpi of the driver registered for *model*; ``ModelNotFoundError`` when none is."""
     ModelRegistry.ensure_discovered()
-    try:
-        return ModelRegistry.find_by_model_id(model).dpi
-    except ModelNotFoundError:
-        for driver in (PTP750WDriver, QL820NWBDriver):
-            if driver.model_id == model:
-                return driver.dpi
-        raise
+    return ModelRegistry.find_by_model_id(model).dpi
 
 
 def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -> Capabilities:

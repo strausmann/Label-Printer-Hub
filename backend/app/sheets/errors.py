@@ -276,6 +276,15 @@ class PageJobNotRetryableError(SheetApiError):
     message = "This page job cannot be retried."
 
 
+class PrinterModelUnknownError(SheetApiError):
+    status = 422
+    error_code = "printer_model_unknown"
+    message = "No driver is registered for this model."
+
+    def __init__(self, known: list[str]) -> None:
+        super().__init__(detail={"known": known})
+
+
 class TrayUnknownError(SheetApiError):
     status = 422
     error_code = "tray_unknown"

@@ -76,6 +76,7 @@ ptouch = "app.printer_backends.ptouch_backend:PTouchBackend"
 
 [project.entry-points."label_hub.printer_models"]
 pt-series = "app.printer_models.pt"
+ql-series = "app.printer_models.ql"
 
 [build-system]
 requires = ["hatchling"]
@@ -126,7 +127,7 @@ show_error_codes = true
 disallow_untyped_decorators = false   # FastAPI/pytest decorators
 
 [[tool.mypy.overrides]]
-module = ["brother_ql.*", "ptouch.*", "pysnmp.*", "qrcode.*", "reportlab.*"]
+module = ["brother_ql.*", "ptouch.*", "pysnmp.*", "pyasn1.*", "qrcode.*", "reportlab.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

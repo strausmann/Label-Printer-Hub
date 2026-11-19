@@ -276,9 +276,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     1. Load seed templates (idempotent, skipped when directory is absent).
     2. Discover model + backend plugins via entry_points (idempotent).
     3. Load the enabled printers in creation order.
-    4. Build the queue (not running), then ``PrinterRuntime.attach(fatal=True)`` each printer:
+    4. Build the queue (not running), then ``PrinterRuntime.attach`` each printer:
        backend, model driver, ``PrintService``, IPP clients and states, producers (not
-       started). An unresolvable tape model aborts startup; a bad IPP URI is degraded.
+       started). A printer that cannot be wired (unknown model, unreachable discovery, a
+       bad IPP URI) is logged and skipped; the hub starts without it.
     5. Register the sheet outcome handler, start the queue (manual pauses first), sweep
        orphan sheet reservations, start the cleanup task.
     6. ``PrinterRuntime.start()``: the status producers, each probing once at start.
@@ -393,11 +394,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # #224: every printer is wired by the runtime, at startup and on an admin change. The
     # queue is not running yet, so an attach only registers the printer and builds its
     # backend, service and producer; nothing probes before ``runtime.start()`` below.
-    # An unresolvable tape model still aborts startup (fatal); a bad IPP URI is degraded.
+    # A printer that cannot be wired is logged and skipped; it never stops the hub.
     runtime = PrinterRuntime(app, settings, session_factory=async_session)
     app.state.printer_runtime = runtime
     for _db_printer in _db_printers:
-        await runtime.attach(_db_printer, fatal=True)
+        await runtime.attach(_db_printer)
 
     # D15: restart recovery calls the handler's ``on_unknown`` from inside ``start()``, so the
     # handler is registered first (a registry without it would hand the call to a no-op).

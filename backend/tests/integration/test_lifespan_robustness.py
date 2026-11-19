@@ -93,3 +93,69 @@ async def test_start_failure_stops_started_producers() -> None:
     assert len(runtime_seen) == 1  # stop() ran
     assert started and all(p is not None for p in started)
     assert all(p._task is not None and p._task.done() for p in started)
+
+
+async def test_hub_starts_with_an_unknown_model_row(caplog: pytest.LogCaptureFixture) -> None:
+    """#166: a stored printer whose model no driver knows is logged and skipped; the hub
+    starts and the other printer is wired."""
+    import app.db.engine as eng
+    from app.main import create_app
+
+    async with eng.async_session() as s:
+        for slug, model in (("good-pt", "PT-P750W"), ("bad-model", "NOPE-1")):
+            s.add(
+                Printer(
+                    name=slug,
+                    slug=slug,
+                    model=model,
+                    backend="ptouch",
+                    connection={"host": "192.0.2.7", "port": 9100, "snmp": {"discover": False}},
+                    enabled=True,
+                )
+            )
+        await s.commit()
+
+    app = create_app()
+    inner = app._app
+    with caplog.at_level(logging.WARNING, logger="app.services.printer_runtime"):
+        async with inner.router.lifespan_context(inner):
+            runtime: PrinterRuntime = inner.state.printer_runtime
+            wired = {w.slug for w in runtime._wired.values()}
+            assert wired == {"good-pt"}
+    message = " ".join(r.getMessage() for r in caplog.records)
+    assert "bad-model" in message
+    assert "ModelNotFoundError" in message
+
+
+async def test_hub_starts_when_model_resolution_raises_a_network_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """#166/#207: any exception of the model resolution (DNS, socket) skips that printer."""
+    import app.db.engine as eng
+    from app.main import create_app
+
+    async with eng.async_session() as s:
+        s.add(
+            Printer(
+                name="dns-down",
+                slug="dns-down",
+                model="PT-P750W",
+                backend="ptouch",
+                connection={"host": "192.0.2.8", "port": 9100, "snmp": {"discover": True}},
+                enabled=True,
+            )
+        )
+        await s.commit()
+
+    app = create_app()
+    inner = app._app
+    with (
+        patch(
+            "app.services.printer_runtime._resolve_model_id_from_config",
+            side_effect=OSError("name resolution failed"),
+        ),
+        caplog.at_level(logging.WARNING, logger="app.services.printer_runtime"),
+    ):
+        async with inner.router.lifespan_context(inner):
+            assert not inner.state.printer_runtime._wired
+    assert "dns-down" in " ".join(r.getMessage() for r in caplog.records)

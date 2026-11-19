@@ -48,6 +48,7 @@ from app.printer_backends.ipp.errors import (
     IppTransportError,
     IppUnreachableError,
 )
+from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printers as printers_repo
 from app.schemas.label_layout import LayoutDefault
@@ -65,6 +66,7 @@ from app.sheets.errors import (
     IppPdfUnsupportedError,
     IppRejectedError,
     IppUnreachableApiError,
+    PrinterModelUnknownError,
     StoredConnectionInvalidError,
     TrayUnknownError,
 )
@@ -139,6 +141,23 @@ class ConnectionKindMismatchError(Exception):
 
 class TraysNotAllowedError(Exception):
     """``trays`` were sent for a tape printer."""
+
+
+def _check_tape_model(model: str | None) -> None:
+    """A tape printer is stored only with a model some driver is registered for (#166)."""
+    if model is None:
+        return
+    ModelRegistry.ensure_discovered()
+    try:
+        ModelRegistry.find_by_model_id(model)
+    except ModelNotFoundError:
+        known = sorted(
+            {
+                str(getattr(e if isinstance(e, type) else type(e), "model_id", "?"))
+                for e in ModelRegistry.all()
+            }
+        )
+        raise PrinterModelUnknownError(known) from None
 
 
 class SnmpCommunityRequiredError(Exception):
@@ -565,6 +584,7 @@ class PrinterAdminService:
             host, port = _ipp_host_port(payload.connection.uri)
         else:
             model = payload.model or ""
+            _check_tape_model(payload.model)
             host, port = payload.connection.host, payload.connection.port
         created_at = datetime.now(UTC)
         printer_id = derive_printer_id(

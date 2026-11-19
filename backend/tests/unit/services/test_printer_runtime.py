@@ -418,17 +418,24 @@ async def test_attach_unresolvable_tape_model_degrades_at_runtime(
     assert all("192.0.2.10" not in r.getMessage() for r in caplog.records)
 
 
-async def test_attach_unresolvable_tape_model_is_fatal_at_startup(env: Env) -> None:
+async def test_attach_unresolvable_tape_model_is_skipped_before_start(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#166: the same skip-and-log before the runtime started (the lifespan path)."""
     printer = _tape(discover=True)
     with (
         patch(
             "app.services.printer_runtime._resolve_model_id_from_config",
             AsyncMock(side_effect=SnmpDiscoveryError("no answer")),
         ),
-        pytest.raises(SnmpDiscoveryError),
+        caplog.at_level(logging.WARNING, logger="app.services.printer_runtime"),
     ):
-        await env.runtime.attach(printer, fatal=True)
+        await env.runtime.attach(printer)  # does not raise
     assert env.runtime.print_service_for(printer.id) is None
+    assert any(
+        printer.slug in r.getMessage() and "SnmpDiscoveryError" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 async def test_first_tape_printer_backcompat_by_created_at(env: Env) -> None:
@@ -1030,7 +1037,7 @@ async def test_unbuildable_producer_pauses_page_printer_before_the_queue_runs(
     printer = _ipp()
     try:
         with patch.object(ipp_status_producer.IppStatusProducer, "__init__", _raising_init):
-            await e.runtime.attach(printer, fatal=True)
+            await e.runtime.attach(printer)
         info = e.queue.pause_info(printer.id)
         assert info is not None and info.reason_code == "status-unavailable"
         await _start(e)
