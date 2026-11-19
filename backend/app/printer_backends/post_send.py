@@ -131,6 +131,13 @@ labels are then counted as printed with a warning (``PrinterOfflineError``, as b
 instead of holding the worker for the whole timeout of an unreachable printer."""
 
 
+STEADY_READS: Final = 3
+"""Reads in a row with every label counted, the same count and a printer that does not report
+``printing`` after which the counter wait ends without ``idle`` (final review M6): some printers
+report ``other`` (a QL while it prints, too) or ``warmup`` and never ``idle``. The count has to
+hold still, so a QL still printing is not cut short."""
+
+
 def _raise_new_bits(
     status: PreflightStatus, before_flags: frozenset[str], printed: int | None
 ) -> None:
@@ -169,7 +176,8 @@ async def check_after_send(
       then changes nothing: IPP said "not printed". An accepted job is never sent again over
       TCP 9100. A job the printer forgot after it answered for it is left to the counter.
     - **Label counter:** polled every ``poll_s`` until it rose by the labels sent and the
-      printer is idle (``hrPrinterStatus`` 3; a QL reports 1 while printing). A shortfall at
+      printer is idle (``hrPrinterStatus`` 3; a QL reports 1 while printing), or the count held
+      still for ``STEADY_READS`` reads while the printer did not report ``printing``. A shortfall at
       the timeout raises ``LabelsNotConfirmedError(printed, sent)``. A counter that is missing
       before or after, went down, or jumped by more than the labels plus ``COUNTER_JUMP_SLACK``
       is logged and accepted: a job never fails on a counter that cannot be interpreted.
@@ -220,6 +228,8 @@ async def check_after_send(
         return
 
     unanswered = 0
+    steady = 0  # reads in a row: every label counted, same count, not "printing"
+    last_after: int | None = None
     while True:
         try:
             status = await _read(backend)
@@ -271,6 +281,14 @@ async def check_after_send(
             await _finish(state, False, False)
             return
         if printed >= expected and status.hr_printer_status == "idle":
+            await _finish(state, False, printed == expected)
+            return
+        if printed >= expected and status.hr_printer_status != "printing" and after == last_after:
+            steady += 1
+        else:
+            steady = 1 if printed >= expected and status.hr_printer_status != "printing" else 0
+        last_after = after
+        if steady >= STEADY_READS:
             await _finish(state, False, printed == expected)
             return
         if _now() >= deadline:

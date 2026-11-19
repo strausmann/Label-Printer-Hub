@@ -9,6 +9,7 @@ import logging
 from collections.abc import Iterable
 
 import pytest
+from app.printer_backends import post_send
 from app.printer_backends.exceptions import (
     LabelsNotConfirmedError,
     PrinterOfflineError,
@@ -140,10 +141,35 @@ async def test_a_backend_that_reports_no_label_count_is_read_once() -> None:
     assert backend.count == 1
 
 
-async def test_labels_counted_without_idle_until_the_timeout_count_as_printed(
+async def test_labels_counted_while_printing_until_the_timeout_count_as_printed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    backend = _Backend(10, 2, [_status(12, "other")])
+    backend = _Backend(10, 2, [_status(12, "printing")])
     with caplog.at_level(logging.WARNING, logger="app.printer_backends.post_send"):
         await _check(backend, timeout_s=0.02)
     assert any("did not turn idle" in r.message for r in caplog.records)
+
+
+async def test_labels_counted_and_a_steady_count_without_printing_end_the_wait(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # A printer that never reports idle (``other``, ``warmup``) but no longer counts: done after
+    # a few reads with the same count, not at the end of the timeout.
+    backend = _Backend(10, 2, [_status(11, "other"), _status(12, "other"), _status(12, "warmup")])
+    with caplog.at_level(logging.WARNING, logger="app.printer_backends.post_send"):
+        await _check(backend, timeout_s=5.0)
+    assert backend.count == 1 + post_send.STEADY_READS
+    assert not any("did not turn idle" in r.message for r in caplog.records)
+
+
+async def test_a_count_that_still_moves_keeps_the_wait_going() -> None:
+    reads = [_status(12, "other"), _status(12, "other"), _status(13, "other"), _status(13, "idle")]
+    backend = _Backend(10, 2, reads)
+    await _check(backend, timeout_s=5.0)
+    assert backend.count == 4  # ended on idle, the count did not hold still long enough before
+
+
+async def test_a_printer_that_reports_printing_is_not_done_on_a_steady_count() -> None:
+    backend = _Backend(10, 1, [_status(11, "printing")] * 6 + [_status(11, "idle")])
+    await _check(backend, timeout_s=5.0)
+    assert backend.count == 7
