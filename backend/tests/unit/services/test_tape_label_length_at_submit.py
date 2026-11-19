@@ -115,3 +115,28 @@ async def test_a_batch_refused_in_the_worker_for_its_length_does_not_pause_the_p
         assert not queue.is_paused(printer.id)
     finally:
         await queue.stop(timeout_s=2.0)
+
+
+async def test_a_deferred_label_too_long_fails_its_job_before_it_is_queued() -> None:
+    """Review round 4, M1: the Grocy label webhook answers before the label is drawn, so it
+    cannot answer 422; its completion checks the length and fails the job with the code, a
+    fixed sentence and the lengths, and nothing is queued."""
+    import asyncio
+
+    svc, queue, store = _service(MagicMock(side_effect=_TOO_LONG))
+    store.set_queued_payload = AsyncMock(return_value=True)
+    store.mark_failed_code = AsyncMock(return_value=True)
+    await svc.accept_deferred_job(
+        RawLabelData(title="Box", primary_id="A1", qr_payload="https://e.invalid"),
+        content_type=ContentType.QR_TWO_LINES,
+        source_app="grocy",
+        api_key_id=None,
+        source_ip=None,
+    )
+    await asyncio.gather(*list(svc._deferred))
+    queue.submit_with_id.assert_not_called()
+    store.set_queued_payload.assert_not_called()
+    (_job, code, message, detail), _ = store.mark_failed_code.call_args
+    assert code == "tape_label_too_long"
+    assert message == "The label is longer than the loaded tape allows."
+    assert detail == {"length_mm": 1601, "max_mm": 1000}

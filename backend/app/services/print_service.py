@@ -35,6 +35,7 @@ from app.printer_backends.exceptions import (
     PrinterReportedError,
     QrPayloadTooLongError,
     SpoolLabelOnlyTapeError,
+    TapeLabelTooLongError,
     TapeMismatchError,
 )
 from app.printer_backends.snmp_helper import parse_media_kind
@@ -69,6 +70,7 @@ _DEFERRED_FAILURE_MESSAGES: dict[str, str] = {
     "unsupported_tape": "The loaded tape is not supported.",
     "content_type_data_mismatch": "The label data does not fit the content type.",
     "qr_payload_too_long": "The QR code content is too long for the loaded tape.",
+    "tape_label_too_long": "The label is longer than the loaded tape allows.",
     "snmp_query_failed": "The printer did not answer the status query.",
 }
 _DEFERRED_FAILURE_FALLBACK = "The label could not be printed."
@@ -552,6 +554,14 @@ class PrintService:
                     preset=preset,
                 )
             )
+            # The caller has its 202 already: a label too long for the tape fails the job here,
+            # before it is completed and queued (review round 4, M1).
+            await self._check_label_lengths(
+                [image],
+                tape_mm=tape_mm,
+                high_resolution=options.high_resolution,
+                orientation=str(orientation),
+            )
             completed = await self._store.set_queued_payload(
                 job_id,
                 {
@@ -595,6 +605,8 @@ class PrintService:
                 detail = {"flags": list(exc.flags)}
             elif isinstance(exc, QrPayloadTooLongError):
                 detail = {"length": exc.length, "max_bytes": exc.max_bytes}
+            elif isinstance(exc, TapeLabelTooLongError):
+                detail = {"length_mm": exc.length_mm, "max_mm": exc.max_mm}
             message = _DEFERRED_FAILURE_MESSAGES.get(code, _DEFERRED_FAILURE_FALLBACK)
             # Announced only when the row changed: a job the user cancelled meanwhile stays
             # cancelled and must not show up as failed (review F3).
