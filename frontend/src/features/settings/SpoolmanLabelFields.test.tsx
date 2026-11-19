@@ -4,7 +4,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, widenAppWaits } from "../../test-utils";
 import { KEY_ADMIN, mockApi, settingsList } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -29,6 +29,12 @@ async function openSpoolman(extra: Record<string, unknown> = {}, language: "en" 
 }
 
 const open = async (card: HTMLElement, name = "Label fields") => userEvent.click(within(card).getByRole("button", { name }));
+
+// Each test boots the whole app (the first one also loads its modules); on a loaded runner the first one passed the
+// default 5 s limit. The per-test limit and the findBy window are widened for this file only, like the other
+// whole-app test files.
+vi.setConfig({ testTimeout: 15_000 });
+widenAppWaits();
 
 describe("the Spoolman label fields (#346)", () => {
   it("the label fields are collapsed and open on press", async () => {
