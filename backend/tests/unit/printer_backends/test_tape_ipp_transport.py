@@ -17,7 +17,11 @@ import httpx
 import pytest
 from app.models.tape import TapeSpec
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
-from app.printer_backends.exceptions import LabelsNotConfirmedError, PrintFailedError
+from app.printer_backends.exceptions import (
+    ConfirmationUnknownError,
+    LabelsNotConfirmedError,
+    PrintFailedError,
+)
 from app.printer_backends.post_send import check_after_send
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.printer_backends.tape_confirmation import ConfirmationRecord
@@ -129,6 +133,31 @@ async def test_a_printer_without_octet_stream_gets_tcp_9100(
     assert len(snmp.raw_sent) == 1
 
 
+async def test_a_printer_that_cannot_follow_or_cancel_a_job_gets_tcp_9100(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Without Get-Job-Attributes (0x0009) and Cancel-Job (0x0008) IPP cannot confirm anything.
+    snmp = _Snmp(monkeypatch)
+    fake = FakeIppPrinter(formats=RASTER, operations=[0x0002, 0x000B])
+
+    await _backend(fake).print_image(_image(), _spec())
+
+    assert _ops(fake) == ["Get-Printer-Attributes"]
+    assert len(snmp.raw_sent) == 1
+
+
+async def test_a_printer_that_lists_the_job_operations_gets_ipp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snmp = _Snmp(monkeypatch)
+    fake = FakeIppPrinter(formats=RASTER, operations=[0x0002, 0x0008, 0x0009, 0x000B])
+
+    await _backend(fake).print_image(_image(), _spec())
+
+    assert _ops(fake) == ["Get-Printer-Attributes", "Print-Job"]
+    assert snmp.raw_sent == []
+
+
 async def test_a_probe_that_fails_falls_back_to_9100_and_is_cached(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -224,6 +253,38 @@ async def test_a_job_that_never_finishes_fails_at_the_timeout(
         await _confirm(backend, timeout_s=0.05)
 
     assert (err.value.printed, err.value.expected) == (0, 1)
+
+
+def _cancel_fails(fake: FakeIppPrinter) -> httpx.AsyncBaseTransport:
+    return FailingTransport(httpx.ASGITransport(app=fake), "Cancel-Job", httpx.ReadError)  # type: ignore[arg-type]
+
+
+async def test_a_failed_cancel_with_every_label_counted_is_printed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The job never reports a final state and cannot be cancelled, but the counter rose by exactly
+    # the labels sent: nothing is left that may still print.
+    snmp = _Snmp(monkeypatch)
+    fake = FakeIppPrinter(formats=RASTER, job_script=[5], impressions_script=[0])
+    backend = _backend(transport=_cancel_fails(fake))
+    await backend.print_image(_image(), _spec())
+    snmp.printed(1)
+
+    await _confirm(backend, timeout_s=0.05)
+
+    assert "Cancel-Job" in _ops(fake)
+
+
+async def test_a_failed_cancel_without_every_label_counted_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _Snmp(monkeypatch)  # the counter never moves
+    fake = FakeIppPrinter(formats=RASTER, job_script=[5], impressions_script=[0])
+    backend = _backend(transport=_cancel_fails(fake))
+    await backend.print_image(_image(), _spec())
+
+    with pytest.raises(ConfirmationUnknownError):
+        await _confirm(backend, timeout_s=0.05)
 
 
 async def test_ipp_wins_over_a_counter_that_disagrees(

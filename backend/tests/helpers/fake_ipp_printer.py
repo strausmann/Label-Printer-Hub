@@ -98,6 +98,8 @@ class FakeIppPrinter:
     """Each marker: ``name`` and optional ``color``, ``level``, ``low_level``, ``type``."""
     media_sources: list[str] = field(default_factory=list)
     formats: list[str] = field(default_factory=lambda: ["application/pdf"])
+    operations: list[int] | None = None
+    """``operations-supported`` (operation ids); ``None``: not reported."""
     job_creation_attributes: list[str] = field(
         default_factory=lambda: [
             "media-col",
@@ -239,6 +241,11 @@ class FakeIppPrinter:
             Attr("printer-is-accepting-jobs", Tag.BOOLEAN, [self.accepting_jobs]),
             Attr("queued-job-count", Tag.INTEGER, [self._count(_NOT_COMPLETED)]),
             Attr("document-format-supported", Tag.MIME, list(self.formats)),
+            *(
+                [Attr("operations-supported", Tag.ENUM, list(self.operations))]
+                if self.operations is not None
+                else []
+            ),
             Attr(
                 "job-creation-attributes-supported", Tag.KEYWORD, list(self.job_creation_attributes)
             ),

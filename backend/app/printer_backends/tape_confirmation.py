@@ -65,7 +65,14 @@ sender, a replaced printer): it is accepted as printed with a warning."""
 IPP_PORT: Final = 631
 IPP_PATH: Final = "/ipp/print"
 OCTET_STREAM: Final = "application/octet-stream"
-_PROBE_ATTRIBUTES = ("ipp-versions-supported", "document-format-supported", "printer-state")
+_PROBE_ATTRIBUTES = (
+    "ipp-versions-supported",
+    "document-format-supported",
+    "operations-supported",
+    "printer-state",
+)
+_CANCEL_JOB: Final = 0x0008
+_GET_JOB_ATTRIBUTES: Final = 0x0009
 _IPP_STATE_COMPLETED = 9
 _IPP_STATE_FINAL = 7
 
@@ -213,14 +220,26 @@ class TapeIppTransport:
         )
 
     async def offers_raster(self) -> bool:
-        """Get-Printer-Attributes answers and lists ``application/octet-stream``.
+        """Get-Printer-Attributes answers, lists ``application/octet-stream`` and can follow and
+        stop a job.
 
+        An ``operations-supported`` that lacks Get-Job-Attributes or Cancel-Job means 9100: the
+        hub could take the job but never confirm or cancel it. A printer that does not report
+        ``operations-supported`` is taken at its word (RFC 8011 makes both operations required).
         Raises ``IppError`` when the printer does not answer as an IPP printer.
         """
         async with self._client() as client:
             attrs = await client.get_printer_attributes(_PROBE_ATTRIBUTES)
         formats = attrs.get("document-format-supported") or []
-        return any(isinstance(f, str) and f.lower() == OCTET_STREAM for f in formats)
+        if not any(isinstance(f, str) and f.lower() == OCTET_STREAM for f in formats):
+            return False
+        operations = attrs.get("operations-supported")
+        if operations:
+            ids = {op for op in operations if isinstance(op, int) and not isinstance(op, bool)}
+            if not {_CANCEL_JOB, _GET_JOB_ATTRIBUTES} <= ids:
+                _logger.info("Tape printer cannot follow or cancel an IPP job; using TCP 9100")
+                return False
+        return True
 
     async def submit(self, data: bytes, labels: int = 1) -> int:
         """Send *data* (*labels* labels) as one Print-Job; returns the printer's job id.

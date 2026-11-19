@@ -164,7 +164,8 @@ async def check_after_send(
       is only logged (IPP wins). ``aborted``/``canceled``/no final state in time: a job still
       open is cancelled (best effort), a blocking bit raises its error, else
       ``LabelsNotConfirmedError(impressions completed, sent)``; a cancel that failed raises
-      ``ConfirmationUnknownError`` (the labels may still print). A status that cannot be read
+      ``ConfirmationUnknownError`` (the labels may still print), unless the label counter rose
+      by exactly the labels sent. A status that cannot be read
       then changes nothing: IPP said "not printed". An accepted job is never sent again over
       TCP 9100. A job the printer forgot after it answered for it is left to the counter.
     - **Label counter:** polled every ``poll_s`` until it rose by the labels sent and the
@@ -297,7 +298,9 @@ async def _ipp_not_completed(
     A job still open is cancelled and polled until it stopped (``TapeIppTransport.cancel``):
 
     - the cancel failed or the job did not stop: the labels may still print, so
-      ``ConfirmationUnknownError``, whatever bits the printer reports;
+      ``ConfirmationUnknownError``, whatever bits the printer reports; unless the label counter
+      rose by exactly the labels sent: then they are printed (a new bit raises with
+      ``printed = expected``);
     - the job is gone: ``"counter"``, the label counter decides;
     - it stopped: its last impressions count.
 
@@ -312,8 +315,16 @@ async def _ipp_not_completed(
             return "counter"
         if cancel.result == "failed":
             status = await _read_or_none(backend)
-            await _finish(state, False, _exact(before, status, expected))
-            raise ConfirmationUnknownError()
+            exact = _exact(before, status, expected)
+            await _finish(state, False, exact)
+            if not exact or status is None:
+                raise ConfirmationUnknownError()
+            # The counter rose by exactly the labels sent: every label is out, nothing is left
+            # that may still print.
+            _logger.warning("IPP job could not be cancelled, but the counter shows every label")
+            if _has_new_bits(status, before_flags):
+                _raise_new_bits(status, before_flags, expected)
+            return "printed"
         if cancel.impressions is not None:
             printed = outcome.printed_before + min(cancel.impressions, outcome.pending_labels)
     status = await _read_or_none(backend)
