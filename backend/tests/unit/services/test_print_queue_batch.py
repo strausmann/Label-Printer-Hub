@@ -153,9 +153,12 @@ async def test_batchjob_failure_marks_all_job_ids_failed(fake_printer, make_imag
     for jid in job_ids:
         job = await queue.get(jid)
         assert job.state == JobState.FAILED, f"job {jid} expected FAILED, got {job.state}"
-        assert "printer offline" in (job.error_message or ""), (
-            f"job {jid} error_message missing 'printer offline': {job.error_message!r}"
+        # The class name only: an unexpected error's message may name the printer's address and
+        # the job is readable with a read key (#234).
+        assert "RuntimeError" in (job.error_message or ""), (
+            f"job {jid} error_message missing the error class: {job.error_message!r}"
         )
+        assert "printer offline" not in (job.error_message or "")
 
 
 @pytest.mark.anyio
@@ -306,7 +309,8 @@ async def test_batchjob_generic_exception_marks_jobs_failed(
     for jid in job_ids:
         job = await queue.get(jid)
         assert job.state == JobState.FAILED
-        assert "kapow" in (job.error_message or "")
+        assert "RuntimeError" in (job.error_message or "")  # the class only (#234)
+        assert "kapow" not in (job.error_message or "")
 
     # Generic Exception must NOT pause the printer
     assert queue._worker_states[fake_printer.id] == PrinterWorkerState.ACTIVE

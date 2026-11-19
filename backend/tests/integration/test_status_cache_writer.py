@@ -238,3 +238,26 @@ async def test_probe_records_the_roll_and_a_tracker_failure_does_not_fail_the_pr
     async with _eng.async_session() as s:
         cache = await s.get(PrinterStatusCache, _printer_id)
     assert cache.parsed["online"] is True  # not marked offline by the tracker failure
+
+
+async def test_probe_failure_stores_the_class_name_only(_printer_id, monkeypatch):
+    """The device error text names the host; the cache keeps the class name only (#234)."""
+
+    async def _failing_query(host, *, community="public", timeout_s=3.0):
+        raise OSError("cannot reach printer.example.invalid:9100")
+
+    monkeypatch.setattr(
+        "app.services.producers.status_probe_producer.query_preflight",
+        _failing_query,
+    )
+
+    await _make_producer(_printer_id)._probe_once()
+
+    import app.db.engine as _eng
+    from app.models.printer_status_cache import PrinterStatusCache
+
+    async with _eng.async_session() as s:
+        row = await s.get(PrinterStatusCache, _printer_id)
+
+    assert row is not None and row.parsed is not None
+    assert row.parsed["last_error"] == "OSError"

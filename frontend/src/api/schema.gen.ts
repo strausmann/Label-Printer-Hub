@@ -3218,7 +3218,7 @@ export interface components {
          *     *successful* reading; ``online`` and ``last_error`` tell that it is stale.
          *     ``last_probe_age_s`` is the age of the cached reading in seconds (for an
          *     offline page printer: since its last successful reading).
-         *     ``last_error`` is the exception message from the most recent failed probe.
+         *     ``last_error`` is the error class name of the most recent failed probe.
          *     ``note`` carries a human-readable hint (e.g. "No probe yet").
          *     ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
          *     off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
@@ -3271,7 +3271,7 @@ export interface components {
             last_calibration_print?: components["schemas"]["CalibrationPrintRead"] | null;
             /**
              * Last Error
-             * @description Exception message from the most recent failed probe
+             * @description Error class name of the most recent failed probe (the full message is in the server log)
              */
             last_error?: string | null;
             /**
@@ -4946,7 +4946,7 @@ export interface components {
             backend: string;
             /**
              * Connection
-             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296). Only an admin key receives a tape printer's connection (``host``, ``port``, ``snmp``); every other key gets an empty object (#234).
              */
             connection: {
                 [key: string]: unknown;
@@ -5025,7 +5025,7 @@ export interface components {
             backend: string;
             /**
              * Connection
-             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296). Only an admin key receives a tape printer's connection (``host``, ``port``, ``snmp``); every other key gets an empty object (#234).
              */
             connection: {
                 [key: string]: unknown;

@@ -197,6 +197,12 @@ _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
 }
 
 
+_UNREACHABLE_TEXT: dict[str, str] = {
+    "printer_offline": "The printer could not be reached.",
+    "printer_status_unavailable": "The printer's status could not be read.",
+}
+
+
 def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any] | None]:
     """Map a PrinterError subclass to (error_code, error_message, error_detail)."""
     code = _ERROR_CODE_MAP.get(type(exc), "print_failed")
@@ -211,6 +217,16 @@ def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any
         detail = {"printed": exc.printed, "expected": exc.expected}
     elif isinstance(exc, TapeLabelTooLongError):
         detail = {"length_mm": exc.length_mm, "max_mm": exc.max_mm}
+    if isinstance(exc, (PrinterOfflineError, StatusQueryFailedError)):
+        # The cause names the printer's address (a ptouch connection error) and the record is
+        # readable with a read key (#234): a fixed text is stored, the cause goes to the log.
+        logger.warning("Printer unreachable (%s): %s", code, exc)
+        text = _UNREACHABLE_TEXT[
+            "printer_offline"
+            if isinstance(exc, PrinterOfflineError)
+            else "printer_status_unavailable"
+        ]
+        return code, text, detail
     return code, str(exc) or code, detail
 
 
@@ -2693,7 +2709,9 @@ class PrintQueue:
                     # to release the queue.
                     await self.pause_printer(printer_id, reason=code)
             except Exception as exc:
-                job.error_msg = str(exc)
+                # The class name only: the message may name a printer address, and the job is
+                # readable with a read key (#234). The traceback is logged below.
+                job.error_msg = type(exc).__name__
                 _from = job.state
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
@@ -2712,7 +2730,7 @@ class PrintQueue:
                         exc,
                     )
                 # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
-                await self._store.mark_failed(UUID(job.id), str(exc))
+                await self._store.mark_failed(UUID(job.id), type(exc).__name__)
                 logger.exception("Job %s failed on %s", job.id, printer_id)
 
     def set_roll_colour(self, roll_colour: RollColour | None) -> None:
@@ -3312,7 +3330,11 @@ class PrintQueue:
         if isinstance(exc, PrinterError):
             cause, cause_msg, cause_detail = _printer_error_to_record(exc)
         else:
-            cause, cause_msg, cause_detail = "batch_failed", f"batch print failed: {exc}", None
+            cause, cause_msg, cause_detail = (
+                "batch_failed",
+                f"batch print failed: {type(exc).__name__}",
+                None,
+            )
         if (
             isinstance(exc, PrinterError)
             # A shortfall and a label too long for the tape are not the printer's state: the

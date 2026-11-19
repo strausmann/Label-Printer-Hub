@@ -573,18 +573,30 @@ class PTouchBackend:
         await self.send_state.send(data, len(images), raw, length_mm=sum(lengths))
 
 
+_UNREACHABLE_TEXT = "The printer could not be reached."
+_WRITE_FAILED_TEXT = "Writing to the printer failed."
+
+
 @contextlib.contextmanager
 def _ptouch_errors() -> Iterator[None]:
-    """The ptouch connection errors as the hub's printer errors."""
+    """The ptouch connection errors as the hub's printer errors.
+
+    ptouch's messages name the printer's address (``Connection to printer at <host>:<port>
+    timed out``, ``Cannot resolve hostname '<host>'``, ``Failed to write to printer at
+    <host>:<port>``, ...) and the job record is readable with a read key (#234): the hub's
+    error carries a fixed text, the library's message goes to the server log.
+    """
     try:
         yield
     except (ptouch.PrinterWriteError, ptouch.PrinterPermissionError) as exc:
         # These are subclasses of PrinterConnectionError — must be caught first.
-        raise PrintFailedError(str(exc)) from exc
+        _logger.warning("ptouch write failed (%s): %s", type(exc).__name__, exc)
+        raise PrintFailedError(_WRITE_FAILED_TEXT) from exc
     except (
         ptouch.PrinterNetworkError,
         ptouch.PrinterTimeoutError,
         ptouch.PrinterNotFoundError,
         ptouch.PrinterConnectionError,
     ) as exc:
-        raise PrinterOfflineError(str(exc)) from exc
+        _logger.warning("ptouch connection failed (%s): %s", type(exc).__name__, exc)
+        raise PrinterOfflineError(_UNREACHABLE_TEXT) from exc

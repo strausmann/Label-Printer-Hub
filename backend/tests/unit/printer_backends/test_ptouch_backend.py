@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+import ptouch
 import pytest
 from app.models.tape import TapeSpec
 from app.printer_backends.base import PrinterBackend
@@ -240,7 +241,8 @@ async def test_print_image_wraps_ptouch_exception(
     backend = PTouchBackend(host="x")
     with pytest.raises(PrintFailedError) as exc:
         await backend.print_image(img_128, tape_24)
-    assert "disk full" in str(exc.value)
+    assert "disk full" not in str(exc.value)  # the library message goes to the log (#234)
+    assert isinstance(exc.value.__cause__, _ptouch.PrinterWriteError)
 
 
 def test_from_settings_reads_pt750w_host() -> None:
@@ -798,3 +800,45 @@ def test_ptouch_print_multi_passes_labels_array(monkeypatch):
     assert captured["num_labels"] == 4
     assert captured["half_cut"] is True
     assert captured["high_resolution"] is False
+
+
+# ---------------------------------------------------------------------------
+# _ptouch_errors: the hub's error never carries the printer's address (#234)
+# ---------------------------------------------------------------------------
+
+_HOST = "printer.example.invalid"
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (
+            ptouch.PrinterTimeoutError(f"Connection to printer at {_HOST}:9100 timed out after 5s"),
+            PrinterOfflineError,
+        ),
+        (
+            ptouch.PrinterNetworkError(f"Cannot resolve hostname '{_HOST}'. Check the hostname."),
+            PrinterOfflineError,
+        ),
+        (
+            ptouch.PrinterNetworkError(f"Failed to connect to printer at {_HOST}:9100: refused"),
+            PrinterOfflineError,
+        ),
+        (ptouch.PrinterNotFoundError(f"No printer at {_HOST}:9100"), PrinterOfflineError),
+        (ptouch.PrinterConnectionError(f"Not connected to {_HOST}:9100"), PrinterOfflineError),
+        (
+            ptouch.PrinterWriteError(f"Failed to write to printer at {_HOST}:9100: broken"),
+            PrintFailedError,
+        ),
+        (ptouch.PrinterPermissionError(f"Permission denied for {_HOST}:9100"), PrintFailedError),
+    ],
+    ids=["timeout", "resolve", "connect", "not_found", "connection", "write", "permission"],
+)
+def test_ptouch_errors_carry_no_address(exc: Exception, expected: type[Exception]) -> None:
+    from app.printer_backends.ptouch_backend import _ptouch_errors
+
+    with pytest.raises(expected) as caught, _ptouch_errors():
+        raise exc
+    assert _HOST not in str(caught.value)
+    assert "9100" not in str(caught.value)
+    assert caught.value.__cause__ is exc  # the full error stays on the chain for the log

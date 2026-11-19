@@ -82,14 +82,16 @@ router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object]:
     """The ``connection`` a caller may see.
 
-    For an ``ipp`` printer the URI is connection detail (spec 14, 18): only admin callers
-    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows show ``snmp.community_set``
-    instead of the SNMP community, for every caller (#296).
+    The address of a printer is connection detail (spec 14, 18), for tape and page printers
+    alike: only admin callers see it. For an ``ipp`` printer everyone else gets
+    ``{"tls_verify": ...}``; for a tape printer everyone else gets ``{}``. An admin sees the
+    tape row with ``snmp.community_set`` instead of the SNMP community (#296).
     """
     connection = dict(printer.connection or {})
+    is_admin = auth is not None and auth.scope == "admin"
     if printer.backend != "ipp":
-        return snmp_view(connection)
-    if auth is not None and auth.scope == "admin":
+        return snmp_view(connection) if is_admin else {}
+    if is_admin:
         return connection
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 
