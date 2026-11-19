@@ -466,6 +466,7 @@ class TapeSendState:
     counter_off_at: float | None = None
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    _store_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def begin(self, *, detect: bool = False) -> None:
         """A new send starts (right after the read before sending)."""
@@ -602,15 +603,20 @@ class TapeSendState:
         self.length_mm += length_mm
 
     async def store(self, record: ConfirmationRecord) -> None:
-        """Keep *record* and hand it to the sink; a failing sink is logged, never raised."""
+        """Keep *record* and hand it to the sink; a failing sink is logged, never raised.
+
+        Writes go to the sink one at a time, in the order they were made (audit run 27, R27-1):
+        a slow write cannot commit after a later one and leave an outdated record stored.
+        """
         self.record = record
         if self.sink is None:
             return
-        try:
-            await self.sink(record)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _logger.warning(
-                "The print confirmation of a printer could not be stored", exc_info=True
-            )
+        async with self._store_lock:
+            try:
+                await self.sink(record)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _logger.warning(
+                    "The print confirmation of a printer could not be stored", exc_info=True
+                )

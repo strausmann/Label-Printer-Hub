@@ -221,3 +221,56 @@ def _with_media(agent: _Agent, module: str) -> Callable[..., Any]:
         return dataclasses.replace(status, media_raw="12mm", loaded_tape_mm=12)
 
     return preflight
+
+
+# ---------------------------------------------------------------------------- R27-1
+
+
+async def test_a_test_print_stores_the_counter_state_it_ends_with(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Audit run 27, R27-1: a test print whose counter is switched off while it runs stores
+    ``counter_off`` true, not the default."""
+    from app.printer_backends import post_send
+
+    state = tape_confirmation.TapeSendState("192.0.2.35", tape_confirmation.TapeIppTransport("x"))
+    sink = _Sink()
+    state.sink = sink
+    state.begin(detect=True)
+    state.counter_off_at = 1.0  # switched off by reads that ran meanwhile
+    await post_send._finish(state, False, True)
+    assert [(r.label_counter, r.counter_off) for r in sink.records] == [(True, True)]
+    assert PrintConfirmationRead.from_stored(sink.records[-1].to_json()).channel == "none"  # type: ignore[union-attr]
+
+
+class _SlowFirstWrite:
+    """A sink whose first write takes longer than the next: what a database commits last wins."""
+
+    def __init__(self) -> None:
+        self.committed: list[ConfirmationRecord] = []
+        self.calls = 0
+
+    async def __call__(self, record: ConfirmationRecord) -> None:
+        import asyncio
+
+        self.calls += 1
+        if self.calls == 1:
+            await asyncio.sleep(0.05)
+        self.committed.append(record)
+
+
+async def test_record_writes_commit_in_the_order_they_were_made() -> None:
+    """Audit run 27, R27-1: the flip back on and a switch-off right after it must not commit in
+    the opposite order, or the stored record says the counter is read while it is not."""
+    import asyncio
+
+    state = tape_confirmation.TapeSendState("192.0.2.36", tape_confirmation.TapeIppTransport("x"))
+    state.record = ConfirmationRecord("raw", True, _AT, counter_off=True)
+    sink = _SlowFirstWrite()
+    state.sink = sink
+    on = asyncio.create_task(state.note_counter(refused=False, answered=True))
+    await asyncio.sleep(0)  # the flip back on has started its write
+    for _ in range(COUNTER_REFUSALS_TO_STOP):
+        await state.note_counter(refused=True, answered=False)
+    await on
+    assert [r.counter_off for r in sink.committed] == [False, True]

@@ -413,5 +413,8 @@ async def _finish(
         confirmed_at=datetime.now(UTC),
         ipp_incomplete=not ipp
         and (state.detect_ipp_skipped or (state.detect_ipp_taken and not fault)),
+        # R27-1: what the hub does now, not the default: reads that ran meanwhile may have
+        # switched the counter off.
+        counter_off=state.counter_off_at is not None,
     )
     await state.store(record)
