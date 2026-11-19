@@ -296,7 +296,7 @@ The hub ships with these sheet types. Avery Zweckform 3490, 6121, L4731REV and L
 **One container:** a single backend process serves the REST API, the live event stream and the web UI ([ADR 0015](docs/decisions/0015-single-process-deployment.md)). Printers are added in the UI (Settings > Printers), not through environment variables.
 
 - **Backend** (`labelyard`, the only image): Python 3.12+, FastAPI, SQLModel (SQLite), asyncio
-- **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `pklaus/brother_ql` (QL-Series), `pysnmp` for status polling; an own IPP client over `httpx` for page printers ([ADR 0020](docs/decisions/0020-backend-kinds-ipp-page-printers.md)), with `reportlab` drawing the PDF pages
+- **Printer protocols**: `nbuchwitz/ptouch` (PT-Series), `LunarEclipse363/brother_ql_next` (QL-Series, the maintained fork of `pklaus/brother_ql`), `pysnmp` for status polling; an own IPP client over `httpx` for page printers ([ADR 0020](docs/decisions/0020-backend-kinds-ipp-page-printers.md)), with `reportlab` drawing the PDF pages
 - **Web UI** (built into the backend image from `frontend/`): React + TypeScript, Vite, PWA (manifest + service worker + camera scanning) — [ADR 0016](docs/decisions/0016-react-typescript-web-ui.md)
 - **Container**: Docker (multi-stage, one image), GHCR + Docker Hub publishing, multi-arch (amd64 + arm64)
 - **CI/CD**: GitHub Actions, semantic-release, Dependabot
@@ -445,7 +445,7 @@ Releases up to and including 1.0.3 are MIT; from 1.1.0 on AGPL-3.0-or-later. Any
 
 Why the change:
 
-- The hub depends on [`brother_ql`](https://github.com/pklaus/brother_ql), which is GPL-3.0-or-later, so the combined work is distributed under terms at least as strong as GPL-3.0.
+- The hub depends on [`brother_ql_next`](https://github.com/LunarEclipse363/brother_ql_next), which is GPL-3.0-only, so the combined work is distributed under terms at least as strong as GPL-3.0.
 - The hub is a network service. Section 13 of the AGPL gives the people who use a modified version over a network the right to its source.
 
 If you run a modified version for others, set `HUB_REPO_URL` to where its source is published — the About page links there. Unmodified releases link to the exact tag of the running version.
@@ -456,6 +456,6 @@ The container images carry a software bill of materials and a build provenance a
 
 ## Acknowledgements
 
-- [`pklaus/brother_ql`](https://github.com/pklaus/brother_ql) — QL-Series Python library
+- [`LunarEclipse363/brother_ql_next`](https://github.com/LunarEclipse363/brother_ql_next) — QL-Series Python library (fork of [`pklaus/brother_ql`](https://github.com/pklaus/brother_ql))
 - [`nbuchwitz/ptouch`](https://github.com/nbuchwitz/ptouch) — PT-Series Python library
 - [`donkie/Spoolman`](https://github.com/donkie/Spoolman), [Grocy](https://github.com/grocy/grocy), [Snipe-IT](https://github.com/snipe/snipe-it) — apps this hub integrates with

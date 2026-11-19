@@ -339,7 +339,7 @@ jobs:
           SYFT: ${{ steps.syft.outputs.cmd }}
         run: |
           "$SYFT" "$IMAGE" --select-catalogers +sbom-cataloger -o json \
-            | jq -e '[.artifacts[].name] as $n | ($n|index("react")) and ($n|index("react-dom")) and ($n|index("brother-ql")) and ($n|index("tini"))'
+            | jq -e '[.artifacts[].name] as $n | ($n|index("react")) and ($n|index("react-dom")) and ($n|any(test("^brother[-_.]ql[-_.]next$"))) and ($n|index("tini"))'
 
       - name: Check the licence files in the image
         run: |

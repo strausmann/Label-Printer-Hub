@@ -686,8 +686,11 @@ def test_sbom_uses_merge_image_ref() -> None:
     assert "--select-catalogers +sbom-cataloger" in runs
     assert "--platform linux/amd64" in runs
     assert "jq -e" in runs
-    for name in ("react", "brother-ql", "tini"):
+    for name in ("react", "tini"):
         assert f'index("{name}")' in runs, name
+    # #256: the QL library is brother-ql-next; its metadata name is brother_ql_next, and the
+    # SBOM catalogers spell it with a hyphen or an underscore. The old name must not satisfy it.
+    assert 'any(test("^brother[-_.]ql[-_.]next$"))' in runs
     upload = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
     assert len(upload) == 1
     assert upload[0]["with"]["name"] == "release-sbom"

@@ -216,3 +216,87 @@ async def test_preflight_check_no_duplicate_prefix_when_snmp_error_already_has_p
     assert error_msg.count("preflight SNMP failed") == 1, (
         f"Duplicate prefix in error message: {error_msg!r}"
     )
+
+
+@pytest.mark.anyio
+async def test_ql820_raster_starts_with_400_invalidate_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    dummy_image: Image.Image,
+    tape_spec_62: TapeSpec,
+) -> None:
+    """#256: brother-ql-next sends 400 invalidate bytes for the QL-820NWB (brother-ql: 200).
+
+    ``convert`` writes ``ESC i a 1`` (raster mode), then the invalidate bytes, then ``ESC @``
+    (initialise). Asserts on the exact bytes handed to ``helpers.send``, so a library that goes
+    back to 200 turns this red.
+    """
+    sent: list[bytes] = []
+    monkeypatch.setattr(
+        "app.printer_backends.brother_ql_backend._helpers_send",
+        lambda data, identifier, **kwargs: sent.append(bytes(data)),
+    )
+
+    backend = BrotherQLBackend(host="192.0.2.11", port=9100, model_id="QL-820NWB")
+    await backend.print_image(dummy_image, tape_spec_62, auto_cut=True, last_page=True)
+
+    (raster,) = sent
+    assert raster.startswith(b"\x1bia\x01" + b"\x00" * 400 + b"\x1b\x40")
+
+
+@pytest.mark.anyio
+async def test_raster_shorter_than_the_model_minimum_is_padded_not_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    tape_spec_62: TapeSpec,
+) -> None:
+    """#256: brother-ql-next refuses a raster under 150 dots (QL-820NWB); the backend pads it.
+
+    A 70-row label used to go out as it was. Now it is padded with white rows at the end, so the
+    print is accepted and the extra rows are blank tape.
+    """
+    seen: list[Image.Image] = []
+    from app.printer_backends import brother_ql_backend
+
+    real = brother_ql_backend.convert
+
+    def spy(qlr, images, *args, **kwargs):
+        seen.extend(images)
+        return real(qlr, images, *args, **kwargs)
+
+    monkeypatch.setattr(brother_ql_backend, "convert", spy)
+    monkeypatch.setattr(brother_ql_backend, "_helpers_send", lambda *a, **k: None)
+
+    image = Image.new("RGB", (696, 70), "black")
+    await BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB").print_image(
+        image, tape_spec_62, auto_cut=True, last_page=True
+    )
+
+    (sent_image,) = seen
+    assert sent_image.size == (696, 150)
+    assert sent_image.getpixel((10, 10)) == (0, 0, 0)  # content kept at the top
+    assert sent_image.getpixel((10, 149)) == (255, 255, 255)  # padding is white
+
+
+@pytest.mark.anyio
+async def test_batch_pads_short_labels_too(
+    monkeypatch: pytest.MonkeyPatch,
+    tape_spec_62: TapeSpec,
+) -> None:
+    """The batch path pads each label like the single path does."""
+    from app.printer_backends import brother_ql_backend
+
+    seen: list[Image.Image] = []
+    real = brother_ql_backend.convert
+
+    def spy(qlr, images, *args, **kwargs):
+        seen.extend(images)
+        return real(qlr, images, *args, **kwargs)
+
+    monkeypatch.setattr(brother_ql_backend, "convert", spy)
+    monkeypatch.setattr(brother_ql_backend, "_helpers_send", lambda *a, **k: None)
+
+    backend = BrotherQLBackend(host="192.0.2.11", model_id="QL-820NWB")
+    await backend.print_images(
+        [Image.new("RGB", (696, 70), "black"), Image.new("RGB", (696, 300), "black")],
+        tape_spec_62,
+    )
+    assert [im.height for im in seen] == [150, 300]

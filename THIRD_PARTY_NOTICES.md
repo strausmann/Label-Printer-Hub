@@ -63,11 +63,12 @@ ship as `.py` source files in `/opt/venv`, so their source is part of the image 
 
 | Package | Licence | Upstream | Notes |
 |---|---|---|---|
-| brother_ql | GPL-3.0-or-later | [pklaus/brother_ql](https://github.com/pklaus/brother_ql) | QL-Series raster protocol. The wheel ships no licence text; the image carries the canonical GPL-3.0-or-later text from `backend/licences/` and lists it in URL `/licenses/backend.json` |
+| brother_ql_next | GPL-3.0-only | [LunarEclipse363/brother_ql_next](https://github.com/LunarEclipse363/brother_ql_next) | QL-Series raster protocol, the maintained fork of `pklaus/brother_ql` (import name `brother_ql`). The wheel ships the GPL-3.0-only text; the image lists the package with that text in URL `/licenses/backend.json`. It brings one further dependency, `jsons` (MIT), listed there as well |
 | ptouch | LGPL-2.1-or-later | [ptouch on PyPI](https://pypi.org/project/ptouch/) | PT-Series protocol. The wheel ships the LGPL-2.1-or-later text; the image lists the package with that text in URL `/licenses/backend.json` |
 
-Because of `brother_ql` the combined work is distributed under the AGPL-3.0-or-later (the
-project's licence is in `/opt/app/LICENSE`). The complete corresponding source of the project
+Because of `brother_ql_next` (GPL-3.0-only) the combined work is distributed under the
+AGPL-3.0-or-later, which GPLv3 section 13 and AGPLv3 section 13 allow for a combination of
+the two (the project's licence is in `/opt/app/LICENSE`). The complete corresponding source of the project
 itself, for the exact version that runs, is linked from the About page of every instance
 (GPLv3 section 6(d), AGPL section 13).
 

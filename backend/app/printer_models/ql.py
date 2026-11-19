@@ -6,7 +6,7 @@
 Naming follows pt.py (ADR 0004 — m2-Fix: ql.py, not ql_series.py).
 
 Tape data sourced from:
-  brother_ql.devicedependent.label_type_specs — endless (continuous) DK labels.
+  brother_ql.labels.ALL_LABELS — endless (continuous) DK labels.
   Brother QL-800/810W/820NWB Raster Command Reference v1.01.
 
 Only endless (CONTINUOUS_LENGTH_TAPE) DK labels are registered here;
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 
 # QL-Series DK continuous (endless) tape specs.
-# dots_printable from brother_ql.devicedependent.label_type_specs (v0.9.x).
+# dots_printable from brother_ql.labels.ALL_LABELS (brother-ql-next 0.12).
 # bytes_per_raster: ceil(dots_printable / 8), rounded to the next byte.
 # QL-Series does not use a fixed bytes_per_raster like PT; the value here is
 # informational and used only for TapeSpec storage; the brother_ql library

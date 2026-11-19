@@ -3,7 +3,7 @@
 
 """Phase 1i Sub-Task G: BrotherQLBackend.
 
-C1-Fix: brother_ql v0.9.4 API (convert + helpers.send).
+C1-Fix: brother-ql-next 0.12 API (import name brother_ql) (convert + helpers.send).
 C8-Fix: model bleibt "QL-820NWB" (library kennt kein "c"-Suffix).
 M6-Fix: red=False für Monochrome auf two_color=True Library-Modellen.
 R3-Zusatz: helpers.send ist synchron mit blocking=True -> asyncio.to_thread wrapping.
@@ -15,14 +15,12 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-# Must run before brother_ql is used: restores Image.ANTIALIAS (removed in Pillow 10),
-# which brother_ql 0.9.x calls in its resize branch. See _pillow_compat and issue #254.
-from app.printer_backends import _pillow_compat  # noqa: F401  # isort: skip
 from brother_ql.backends.helpers import (
     send as _helpers_send,
 )
 from brother_ql.conversion import convert
 from brother_ql.labels import ALL_LABELS
+from brother_ql.models import ALL_MODELS
 from brother_ql.raster import BrotherQLRaster
 from PIL import Image
 
@@ -124,6 +122,24 @@ def _fit_to_printable_width(
     return image
 
 
+def _pad_to_min_length(image: Image.Image, model_id: str) -> Image.Image:
+    """Pad a raster shorter than the model's minimum length with white at the end (#256).
+
+    ``brother-ql-next`` refuses a raster below ``Model.min_max_length_dots[0]`` (150 dots for the
+    QL-820NWB) with ``BrotherQLRasterError``; ``brother-ql`` 0.9.4 passed it on. White rows after
+    the content print as blank tape, so the label looks as before. An unknown model is left to
+    ``BrotherQLRaster``, which refuses it.
+    """
+    model = next((m for m in ALL_MODELS if m.identifier == model_id), None)
+    if model is None or image.height >= model.min_max_length_dots[0]:
+        return image
+    padded = Image.new(
+        image.mode, (image.width, model.min_max_length_dots[0]), (255,) * len(image.mode)
+    )
+    padded.paste(image, (0, 0))
+    return padded
+
+
 def _ql_dpi(high_resolution: bool) -> int:
     """The resolution of a fitted QL raster image along the tape (R26-2): 300 dpi, doubled for a
     600 dpi print (``_fit_to_printable_width`` doubles both axes)."""
@@ -145,7 +161,7 @@ def _ql_label_of(tape_spec: TapeSpec) -> str:
 
 
 class BrotherQLBackend:
-    """PrinterBackend backed by the brother_ql library (v0.9.x).
+    """PrinterBackend backed by the brother_ql library (the maintained brother-ql-next fork).
 
     Wraps the synchronous ``brother_ql.backends.helpers.send`` in
     ``asyncio.to_thread`` so the async caller is not blocked.
@@ -247,6 +263,7 @@ class BrotherQLBackend:
         image = _fit_to_printable_width(
             image, ql_label, dpi_600=high_resolution, orientation=orientation
         )
+        image = _pad_to_min_length(image, self._model_id)
         length = label_length_mm(image, _ql_dpi(high_resolution))
         check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
         if not media_checked:
@@ -285,7 +302,7 @@ class BrotherQLBackend:
             self._identifier,
             blocking=True,
         )
-        # #389: brother_ql 0.9.4 reads nothing back over the network backend (``outcome`` stays
+        # #389: brother_ql reads nothing back over the network backend (``outcome`` stays
         # ``sent``); a backend that does read back reports ``error``. The queue's status check
         # after sending covers the network case.
         if isinstance(result, dict) and result.get("outcome") == "error":
@@ -346,8 +363,11 @@ class BrotherQLBackend:
         self.last_send_status = None
         ql_label = _ql_label_of(tape_spec)
         fitted = [
-            _fit_to_printable_width(
-                image, ql_label, dpi_600=high_resolution, orientation=orientation
+            _pad_to_min_length(
+                _fit_to_printable_width(
+                    image, ql_label, dpi_600=high_resolution, orientation=orientation
+                ),
+                self._model_id,
             )
             for image in images
         ]
