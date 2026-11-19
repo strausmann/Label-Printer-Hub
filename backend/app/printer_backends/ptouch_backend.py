@@ -35,10 +35,18 @@ from app.printer_backends.exceptions import (
 from app.printer_backends.post_send import raise_for_error_flags
 from app.printer_backends.snmp_helper import PreflightStatus, query_preflight, roll_record
 from app.printer_backends.status_query import query_status_over_socket
-from app.printer_backends.tape_confirmation import TapeIppTransport, TapeSendState
+from app.printer_backends.tape_confirmation import (
+    TapeIppTransport,
+    TapeSendState,
+    label_length_mm,
+)
 from app.services.status_block import StatusBlock
 
 _logger = logging.getLogger(__name__)
+
+PT_DPI = 180
+"""The resolution the hub renders P-touch labels at (``printer_models/pt.py``: 180 dpi); a
+high-resolution print doubles the dots, not the length."""
 
 _RETRY_BACKOFFS: tuple[float, ...] = (0.0, 1.0, 2.0)
 
@@ -456,7 +464,7 @@ class PTouchBackend:
                 last_page=last_page,
                 multi=False,
             )
-        await self.send_state.send(data, 1, raw)
+        await self.send_state.send(data, 1, raw, length_mm=label_length_mm(image, PT_DPI))
 
     async def _render(
         self,
@@ -542,7 +550,9 @@ class PTouchBackend:
                 half_cut=half_cut,
                 multi=True,
             )
-        await self.send_state.send(data, len(images), raw)
+        await self.send_state.send(
+            data, len(images), raw, length_mm=sum(label_length_mm(i, PT_DPI) for i in images)
+        )
 
 
 @contextlib.contextmanager

@@ -53,7 +53,7 @@ def _fast_confirmation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Confirmation timeouts of a fraction of a second, polls every millisecond."""
     from app.printer_backends import tape_confirmation
 
-    monkeypatch.setattr(post_send, "confirm_timeout_s", lambda labels: 0.1)
+    monkeypatch.setattr(post_send, "confirm_timeout_s", lambda labels, length_mm=0.0: 0.1)
     monkeypatch.setattr(post_send, "CONFIRM_POLL_S", 0.001)
     monkeypatch.setattr(tape_confirmation, "CONFIRM_POLL_S", 0.001, raising=False)
     monkeypatch.setattr(tape_confirmation, "CANCEL_STOP_S", 0.5, raising=False)

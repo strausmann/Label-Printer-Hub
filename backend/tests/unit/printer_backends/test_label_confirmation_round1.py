@@ -70,7 +70,7 @@ class _Ipp(TapeIppTransport):
         self.outcome = outcome
         self.cancelled: list[int] = []
 
-    async def wait(self, jobs, *, timeout_s, poll_s=1.0):  # type: ignore[no-untyped-def,override]
+    async def wait(self, jobs, *, timeout_s, poll_s=1.0, **_):  # type: ignore[no-untyped-def,override]
         return self.outcome
 
     async def cancel(self, job_id: int) -> bool:

@@ -53,6 +53,17 @@ CONFIRM_PER_LABEL_S: Final = 8.0
 """First value: seconds per label sent. Measured: a QL-820NWB prints a 62 mm x 17 mm label in
 about 3 s, a PT-P750W a 12 mm label in about 7 s; 8 s covers both."""
 
+TAPE_MIN_SPEED_MM_S: Final = 20.0
+"""Millimetres of tape per second the confirmation wait assumes on top of the per-label time
+(R26-2): a long label takes as long as its length needs. The slowest model the hub drives is the
+PT-P750W, with a data-sheet print speed of up to 30 mm/s; 20 mm/s leaves a third as margin (a
+cold head, a low battery, a slower firmware). The QL printers are faster, so they are covered."""
+
+CONFIRM_PRINTING_FACTOR: Final = 2.0
+"""While the printer still reports ``printing`` (``hrPrinterStatus``, or IPP job state 5) at the
+end of the wait, the wait goes on, up to this many times the computed wait (R26-2). The hard
+bound keeps a printer that reports ``printing`` for ever from holding the queue."""
+
 CONFIRM_POLL_S: Final = 1.0
 """Seconds between two reads of the IPP job state or the label counter."""
 
@@ -89,6 +100,7 @@ _PROBE_ATTRIBUTES = (
 _CANCEL_JOB: Final = 0x0008
 _GET_JOB_ATTRIBUTES: Final = 0x0009
 _IPP_STATE_COMPLETED = 9
+_IPP_STATE_PROCESSING = 5
 _IPP_STATE_FINAL = 7
 
 ConfirmTransport = Literal["ipp", "raw"]
@@ -99,9 +111,23 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
-def confirm_timeout_s(labels: int) -> float:
-    """How long the printer has to confirm *labels* labels."""
-    return CONFIRM_BASE_S + max(0, labels) * CONFIRM_PER_LABEL_S
+def confirm_timeout_s(labels: int, length_mm: float = 0.0) -> float:
+    """How long the printer has to confirm *labels* labels of *length_mm* tape in all (R26-2)."""
+    return (
+        CONFIRM_BASE_S
+        + max(0, labels) * CONFIRM_PER_LABEL_S
+        + max(0.0, length_mm) / TAPE_MIN_SPEED_MM_S
+    )
+
+
+def label_length_mm(image: Any, dpi: int) -> float:
+    """The length of tape a rendered label takes: its long side at *dpi* (R26-2).
+
+    The long side is the length on every tape layout but a short label across a wide roll, where
+    it is the width; that overestimates, which only makes the wait longer.
+    """
+    width, height = image.size
+    return float(max(width, height)) * 25.4 / dpi
 
 
 # ---------------------------------------------------------------------------- the record
@@ -268,7 +294,7 @@ class TapeIppTransport:
                 return False
         return True
 
-    async def submit(self, data: bytes, labels: int = 1) -> int:
+    async def submit(self, data: bytes, labels: int = 1, length_mm: float = 0.0) -> int:
         """Send *data* (*labels* labels) as one Print-Job; returns the printer's job id.
 
         ``job-name`` is unique per send. The upload may take as long as the labels may take to
@@ -280,7 +306,7 @@ class TapeIppTransport:
             Attr("job-name", Tag.NAME, [job_name]),
             Attr("document-format", Tag.MIME, [OCTET_STREAM]),
         ]
-        upload_s = max(self._upload_timeout_s, confirm_timeout_s(labels))
+        upload_s = max(self._upload_timeout_s, confirm_timeout_s(labels, length_mm))
         async with self._client(upload_s) as client:
             accepted = await client.print_job(data, [], op_attrs)
         return accepted.job_id
@@ -328,9 +354,17 @@ class TapeIppTransport:
                 await asyncio.sleep(poll)
 
     async def wait(
-        self, jobs: list[tuple[int, int]], *, timeout_s: float, poll_s: float = CONFIRM_POLL_S
+        self,
+        jobs: list[tuple[int, int]],
+        *,
+        timeout_s: float,
+        poll_s: float = CONFIRM_POLL_S,
+        hard_timeout_s: float | None = None,
     ) -> IppOutcome:
         """Poll each ``(job_id, labels)`` until a final state (``>= 7``) or the timeout.
+
+        A job that still reports ``processing`` (5) at the timeout is polled on until
+        *hard_timeout_s* (R26-2: a long label is not cancelled while it prints).
 
         ``9`` counts the job's labels as printed. ``7``/``8`` stop the wait with the labels of
         the completed jobs plus the failed job's last ``job-impressions-completed``. At the
@@ -340,9 +374,11 @@ class TapeIppTransport:
         """
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_s
+        hard_deadline = loop.time() + max(timeout_s, hard_timeout_s or 0.0)
         printed = 0
         async with self._client() as client:
             for job_id, labels in jobs:
+                state: int | None = None
                 impressions = 0
                 seen = False
                 while True:
@@ -358,13 +394,15 @@ class TapeIppTransport:
                         info = None
                     if info is not None:
                         seen = True
+                        state = info.state
                         impressions = info.impressions_completed or impressions
                         if info.state >= _IPP_STATE_FINAL:
                             if info.state == _IPP_STATE_COMPLETED:
                                 printed += labels
                                 break
                             return IppOutcome(False, printed + min(impressions, labels))
-                    if loop.time() >= deadline:
+                    now = loop.time()
+                    if now >= deadline and (state != _IPP_STATE_PROCESSING or now >= hard_deadline):
                         return IppOutcome(
                             False,
                             printed + min(impressions, labels),
@@ -402,6 +440,8 @@ class TapeSendState:
     detect_ipp_failed: bool = False
     detect_ipp_taken: bool = False
     detect_ipp_skipped: bool = False
+    # R26-2: the tape length of the labels sent since the read before sending, in mm.
+    length_mm: float = 0.0
     # R26-1: refusals of the label counter in a row, and since when it is not asked for.
     counter_refusals: int = 0
     counter_off_at: float | None = None
@@ -411,6 +451,7 @@ class TapeSendState:
     def begin(self, *, detect: bool = False) -> None:
         """A new send starts (right after the read before sending)."""
         self.labels_sent = 0
+        self.length_mm = 0.0
         self.ipp_jobs = []
         self.detecting = detect
         self.detect_ipp_failed = False
@@ -499,6 +540,7 @@ class TapeSendState:
         data: bytes,
         labels: int,
         raw: Callable[[], Awaitable[None]],
+        length_mm: float = 0.0,
     ) -> None:
         """Send *labels* labels of raster *data*: over IPP when it is the transport, else *raw*.
 
@@ -510,7 +552,7 @@ class TapeSendState:
         """
         if await self.use_ipp():
             try:
-                job_id = await self.ipp.submit(data, labels)
+                job_id = await self.ipp.submit(data, labels, length_mm)
             except (IppUnreachableError, IppStatusError) as exc:
                 _logger.warning(
                     "IPP Print-Job not taken (%s); sending over TCP 9100", type(exc).__name__
@@ -525,9 +567,11 @@ class TapeSendState:
                 if self.detecting:
                     self.detect_ipp_taken = True
                 self.labels_sent += labels
+                self.length_mm += length_mm
                 return
         await raw()
         self.labels_sent += labels
+        self.length_mm += length_mm
 
     async def store(self, record: ConfirmationRecord) -> None:
         """Keep *record* and hand it to the sink; a failing sink is logged, never raised."""

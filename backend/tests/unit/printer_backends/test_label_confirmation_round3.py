@@ -40,7 +40,7 @@ class _Ipp(TapeIppTransport):
         super().__init__("192.0.2.70")
         self.clock = clock
 
-    async def wait(self, jobs, *, timeout_s, poll_s=1.0):  # type: ignore[no-untyped-def,override]
+    async def wait(self, jobs, *, timeout_s, poll_s=1.0, **_):  # type: ignore[no-untyped-def,override]
         self.clock.now += timeout_s - LEFT_S
         return IppOutcome(False, 0, pending=7, pending_labels=2)
 

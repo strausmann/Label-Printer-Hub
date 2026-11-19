@@ -48,6 +48,7 @@ from app.printer_backends.exceptions import (
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.printer_backends.tape_confirmation import (
     CONFIRM_POLL_S,
+    CONFIRM_PRINTING_FACTOR,
     COUNTER_JUMP_SLACK,
     ConfirmationRecord,
     IppOutcome,
@@ -177,10 +178,13 @@ async def check_after_send(
       TCP 9100. A job the printer forgot after it answered for it is left to the counter.
     - **Label counter:** polled every ``poll_s`` until it rose by the labels sent and the
       printer is idle (``hrPrinterStatus`` 3; a QL reports 1 while printing), or the count held
-      still for ``STEADY_READS`` reads while the printer did not report ``printing``. A shortfall at
-      the timeout raises ``LabelsNotConfirmedError(printed, sent)``. A counter that is missing
-      before or after, went down, or jumped by more than the labels plus ``COUNTER_JUMP_SLACK``
-      is logged and accepted: a job never fails on a counter that cannot be interpreted.
+      still for ``STEADY_READS`` reads while the printer did not report ``printing``. The timeout
+      is ``confirm_timeout_s`` of the labels and their tape length (R26-2); a printer that still
+      reports ``printing`` then gets up to ``CONFIRM_PRINTING_FACTOR`` times it (an IPP job in
+      state 5 as well). A shortfall at the timeout raises
+      ``LabelsNotConfirmedError(printed, sent)``. A counter that is missing before or after,
+      went down, or jumped by more than the labels plus ``COUNTER_JUMP_SLACK`` is logged and
+      accepted: a job never fails on a counter that cannot be interpreted.
       ``UNANSWERED_POLLS_LIMIT`` reads in a row without an answer end the wait early.
     - **Blocking bits** carry the printed count when it is known (``PrinterError.printed``);
       with every label counted (the last label used up the roll) it is the labels sent, and the
@@ -201,15 +205,23 @@ async def check_after_send(
     expected = _labels_sent(backend, state)
     before_flags = _flags_before_send(backend)
     poll = CONFIRM_POLL_S if poll_s is None else poll_s
-    limit = confirm_timeout_s(expected) if timeout_s is None else timeout_s
+    length = state.length_mm if state is not None else 0.0
+    limit = confirm_timeout_s(expected, length) if timeout_s is None else timeout_s
     before = _count_of(getattr(backend, "last_send_status", None))
 
     # One budget for the whole confirmation (#393 F3): a counter wait after an IPP job that
     # vanished gets what is left of it, not a fresh timeout (plus the cancel's stop poll).
     deadline = _now() + limit
+    # R26-2: a printer that still reports printing at the deadline gets more time, up to this.
+    hard_deadline = _now() + limit * CONFIRM_PRINTING_FACTOR
     ipp_completed = False
     if state is not None and state.ipp_jobs:
-        outcome = await state.ipp.wait(state.ipp_jobs, timeout_s=limit, poll_s=poll)
+        outcome = await state.ipp.wait(
+            state.ipp_jobs,
+            timeout_s=limit,
+            poll_s=poll,
+            hard_timeout_s=limit * CONFIRM_PRINTING_FACTOR,
+        )
         if outcome.completed:
             ipp_completed = True
         elif outcome.vanished:
@@ -291,7 +303,9 @@ async def check_after_send(
         if steady >= STEADY_READS:
             await _finish(state, False, printed == expected)
             return
-        if _now() >= deadline:
+        if _now() >= deadline and not (
+            status.hr_printer_status == "printing" and _now() < hard_deadline
+        ):
             if printed >= expected:
                 # Counted, but the printer never reported idle: the labels are out.
                 _logger.warning("Labels counted but the printer did not turn idle in time")

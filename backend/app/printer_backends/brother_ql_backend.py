@@ -47,7 +47,11 @@ from app.printer_backends.snmp_helper import (
     query_preflight,
     roll_record,
 )
-from app.printer_backends.tape_confirmation import TapeIppTransport, TapeSendState
+from app.printer_backends.tape_confirmation import (
+    TapeIppTransport,
+    TapeSendState,
+    label_length_mm,
+)
 from app.schemas.label_layout import LabelOrientation
 from app.services.status_block import StatusBlock
 
@@ -228,7 +232,12 @@ class BrotherQLBackend:
             dpi_600=high_resolution,
         )
 
-        await self.send_state.send(qlr.data, 1, lambda: self._send_raw(qlr.data))
+        await self.send_state.send(
+            qlr.data,
+            1,
+            lambda: self._send_raw(qlr.data),
+            length_mm=label_length_mm(image, 600 if high_resolution else 300),
+        )
 
     async def _send_raw(self, data: bytes) -> None:
         """Send *data* over TCP 9100 (``brother_ql.backends.helpers.send``), as before #393."""
@@ -313,7 +322,14 @@ class BrotherQLBackend:
             ]
             convert(qlr, fitted, ql_label, cut=auto_cut, red=False, dpi_600=high_resolution)
             try:
-                await self.send_state.send(qlr.data, len(images), lambda: self._send_raw(qlr.data))
+                await self.send_state.send(
+                    qlr.data,
+                    len(images),
+                    lambda: self._send_raw(qlr.data),
+                    length_mm=sum(
+                        label_length_mm(image, 600 if high_resolution else 300) for image in fitted
+                    ),
+                )
             except PrinterError as exc:
                 exc.nothing_sent = False
                 raise
