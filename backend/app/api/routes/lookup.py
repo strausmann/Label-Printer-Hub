@@ -53,6 +53,7 @@ from app.auth.scope_deps import require_read
 from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
 from app.schemas.lookup import LookupResult
+from app.schemas.print_request import LOOKUP_IDENTIFIER_MAX
 from app.services.lookup_service import AppLookupService, LookupFailedError, UnknownAppError
 
 router = APIRouter(prefix="/api/v1/lookup", tags=["lookup"])
@@ -137,7 +138,7 @@ def _label_data_to_result(app: AppLiteral, entity_id: str, data: LabelData) -> L
 )
 async def lookup(
     app: AppLiteral,
-    entity_id: str,
+    entity_id: Annotated[str, Path(max_length=LOOKUP_IDENTIFIER_MAX)],
     _auth: ReadAuthDep,
 ) -> LookupResult:
     """Resolve ``entity_id`` via the integration named ``app``."""

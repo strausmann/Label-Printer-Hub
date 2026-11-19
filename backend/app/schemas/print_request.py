@@ -10,7 +10,7 @@ to 'manual' for raw requests).
 
 from __future__ import annotations
 
-from typing import Annotated, Self
+from typing import Annotated, Final, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,13 +19,16 @@ from app.schemas.label_data_item import LabelDataItem
 from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.spool_swatch import SpoolSwatch
 
+LOOKUP_IDENTIFIER_MAX: Final = 120
+"""Longest lookup identifier; the sheet path's bound (``sheet_print.TEXT_MAX``)."""
+
 
 class PrintLookupRequest(BaseModel):
     """Resolve label data via an integration plugin."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
-    app: str
-    identifier: str
+    app: str = Field(max_length=32)
+    identifier: str = Field(max_length=LOOKUP_IDENTIFIER_MAX)
 
 
 class PrintOptions(BaseModel):

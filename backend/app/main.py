@@ -91,6 +91,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
+from app.api.body_limit import install_body_limit
 from app.api.error_handlers import (
     SHEET_ERROR_SCHEMA,
     SHEET_ERROR_SCHEMA_NAME,
@@ -735,6 +736,8 @@ def create_app() -> _LifespanManager:
     app.include_router(info_routes.router)
     app.include_router(notices_routes.router)
 
+    # #164: inside the security headers and the access log, around every router.
+    install_body_limit(app)
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.
     add_security_headers(app)

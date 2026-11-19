@@ -46,6 +46,10 @@ services:
       caddy.reverse_proxy: "{{upstreams ${BACKEND_PORT:-8000}}}"
       # SSE: disable response buffering for the live event stream (/api/v1/events)
       caddy.reverse_proxy.flush_interval: "-1"
+      # Optional: refuse request bodies above 2 MiB at the proxy too. The hub refuses them itself
+      # with 413 body_too_large; this saves the proxy from passing them on (Caddy's "2MB" is
+      # 2,000,000 bytes, so write 2MiB).
+      # caddy.request_body.max_size: 2MiB
 
 networks:
   caddy:

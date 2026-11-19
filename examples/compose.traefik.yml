@@ -64,6 +64,11 @@ services:
       # SSE: disable buffering for the live event stream (/api/v1/events)
       - "traefik.http.services.labelyard.loadbalancer.responseforwarding.flushinterval=100ms"
 
+      # Optional: refuse request bodies above 2 MiB at the proxy too (the hub refuses them itself
+      # with 413 body_too_large). Traefik's buffering middleware also buffers responses, which would
+      # hold back the event stream: attach it only to a router that does not match /api/v1/events.
+      # - "traefik.http.middlewares.labelyard-limit.buffering.maxRequestBodyBytes=2097152"
+
 networks:
   traefik:
     external: true

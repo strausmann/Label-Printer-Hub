@@ -28,9 +28,13 @@ response without any extra handler code.
 
 from __future__ import annotations
 
+from typing import Final
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+ID_MAX: Final = 64
+"""Longest webhook id or event type; real ids are short, the value is sent on to a lookup."""
 
 
 class SpoolmanWebhookPayload(BaseModel):
@@ -39,9 +43,11 @@ class SpoolmanWebhookPayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="ignore")
 
     spool_id: str = Field(
+        max_length=ID_MAX,
         description="Spoolman spool identifier (as a string to accept both int and str JSON input)",
     )
     type: str = Field(
+        max_length=ID_MAX,
         description="Event type string (e.g. 'updated', 'created', 'consumed')",
     )
     quantity: float | None = Field(
@@ -61,9 +67,11 @@ class GrocyWebhookPayload(BaseModel):
     model_config = ConfigDict(strict=True, extra="ignore")
 
     product_id: str = Field(
+        max_length=ID_MAX,
         description="Grocy product identifier",
     )
     type: str = Field(
+        max_length=ID_MAX,
         description="Event type string (e.g. 'stock_added', 'stock_removed')",
     )
     quantity: float | None = Field(
