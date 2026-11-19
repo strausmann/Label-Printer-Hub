@@ -146,6 +146,23 @@ def test_try_consume_takes_all_or_nothing():
     assert rl.try_consume("k", 4, limit_per_minute=10) == (True, 0, 4)
 
 
+def test_try_consume_retry_after_covers_the_next_requests_own_token(monkeypatch):
+    """A client that waits the given Retry-After must get through: the retried request takes
+    its own token at authentication before the fan-out is charged (Codex review on #399)."""
+    from app.services import rate_limiter as rl
+
+    clock = [1000.0]
+    monkeypatch.setattr(rl.time, "monotonic", lambda: clock[0])
+    limiter = rl.RateLimiter()
+    for _ in range(5):
+        assert limiter.check_and_consume("k", limit_per_minute=10)  # 5 left
+    allowed, retry_after, _ = limiter.try_consume("k", 9, limit_per_minute=10)
+    assert not allowed
+    clock[0] += retry_after
+    assert limiter.check_and_consume("k", limit_per_minute=10)  # the retry's own token
+    assert limiter.try_consume("k", 9, limit_per_minute=10)[0] is True
+
+
 def test_try_consume_cap_leaves_room_for_the_requests_own_token():
     """A fresh bucket minus the request's token holds capacity - 1: asking for more than the
     limit must still be servable, or such a request is refused forever (review 1)."""

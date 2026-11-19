@@ -132,7 +132,12 @@ class RateLimiter:
         if bucket.tokens >= needed:
             bucket.tokens -= needed
             return True, 0, needed
-        return False, int((needed - bucket.tokens) / rate_per_second) + 1, 0
+        # The retried request takes its own token at authentication before it is charged again,
+        # so the wait covers that token too; otherwise a client that follows Retry-After finds
+        # the refill eaten by its own request and is refused again (Codex review on #399).
+        # ``needed`` <= capacity - 1, so ``needed + 1`` always fits in a full bucket.
+        deficit = needed + 1 - bucket.tokens
+        return False, int(deficit / rate_per_second) + 1, 0
 
     def refund(self, key_id: Hashable, tokens: int) -> None:
         """Give back ``tokens`` that :meth:`try_consume` reported as taken, never above the
