@@ -371,3 +371,66 @@ async def test_recovered_run_keeps_the_half_cut_of_the_batch(async_session_facto
     batch = _drain(queue, printer_id)[0]
     assert batch.options["half_cut"] is True
     await queue.stop()
+
+
+# --- #168: the lifespan does not render the backlog --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lifespan_starts_without_rendering_the_backlog(monkeypatch):
+    """With a backlog of queued rows the lifespan's ``queue.start()`` returns before any of them
+    is drawn; the worker then draws and prints them on their turn."""
+    from datetime import UTC, datetime, timedelta
+
+    import app.db.engine as eng
+    from app.main import create_app
+    from app.models.printer import Printer
+
+    renders: list[int] = []
+    at_start: list[int] = []
+    real_render = PrintQueue._rerender_from_db_payload
+    real_start = PrintQueue.start
+
+    def _counting(self, payload):
+        renders.append(1)
+        return real_render(self, payload)
+
+    async def _start(self, *args, **kwargs):
+        await real_start(self, *args, **kwargs)
+        at_start.append(len(renders))
+
+    monkeypatch.setattr(PrintQueue, "_rerender_from_db_payload", _counting)
+    monkeypatch.setattr(PrintQueue, "start", _start)
+
+    backlog = 300
+    async with eng.async_session() as s:
+        printer = Printer(name="Tape", slug="tape-168", model="PT-P750W", backend="mock")
+        s.add(printer)
+        await s.commit()
+        base = datetime(2026, 11, 1, tzinfo=UTC)
+        rows = [
+            Job(
+                printer_id=printer.id,
+                template_key=None,
+                payload=_SAMPLE_PAYLOAD,
+                created_at=base + timedelta(seconds=i),
+            )
+            for i in range(backlog)
+        ]
+        s.add_all(rows)
+        await s.commit()
+        first_id = rows[0].id
+
+    app = create_app()._app
+    async with app.router.lifespan_context(app):
+        assert at_start == [0]
+
+        async def _first_done() -> bool:
+            async with eng.async_session() as s:
+                row = await s.get(Job, first_id)
+                return row is not None and row.state == JobState.DONE.value
+
+        async with asyncio.timeout(10):
+            while not await _first_done():
+                await asyncio.sleep(0.02)
+    assert renders  # the worker drew the first row on its turn
