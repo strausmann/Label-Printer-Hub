@@ -6,13 +6,14 @@ a printer that still reports ``printing`` gets more time, within a hard bound.""
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import httpx
 import pytest
 from app.printer_backends import post_send
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
-from app.printer_backends.exceptions import LabelsNotConfirmedError
+from app.printer_backends.exceptions import LabelsNotConfirmedError, LabelTooLongError
 from app.printer_backends.ptouch_backend import PTouchBackend
 from app.printer_backends.snmp_helper import PreflightStatus
 from app.printer_backends.tape_confirmation import (
@@ -164,3 +165,85 @@ def _refusing() -> httpx.MockTransport:
         raise httpx.ConnectError("refused", request=request)
 
     return httpx.MockTransport(refuse)
+
+
+# ---------------------------------------------------------------------------- max_length_mm
+
+
+async def test_a_pt_label_longer_than_the_tape_allows_is_refused_before_sending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[object] = []
+
+    async def preflight(host: str, **_: Any) -> PreflightStatus:
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, media_raw="12mm")
+
+    monkeypatch.setattr("app.printer_backends.ptouch_backend.query_preflight", preflight)
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._ptouch_print", lambda *a, **k: sent.append(a)
+    )
+    spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
+    backend = PTouchBackend(host="192.0.2.85", ipp_transport=_refusing())
+    too_long = Image.new("1", (round((spec.max_length_mm + 10) / 25.4 * 180), 76), 1)
+    with pytest.raises(LabelTooLongError) as err:
+        await backend.print_image(too_long, spec)
+    assert err.value.nothing_sent
+    assert err.value.max_mm == spec.max_length_mm and err.value.length_mm > spec.max_length_mm
+    assert sent == []
+    fits = Image.new("1", (round((spec.max_length_mm - 10) / 25.4 * 180), 76), 1)
+    await backend.print_image(fits, spec)
+    assert len(sent) == 1
+
+
+async def test_a_pt_batch_with_one_label_too_long_sends_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[object] = []
+
+    async def preflight(host: str, **_: Any) -> PreflightStatus:
+        return PreflightStatus(hr_printer_status="idle", loaded_tape_mm=12, media_raw="12mm")
+
+    monkeypatch.setattr("app.printer_backends.ptouch_backend.query_preflight", preflight)
+    monkeypatch.setattr(
+        "app.printer_backends.ptouch_backend._ptouch_print_multi", lambda *a, **k: sent.append(a)
+    )
+    spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
+    backend = PTouchBackend(host="192.0.2.86", ipp_transport=_refusing())
+    too_long = Image.new("1", (round((spec.max_length_mm + 10) / 25.4 * 180), 76), 1)
+    with pytest.raises(LabelTooLongError):
+        await backend.print_images([Image.new("1", (300, 76), 1), too_long], spec)
+    assert sent == []
+
+
+async def test_a_ql_label_longer_than_the_tape_allows_is_refused_before_sending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[object] = []
+    monkeypatch.setattr(
+        "app.printer_backends.brother_ql_backend._helpers_send",
+        lambda *a, **k: sent.append(a) or {"outcome": "sent"},
+    )
+    spec = dataclasses.replace(
+        TapeRegistry.lookup_ql(29, MediaType.CONTINUOUS_LENGTH_TAPE), max_length_mm=50
+    )
+    backend = BrotherQLBackend(host="192.0.2.87", ipp_transport=_refusing())
+    with pytest.raises(LabelTooLongError) as err:
+        await backend.print_image(Image.new("1", (1181, 306), 1), spec)  # 100 mm
+    assert err.value.nothing_sent and (err.value.length_mm, err.value.max_mm) == (100, 50)
+    with pytest.raises(LabelTooLongError):
+        await backend.print_images(
+            [Image.new("1", (300, 306), 1)] * 2 + [Image.new("1", (1181, 306), 1)], spec
+        )
+    assert sent == []
+
+
+def test_a_label_too_long_maps_to_its_own_code() -> None:
+    from app.services.print_error_codes import describe_print_error
+    from app.services.print_queue import _printer_error_to_record
+
+    exc = LabelTooLongError(length_mm=1601, max_mm=1000)
+    known = describe_print_error(exc)
+    assert (known.status, known.code) == (422, "label_too_long")
+    assert known.detail == {"length_mm": 1601, "max_mm": 1000}
+    assert _printer_error_to_record(exc)[0] == "label_too_long"
+    assert _printer_error_to_record(exc)[2] == {"length_mm": 1601, "max_mm": 1000}

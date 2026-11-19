@@ -10080,7 +10080,7 @@
                 }
               }
             },
-            "description": "Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
+            "description": "Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
           },
           "502": {
             "description": "Known printer or render errors: `integration_lookup_failed`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
@@ -10155,7 +10155,7 @@
                 }
               }
             },
-            "description": "`conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`."
+            "description": "`conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`."
           },
           "429": {
             "description": "`too-many-queued-runs` or `rate_limit_exceeded`, with Retry-After."
@@ -11535,7 +11535,7 @@
                 }
               }
             },
-            "description": "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
+            "description": "`tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`, `label-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
           },
           "502": {
             "description": "Known printer or render errors: `integration-lookup-failed`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`)."
@@ -14050,7 +14050,7 @@
                 }
               }
             },
-            "description": "Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
+            "description": "Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
           },
           "429": {
             "description": "Above the per-key rate limit, with Retry-After."
@@ -14272,7 +14272,7 @@
                 }
               }
             },
-            "description": "Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
+            "description": "Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{\"error\": \"printer_disabled\", \"slug\"}`."
           },
           "429": {
             "description": "Above the per-key rate limit, with Retry-After."

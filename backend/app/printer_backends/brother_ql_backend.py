@@ -50,6 +50,7 @@ from app.printer_backends.snmp_helper import (
 from app.printer_backends.tape_confirmation import (
     TapeIppTransport,
     TapeSendState,
+    check_label_lengths,
     label_length_mm,
 )
 from app.schemas.label_layout import LabelOrientation
@@ -121,6 +122,12 @@ def _fit_to_printable_width(
     if dpi_600:
         image = image.resize((image.width * 2, image.height * 2), Image.Resampling.NEAREST)
     return image
+
+
+def _ql_dpi(high_resolution: bool) -> int:
+    """The resolution of a fitted QL raster image along the tape (R26-2): 300 dpi, doubled for a
+    600 dpi print (``_fit_to_printable_width`` doubles both axes)."""
+    return 600 if high_resolution else 300
 
 
 def _ql_label_of(tape_spec: TapeSpec) -> str:
@@ -212,6 +219,11 @@ class BrotherQLBackend:
         if not media_checked:
             self.last_send_status = None
         ql_label = _ql_label_of(tape_spec)
+        image = _fit_to_printable_width(
+            image, ql_label, dpi_600=high_resolution, orientation=orientation
+        )
+        length = label_length_mm(image, _ql_dpi(high_resolution))
+        check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
         if not media_checked:
             await self._check_loaded_media(tape_spec)
             self.send_state.begin(detect=detect_confirmation)
@@ -220,9 +232,6 @@ class BrotherQLBackend:
         # M6-Fix: red=False for monochrome; two_color capable models (QL-820NWB)
         # accept this without error — they only require red=False not to raise.
         qlr = BrotherQLRaster(self._model_id)
-        image = _fit_to_printable_width(
-            image, ql_label, dpi_600=high_resolution, orientation=orientation
-        )
         convert(
             qlr,
             [image],
@@ -236,7 +245,7 @@ class BrotherQLBackend:
             qlr.data,
             1,
             lambda: self._send_raw(qlr.data),
-            length_mm=label_length_mm(image, 600 if high_resolution else 300),
+            length_mm=length,
         )
 
     async def _send_raw(self, data: bytes) -> None:
@@ -309,26 +318,26 @@ class BrotherQLBackend:
         # #389: one media check for the whole batch, not one per label (no probe storm).
         self.last_send_status = None
         ql_label = _ql_label_of(tape_spec)
+        fitted = [
+            _fit_to_printable_width(
+                image, ql_label, dpi_600=high_resolution, orientation=orientation
+            )
+            for image in images
+        ]
+        lengths = [label_length_mm(image, _ql_dpi(high_resolution)) for image in fitted]
+        check_label_lengths(lengths, tape_spec.max_length_mm)  # R26-2: the whole batch or none
         await self._check_loaded_media(tape_spec)
         self.send_state.begin()
         if images and await self.send_state.use_ipp():
             # #393: one IPP job for the whole batch; the printer reports its impressions.
             qlr = BrotherQLRaster(self._model_id)
-            fitted = [
-                _fit_to_printable_width(
-                    image, ql_label, dpi_600=high_resolution, orientation=orientation
-                )
-                for image in images
-            ]
             convert(qlr, fitted, ql_label, cut=auto_cut, red=False, dpi_600=high_resolution)
             try:
                 await self.send_state.send(
                     qlr.data,
                     len(images),
                     lambda: self._send_raw(qlr.data),
-                    length_mm=sum(
-                        label_length_mm(image, 600 if high_resolution else 300) for image in fitted
-                    ),
+                    length_mm=sum(lengths),
                 )
             except PrinterError as exc:
                 exc.nothing_sent = False

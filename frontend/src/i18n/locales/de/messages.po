@@ -6006,6 +6006,14 @@ msgstr "Dieses Etikett lässt sich nicht zeichnen."
 msgid "This label cannot print on {tapeMm} mm tape. Load another tape."
 msgstr "Dieses Etikett lässt sich nicht auf {tapeMm}-mm-Band drucken. Lege ein anderes Band ein."
 
+#: src/features/printers/printErrorText.ts
+msgid "This label is {length} mm long; this tape holds at most {max} mm. Shorten the text."
+msgstr "Dieses Etikett ist {length} mm lang, dieses Band erlaubt höchstens {max} mm. Kürze den Text."
+
+#: src/features/printers/printErrorText.ts
+msgid "This label is longer than this tape allows. Shorten the text."
+msgstr "Dieses Etikett ist länger, als dieses Band erlaubt. Kürze den Text."
+
 #: src/pages/placeholders.tsx
 msgid "This page is not available yet."
 msgstr "Diese Seite ist noch nicht verfügbar."

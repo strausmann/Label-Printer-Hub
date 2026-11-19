@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from app.printer_backends.exceptions import (
     ContentTypeDataMismatchError,
+    LabelTooLongError,
     MediaTypeMismatchError,
     NoTapeLoadedError,
     PrinterCoverOpenError,
@@ -44,6 +45,7 @@ SYNC_ERROR_MAP: dict[type[Exception], tuple[int, str]] = {
     UnsupportedTapeError: (409, "unsupported_tape"),
     ContentTypeDataMismatchError: (422, "content_type_data_mismatch"),
     QrPayloadTooLongError: (422, "qr_payload_too_long"),
+    LabelTooLongError: (422, "label_too_long"),
     SnmpQueryError: (503, "snmp_query_failed"),
 }
 
@@ -118,6 +120,9 @@ def describe_print_error(exc: Exception) -> KnownPrintError:
     elif isinstance(exc, QrPayloadTooLongError):
         message = _QR_TOO_LONG
         detail = {"length": exc.length, "max_bytes": exc.max_bytes}
+    elif isinstance(exc, LabelTooLongError):
+        message = str(exc)
+        detail = {"length_mm": exc.length_mm, "max_mm": exc.max_mm}
     elif isinstance(exc, TapeMismatchError):
         message = str(exc)
         detail = {"expected_mm": exc.expected_mm, "loaded_mm": exc.loaded_mm}

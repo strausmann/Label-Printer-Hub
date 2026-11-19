@@ -6369,7 +6369,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            /** @description Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6440,7 +6440,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
+            /** @description `conflicting_orientation`, or an invalid body. Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{detail: {error_code, error_message, error_detail?}}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -7331,7 +7331,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
+            /** @description `tray-invalid`: a tray on a tape printer, or an unknown/disabled tray. Known printer or render errors: `integration-unknown-app`, `content-type-data-mismatch`, `qr-payload-too-long`, `label-too-long`. Body: a problem under `detail` (`type` is the code, `title` the message, structured values in `extensions`). */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -8939,7 +8939,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -9120,7 +9120,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
+            /** @description Missing payload fields (`invalid_request`, field paths only). Known printer or render errors: `integration_unknown_app`, `content_type_data_mismatch`, `qr_payload_too_long`, `label_too_long`. Body: `{error_code, error_message, error_detail?}`; a disabled printer answers `{"error": "printer_disabled", "slug"}`. */
             422: {
                 headers: {
                     [name: string]: unknown;

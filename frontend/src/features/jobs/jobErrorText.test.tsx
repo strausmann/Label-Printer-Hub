@@ -42,6 +42,15 @@ describe("job error words", () => {
     expect(await textFor("printer_error", "de")).not.toMatch(/The printer/);
   });
 
+  it("R26-2: a label longer than the tape allows has its own words, en and de", async () => {
+    expect(await storedFor("label_too_long: The label is 1601 mm long", { length_mm: 1601, max_mm: 1000 }, "en")).toBe(
+      "This label is 1601 mm long; this tape holds at most 1000 mm. Shorten the text.",
+    );
+    expect(await storedFor("label_too_long: The label is 1601 mm long", { length_mm: 1601, max_mm: 1000 }, "de")).toBe(
+      "Dieses Etikett ist 1601 mm lang, dieses Band erlaubt höchstens 1000 mm. Kürze den Text.",
+    );
+  });
+
   it("an unknown code still names the code", async () => {
     expect(await textFor("no_such_code", "en")).toBe("The print failed (error code no_such_code).");
   });

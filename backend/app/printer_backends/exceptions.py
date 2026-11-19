@@ -103,6 +103,19 @@ class LabelsNotConfirmedError(PrinterError):
         super().__init__(f"{self.printed} of {self.expected} labels printed")
 
 
+class LabelTooLongError(PrinterError):
+    """A rendered label is longer than the tape allows (``TapeSpec.max_length_mm``, R26-2).
+
+    Refused before anything is sent: the printer would cut it off or refuse it, and the hub could
+    not confirm it in a sensible time. HTTP 422 (the client has to shorten the label).
+    """
+
+    def __init__(self, *, length_mm: int, max_mm: int) -> None:
+        self.length_mm = length_mm
+        self.max_mm = max_mm
+        super().__init__(f"The label is {length_mm} mm long; this tape allows at most {max_mm} mm")
+
+
 class ConfirmationUnknownError(PrinterError):
     """The printer did not confirm the labels in time, and its IPP job could not be cancelled
     (#393): the labels may still print. The job's outcome is unknown, never "x of y"."""

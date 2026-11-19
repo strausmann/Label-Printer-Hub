@@ -22,6 +22,8 @@ describe("printErrorText", () => {
     ["tape_empty", null, "The tape is empty. Put in a new tape and try again."],
     ["labels_not_confirmed", { printed: 3, expected: 5 }, "The printer confirmed 3 of 5 labels. Reprint the rest."],
     ["labels_not_confirmed", null, "The printer did not confirm every label. Reprint the rest."],
+    ["label_too_long", { length_mm: 1601, max_mm: 1000 }, "This label is 1601 mm long; this tape holds at most 1000 mm. Shorten the text."],
+    ["label-too-long", null, "This label is longer than this tape allows. Shorten the text."],
     ["tape_mismatch", { expected_mm: 12, loaded_mm: 24 }, "The loaded tape (24 mm) does not match this label (12 mm)."],
     ["tape_mismatch", { expected_mm: 12, loaded_mm: null }, "The loaded tape does not match this label."],
     ["media_type_mismatch", { loaded_kind: "die_cut", media_raw: "29mm x 90mm" }, "The loaded roll is die-cut labels. The hub prints on continuous tape only; put in a continuous roll."],

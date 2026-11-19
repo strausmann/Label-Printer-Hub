@@ -38,6 +38,7 @@ from app.printer_backends.status_query import query_status_over_socket
 from app.printer_backends.tape_confirmation import (
     TapeIppTransport,
     TapeSendState,
+    check_label_lengths,
     label_length_mm,
 )
 from app.services.status_block import StatusBlock
@@ -430,6 +431,8 @@ class PTouchBackend:
         # PT-Series. preflight_check raises TapeEmptyError / PrinterCoverOpenError
         # / PrinterOfflineError on detected issues.
         self.last_send_status = None
+        length = label_length_mm(image, PT_DPI)
+        check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
         try:
             await self._check_before_send(tape_spec)
         except PrinterError as exc:
@@ -464,7 +467,7 @@ class PTouchBackend:
                 last_page=last_page,
                 multi=False,
             )
-        await self.send_state.send(data, 1, raw, length_mm=label_length_mm(image, PT_DPI))
+        await self.send_state.send(data, 1, raw, length_mm=length)
 
     async def _render(
         self,
@@ -515,6 +518,8 @@ class PTouchBackend:
             raise ValueError("print_images requires at least one image")
 
         self.last_send_status = None
+        lengths = [label_length_mm(image, PT_DPI) for image in images]
+        check_label_lengths(lengths, tape_spec.max_length_mm)  # R26-2: the whole batch or none
         try:
             _require_tape_class(tape_spec.width_mm)
             await self._check_before_send(tape_spec)
@@ -550,9 +555,7 @@ class PTouchBackend:
                 half_cut=half_cut,
                 multi=True,
             )
-        await self.send_state.send(
-            data, len(images), raw, length_mm=sum(label_length_mm(i, PT_DPI) for i in images)
-        )
+        await self.send_state.send(data, len(images), raw, length_mm=sum(lengths))
 
 
 @contextlib.contextmanager
