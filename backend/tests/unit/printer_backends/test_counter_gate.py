@@ -31,9 +31,12 @@ _BACKENDS: list[tuple[str, Callable[[], Any]]] = [
 
 class _Agent:
     """A printer's SNMP agent: each read answers the next of ``answers`` (``True``: refuses the
-    counter, ``False``: answers it); the last one sticks."""
+    counter, ``False``: answers it, ``None``: neither, e.g. a garbled value); the last one
+    sticks."""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, module: str, answers: list[bool]) -> None:
+    def __init__(
+        self, monkeypatch: pytest.MonkeyPatch, module: str, answers: list[bool | None]
+    ) -> None:
         self.answers = answers
         self.asked: list[bool] = []
 
@@ -45,8 +48,8 @@ class _Agent:
                 hr_printer_status="idle",
                 loaded_tape_mm=12,
                 media_raw="12mm",
-                marker_count=None if (refuse or not asked) else 100,
-                counter_refused=asked and refuse,
+                marker_count=None if (refuse is not False or not asked) else 100,
+                counter_refused=asked and refuse is True,
             )
 
         monkeypatch.setattr(f"{module}.query_preflight", preflight)
@@ -274,3 +277,51 @@ async def test_record_writes_commit_in_the_order_they_were_made() -> None:
         await state.note_counter(refused=True, answered=False)
     await on
     assert [r.counter_off for r in sink.committed] == [False, True]
+
+
+# ---------------------------------------------------------------------------- streak rules
+
+
+async def test_any_other_answer_of_the_counter_breaks_the_streak(
+    monkeypatch: pytest.MonkeyPatch, backend_kind: tuple[str, Callable[[], Any]]
+) -> None:
+    """Review round 3, R3-6: a read that asked and was not refused (here a garbled value) starts
+    the count again, so "in a row" is exact."""
+    module, make = backend_kind
+    pattern: list[bool | None] = [True] * (COUNTER_REFUSALS_TO_STOP - 1) + [None]
+    agent = _Agent(monkeypatch, module, pattern * 3)
+    backend = make()
+    await _reads(backend, len(pattern) * 3)
+    assert all(agent.asked)
+
+
+async def test_a_streak_older_than_the_retry_window_starts_again(
+    monkeypatch: pytest.MonkeyPatch, backend_kind: tuple[str, Callable[[], Any]]
+) -> None:
+    """Audit run 27, note 1: two refusals and a third one hours later are not "in a row"."""
+    module, make = backend_kind
+    now = [1000.0]
+    monkeypatch.setattr(tape_confirmation, "_monotonic", lambda: now[0])
+    agent = _Agent(monkeypatch, module, [True])
+    backend = make()
+    await _reads(backend, COUNTER_REFUSALS_TO_STOP - 1)
+    now[0] += tape_confirmation.COUNTER_RETRY_S
+    await _reads(backend, 2)
+    assert all(agent.asked)
+
+
+async def test_after_the_retry_window_one_refusal_does_not_switch_it_off_again(
+    monkeypatch: pytest.MonkeyPatch, backend_kind: tuple[str, Callable[[], Any]]
+) -> None:
+    """Audit run 27, note 1: the window opens a fresh streak, not the old one plus one."""
+    module, make = backend_kind
+    now = [1000.0]
+    monkeypatch.setattr(tape_confirmation, "_monotonic", lambda: now[0])
+    agent = _Agent(monkeypatch, module, [True])
+    backend = make()
+    await _reads(backend, COUNTER_REFUSALS_TO_STOP)
+    now[0] += tape_confirmation.COUNTER_RETRY_S
+    await _reads(backend, COUNTER_REFUSALS_TO_STOP)
+    assert agent.asked[-COUNTER_REFUSALS_TO_STOP:] == [True] * COUNTER_REFUSALS_TO_STOP
+    await backend.read_status()
+    assert agent.asked[-1] is False  # three fresh refusals switched it off again

@@ -464,6 +464,8 @@ class TapeSendState:
     # R26-1: refusals of the label counter in a row, and since when it is not asked for.
     counter_refusals: int = 0
     counter_off_at: float | None = None
+    _counter_streak_at: float | None = None
+    _counter_retrying: bool = False
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _store_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -486,20 +488,47 @@ class TapeSendState:
         asks for the counter; ``begin`` repeats it."""
         self.counter_refusals = 0
         self.counter_off_at = None
+        self._counter_streak_at = None
+        self._counter_retrying = False
 
     def ask_counter(self) -> bool:
-        """Whether the next status read asks for the label counter (R26-1)."""
-        return self.counter_off_at is None or _monotonic() - self.counter_off_at >= COUNTER_RETRY_S
+        """Whether the next status read asks for the label counter (R26-1).
 
-    async def note_counter(self, *, refused: bool, answered: bool) -> None:
+        Once the retry window after a switch-off has passed, it is asked again with a fresh
+        streak: the refusals that switched it off do not count again (audit run 27, note 1).
+        """
+        if self.counter_off_at is None:
+            return True
+        if _monotonic() - self.counter_off_at < COUNTER_RETRY_S:
+            return False
+        if not self._counter_retrying:
+            self._counter_retrying = True
+            self.counter_refusals = 0
+            self._counter_streak_at = None
+        return True
+
+    async def note_counter(self, *, refused: bool, answered: bool, asked: bool = True) -> None:
         """Count a read's answer for the label counter (R26-1).
 
-        *refused*: the agent refused the counter; ``COUNTER_REFUSALS_TO_STOP`` of them in a row
-        stop asking for it (a refusal after the retry window starts the window again).
-        *answered*: it returned a count, which ends the streak and turns the counter back on.
-        A change is stored in the record (``counter_off``), so the printer view shows it.
+        Only reads that *asked* for the counter count. *refused*: the agent refused it;
+        ``COUNTER_REFUSALS_TO_STOP`` refusals in a row, within ``COUNTER_RETRY_S`` of the first,
+        stop asking for it. Any other answer to the question (a count, or a value that is no
+        count) ends the streak (review round 3, R3-6); a read that failed altogether never
+        reaches here and counts neither way. *answered*: it returned a count, which also turns
+        the counter back on. A change is stored in the record (``counter_off``), so the printer
+        view shows it.
         """
+        if not asked:
+            return
         if refused:
+            now = _monotonic()
+            if (
+                self._counter_streak_at is not None
+                and now - self._counter_streak_at >= COUNTER_RETRY_S
+            ):
+                self.counter_refusals = 0  # a stale streak is not "in a row"
+            if self.counter_refusals == 0:
+                self._counter_streak_at = now
             self.counter_refusals += 1
             if self.counter_refusals < COUNTER_REFUSALS_TO_STOP:
                 return
@@ -510,13 +539,17 @@ class TapeSendState:
                     self.counter_refusals,
                     COUNTER_RETRY_S,
                 )
-            self.counter_off_at = _monotonic()
+            self.counter_off_at = now
+            self._counter_retrying = False
             await self._mark_counter_off(True)
-        elif answered:
+            return
+        self.counter_refusals = 0
+        self._counter_streak_at = None
+        if answered:
             if self.counter_off_at is not None:
                 _logger.info("Tape printer answers the label counter again")
-            self.counter_refusals = 0
             self.counter_off_at = None
+            self._counter_retrying = False
             await self._mark_counter_off(False)
 
     async def _mark_counter_off(self, off: bool) -> None:

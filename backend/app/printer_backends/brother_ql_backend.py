@@ -395,13 +395,14 @@ class BrotherQLBackend:
 
         Raises ``PrinterOfflineError`` when the printer does not answer.
         """
+        asked = self.send_state.ask_counter()
         try:
             status = await query_preflight(
                 self.host,
                 community=self._community if community is None else community,
                 timeout_s=timeout_s,
                 # Only passed once it is off: older callers' fakes take no such argument.
-                **({} if self.send_state.ask_counter() else {"ask_counter": False}),
+                **({} if asked else {"ask_counter": False}),
             )
         except SnmpQueryError as exc:
             # Issue #105: query_preflight() kann bereits "preflight SNMP failed: …"
@@ -413,7 +414,7 @@ class BrotherQLBackend:
         # #393, R26-1: consecutive refusals stop asking for the label counter; an answer turns
         # it back on.
         await self.send_state.note_counter(
-            refused=status.counter_refused, answered=status.marker_count is not None
+            refused=status.counter_refused, answered=status.marker_count is not None, asked=asked
         )
         return status
 
