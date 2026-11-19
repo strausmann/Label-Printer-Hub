@@ -477,9 +477,14 @@ class TapeSendState:
         self.detect_ipp_taken = False
         self.detect_ipp_skipped = False
         if detect:
-            # A test print re-decides everything, the label counter included (R26-1).
-            self.counter_refusals = 0
-            self.counter_off_at = None
+            self.reset_counter_gate()
+
+    def reset_counter_gate(self) -> None:
+        """A test print re-decides everything, the label counter included (R26-1). The backend
+        calls this before the test print's own read before sending (R3-2), so that read already
+        asks for the counter; ``begin`` repeats it."""
+        self.counter_refusals = 0
+        self.counter_off_at = None
 
     def ask_counter(self) -> bool:
         """Whether the next status read asks for the label counter (R26-1)."""

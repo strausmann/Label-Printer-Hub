@@ -225,6 +225,8 @@ class BrotherQLBackend:
         length = label_length_mm(image, _ql_dpi(high_resolution))
         check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
         if not media_checked:
+            if detect_confirmation:
+                self.send_state.reset_counter_gate()  # R3-2: the read below asks for the counter
             await self._check_loaded_media(tape_spec)
             self.send_state.begin(detect=detect_confirmation)
 

@@ -433,6 +433,8 @@ class PTouchBackend:
         self.last_send_status = None
         length = label_length_mm(image, PT_DPI)
         check_label_lengths([length], tape_spec.max_length_mm)  # R26-2, before any SNMP
+        if detect_confirmation:
+            self.send_state.reset_counter_gate()  # R3-2: the read below asks for the counter
         try:
             await self._check_before_send(tape_spec)
         except PrinterError as exc:

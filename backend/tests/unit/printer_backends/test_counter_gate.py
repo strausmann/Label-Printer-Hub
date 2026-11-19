@@ -7,6 +7,7 @@ counter is not read."""
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -166,3 +167,57 @@ def test_the_printer_view_shows_why_ipp_is_not_tried() -> None:
         ConfirmationRecord("raw", True, _AT, ipp_incomplete=True).to_json()
     )
     assert shown is not None and shown.ipp_incomplete is True
+
+
+def _refusing_ipp() -> Any:
+    import httpx
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    return httpx.MockTransport(refuse)
+
+
+@pytest.mark.usefixtures("real_ql_media_check")
+async def test_a_test_print_asks_for_the_counter_in_its_own_read_before_sending(
+    monkeypatch: pytest.MonkeyPatch, backend_kind: tuple[str, Callable[[], Any]]
+) -> None:
+    """Review round 3, R3-2: through the real call order (read before sending, then the send),
+    not by calling ``begin`` first."""
+    from app.services.status_block import MediaType
+    from app.services.tape_registry import TapeRegistry
+    from PIL import Image
+
+    module, _make = backend_kind
+    agent = _Agent(monkeypatch, module, [True] * COUNTER_REFUSALS_TO_STOP + [False])
+    monkeypatch.setattr(f"{module}.query_preflight", _with_media(agent, module))
+    if module.endswith("ptouch_backend"):
+        monkeypatch.setattr(f"{module}._ptouch_print", lambda *a, **k: None)
+        backend = PTouchBackend(host="192.0.2.33", ipp_transport=_refusing_ipp())
+        spec = TapeRegistry.lookup_pt(12, MediaType.LAMINATED)
+        image = Image.new("1", (300, 76), 1)
+    else:
+        monkeypatch.setattr(f"{module}._helpers_send", lambda *a, **k: {"outcome": "sent"})
+        backend = BrotherQLBackend(host="192.0.2.34", ipp_transport=_refusing_ipp())
+        spec = TapeRegistry.lookup_ql(12, MediaType.CONTINUOUS_LENGTH_TAPE)
+        image = Image.new("1", (300, 106), 1)
+    await _reads(backend, COUNTER_REFUSALS_TO_STOP)
+    assert agent.asked[-1] is True and not backend.send_state.ask_counter()
+    before = len(agent.asked)
+    await backend.print_image(image, spec, detect_confirmation=True)
+    assert agent.asked[before] is True  # the test print's own read before sending
+    assert backend.last_send_status is not None
+    assert backend.last_send_status.marker_count == 100
+
+
+def _with_media(agent: _Agent, module: str) -> Callable[..., Any]:
+    """The agent's answers with a 12 mm roll that both backends accept."""
+    import importlib
+
+    inner = importlib.import_module(module).query_preflight
+
+    async def preflight(host: str, **kw: Any) -> PreflightStatus:
+        status = await inner(host, **kw)
+        return dataclasses.replace(status, media_raw="12mm", loaded_tape_mm=12)
+
+    return preflight
