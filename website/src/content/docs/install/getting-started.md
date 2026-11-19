@@ -140,7 +140,7 @@ curl -X POST http://localhost:8000/api/v1/webhook/spoolman \
 
 What happens on a valid call:
 
-- The hub prints **one** `qr_two_lines` label on the **first enabled tape printer** (a page printer is never used for webhooks). `quantity` is accepted but does not change the number of labels.
+- The hub prints **one** QR label on the **first enabled tape printer** (a page printer is never used for webhooks). A `quantity` in range prints as its third line (`qr_three_lines`), without one the label has two lines (`qr_two_lines`); it never changes the number of labels ([the quantity on the label](/integrations/webhooks/#the-quantity-on-the-label)).
 - The label content comes from the integration (Spoolman or Grocy), so that integration must be configured; otherwise the call answers `503` with `integration_not_configured`. An unknown spool or product answers `404` with `app-lookup-not-found`.
 - Printer problems (no tape, printer offline or disabled) answer like `POST /api/v1/print`: `409`, `422`, `502` or `503`. Nothing is queued in these cases.
 - On success the answer is `202` with the job id. The webhook key cannot read the job; an admin or a single-sign-on user sees it under **Jobs**.

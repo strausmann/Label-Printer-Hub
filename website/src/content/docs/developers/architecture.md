@@ -108,7 +108,7 @@ Browsers sign in with an API key (or proxy SSO) and receive a session cookie wit
 6. The UI already holds one SSE connection to `/api/v1/events` for the whole tab
 7. Backend's PrintQueue worker picks up the job, opens TCP/9100 to the printer, sends raster bytes
 8. Backend pushes `job` and `status` events on the EventBus → SSE (JSON frames) → the UI updates its data in place
-9. Job completes; the job's state on the page changes from the SSE event. The hub sends no browser notification (a notification centre is planned in [#255](https://github.com/strausmann/labelyard/issues/255))
+9. Job completes; the job's state on the page changes from the SSE event. The job also appears in the [notification centre](/using/notifications/) behind the bell in the top bar ([#255](https://github.com/strausmann/labelyard/issues/255)); the hub sends no notification of the browser or the operating system
 
 ### Push mode — Spoolman and Grocy webhooks
 
@@ -116,7 +116,7 @@ The hub takes webhooks for Spoolman spools (`POST /api/v1/webhook/spoolman`) and
 
 1. Grocy posts to `https://labelyard.example.com/api/v1/webhook/grocy` (a Spoolman event goes to `/api/v1/webhook/spoolman`)
 2. Reverse proxy routes the webhook subroute **without SSO** to the hub
-3. Backend validates `X-API-Key` and the per-key rate limit (`LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`, default 120), then submits a `qr_two_lines` label for the spool or product to the first enabled tape printer through the print service, the same path as `POST /api/v1/print`: preflight, lookup, render, persist, queue. Printer and lookup errors answer 409/422/502/503 like the print route, an unknown spool or product 404 `app-lookup-not-found`, and an integration that is not configured 503 `integration_not_configured` (both in the problem-detail body shape); nothing is queued. One label is printed; `quantity` is accepted but not printed ([#284](https://github.com/strausmann/labelyard/issues/284))
+3. Backend validates `X-API-Key` and the per-key rate limit (`LABELYARD_WEBHOOK_LIMIT_PER_MINUTE`, default 120), then submits a QR label for the spool or product to the first enabled tape printer through the print service, the same path as `POST /api/v1/print`: preflight, lookup, render, persist, queue. Printer and lookup errors answer 409/422/502/503 like the print route, an unknown spool or product 404 `app-lookup-not-found`, and an integration that is not configured 503 `integration_not_configured` (both in the problem-detail body shape); nothing is queued. One label is printed per event: `qr_two_lines`, or `qr_three_lines` when a `quantity` in range adds it as the third line in the hub's language; `quantity` is never a number of copies ([#284](https://github.com/strausmann/labelyard/issues/284))
 4. Returns `202` with job ID; webhook caller doesn't wait for print completion (webhook jobs have no owner, so only admin or SSO callers see them)
 5. Backend prints; any active SSE consumer sees the live state changes
 

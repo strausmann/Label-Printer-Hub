@@ -140,7 +140,7 @@ curl -X POST http://localhost:8000/api/v1/webhook/spoolman \
 
 Was bei einem gültigen Aufruf passiert:
 
-- Der Hub druckt **ein** Etikett `qr_two_lines` auf dem **ersten eingeschalteten Banddrucker** (ein Seitendrucker wird für Webhooks nie genommen). `quantity` wird angenommen, ändert aber die Zahl der Etiketten nicht.
+- Der Hub druckt **ein** QR-Etikett auf dem **ersten eingeschalteten Banddrucker** (ein Seitendrucker wird für Webhooks nie genommen). Eine `quantity` im gültigen Bereich steht als dritte Zeile darauf (`qr_three_lines`), ohne sie hat das Etikett zwei Zeilen (`qr_two_lines`); die Zahl der Etiketten ändert sie nie ([die Menge auf dem Etikett](/de/integrations/webhooks/#die-menge-auf-dem-etikett)).
 - Der Inhalt des Etiketts kommt aus der Integration (Spoolman oder Grocy), sie muss also eingerichtet sein; sonst antwortet der Aufruf mit `503` und `integration_not_configured`. Eine unbekannte Spule oder ein unbekanntes Produkt beantwortet er mit `404` und `app-lookup-not-found`.
 - Probleme am Drucker (kein Band, Drucker offline oder ausgeschaltet) beantwortet er wie `POST /api/v1/print`: `409`, `422`, `502` oder `503`. In diesen Fällen landet nichts in der Warteschlange.
 - Bei Erfolg kommt `202` mit der Nummer des Auftrags zurück. Der Webhook-Schlüssel kann den Auftrag nicht lesen; ein Admin oder eine per Single Sign-on angemeldete Person sieht ihn unter **Aufträge**.
