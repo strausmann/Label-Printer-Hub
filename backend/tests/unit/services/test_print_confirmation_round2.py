@@ -401,3 +401,34 @@ async def test_a_stop_after_the_group_holds_the_next_part_when_its_own_is_cancel
     finally:
         store.release.set()
         await queue.stop(timeout_s=2.0)
+
+
+async def test_a_stop_after_the_group_leaves_a_run_the_cancel_finished_alone() -> None:
+    """Final review N2: as above, but the part is the run's last. The cancel of its other labels
+    finishes the run while the group's rows are written; the stop must not bring it back as a
+    stopped (held) run. The printer still pauses for the bit."""
+    printer = _BitWithTheFirstGroup()
+    store = _SlowDoneStore()
+    events: list[str] = []
+    queue, run_id, ids, _ = await _run(
+        printer,
+        MAX_LABELS_PER_TAPE_JOB,
+        store=store,
+        on_run_change=lambda _run_id, _printer_id, kind: events.append(kind),
+    )
+    store.slow = ids[0]
+    try:
+        await asyncio.wait_for(store.reached.wait(), 3.0)
+        for jid in ids[TAPE_GROUP_SIZE:]:
+            assert await queue.cancel(str(jid))
+        store.release.set()
+        await _until(lambda: queue.is_paused(printer.id))
+        states = await _states(queue, ids)
+        assert states[:TAPE_GROUP_SIZE] == [JobState.COMPLETED] * TAPE_GROUP_SIZE
+        assert states[TAPE_GROUP_SIZE:] == [JobState.CANCELLED] * (MAX_LABELS_PER_TAPE_JOB - 10)
+        assert queue.run_info(run_id) is None
+        assert queue.held_runs(printer.id) == []
+        assert "stopped" not in events
+    finally:
+        store.release.set()
+        await queue.stop(timeout_s=2.0)
