@@ -197,11 +197,12 @@ def _mock_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     get_settings.cache_clear()
     # Reset registry state so each test gets a clean discovery cycle, and restore it after.
-    # The registries are process-wide; drivers that register as an import side effect (the
-    # QL driver: it has no entry point) never come back from a re-discovery, so clearing
-    # them on teardown broke every later test in the same process that relied on the
+    # The registries are process-wide; a driver that registered as an import side effect
+    # (not through its entry point) never comes back from a re-discovery, so clearing the
+    # registry on teardown could break a later test in the same process that relied on the
     # import (tests/unit/services/test_printer_runtime.py::test_describe_tape_for_uses_
-    # model_driver, when any integration test ran first).
+    # model_driver, when any integration test ran first). Both shipped drivers are entry
+    # points now, but the restore stays: other test code may register doubles.
     saved_factories = dict(BackendRegistry._factories)
     saved_backends_discovered = BackendRegistry._discovered
     saved_models = list(ModelRegistry._models)

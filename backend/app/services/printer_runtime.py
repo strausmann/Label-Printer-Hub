@@ -113,13 +113,17 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
     """The runtime config of a stored tape printer (missing connection fields get defaults)."""
     conn: dict[str, Any] = p.connection or {}
     snmp_raw: dict[str, Any] = conn.get("snmp", {}) or {}
+    try:
+        port = int(conn.get("port", 9100))
+    except (TypeError, ValueError):
+        raise ValueError("stored connection port is not a number") from None
     return PrinterYAMLConfig.model_construct(
         slug=p.slug,
         name=p.name,
         backend=p.backend,
         model=p.model,
         host=conn.get("host", ""),
-        port=int(conn.get("port", 9100)),
+        port=port,
         snmp=SNMPConfig(
             discover=snmp_raw.get("discover", False),
             community=snmp_raw.get("community") or "public",
@@ -132,12 +136,36 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
     )
 
 
+# Discovery failures with a configured model to fall back on: a timeout, DNS or network error
+# (``OSError``, ``TimeoutError`` included), a malformed reply, a device no driver claims.
+_DISCOVERY_ERRORS = (SnmpDiscoveryError, PySnmpError, PyAsn1Error, OSError, ModelNotFoundError)
+# What a stored printer row can legitimately cause when it is wired: logged at WARNING. Any
+# other exception is a bug and is logged at ERROR with its traceback; the printer is skipped
+# either way, so one bad row never stops the hub.
+_EXPECTED_WIRING_ERRORS = (ValueError, *_DISCOVERY_ERRORS)
+
+
+def _log_not_wired(slug: str, exc: Exception, what: str) -> None:
+    """Log a printer that could not be wired. The message carries the class name only."""
+    if isinstance(exc, _EXPECTED_WIRING_ERRORS):
+        _log.warning("Printer slug=%s not wired: %s (%s)", slug, what, type(exc).__name__)
+    else:
+        _log.error(
+            "Printer slug=%s not wired: %s (%s), unexpected",
+            slug,
+            what,
+            type(exc).__name__,
+            exc_info=True,
+        )
+
+
 async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
     """SNMP discovery first, fall back to ``printer_cfg.model`` on failure.
 
     Raises ``ValueError`` when neither source has a model, and the discovery error
-    (``SnmpDiscoveryError``, ``PySnmpError``, ``PyAsn1Error`` or ``ModelNotFoundError`` for a
-    device no driver claims) when the discovery fails and there is no fallback.
+    (``SnmpDiscoveryError``, ``PySnmpError``, ``PyAsn1Error``, ``OSError`` or
+    ``ModelNotFoundError`` for a device no driver claims) when the discovery fails and there
+    is no fallback.
     """
     host: str = printer_cfg.host
     community: str = printer_cfg.snmp.community
@@ -155,7 +183,7 @@ async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
     try:
         pjl = await query_model_pjl(host, community=community)
         driver_cls = ModelRegistry.find_by_pjl(pjl)
-    except (SnmpDiscoveryError, PySnmpError, PyAsn1Error, ModelNotFoundError) as exc:
+    except _DISCOVERY_ERRORS as exc:
         # Discovery failed (timeout, DNS, malformed reply) or the device names a model no
         # driver claims: the configured model decides.
         if model_fallback:
@@ -469,16 +497,12 @@ class PrinterRuntime:
             raise
 
     async def _attach_tape(self, printer: Printer, paused_since: datetime | None) -> _Wiring | None:
-        cfg = tape_config(printer)
         try:
+            cfg = tape_config(printer)  # a malformed stored row (port, snmp) fails here
             model_id = await _resolve_model_id_from_config(cfg)
             driver_cls: Any = ModelRegistry.find_by_model_id(model_id)
         except Exception as exc:
-            _log.warning(
-                "Printer slug=%s not wired: tape model unresolved (%s)",
-                cfg.slug,
-                type(exc).__name__,
-            )
+            _log_not_wired(printer.slug, exc, "tape model unresolved")
             return None
         queue = self._queue()
         registered = False
@@ -510,7 +534,7 @@ class PrinterRuntime:
         except Exception as exc:
             if registered:
                 self._router.unregister(cfg.slug)
-            _log.warning("Printer slug=%s not wired (%s)", cfg.slug, type(exc).__name__)
+            _log_not_wired(cfg.slug, exc, "wiring failed")
             return None
         self._slug_to_id[cfg.slug] = printer.id
         return _Wiring(

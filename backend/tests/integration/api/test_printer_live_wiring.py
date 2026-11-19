@@ -261,12 +261,6 @@ async def test_tape_printer_created_with_snmp_discover_has_status(live: Live) ->
 
 async def test_ql_layout_default_round_trips_and_reaches_the_service(live: Live) -> None:
     """#258: PUT stores the default per tape width, GET shows it, the service uses it."""
-    from app.printer_models.ql import QL820NWBDriver
-    from app.printer_models.registry import ModelRegistry
-
-    # The integration conftest clears the registry; the QL driver registers on import only
-    # (no entry point), so register it for this test (the fixture restores the registry).
-    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
     body = {
         "name": "Shelf QL",
         "slug": "shelf-ql",
@@ -305,10 +299,7 @@ async def test_ql_layout_default_round_trips_and_reaches_the_service(live: Live)
 async def test_public_printer_read_shows_the_stored_layout_default(live: Live) -> None:
     """#258: the print dialog (any reader) preselects the stored default, so the public
     printer list and detail carry it too, keyed by the width as a string."""
-    from app.printer_models.ql import QL820NWBDriver
-    from app.printer_models.registry import ModelRegistry
 
-    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
     body = {
         "name": "Shelf QL",
         "slug": "shelf-ql",
@@ -589,10 +580,7 @@ async def test_a_tape_printers_print_confirmation_is_stored_and_shown(live: Live
     from datetime import UTC, datetime
 
     from app.printer_backends.tape_confirmation import ConfirmationRecord
-    from app.printer_models.ql import QL820NWBDriver
-    from app.printer_models.registry import ModelRegistry
 
-    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
     body = {
         "name": "Shelf QL",
         "slug": "shelf-ql",
@@ -651,10 +639,7 @@ async def test_a_test_print_of_the_old_address_cannot_write_over_the_cleared_rec
     from datetime import UTC, datetime
 
     from app.printer_backends.tape_confirmation import ConfirmationRecord
-    from app.printer_models.ql import QL820NWBDriver
-    from app.printer_models.registry import ModelRegistry
 
-    ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
     body = {
         "name": "Hall QL",
         "slug": "hall-ql",

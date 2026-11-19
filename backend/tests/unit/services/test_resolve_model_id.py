@@ -34,7 +34,14 @@ async def test_foreign_pjl_falls_back_to_the_configured_model() -> None:
 
 
 @pytest.mark.parametrize(
-    "error", [PySnmpError("dns"), PyAsn1Error("bad"), SnmpDiscoveryError("timeout")]
+    "error",
+    [
+        PySnmpError("dns"),
+        PyAsn1Error("bad"),
+        SnmpDiscoveryError("timeout"),
+        OSError("unreachable"),
+        TimeoutError("slow"),
+    ],
 )
 async def test_snmp_errors_fall_back(error: Exception) -> None:
     with patch("app.services.printer_runtime.query_model_pjl", AsyncMock(side_effect=error)):

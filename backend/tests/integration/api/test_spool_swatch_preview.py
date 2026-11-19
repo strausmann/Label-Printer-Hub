@@ -102,15 +102,9 @@ async def hub(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Hub]:
         IntegrationRegistry,
         _discover_plugins,
     )
-    from app.printer_models.ql import QL820NWBDriver
-    from app.printer_models.registry import ModelRegistry
 
     if not IntegrationRegistry.names():
         _discover_plugins()
-    # The integration conftest clears the model registry; the QL driver registers on import only
-    # (no entry point), so it is registered here (the conftest restores the registry).
-    if not any(getattr(m, "model_id", None) == "QL-820NWB" for m in ModelRegistry._models):
-        ModelRegistry.register(QL820NWBDriver)  # type: ignore[arg-type]
     monkeypatch.setenv("LABELYARD_SPOOLMAN_URL", SPOOLMAN_URL)
     monkeypatch.setenv("LABELYARD_WEBHOOK_API_KEY", WEBHOOK_KEY)
     get_settings.cache_clear()

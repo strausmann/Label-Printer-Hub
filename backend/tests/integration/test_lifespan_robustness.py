@@ -159,3 +159,42 @@ async def test_hub_starts_when_model_resolution_raises_a_network_error(
         async with inner.router.lifespan_context(inner):
             assert not inner.state.printer_runtime._wired
     assert "dns-down" in " ".join(r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("port", [None, "not-a-port"])
+async def test_hub_starts_with_a_malformed_stored_port(
+    port: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    """L1: ``tape_config`` on a legacy or hand-edited row (null or non-numeric port) skips
+    that printer; it does not abort the lifespan."""
+    import app.db.engine as eng
+    from app.main import create_app
+
+    async with eng.async_session() as s:
+        for slug, conn_port in (("bad-port", port), ("good-pt", 9100)):
+            s.add(
+                Printer(
+                    name=slug,
+                    slug=slug,
+                    model="PT-P750W",
+                    backend="ptouch",
+                    connection={
+                        "host": "192.0.2.9",
+                        "port": conn_port,
+                        "snmp": {"discover": False},
+                    },
+                    enabled=True,
+                )
+            )
+        await s.commit()
+
+    app = create_app()
+    inner = app._app
+    with caplog.at_level(logging.WARNING, logger="app.services.printer_runtime"):
+        async with inner.router.lifespan_context(inner):
+            wired = {w.slug for w in inner.state.printer_runtime._wired.values()}
+            assert wired == {"good-pt"}
+    bad = [r for r in caplog.records if "bad-port" in r.getMessage()]
+    assert bad
+    # A bad stored row is routine: a warning without a traceback, not an unexpected error.
+    assert all(r.levelno == logging.WARNING and r.exc_info is None for r in bad)
