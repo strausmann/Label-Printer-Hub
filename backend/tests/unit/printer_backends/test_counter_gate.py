@@ -337,3 +337,31 @@ async def test_a_read_that_did_not_ask_for_the_counter_does_not_break_the_streak
     await state.note_counter(refused=False, answered=False, asked=False)
     await state.note_counter(refused=True, answered=False)
     assert state.counter_off_at is not None
+
+
+async def test_a_stuck_record_write_does_not_hold_the_next_one(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Review round 4, L3: writes are serialised, so a write that never ends would hold every
+    later writer of the printer. It is given up after ``STORE_TIMEOUT_S`` and logged."""
+    import asyncio
+
+    monkeypatch.setattr(tape_confirmation, "STORE_TIMEOUT_S", 0.05)
+    written: list[bool] = []
+    hang = asyncio.Event()
+
+    async def sink(record: ConfirmationRecord) -> None:
+        if not written and not hang.is_set():
+            hang.set()
+            await asyncio.Event().wait()  # never ends
+        written.append(record.counter_off)
+
+    state = tape_confirmation.TapeSendState("192.0.2.38", tape_confirmation.TapeIppTransport("x"))
+    state.sink = sink
+    async with asyncio.timeout(2):
+        with caplog.at_level("WARNING", logger="app.printer_backends.tape_confirmation"):
+            await state.store(ConfirmationRecord("raw", True, _AT))
+            await state.store(ConfirmationRecord("raw", True, _AT, counter_off=True))
+    assert written == [True]
+    assert any("not stored in time" in r.message for r in caplog.records)
+    assert not any("192.0.2" in r.getMessage() for r in caplog.records)

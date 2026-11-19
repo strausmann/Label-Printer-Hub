@@ -93,6 +93,12 @@ COUNTER_RETRY_S: Final = 3600.0
 printer that answers it again, or an attacker who has left, does not keep the confirmation off
 until a restart. Every test print asks again at once."""
 
+STORE_TIMEOUT_S: Final = 10.0
+"""Seconds one write of the confirmation record may take (review round 4, L3). Writes are
+serialised per printer, so a write stuck on a locked database would hold every later writer
+(status reads, the end of a test print); it is given up and logged instead. A SQLite commit of
+one row takes milliseconds; ten seconds is far above any busy wait of the hub's database."""
+
 IPP_PORT: Final = 631
 IPP_PATH: Final = "/ipp/print"
 OCTET_STREAM: Final = "application/octet-stream"
@@ -635,7 +641,13 @@ class TapeSendState:
             return
         async with self._store_lock:
             try:
-                await self.sink(record)
+                await asyncio.wait_for(self.sink(record), STORE_TIMEOUT_S)
+            except TimeoutError:
+                _logger.warning(
+                    "The print confirmation of a printer was not stored in time (%.0f s); "
+                    "the stored record may lag until the next write",
+                    STORE_TIMEOUT_S,
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
