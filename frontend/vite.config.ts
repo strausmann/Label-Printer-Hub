@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { readFileSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
 import { lingui } from "@lingui/vite-plugin";
 import tailwindcss from "@tailwindcss/vite";
@@ -98,6 +99,12 @@ export default defineConfig({
   build: { outDir: "dist", sourcemap: false },
   test: {
     environment: "jsdom",
+    // Separate processes (the default pool, stated so it stays), and at most half of the cores per run (#299): the
+    // component tests render the whole app, so a run that takes every core slows down so much under a second load (a second
+    // `pnpm test`, CI next to another job) that the findBy waits of Testing Library (1 s) run out before the page has rendered.
+    // Vitest 5 names the limit `maxWorkers` (`poolOptions.forks.maxForks` of Vitest 3 is gone).
+    pool: "forks",
+    maxWorkers: Math.max(1, Math.floor(availableParallelism() / 2)),
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     coverage: {

@@ -5,7 +5,7 @@ import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path";
 import type { Page } from "@playwright/test";
 import { MAIN } from "./env";
-import { expect, test } from "./fixtures";
+import { expect, mainKey, signInWith, test } from "./fixtures";
 import { NEWER, reportNewerHub, toastReload, updateToast } from "./newerHub";
 
 // Issue #288: a tab opened before an update shows the update notice when the hub reports another version; one click on Reload lands on the new version.
@@ -64,14 +64,20 @@ test.describe("new server version", () => {
     }
   });
 
-  test("does not reload when the hub reports the version of the bundle", async ({ signedInPage: page }) => {
-    let loads = 0;
-    page.on("load", () => (loads += 1));
+  test("does not reload when the hub reports the version of the bundle", async ({ page }) => {
+    // The listener is in place before the sign-in, so it cannot miss the shell's own printers request: that answer is cached
+    // for 15 s, and a click on "Printers" after it sends nothing new (the wait for a response the click was to cause timed out
+    // in 2 of 15 runs).
+    await page.goto("/");
     const answered = page.waitForResponse((r) => r.url().includes("/api/v1/printers") && r.ok());
-    await page.getByRole("link", { name: "Printers", exact: true }).first().click();
+    await signInWith(page, mainKey());
     const response = await answered;
     // The real hub names its version, and it is the one the bundle was built for.
     expect(response.headers()["x-hub-version"]).toBeTruthy();
+    await expect(page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first()).toBeVisible();
+    let loads = 0;
+    page.on("load", () => (loads += 1));
+    await page.getByRole("link", { name: "Printers", exact: true }).first().click();
     await expect(page.getByRole("heading", { name: "Printers" }).first()).toBeVisible();
     expect(loads).toBe(0);
     await expect(page.getByText("New version available")).toHaveCount(0);
@@ -115,6 +121,23 @@ test.describe("new server version with a real service worker", () => {
     );
 
     await reportNewerHub(page);
+    // The new worker has to be installed and waiting before anyone presses Reload: the button waits for one to start waiting
+    // only for a bounded time and then falls back to a plain reload, which the old precache answers. Waiting for the
+    // worker's own state change replaces a guess about how long the install takes.
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.update();
+      if (registration.waiting) return;
+      await new Promise<void>((resolve) => {
+        const watch = (worker: ServiceWorker | null) => {
+          if (!worker) return;
+          if (worker.state === "installed") resolve();
+          worker.addEventListener("statechange", () => worker.state === "installed" && resolve());
+        };
+        watch(registration.installing);
+        registration.addEventListener("updatefound", () => watch(registration.installing));
+      });
+    });
     return marker;
   }
 
