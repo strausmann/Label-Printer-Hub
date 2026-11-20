@@ -278,8 +278,9 @@ class PrinterStatus(BaseModel):
     ``error_state`` mirrors the active PrinterError flags as a string, or
     ``None`` when the printer is ready.
     ``captured_at`` is the UTC timestamp of the probe that last updated the
-    cache row.  ``None`` means no probe has completed yet.  For a page printer
-    (``kind="page"``) that went offline it stays the time of the last
+    cache row.  ``None`` means no successful answer yet: either no probe has completed
+    or every probe so far failed (``online`` is then ``False`` with ``last_error``).
+    For a page printer (``kind="page"``) that went offline it stays the time of the last
     *successful* reading; ``online`` and ``last_error`` tell that it is stale.
     ``last_probe_age_s`` is the age of the cached reading in seconds (for an
     offline page printer: since its last successful reading).
@@ -354,7 +355,8 @@ class PrinterStatus(BaseModel):
     captured_at: datetime | None = Field(
         default=None,
         description=(
-            "UTC timestamp of the probe that produced this reading; None if no probe yet. "
+            "UTC timestamp of the probe that produced this reading; None if the printer has "
+            "not answered yet (no probe yet, or only failed probes). "
             "A page printer that went offline keeps the time of its last successful reading."
         ),
     )

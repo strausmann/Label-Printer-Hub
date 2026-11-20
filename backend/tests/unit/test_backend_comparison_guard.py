@@ -4,8 +4,11 @@
 """Source guard: a printer's page/tape kind is asked through one helper only (#208).
 
 It reads the syntax tree, so docstrings and comments cannot trip it. A comparison spelled
-differently (``in {"ipp"}``, a local variable holding the backend) is not seen. A behaviour test
-cannot pin where a check lives, hence a source guard.
+differently is not seen: ``in {"ipp"}``, a local variable holding the backend, ``getattr(p,
+"backend")``, ``row["backend"]`` / ``.get("backend")``, a backend under another attribute name,
+and ``match`` statements. Kind logic that never mentions ``backend`` is outside it too (the cache
+row's ``kind`` in ``status_freshness.backoff_of`` without ``page=``, and ``sse_snapshot``). A
+behaviour test cannot pin where a check lives, hence a source guard.
 """
 
 from __future__ import annotations
@@ -41,6 +44,8 @@ def _offending_lines(tree: ast.AST) -> list[int]:
 def test_guard_sees_a_comparison_and_ignores_docstrings() -> None:
     bad = ast.parse('def f(p):\n    return p.backend == "ipp"\n')
     assert _offending_lines(bad) == [2]
+    sql = ast.parse('q = select(Printer).where(Printer.backend == "ipp")\n')
+    assert _offending_lines(sql) == [1]
     reversed_ = ast.parse("def f(p):\n    return IPP_BACKEND != p.backend\n")
     assert _offending_lines(reversed_) == [2]
     docstring = ast.parse('def f(p):\n    """p.backend == "ipp" """\n    # p.backend == "ipp"\n')

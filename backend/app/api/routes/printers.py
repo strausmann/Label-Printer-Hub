@@ -447,7 +447,7 @@ async def _cached_status(
                 row.updated_at,
                 datetime.now(UTC),
                 get_settings().sse_probe_interval_s,
-                backoff_of(parsed_early),
+                backoff_of(parsed_early, page=is_page),
             )
         ):
             # The printer has been probed and never answered: it is offline, not "not yet
@@ -479,7 +479,7 @@ async def _cached_status(
     age_s = int((now - captured).total_seconds())
 
     interval_s = get_settings().sse_probe_interval_s
-    backoff_s = backoff_of(parsed)
+    backoff_s = backoff_of(parsed, page=is_page)
     stale = polled and is_stale(row.updated_at, now, interval_s, backoff_s)
     if not polled or stale:
         # The cached values describe a printer nobody has looked at for a while (or at all):

@@ -372,3 +372,53 @@ async def test_first_failed_probe_reports_offline_without_capture_time():
     assert body["kind"] == "page"
     assert body["polled"] is True
     assert not body.get("note")
+
+
+@pytest.mark.parametrize(
+    ("case", "polled", "age_s", "parsed", "note_part", "online"),
+    [
+        ("unpolled", False, 5, {"online": False, "last_error": "E"}, "not polled", None),
+        ("stale", True, 100_000, {"online": False, "last_error": "E"}, "no probe yet", None),
+        ("not-offline", True, 5, {"online": True}, "no probe yet", None),
+    ],
+)
+async def test_row_without_capture_time_keeps_the_old_answer_unless_live_offline(
+    case, polled, age_s, parsed, note_part, online
+):
+    """Only a polled, fresh row that says ``online: false`` is answered as offline."""
+    from datetime import timedelta
+
+    import app.db.engine as _eng
+    from app.models.printer_status_cache import PrinterStatusCache
+    from httpx import ASGITransport, AsyncClient
+
+    factory = _eng.async_session
+    printer_id = await _insert_named_printer(
+        factory,
+        name=f"no-capture-{case}",
+        backend="ipp",
+        connection={"uri": "ipp://127.0.0.1:631/ipp/print", "tls_verify": True},
+    )
+    if not polled:
+        _RUNTIME.polled.discard(printer_id)
+    async with factory() as s:
+        s.add(
+            PrinterStatusCache(
+                printer_id=printer_id,
+                parsed={"kind": "page", **parsed},
+                captured_at=None,
+                updated_at=datetime.now(UTC) - timedelta(seconds=age_s),
+            )
+        )
+        await s.commit()
+    async with factory() as s:
+        app = _build_test_app(s)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+            resp = await c.get(
+                f"/api/v1/printers/{printer_id}/status", headers={"X-Pangolin-User": "u"}
+            )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["online"] is online
+    assert body["captured_at"] is None
+    assert note_part in body["note"].lower()
