@@ -4,20 +4,20 @@
 import { plural } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react/macro";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "react-aria-components";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { Badge } from "../archive/fields";
 import { ModalDialog, SwitchField, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
-import { useSheetTypes } from "../archive/api";
+import { useSheetTypes, type SheetTypeRead } from "../archive/api";
 import { AddSheetDialog } from "./AddSheetDialog";
 import { formatMm } from "./cellState";
 import { useSheetErrorText } from "./errors";
 import { MAX_CODE_SEARCH, parseSheetsSearch, type SheetsSearch } from "./search";
 import { SheetTypeCombobox } from "./SheetTypeCombobox";
-import { typeLabelWithKey } from "./typeLabel";
+import { typeLabelWithKey, typeTitle } from "./typeLabel";
 import { useDiscardSheet, useSheets, type SheetSummary } from "./api";
 
 const ANY = "__any__";
@@ -184,11 +184,12 @@ export function DiscardDialog({
 
 const COLUMNS = "md:grid-cols-[7.5rem_minmax(0,1fr)_minmax(11rem,15rem)_7rem_6.5rem]";
 
-function SheetRow({ sheet, canWrite, onDiscard }: { sheet: SheetSummary; canWrite: boolean; onDiscard: (s: SheetSummary) => void }) {
+function SheetRow({ sheet, type, canWrite, onDiscard }: { sheet: SheetSummary; type: SheetTypeRead | undefined; canWrite: boolean; onDiscard: (s: SheetSummary) => void }) {
   const { t, i18n } = useLingui();
   const code = sheet.code;
   const size = `${formatMm(sheet.label_w, i18n.locale).replace(/ mm$/, "")} × ${formatMm(sheet.label_h, i18n.locale)}`;
-  const typeLine = `${sheet.type_label} · ${size}`;
+  // The readable name of the type; the server's short label while the types load or when the type is not known.
+  const typeLine = `${type ? typeTitle(type) : sheet.type_label} · ${size}`;
   const inUse = sheet.reserved > 0;
   const dim = sheet.state === "discarded";
   return (
@@ -254,6 +255,7 @@ export function SheetsPage() {
   const list = useSheets({ type: search.type, q: search.q, state: search.discarded ? "all" : "active" });
   // Archived types are listed too: their sheets are still there to be filtered.
   const types = useSheetTypes({ include_archived: true });
+  const typeByKey = useMemo(() => new Map((types.data ?? []).map((x) => [x.key, x])), [types.data]);
   // The address always names what the page shows: a type the hub does not know leaves it (the same rule as the calibration page).
   const unknownType = types.isSuccess && search.type !== undefined && !types.data.some((x) => x.key === search.type);
   useEffect(() => {
@@ -348,7 +350,7 @@ export function SheetsPage() {
               </div>
               <div role="rowgroup" className="flex flex-col gap-2 md:gap-0">
                 {rows.map((sheet) => (
-                  <SheetRow key={sheet.code} sheet={sheet} canWrite={canWrite} onDiscard={setDiscarding} />
+                  <SheetRow key={sheet.code} sheet={sheet} type={typeByKey.get(sheet.type_key)} canWrite={canWrite} onDiscard={setDiscarding} />
                 ))}
               </div>
             </div>

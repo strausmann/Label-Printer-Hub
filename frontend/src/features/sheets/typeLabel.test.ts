@@ -25,6 +25,14 @@ describe("typeTitle", () => {
     expect(typeTitle({ key: "my-custom", vendor: null, product_codes: [], description: null })).toBe("my-custom");
   });
 
+  it("treats an empty product code or a blank vendor like a missing one", () => {
+    expect(typeTitle({ ...BASE, product_codes: [""], description: null })).toBe("avery-l4736rev");
+    expect(typeTitle({ ...BASE, product_codes: [""] })).toBe("48 labels, 45.7 x 21.2 mm");
+    expect(typeTitle({ ...BASE, vendor: "   ", description: null })).toBe("L4736REV-25");
+    expect(typeTitle({ ...BASE, vendor: "   " })).toBe("48 labels, 45.7 x 21.2 mm");
+    expect(typeLabelWithKey({ ...BASE, product_codes: [""], description: null })).toBe("avery-l4736rev");
+  });
+
   it("keeps markup as plain text", () => {
     expect(typeTitle({ ...BASE, vendor: "<img src=x onerror=alert(1)>", description: "<b>x</b>" })).toBe(
       "<img src=x onerror=alert(1)> L4736REV-25 · <b>x</b>",

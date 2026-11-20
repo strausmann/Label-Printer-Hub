@@ -136,6 +136,13 @@ describe("tray, sheet type and the sheet", () => {
     expect(options.at(-1)).toMatch(/New .* sheet.*L4736-0005/);
   });
 
+  it("keeps the one-line sheet option short: vendor and code, without the description or the key", async () => {
+    await itemView(routes({ sheets: [sheet("L4736-0010", 43)] }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Sheet" }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options.at(-1)).toBe("+ New Example Labels L4736REV-25 sheet, becomes L4736-0005");
+  });
+
   it("searches by code", async () => {
     await itemView(routes({ sheets: [sheet("L4736-0010", 43), sheet("L4736-0011", 18)] }));
     const box = await screen.findByRole("combobox", { name: "Sheet" });

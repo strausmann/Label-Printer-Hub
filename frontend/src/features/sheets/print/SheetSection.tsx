@@ -22,7 +22,7 @@ import { useNextCode, usePrintSheets, useSheet, useSheetPreview, useSheets, type
 import type { GridCell } from "../cellState";
 import { SheetGrid } from "../SheetGrid";
 import { SheetTypeCombobox } from "../SheetTypeCombobox";
-import { typeLabelWithKey } from "../typeLabel";
+import { typeLabel } from "../typeLabel";
 import { CapacityAlert } from "./CapacityAlert";
 import { plannedCellsText } from "./plannedCells";
 import { usePrintDialogErrorText } from "./errors";
@@ -162,7 +162,8 @@ export function SheetSection({ items, printer, preselectedSheet, preselectedTray
   const choiceOffered = typeChoice !== null && typeList.some((x) => x.key === typeChoice);
   const typeKey = (choiceOffered ? typeChoice : null) ?? linkedUsable?.type_key ?? rememberedType ?? typeWithRoom ?? typeList[0]?.key ?? null;
   const type = typeList.find((x) => x.key === typeKey) ?? null;
-  const typeName = type ? typeLabelWithKey(type) : (typeKey ?? "");
+  // The short name (vendor and code): it goes into one-line sentences ("New {name} sheet, becomes {code}") that cannot wrap.
+  const typeName = type ? typeLabel(type) : (typeKey ?? "");
   // An archived type offers no new sheet: neither as target, nor as the place for a rest.
   // Asked of the complete list, not of `typeList`, which leaves out an archived type without room.
   const archivedType = !!(types.data ?? []).find((x) => x.key === typeKey)?.archived_at;

@@ -434,6 +434,26 @@ async def test_list_filters(session: AsyncSession) -> None:
         assert keys(got) == want, q
 
 
+async def test_list_search_finds_a_type_by_its_vendor(session: AsyncSession) -> None:
+    # The vendor is in no other searched part, so only a vendor clause finds it.
+    await ts.create_type(
+        session,
+        fields("l4736", "L4736", vendor="Avery", product_codes=["L4736REV-25"]),
+        G_4X12,
+        actor="t",
+    )  # fmt: skip
+    await ts.create_type(
+        session,
+        fields("j8651", "J8651", vendor="Zweckform", product_codes=["J8651"]),
+        G_SMALL,
+        actor="t",
+    )  # fmt: skip
+    kw: dict[str, Any] = {"page": None, "vendor": None, "w": None, "h": None}
+    for q in ("Avery", "avery", "AVE"):
+        got = await ts.list_types(session, include_archived=False, **{**kw, "q": q})
+        assert [r.key for r in got] == ["l4736"], q
+
+
 async def test_list_size_tolerance_boundary_is_exact(session: AsyncSession) -> None:
     await ts.create_type(session, fields(), G_4X12, actor="t")  # label 45.70 x 21.20
     kw: dict[str, Any] = {"page": None, "vendor": None, "q": None, "include_archived": False}

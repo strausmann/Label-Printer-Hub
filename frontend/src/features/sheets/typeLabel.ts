@@ -5,9 +5,11 @@ import { formatMm } from "./cellState";
 
 /** The name the sheet list shows for a type, as the server builds it: "<vendor> <first product code>", else the code, else the key. */
 export function typeLabel(type: { key: string; vendor: string | null; product_codes: string[] }): string {
-  const code = type.product_codes[0];
-  if (type.vendor && code) return `${type.vendor} ${code}`;
-  return code ?? type.key;
+  // An empty vendor or code counts as none.
+  const vendor = type.vendor?.trim();
+  const code = type.product_codes[0]?.trim();
+  if (vendor && code) return `${vendor} ${code}`;
+  return code || type.key;
 }
 
 /**
@@ -19,7 +21,8 @@ export function typeTitle(type: { key: string; vendor: string | null; product_co
   const label = typeLabel(type);
   const description = type.description?.trim();
   if (!description) return label;
-  return type.vendor && type.product_codes[0] ? `${label} · ${description}` : description;
+  const named = !!type.vendor?.trim() && !!type.product_codes[0]?.trim();
+  return named ? `${label} · ${description}` : description;
 }
 
 /** What a sheet type picker lists: label, key, label size and, for an archived type, that it is archived. */

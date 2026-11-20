@@ -488,7 +488,7 @@ async def list_types(
         if h_hmm is not None and abs(v.label_h - h_hmm) > _SIZE_TOLERANCE_HMM:
             continue
         if needle is not None:
-            haystack = [t.key, t.description or "", *t.product_codes]
+            haystack = [t.key, t.vendor or "", t.description or "", *t.product_codes]
             if not any(needle in part.lower() for part in haystack):
                 continue
         out.append(t)
