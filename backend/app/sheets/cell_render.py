@@ -41,6 +41,7 @@ from app.page_render.pdf import resolve_font_path
 from app.printer_backends.exceptions import ContentTypeDataMismatchError
 from app.schemas.content_type import ContentType, has_qr
 from app.schemas.label_data import LabelData
+from app.services.fonts import load_truetype
 from app.services.layout_engine import REQUIRED_FIELDS
 from app.services.spool_swatch import SHEET_METRICS, layout_for_box, render_swatch
 from app.sheets.geometry import Geometry, cell_origin
@@ -314,7 +315,7 @@ def qr_fits(payload: str, box_w_mm: float, box_h_mm: float, dpi: int) -> bool:
 @lru_cache(maxsize=256)
 def load_cell_font(size_px: int) -> ImageFont.FreeTypeFont:
     """The bundled PDF font at ``size_px`` (never a machine-dependent fallback), cached."""
-    return ImageFont.truetype(str(resolve_font_path()), size_px)
+    return load_truetype(str(resolve_font_path()), size_px)
 
 
 def cap_height_px(font: ImageFont.FreeTypeFont) -> int:

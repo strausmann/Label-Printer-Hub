@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import quote
 
-from app.integrations.live_config import StoreBoundPlugin
+from app.integrations.live_config import StoreBoundPlugin, read_json_bounded
 from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
 from app.services.errors import AppLookupNotFoundError
@@ -109,7 +109,7 @@ class GrocyPlugin(StoreBoundPlugin):
         # decide whether to treat them as configuration errors vs transient failures.
         response.raise_for_status()
 
-        payload: dict[str, Any] = response.json()
+        payload: dict[str, Any] = await read_json_bounded(response)
         return self._payload_to_label(payload, product_id, base)
 
     async def _lookup_barcode(self, barcode: str) -> LabelData:
@@ -124,7 +124,7 @@ class GrocyPlugin(StoreBoundPlugin):
         if response.status_code in (400, 404):
             raise GrocyNotFoundError(f"Product {barcode!r} not found")
         response.raise_for_status()
-        details = response.json()
+        details = await read_json_bounded(response)
         product = details.get("product") if isinstance(details, dict) else None
         if not isinstance(product, dict):
             raise ValueError(f"Grocy response for barcode {barcode!r} has no product object")
@@ -202,7 +202,7 @@ class GrocyPlugin(StoreBoundPlugin):
         if response.status_code in (400, 404):
             raise GrocyNotFoundError(f"{label} {object_id!r} not found")
         response.raise_for_status()
-        details = response.json()
+        details = await read_json_bounded(response)
         if not isinstance(details, dict):
             raise ValueError(f"Grocy response for {label.lower()} {object_id!r} is not an object")
         return details, base

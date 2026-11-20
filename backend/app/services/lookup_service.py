@@ -18,6 +18,11 @@ Exception hierarchy
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from collections.abc import Awaitable
+from typing import Final
+
 # Trigger plugin discovery — importing this module guarantees the
 # registry is populated regardless of whether main.py has imported
 # app.integrations yet. The discovery is idempotent (registry
@@ -30,19 +35,20 @@ from app.integrations.registry import (
 )
 from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
-from app.services.errors import AppLookupNotFoundError, IntegrationNotConfiguredError
+from app.services.errors import (
+    AppLookupNotFoundError,
+    IntegrationNotConfiguredError,
+    LookupFailedError,
+)
 
+__all__ = ["LOOKUP_DEADLINE_S", "AppLookupService", "LookupFailedError", "UnknownAppError"]
 
-class LookupFailedError(Exception):
-    """Resolving label data via an integration plugin failed.
+#: Upper bound for one whole lookup, covering every upstream call the plugin makes
+#: (a product lookup may fall back to a barcode request, an asset tag to an id request).
+#: The per-request ``timeout`` setting only bounds a single call.
+LOOKUP_DEADLINE_S: Final = 15.0
 
-    This is the umbrella exception for all lookup failures:
-
-    - UnknownAppError: config mismatch (unknown app name)
-    - Any runtime exception from a plugin is wrapped into this type
-
-    The REST layer catches this single type to return HTTP 502.
-    """
+_log = logging.getLogger(__name__)
 
 
 class UnknownAppError(LookupFailedError):
@@ -66,32 +72,36 @@ class AppLookupService:
             plugin = IntegrationRegistry.get(source_app)
         except IntegrationNotFoundError as e:
             raise UnknownAppError(str(e)) from e
-        try:
-            return await plugin.lookup(identifier)
-        except (LookupFailedError, AppLookupNotFoundError, IntegrationNotConfiguredError):
-            raise
-        except Exception as e:
-            raise LookupFailedError(f"{source_app} lookup failed: {e}") from e
+        return await self._run(plugin.lookup(identifier), f"{source_app} lookup")
 
     async def grocy_battery(self, battery_id: str) -> GrocyBatteryResult:
         """Read-only details of one Grocy battery; errors map exactly like :meth:`lookup`."""
         plugin = self._grocy()
-        try:
-            return await plugin.battery(battery_id)
-        except (LookupFailedError, AppLookupNotFoundError, IntegrationNotConfiguredError):
-            raise
-        except Exception as e:
-            raise LookupFailedError(f"grocy battery lookup failed: {e}") from e
+        return await self._run(plugin.battery(battery_id), "grocy battery lookup")
 
     async def grocy_chore(self, chore_id: str) -> GrocyChoreResult:
         """Read-only details of one Grocy chore; errors map exactly like :meth:`lookup`."""
         plugin = self._grocy()
+        return await self._run(plugin.chore(chore_id), "grocy chore lookup")
+
+    @staticmethod
+    async def _run[T](call: Awaitable[T], what: str) -> T:
+        """Await ``call`` under :data:`LOOKUP_DEADLINE_S`; plugin errors map to LookupFailedError.
+
+        The deadline covers all upstream calls the plugin makes, so follow-up requests cannot
+        stack their timeouts. The log carries the exception class name only: a message can hold
+        the upstream address or its answer.
+        """
         try:
-            return await plugin.chore(chore_id)
+            async with asyncio.timeout(LOOKUP_DEADLINE_S) as deadline:
+                return await call
         except (LookupFailedError, AppLookupNotFoundError, IntegrationNotConfiguredError):
             raise
         except Exception as e:
-            raise LookupFailedError(f"grocy chore lookup failed: {e}") from e
+            if deadline.expired():
+                _log.warning("%s exceeded its deadline", what)
+                raise LookupFailedError(f"{what} exceeded its deadline") from None
+            raise LookupFailedError(f"{what} failed: {e}") from e
 
     @staticmethod
     def _grocy() -> GrocyObjectReader:

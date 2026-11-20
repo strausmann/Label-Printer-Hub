@@ -30,6 +30,7 @@ from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, QlLayoutPreset
 from app.schemas.tape_geometry import TAPE_GEOMETRY, TapeGeometry
+from app.services.fonts import load_truetype
 from app.services.ql_layout import render_across, render_along_62, resolve_layout
 from app.services.spool_swatch import SWATCH_TAPES, render_tape_swatch
 
@@ -185,7 +186,7 @@ class LayoutEngine:
         the underlying function before staticmethod descriptor takes effect.
         """
         try:
-            return ImageFont.truetype("DejaVuSans.ttf", size_px)
+            return load_truetype("DejaVuSans.ttf", size_px)
         except OSError:
             return ImageFont.load_default()
 

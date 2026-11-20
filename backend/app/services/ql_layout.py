@@ -50,6 +50,7 @@ from app.printer_backends.exceptions import QrPayloadTooLongError, UnsupportedTa
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
 from app.schemas.label_layout import LabelOrientation, LayoutDefault, QlLayoutPreset
+from app.services.fonts import load_truetype
 
 DOTS_PER_MM: Final = 300 / 25.4
 QL62_PRINTABLE_PX: Final = 696
@@ -258,8 +259,8 @@ def build_box_qr(payload: str, box: QrBox) -> tuple[Image.Image, int]:
 def _font(role: _Role, size_px: int) -> ImageFont.FreeTypeFont:
     """The font of ``role`` at ``size_px``; the variable sans gets its weight set once."""
     if role in (_Role.CODE, _Role.SERIAL):
-        return ImageFont.truetype(str(_MONO_BOLD), size_px)
-    font = ImageFont.truetype(str(_SANS_VARIABLE), size_px)
+        return load_truetype(str(_MONO_BOLD), size_px)
+    font = load_truetype(str(_SANS_VARIABLE), size_px)
     font.set_variation_by_axes([700 if role is _Role.TITLE else 400])
     return font
 

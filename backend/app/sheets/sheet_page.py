@@ -40,6 +40,7 @@ from app.page_render.pdf import (
 from app.page_render.transform import PT_PER_MM
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
+from app.services.fonts import load_truetype
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
 from app.sheets.cell_render import (
     DEFAULT_CELL_RENDERER,
@@ -86,7 +87,7 @@ def _preview_font(size_px: float) -> ImageFont.FreeTypeFont:
     """The bundled font at a fractional pixel size for the margin ID and the feed mark, read
     from disk once per size instead of on every preview (T11 M4). The few sizes in use are
     fixed by the layout, so the cache stays small."""
-    return ImageFont.truetype(str(resolve_font_path()), size_px)
+    return load_truetype(str(resolve_font_path()), size_px)
 
 
 class SheetCellPayload(BaseModel):
