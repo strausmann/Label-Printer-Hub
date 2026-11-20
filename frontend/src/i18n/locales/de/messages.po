@@ -2291,10 +2291,6 @@ msgstr "Schlüssel"
 msgid "Key name"
 msgstr "Schlüsselname"
 
-#: src/features/archive/ArchivePage.tsx
-msgid "Key, description or product code"
-msgstr "Schlüssel, Beschreibung oder Produktcode"
-
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Keys of the extra fields in your Spoolman."
 msgstr "Schlüssel der Zusatzfelder in deinem Spoolman."
@@ -6368,6 +6364,10 @@ msgstr "Meist public."
 #: src/features/archive/TypeForm.tsx
 msgid "Vendor"
 msgstr "Hersteller"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Vendor, key, description or product code"
+msgstr "Hersteller, Schlüssel, Beschreibung oder Produktcode"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Verified against a real sheet"

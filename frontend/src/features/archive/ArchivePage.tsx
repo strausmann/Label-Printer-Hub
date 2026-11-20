@@ -170,7 +170,7 @@ export function SheetArchivePage() {
               onSubmit={(e) => e.preventDefault()}
               className={`${PANEL} ${filtersOpen ? "flex" : "hidden"} flex-col gap-4 lg:flex`}
             >
-              <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} maxLength={MAX_QUERY} description={t`Key, description or product code`} />
+              <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} maxLength={MAX_QUERY} description={t`Vendor, key, description or product code`} />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                 <SelectField
                   label={t`Page size`}
