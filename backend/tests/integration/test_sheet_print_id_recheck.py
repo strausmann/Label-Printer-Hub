@@ -10,6 +10,7 @@ the hub's own label into a cell the plan never checked.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
@@ -19,9 +20,12 @@ import pytest
 import pytest_asyncio
 from app.models.print_batch import PrintBatch
 from app.models.sheet import Sheet, SheetCell
+from app.schemas.content_type import ContentType
+from app.sheets import print_service
 from app.sheets import type_service as ts
 from app.sheets.errors import IdCellContentMismatchError
 from app.sheets.geometry import Geometry
+from app.sheets.reservation import NewSheetIn
 from app.sheets.sheet_service import HUB_SOURCE, ID_CELL_PURPOSE
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -67,15 +71,13 @@ class ReleasingLookup(FakeLookup):
         return await super().lookup(source_app, identifier)
 
 
-async def test_id_cell_checked_after_a_replan(
-    factory: async_sessionmaker[AsyncSession],
-) -> None:
+async def _held_sheet(factory: async_sessionmaker[AsyncSession]) -> tuple[Any, str]:
+    """A ``cell`` sheet whose ID cell another job holds: the dry plan gives a run no ID cell."""
     async with factory() as s:
         printer = await make_printer(s, record(dpis=[300]))
         code = await make_sheet(s, key=KEY)
         sheet = (await s.execute(select(Sheet))).scalar_one()
         sheet.id_placement = "cell"  # a sheet type with the ID in a cell
-        # Another job holds the ID cell: the dry plan gives this run none, so nothing checks it.
         s.add(
             SheetCell(
                 sheet_id=sheet.id,
@@ -87,13 +89,26 @@ async def test_id_cell_checked_after_a_replan(
             )
         )
         await s.commit()
+    return printer, code
+
+
+async def _no_reserved_cells(factory: async_sessionmaker[AsyncSession]) -> int:
+    async with factory() as s:
+        q = select(func.count()).select_from(SheetCell).where(SheetCell.state == "reserved")
+        return int((await s.execute(q)).scalar_one())
+
+
+async def test_id_cell_checked_after_a_replan(
+    factory: async_sessionmaker[AsyncSession],
+) -> None:
+    printer, code = await _held_sheet(factory)
     queue = FakeQueue()
 
     with pytest.raises(IdCellContentMismatchError) as refused:
         await run_print(
             factory,
             printer,
-            req([grocy(1, _text())], [on(code)]),
+            req([grocy(1, ContentType.TEXT_TWO_LINES)], [on(code)]),
             queue=queue,
             lookup=ReleasingLookup(factory),
         )
@@ -105,7 +120,64 @@ async def test_id_cell_checked_after_a_replan(
         assert (await s.execute(select(func.count()).select_from(PrintBatch))).scalar_one() == 0
 
 
-def _text() -> Any:
-    from app.schemas.content_type import ContentType
+@pytest.mark.parametrize("failure", [asyncio.CancelledError(), RuntimeError("boom")])
+async def test_a_failing_recheck_does_not_leak_reservations(
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+    failure: BaseException,
+) -> None:
+    """A cancel, or any error but the mismatch, during the threaded check frees the cells."""
+    printer, code = await _held_sheet(factory)
 
-    return ContentType.TEXT_TWO_LINES
+    def broken(*_a: Any, **_k: Any) -> None:
+        raise failure
+
+    monkeypatch.setattr(print_service, "check_id_cell_fits", broken)
+
+    with pytest.raises(type(failure)):
+        await run_print(
+            factory,
+            printer,
+            req([grocy(1, ContentType.TEXT_TWO_LINES)], [on(code)]),
+            queue=FakeQueue(),
+            lookup=ReleasingLookup(factory),
+        )
+
+    assert await _no_reserved_cells(factory) == 0
+
+
+async def test_id_label_sheet_keeps_its_code_when_the_recheck_refuses(
+    factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sheet exists after the reservation committed: the 422 carries its code."""
+    async with factory() as s:
+        printer = await make_printer(s, record(dpis=[300]))
+    calls = 0
+
+    def second_call_refuses(*_args: Any, **_kwargs: Any) -> None:  # the hint check passes
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # the real code no longer fits where the hint did
+            raise IdCellContentMismatchError(("qr_payload",))
+
+    monkeypatch.setattr(print_service, "check_id_cell_fits", second_call_refuses)
+    new = NewSheetIn(type_key=KEY, version=None, id_placement="cell")
+
+    with pytest.raises(IdCellContentMismatchError) as refused:
+        await print_service.create_sheet_with_id_label(
+            factory,
+            printer=printer,
+            tray=None,
+            new=new,
+            queue=FakeQueue(),
+            actor="t",
+            api_key_id=None,
+            source_ip=None,
+            language="en",
+        )
+
+    assert calls == 2
+    assert refused.value.detail is not None
+    assert refused.value.detail["sheet_code"] == "RC1-0001"
+    assert await _no_reserved_cells(factory) == 0

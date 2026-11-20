@@ -1337,10 +1337,10 @@ async def _recheck_id_cells(
     then puts the hub's own label into a cell the plan never checked. When that label does not
     fit, every reservation of the run is released and the 422 is raised.
     """
-    for page, sheet in zip(reserved, sheets, strict=False):
-        if page.id_cell is None:
-            continue
-        try:
+    try:
+        for page, sheet in zip(reserved, sheets, strict=True):
+            if page.id_cell is None:
+                continue
             await asyncio.to_thread(
                 check_id_cell_fits,
                 sheet.geometry,
@@ -1349,9 +1349,11 @@ async def _recheck_id_cells(
                 scan=scan,
                 render_dpi=render_dpi,
             )
-        except IdCellContentMismatchError:
-            await _release_all(session_factory, [p.job_id for p in reserved], bus)
-            raise
+    except BaseException:
+        # The threaded check is a suspension point after the reservation committed: a cancel or
+        # any other error there must not leave the run's cells reserved without a job row.
+        await asyncio.shield(_release_all(session_factory, [p.job_id for p in reserved], bus))
+        raise
 
 
 def _check_plan_items(
@@ -1917,16 +1919,16 @@ async def create_sheet_with_id_label(
             actor=actor,
             bus=bus,
         )
-        await _recheck_id_cells(
-            session_factory,
-            reserved,
-            [view],
-            scan=scan,
-            render_dpi=facts.render_dpi,
-            bus=bus,
-        )
         (page,) = reserved
         try:
+            await _recheck_id_cells(
+                session_factory,
+                reserved,
+                [view],
+                scan=scan,
+                render_dpi=facts.render_dpi,
+                bus=bus,
+            )
             await _queue_pages(
                 session_factory,
                 session,

@@ -7,7 +7,7 @@ active sheet. A discarded sheet is never resolved, so its unconfirmed cells pin 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import app.models  # noqa: F401
 import pytest
@@ -17,6 +17,7 @@ from app.models.sheet import Sheet, SheetCell
 from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
 from app.sheets import type_service as ts
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.unit.sheets.test_reservation import G48, _fields, make_sheet
@@ -28,7 +29,7 @@ async def _finished_job_with_cell(
     await ts.create_type(session, _fields(), G48, actor="tester")
     code = await make_sheet(session)
     printer = await printers_repo.create(
-        session, Printer(name="P", slug=f"p-{_uuid().hex[:6]}", model="m", backend="mock")
+        session, Printer(name="P", slug=f"p-{uuid4().hex[:6]}", model="m", backend="mock")
     )
     job = await jobs_repo.create_queued(
         session, printer_id=printer.id, template_key="t", payload={}
@@ -45,15 +46,7 @@ async def _finished_job_with_cell(
     return job.id
 
 
-def _uuid() -> UUID:
-    from uuid import uuid4
-
-    return uuid4()
-
-
 async def _sheet(session: AsyncSession, code: str) -> Sheet:
-    from sqlalchemy import select
-
     return (await session.execute(select(Sheet).where(Sheet.code == code))).scalar_one()
 
 
