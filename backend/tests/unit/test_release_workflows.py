@@ -365,11 +365,7 @@ def test_website_deploy_waits_for_the_freshness_check() -> None:
 
 # Legacy major-tag actions in ci.yml; any other action there must be SHA-pinned.
 _CI_MAJOR_TAG_ALLOWED = {
-    "actions/checkout@v6",
-    "actions/setup-python@v6",
-    "actions/setup-node@v6",
     "actions/upload-artifact@v7",
-    "pnpm/action-setup@v4",
     "codecov/codecov-action@v7",
     "codecov/test-results-action@v1",
     "docker/setup-buildx-action@v4",
