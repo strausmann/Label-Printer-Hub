@@ -266,7 +266,6 @@ test.describe.serial("settings", () => {
     const stamp = `${test.info().retry}-${Date.now().toString(36)}`;
     const slug = `second-page-${stamp}`;
     const name = `Second page printer ${stamp}`;
-    let switchedOffByTheTest = false;
     try {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.goto("/settings/printers");
@@ -300,11 +299,9 @@ test.describe.serial("settings", () => {
       await expect(row.getByText(uri)).toBeVisible();
       await row.getByRole("button", { name: `Disable ${name}` }).click();
       await expect(row.getByText("Disabled", { exact: true })).toBeVisible();
-      switchedOffByTheTest = true;
     } finally {
-      // The test switched it off itself: a second disable would answer 409. Otherwise 200, or 404 when the printer was
-      // never created; both are fine, anything else is a broken cleanup.
-      if (!switchedOffByTheTest) expect([200, 404]).toContain(await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`));
+      // 409 when the test switched it off itself; 404 when the printer was never created. Anything else is a broken cleanup.
+      expect([200, 404, 409]).toContain(await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`));
     }
   });
 
@@ -361,8 +358,8 @@ test.describe.serial("settings", () => {
       await expect(edit.getByRole("alert")).toContainText("Enter the SNMP community again");
       expect((await (await page.request.get(`/api/v1/admin/printers/${slug}`)).json()).connection.host).toBe("192.0.2.31");
     } finally {
-      // 404 when the printer was never created; both are fine, anything else is a broken cleanup.
-      expect([200, 404]).toContain(await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`));
+      // 409 when the printer is off already, 404 when it was never created; anything else is a broken cleanup.
+      expect([200, 404, 409]).toContain(await api(page, "POST", `/api/v1/admin/printers/${slug}/disable`));
     }
   });
 

@@ -125,19 +125,14 @@ test.describe("new server version with a real service worker", () => {
     // only for a bounded time and then falls back to a plain reload, which the old precache answers. Waiting for the
     // worker's own state change replaces a guess about how long the install takes.
     await page.evaluate(async () => {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.update();
-      if (registration.waiting) return;
-      await new Promise<void>((resolve) => {
-        const watch = (worker: ServiceWorker | null) => {
-          if (!worker) return;
-          if (worker.state === "installed") resolve();
-          worker.addEventListener("statechange", () => worker.state === "installed" && resolve());
-        };
-        watch(registration.installing);
-        registration.addEventListener("updatefound", () => watch(registration.installing));
-      });
+      await (await navigator.serviceWorker.ready).update();
     });
+    await expect
+      .poll(() => page.evaluate(async () => (await navigator.serviceWorker.ready).waiting?.state ?? "none"), {
+        timeout: 10_000,
+        message: "the new service worker never reached the waiting state",
+      })
+      .toBe("installed");
     return marker;
   }
 
