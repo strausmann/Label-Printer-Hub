@@ -19,7 +19,7 @@ import { formatAge } from "./age";
 import { FlagLine, RollLine } from "./PrinterCard";
 import { usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useJobStateBadge, useKindLabel } from "./model";
-import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
+import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine, ReportedEmptyLine } from "./PageStatus";
 import { TestPrintButton, TestPrintFeedback } from "./TestPrintButton";
 import { PauseResumeButton } from "./PauseResumeButton";
 import { printConfirmationText } from "./printConfirmation";
@@ -106,6 +106,7 @@ function PrinterDetail({ printer }: { printer: Printer }) {
           {view.kind === "not_polled" && <NotMonitoredHint printer={printer} page={page} linked />}
           {view.kind === "paused" && <PauseReason pause={printer.pause} />}
           <ReasonLine reasons={view.reasons} />
+          <ReportedEmptyLine names={view.reportedEmpty} />
           {page && ahead > 0 && (
             <p className="text-small text-ink-2">
               {plural(ahead, { one: "# job from another computer ahead", other: "# jobs from other computers ahead" })}

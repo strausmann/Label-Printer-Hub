@@ -227,12 +227,23 @@ describe("describePrinter with reported-empty material (#274)", () => {
     expect(view.reportedEmpty).toEqual(["cyan"]);
   });
 
-  it("-1 and -3 levels are neither low nor empty", () => {
-    // The hub reports an unknown (-2/-1) or unavailable (-3) level with no percentage and both flags off.
-    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black", { level_percent: null }), marker("cyan", { level_percent: null })] }), false);
+  it("-1 (unknown) and -3 (some remaining) levels are neither low nor empty", () => {
+    // The hub reports -1 as no percentage and -3 as no percentage with `some_remaining`; both flags stay off.
+    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black", { level_percent: null }), marker("cyan", { level_percent: null, some_remaining: true })] }), false);
     expect(view).toMatchObject({ kind: "ready", reportedEmpty: [] });
     expect(supplyEmpty(page({ markers: [marker("black", { level_percent: null })] }))).toBe(false);
     expect(supplyLowOnly(page({ markers: [marker("black", { level_percent: null })] }))).toBe(false);
+  });
+
+  it("a marker that is empty at a level above 0 is named and does not block", () => {
+    // A single supply plus a toner-empty reason can set `empty` while the level is still positive.
+    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black", { level_percent: 30, empty: true })] }), false);
+    expect(view).toMatchObject({ kind: "ready", badge: "ok", reportedEmpty: ["black"] });
+  });
+
+  it("a tape status names nothing as reported empty, even with an empty marker", () => {
+    const tape = status(PRINTER_A.id, { markers: [marker("black", { level_percent: 0, empty: true })] });
+    expect(describePrinter(PRINTER_A, tape, false)).toMatchObject({ kind: "ready", reportedEmpty: [] });
   });
 
   it("a printer that is not ready names nothing as reported empty", () => {

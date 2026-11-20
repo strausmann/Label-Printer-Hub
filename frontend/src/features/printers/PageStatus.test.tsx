@@ -45,6 +45,14 @@ describe("supplyLowOnly and supplyEmpty", () => {
     expect(supplyEmpty(mixed)).toBe(true);
     expect(supplyLowOnly(mixed)).toBe(true);
   });
+  it("a status nobody refreshes counts as nothing (its row says supplies not known)", () => {
+    const markers = [{ ...marker, empty: true }, { ...marker, low: true }];
+    for (const over of [{ stale: true }, { polled: false }]) {
+      const unknown = pageStatus(ID, { markers, ...over });
+      expect(supplyEmpty(unknown)).toBe(false);
+      expect(supplyLowOnly(unknown)).toBe(false);
+    }
+  });
   it("nothing else counts", () => {
     for (const status of [pageStatus(ID, { markers: [{ ...marker }] }), pageStatus(ID, { markers: null }), undefined]) {
       expect(supplyLowOnly(status)).toBe(false);

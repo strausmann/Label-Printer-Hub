@@ -8,6 +8,7 @@ import { useInfo, useSession } from "../../app/session";
 import { docsUrl } from "../about/docsLink";
 import type { Printer, PrinterStatus } from "./api";
 import { MarkerSwatch } from "./MarkerSwatch";
+import { unknownKind } from "./model";
 import { useReasonWord } from "./reasons";
 
 /**
@@ -18,13 +19,20 @@ export const noAnswerYet = (status: PrinterStatus | undefined): boolean =>
   !status || (status.online == null && !status.markers?.length && !status.trays?.length);
 
 /**
- * A supply is reported empty. Level sentinels (-1 unknown, -3 unavailable) arrive as neither `low` nor `empty`, so
+ * The markers of a status that is a reading of the printer now. A stale or unpolled status is no reading, and its row
+ * says "Supplies not known", so the material headlines must not count what it caches (#274).
+ */
+const knownMarkers = (status: PrinterStatus | undefined): NonNullable<PrinterStatus["markers"]> =>
+  unknownKind(status) ? [] : (status?.markers ?? []);
+
+/**
+ * A supply is reported empty. Level sentinels (-1 unknown, -3 some remaining) arrive as neither `low` nor `empty`, so
  * they count as nothing here. An empty level is information, never a block (#274).
  */
-export const supplyEmpty = (status: PrinterStatus | undefined): boolean => !!status?.markers?.some((m) => m.empty);
+export const supplyEmpty = (status: PrinterStatus | undefined): boolean => knownMarkers(status).some((m) => m.empty);
 
 /** A supply is running low and none that is merely low is empty: the page printer's counterpart of "tape running out". */
-export const supplyLowOnly = (status: PrinterStatus | undefined): boolean => !!status?.markers?.some((m) => m.low && !m.empty);
+export const supplyLowOnly = (status: PrinterStatus | undefined): boolean => knownMarkers(status).some((m) => m.low && !m.empty);
 
 /** "Ready · black reported empty": the supplies a ready page printer reports as empty, in words and with a shape. */
 export function ReportedEmptyLine({ names }: { names: string[] }) {
