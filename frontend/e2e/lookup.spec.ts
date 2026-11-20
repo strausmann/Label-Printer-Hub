@@ -85,10 +85,13 @@ test.describe("lookup", () => {
       const section = page.getByRole("region", { name: "Print onto a sheet" });
       await expect(section).toBeVisible();
       // The test only adds to the cart; it assumes the sheet has no free cells to fill, other specs use it too.
-      // The field starts on the type earlier specs left as the default (print-sheet, calibration), and opening it then lists only
-      // what matches that text: type what is wanted instead of assuming which type it starts on.
+      // The field starts on the type earlier specs left as the default (print-sheet, calibration), so the type is typed, not
+      // assumed. Real keystrokes: the list opens under the first one (SheetTypeCombobox), which `fill()` never sends, and the
+      // click puts the focus in the field with its text selected, so the first key replaces the shown label.
       const typeField = section.getByRole("combobox", { name: "Sheet type" });
-      await typeField.fill("L4736");
+      await typeField.click();
+      await typeField.pressSequentially("L4736");
+      await expect(page.getByRole("listbox")).toBeVisible();
       await page.getByRole("option", { name: /L4736/ }).first().click();
       const sheet = section.getByRole("combobox", { name: "Sheet", exact: true });
       await sheet.click();
