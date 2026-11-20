@@ -123,7 +123,7 @@ class CheckTest(SnapshotCase):
         )
         self.assertEqual(code, 1)
         text = summary.read_text(encoding="utf-8")
-        self.assertIn("packbits: MIT → Apache-2.0", text)
+        self.assertIn("- `packbits`: `MIT` → `Apache-2.0`", text)
 
     def test_a_missing_snapshot_fails(self) -> None:
         code, _, err = self.run_cli("check", *self.lists(BACKEND, FRONTEND))
@@ -163,9 +163,9 @@ class NotesTest(SnapshotCase):
         code, out, _ = self.run_cli("notes", "--old", str(old), "--new", str(new))
         self.assertEqual(code, 0)
         self.assertIn("## Licence changes", out)
-        self.assertIn("- packbits: MIT → Apache-2.0", out)
-        self.assertIn("- extra: (new) → MIT", out)
-        self.assertIn("- react: MIT → (removed)", out)
+        self.assertIn("- `packbits`: `MIT` → `Apache-2.0`", out)
+        self.assertIn("- `extra`: `(new)` → `MIT`", out)
+        self.assertIn("- `react`: `MIT` → `(removed)`", out)
 
     def test_notes_prints_nothing_when_nothing_changed(self) -> None:
         old = self.write("old.json", {"packages": SNAPSHOT})
@@ -181,6 +181,109 @@ class NotesTest(SnapshotCase):
         )
         self.assertEqual(code, 0)
         self.assertEqual(out, "")
+
+
+HOSTILE = "::error::pwn\n::stop-commands::x"
+
+
+class HostileNameTest(SnapshotCase):
+    """Names and licences come from third-party metadata and reach the runner's stdout.
+
+    The runner reads workflow commands (``::error::``, ``::stop-commands::``) from stdout, so
+    an entry that could start one is rejected outright: the run fails with exit 2 and says
+    which entry. Neutralising it instead would hide a hostile package from the maintainer.
+    """
+
+    def check_rejected(self, entry: dict) -> None:
+        self.write_snapshot(SNAPSHOT)
+        code, out, err = self.run_cli("check", *self.lists([entry], FRONTEND))
+        self.assertEqual(code, 2)
+        self.assertNotIn("::", out)
+        self.assertIn("error:", err)
+
+    def test_the_reviewers_fixture_is_rejected_and_never_reaches_stdout(self) -> None:
+        self.check_rejected({"name": HOSTILE, "version": "1", "license": "MIT"})
+
+    def test_a_leading_double_colon_is_rejected(self) -> None:
+        self.check_rejected({"name": "::add-mask::x", "version": "1", "license": "MIT"})
+
+    def test_control_characters_in_a_name_are_rejected(self) -> None:
+        for char in ("\r", "\n", "\x00", "\x1b", "\x7f", "\u2028", "\x85"):
+            with self.subTest(char=repr(char)):
+                self.check_rejected({"name": f"a{char}b", "version": "1", "license": "MIT"})
+
+    def test_control_characters_in_a_licence_are_rejected(self) -> None:
+        self.check_rejected({"name": "ok", "version": "1", "license": "MIT\n::error::x"})
+
+    def test_a_hostile_snapshot_is_rejected_by_notes(self) -> None:
+        good = self.write("good.json", {"packages": SNAPSHOT})
+        bad = self.write("bad.json", {"packages": {HOSTILE: "MIT"}})
+        code, out, err = self.run_cli("notes", "--old", str(good), "--new", str(bad))
+        self.assertEqual(code, 2)
+        self.assertEqual(out, "")
+        self.assertIn("error:", err)
+
+    def test_a_double_colon_inside_a_name_is_fine(self) -> None:
+        # Only a leading "::" can start a workflow command.
+        entry = {"name": "pkg::inner", "version": "1", "license": "MIT"}
+        packages = ls.read_lists(self.write("b.json", [entry]), self.write("f.json", FRONTEND))
+        self.assertEqual(packages["pkg::inner"], "MIT")
+
+
+class MarkdownTest(SnapshotCase):
+    """Names and licences are code spans wherever markdown is written."""
+
+    SCOPED = {"@babel/types": "MIT", "pkg[x](http://evil)": "MIT", "a_b*c": "MIT"}
+
+    def test_code_span_uses_a_longer_fence_than_any_backtick_run_inside(self) -> None:
+        self.assertEqual(ls.code_span("abc"), "`abc`")
+        self.assertEqual(ls.code_span("a`b"), "``a`b``")
+        self.assertEqual(ls.code_span("a``b`c"), "```a``b`c```")
+
+    def test_code_span_pads_a_value_that_starts_or_ends_with_a_backtick(self) -> None:
+        self.assertEqual(ls.code_span("`a"), "`` `a ``")
+        self.assertEqual(ls.code_span("a`"), "`` a` ``")
+
+    def test_a_backtick_cannot_break_out_of_the_span(self) -> None:
+        # Parse the span the way CommonMark does: the content ends at the first run of
+        # backticks that is as long as the opening fence.
+        for value in ("a`b", "`", "``", "a`` b", "`x`y`"):
+            with self.subTest(value=value):
+                span = ls.code_span(value)
+                fence = len(span) - len(span.lstrip("`"))
+                body = span[fence:]
+                runs = [len(r) for r in re.findall(r"`+", body)]
+                self.assertEqual(runs.count(fence), 1)
+                self.assertEqual(runs[-1], fence)
+
+    def test_the_step_summary_wraps_names_and_licences(self) -> None:
+        self.write_snapshot({})
+        summary = self.dir / "summary.md"
+        entries = [{"name": n, "version": "1", "license": lic} for n, lic in self.SCOPED.items()]
+        code, out, _ = self.run_cli(
+            "check", *self.lists(entries, []), env={"GITHUB_STEP_SUMMARY": str(summary)}
+        )
+        self.assertEqual(code, 1)
+        text = summary.read_text(encoding="utf-8")
+        self.assertIn("- `@babel/types`: `(new)` → `MIT`", text)
+        self.assertNotRegex(text, r"(?m)^- @")
+        self.assertIn("`pkg[x](http://evil)`", text)
+        # stdout stays plain: it is read by humans and by no markdown renderer.
+        self.assertIn("@babel/types: (new) → MIT", out)
+
+    def test_the_release_notes_wrap_names_and_licences(self) -> None:
+        old = self.write("old.json", {"packages": {}})
+        new = self.write("new.json", {"packages": self.SCOPED})
+        code, out, _ = self.run_cli("notes", "--old", str(old), "--new", str(new))
+        self.assertEqual(code, 0)
+        self.assertIn("- `@babel/types`: `(new)` → `MIT`", out)
+        self.assertNotRegex(out, r"(?m)^- @")
+
+    def test_a_backtick_in_a_licence_keeps_the_release_notes_line_intact(self) -> None:
+        old = self.write("old.json", {"packages": {"p": "MIT"}})
+        new = self.write("new.json", {"packages": {"p": "Foo`Bar"}})
+        _, out, _ = self.run_cli("notes", "--old", str(old), "--new", str(new))
+        self.assertIn("- `p`: `MIT` → ``Foo`Bar``", out)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -225,6 +328,33 @@ class WorkflowWiringTest(unittest.TestCase):
         self.assertIn("licence_snapshot.py notes", script)
         self.assertIn("gh release edit", script)
         self.assertNotIn("--draft=false", script)
+
+    def test_the_notes_step_fails_hard_on_a_missing_tag_and_skips_only_a_missing_file(
+        self,
+    ) -> None:
+        job = _workflow("release.yml")["jobs"]["release-sbom"]
+        steps = {step.get("name"): step for step in job["steps"]}
+        script = steps["Add the licence changes to the release notes"]["run"]
+        # The tag and the previous tag must resolve; neither lookup may be swallowed.
+        self.assertIn('git rev-parse -q --verify "refs/tags/v${VERSION}^{commit}"', script)
+        self.assertNotRegex(script, r"git describe[^\n]*\|\|\s*true")
+        self.assertRegex(script, r"git describe[^\n]*\|\| \{")
+        # A missing snapshot at an existing previous tag is a soft skip with one log line.
+        self.assertIn('git cat-file -e "${prev}:licences/snapshot.json"', script)
+        self.assertIn("::notice::", script)
+
+    def test_the_release_sbom_comment_does_not_claim_there_is_no_checkout(self) -> None:
+        text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+        head = text.split("  release-sbom:\n", 1)[0]
+        comment = head[head.rindex("# Attaches the CycloneDX SBOM") :]
+        self.assertNotIn("no checkout", comment)
+        self.assertIn("persist-credentials", comment)
+
+    def test_contributing_says_where_the_update_lists_come_from(self) -> None:
+        text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        self.assertIn("licence_snapshot.py update", text)
+        self.assertIn("docker cp", text)
+        self.assertIn("/opt/app/web/licenses/backend.json", text)
 
     def test_the_scripts_job_lints_with_the_pinned_ruff(self) -> None:
         script = _runs(_workflow("ci.yml")["jobs"]["scripts"])

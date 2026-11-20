@@ -236,9 +236,11 @@ jobs:
 
   # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced to
   # the DRAFT release (`gh release` finds a draft by its pending tag). A draft is
-  # not immutable yet, so `--clobber` makes a rerun safe. Only GITHUB_TOKEN, no
-  # checkout, no other secret. The version reaches the shell through env and is
-  # validated first.
+  # not immutable yet, so `--clobber` makes a rerun safe. The job checks the
+  # repository out (full history, for the licence-notes step) with
+  # `persist-credentials: false`, so the token is not left in the clone; the tag is
+  # already pushed when it runs. Only GITHUB_TOKEN, no other secret. The version
+  # reaches the shell through env and is validated first.
   release-sbom:
     name: Release SBOM
     needs: [release, images]
@@ -300,18 +302,29 @@ jobs:
           VERSION="${VERSION#v}"
           work="$RUNNER_TEMP/licence-notes"
           mkdir -p "$work"
-          prev=$(git describe --tags --abbrev=0 "v${VERSION}^" 2> /dev/null || true)
-          if ! git show "v${VERSION}:licences/snapshot.json" > "$work/new.json" 2> /dev/null; then
+          # A tag that is missing or was not fetched must fail the step: it would look the
+          # same as "no licence changed". Only a missing snapshot FILE is a soft skip.
+          if ! git rev-parse -q --verify "refs/tags/v${VERSION}^{commit}" > /dev/null; then
+            echo "::error::Tag v${VERSION} is not available in this checkout"
+            exit 1
+          fi
+          prev=$(git describe --tags --abbrev=0 "v${VERSION}^" 2> /dev/null) || {
+            echo "::error::No previous tag found before v${VERSION}; cannot compare licences"
+            exit 1
+          }
+          if ! git cat-file -e "v${VERSION}:licences/snapshot.json" 2> /dev/null; then
             echo "::notice::v${VERSION} carries no licences/snapshot.json; no licence section"
             exit 0
           fi
-          if [ -n "$prev" ] && git show "${prev}:licences/snapshot.json" > "$work/old.json" 2> /dev/null; then
-            python3 scripts/licence_snapshot.py notes --old "$work/old.json" --new "$work/new.json" > "$work/section.md"
-          else
-            : > "$work/section.md"
+          if ! git cat-file -e "${prev}:licences/snapshot.json" 2> /dev/null; then
+            echo "::notice::${prev} carries no licences/snapshot.json; no licence section"
+            exit 0
           fi
+          git show "v${VERSION}:licences/snapshot.json" > "$work/new.json"
+          git show "${prev}:licences/snapshot.json" > "$work/old.json"
+          python3 scripts/licence_snapshot.py notes --old "$work/old.json" --new "$work/new.json" > "$work/section.md"
           if [ ! -s "$work/section.md" ]; then
-            echo "No licence changes since ${prev:-the first release}"
+            echo "No licence changes since ${prev}"
             exit 0
           fi
           gh release view "v${VERSION}" --json body --jq .body > "$work/body.md"

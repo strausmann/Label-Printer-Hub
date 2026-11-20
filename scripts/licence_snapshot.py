@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -35,8 +36,40 @@ NEW = "(new)"
 REMOVED = "(removed)"
 
 
+# Control characters (C0, DEL, C1) and the Unicode line and paragraph separators.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
 class InputError(Exception):
     """A licence list or a snapshot could not be read."""
+
+
+def _vet(name: str, licence: str, source: object) -> None:
+    """Refuse an entry that could steer the workflow runner or the markdown output.
+
+    Names and licences are third-party metadata and are printed to stdout, where the runner
+    parses lines that start with ``::`` as workflow commands (``::error::``,
+    ``::stop-commands::``). A control character can start such a line, and a name can open
+    one. The entry is rejected, not cleaned: the run fails with exit 2 and names the entry,
+    so a hostile package is seen instead of silently rewritten.
+    """
+    for label, value in (("name", name), ("licence", licence)):
+        if _CONTROL.search(value):
+            raise InputError(f"{source}: the {label} of {name!r} holds a control character")
+    if name.startswith("::"):
+        raise InputError(f"{source}: the name {name!r} starts with '::'")
+
+
+def code_span(value: str) -> str:
+    """``value`` as a markdown code span that no backtick inside it can break.
+
+    The fence is one backtick longer than the longest run in the value. A value that starts
+    or ends with a backtick is padded with a space, as CommonMark requires.
+    """
+    longest = max((len(run) for run in re.findall(r"`+", value)), default=0)
+    fence = "`" * (longest + 1)
+    pad = " " if value.startswith("`") or value.endswith("`") else ""
+    return f"{fence}{pad}{value}{pad}{fence}"
 
 
 def _load_json(path: Path) -> object:
@@ -64,6 +97,7 @@ def read_lists(*paths: Path) -> dict[str, str]:
                 raise InputError(f"{path}: an entry has no name")
             if not isinstance(licence, str) or not licence:
                 raise InputError(f"{path}: package {name} has no declared licence")
+            _vet(name, licence, path)
             seen.setdefault(name, set()).add(licence)
     return {name: " / ".join(sorted(found)) for name, found in seen.items()}
 
@@ -73,19 +107,38 @@ def read_snapshot(path: Path) -> dict[str, str]:
     packages = data.get("packages") if isinstance(data, dict) else None
     if not isinstance(packages, dict):
         raise InputError(f"{path}: expected an object with a 'packages' map")
-    return {str(k): str(v) for k, v in packages.items()}
+    result = {str(k): str(v) for k, v in packages.items()}
+    for name, licence in result.items():
+        _vet(name, licence, path)
+    return result
+
+
+def changes(old: dict[str, str], new: dict[str, str]) -> list[tuple[str, str, str]]:
+    """``(name, before, after)`` per difference, sorted by package name."""
+    found = []
+    for name in sorted(old.keys() | new.keys()):
+        before, after = old.get(name, NEW), new.get(name, REMOVED)
+        if name in old and name in new and before == after:
+            continue
+        found.append((name, before, after))
+    return found
 
 
 def diff(old: dict[str, str], new: dict[str, str]) -> list[str]:
-    """One line per difference, sorted by package name."""
-    lines = []
-    for name in sorted(old.keys() | new.keys()):
-        before, after = old.get(name, NEW), new.get(name, REMOVED)
-        if name in old and name in new:
-            if before == after:
-                continue
-        lines.append(f"{name}: {before} → {after}")
-    return lines
+    """One plain line per difference, sorted by package name."""
+    return [f"{name}: {before} → {after}" for name, before, after in changes(old, new)]
+
+
+def markdown_lines(old: dict[str, str], new: dict[str, str]) -> list[str]:
+    """Bullet per difference with the name and both licences as code spans.
+
+    A scoped npm name such as ``@babel/types`` would otherwise render as an @mention, and a
+    name with ``[x](url)`` or ``*`` would change the formatting.
+    """
+    return [
+        f"- {code_span(name)}: {code_span(before)} → {code_span(after)}"
+        for name, before, after in changes(old, new)
+    ]
 
 
 def write_snapshot(path: Path, packages: dict[str, str]) -> None:
@@ -94,13 +147,13 @@ def write_snapshot(path: Path, packages: dict[str, str]) -> None:
     path.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _append_summary(lines: list[str]) -> None:
+def _append_summary(bullets: list[str]) -> None:
     target = os.environ.get("GITHUB_STEP_SUMMARY")
-    if not target or not lines:
+    if not target or not bullets:
         return
     with open(target, "a", encoding="utf-8") as handle:
         handle.write("## Licence changes\n\n")
-        handle.write("\n".join(f"- {line}" for line in lines) + "\n")
+        handle.write("\n".join(bullets) + "\n")
         handle.write("\nRun `scripts/licence_snapshot.py update` to accept them.\n")
 
 
@@ -112,10 +165,11 @@ def cmd_check(args: argparse.Namespace) -> int:
     if not args.snapshot.is_file():
         print(f"licence snapshot {args.snapshot} is missing; run 'update' first", file=sys.stderr)
         return 1
-    lines = diff(read_snapshot(args.snapshot), _current(args))
+    old, new = read_snapshot(args.snapshot), _current(args)
+    lines = diff(old, new)
     for line in lines:
         print(line)
-    _append_summary(lines)
+    _append_summary(markdown_lines(old, new))
     return 1 if lines else 0
 
 
@@ -127,10 +181,10 @@ def cmd_update(args: argparse.Namespace) -> int:
 def cmd_notes(args: argparse.Namespace) -> int:
     if not args.old.is_file():
         return 0  # a first release has no previous snapshot to compare with
-    lines = diff(read_snapshot(args.old), read_snapshot(args.new))
-    if lines:
+    bullets = markdown_lines(read_snapshot(args.old), read_snapshot(args.new))
+    if bullets:
         print("## Licence changes\n")
-        print("\n".join(f"- {line}" for line in lines))
+        print("\n".join(bullets))
     return 0
 
 
