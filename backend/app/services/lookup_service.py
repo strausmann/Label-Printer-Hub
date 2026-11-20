@@ -35,7 +35,12 @@ from app.integrations.registry import (
 )
 from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
-from app.schemas.print_request import RAW_LISTING_MAX, RAW_SECONDARY_MAX, RAW_TEXT_MAX
+from app.schemas.print_request import (
+    QR_PAYLOAD_MAX,
+    RAW_LISTING_MAX,
+    RAW_SECONDARY_MAX,
+    RAW_TEXT_MAX,
+)
 from app.services.errors import (
     AppLookupNotFoundError,
     IntegrationNotConfiguredError,
@@ -48,6 +53,7 @@ __all__ = [
     "LookupFailedError",
     "UnknownAppError",
     "cap_label_text",
+    "refuse_oversized_qr",
 ]
 
 #: Upper bound for one whole lookup, covering every upstream call the plugin makes
@@ -65,15 +71,30 @@ def _shortened(text: str) -> str:
     return text[: RAW_TEXT_MAX - 1] + "\N{HORIZONTAL ELLIPSIS}"
 
 
+def refuse_oversized_qr(label: LabelData) -> None:
+    """Refuse a label whose QR payload, or a listing row's, is above :data:`QR_PAYLOAD_MAX`.
+
+    Raises:
+        LookupFailedError: an upstream answer made the payload too long to encode. The message
+            names no upstream text.
+    """
+    rows = label.items[:RAW_LISTING_MAX]
+    if len(label.qr_payload or "") > QR_PAYLOAD_MAX or any(
+        len(row.qr_payload or "") > QR_PAYLOAD_MAX for row in rows
+    ):
+        raise LookupFailedError("the integration answered with a QR payload that is too long")
+
+
 def cap_label_text(label: LabelData) -> LabelData:
     """A lookup's answer held to the text caps of a raw label (``RawLabelData``).
 
     The integration is not trusted to stay small: a hostile or broken one can answer a name of
     close to a megabyte, and every renderer, job row and preview would carry it whole. Text is
     cut with an ellipsis, the secondary lines and listing rows keep their first
-    ``RAW_SECONDARY_MAX`` and ``RAW_LISTING_MAX`` entries. The QR payload is never cut (a cut
-    payload is another code); plugins build it from the configured base URL and an id they
-    checked, not from the upstream's text.
+    ``RAW_SECONDARY_MAX`` and ``RAW_LISTING_MAX`` entries. The QR payload is not cut here (a cut
+    payload is another code); :func:`refuse_oversized_qr` refuses the lookup instead. Plugins
+    build the payload from the base URL and an id that Grocy and Snipe-IT take from the
+    upstream's answer, so its length is not under our control.
     """
     return label.model_copy(
         update={
@@ -110,6 +131,7 @@ class AppLookupService:
         except IntegrationNotFoundError as e:
             raise UnknownAppError(str(e)) from e
         label = await self._run(plugin.lookup(identifier), f"{source_app} lookup")
+        refuse_oversized_qr(label)
         return cap_label_text(label)
 
     async def grocy_battery(self, battery_id: str) -> GrocyBatteryResult:

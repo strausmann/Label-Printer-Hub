@@ -358,3 +358,44 @@ def test_cap_label_text_leaves_short_text_and_the_qr_payload_alone() -> None:
     assert len(capped.items) == RAW_LISTING_MAX
     assert all(len(line) == RAW_TEXT_MAX for line in capped.secondary)
     assert all(len(row.item) == RAW_TEXT_MAX for row in capped.items)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("plugin_cls", "identifier"),
+    [(SnipeITPlugin, "T-1"), (GrocyPlugin, "42")],
+    ids=lambda v: str(v),
+)
+async def test_a_huge_id_in_the_answer_refuses_the_lookup(
+    plugin_cls: type[StoreBoundPlugin], identifier: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Grocy and Snipe-IT build the QR link from the id in the answer (run-30 re-review)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"id": "9" * 900_000, "asset_tag": identifier, "name": "x"})
+
+    plugin = bound(plugin_cls)
+    _serve(plugin, handler)
+    monkeypatch.setattr(
+        "app.integrations.registry.IntegrationRegistry.get", classmethod(lambda _c, _n: plugin)
+    )
+    with pytest.raises(LookupFailedError) as info:
+        await AppLookupService().lookup(plugin.name, identifier)
+    assert "9999" not in str(info.value)
+
+
+def test_refuse_oversized_qr_checks_the_label_and_its_listing_rows() -> None:
+    from app.schemas.label_data_item import LabelDataItem
+    from app.schemas.print_request import QR_PAYLOAD_MAX
+    from app.services.lookup_service import refuse_oversized_qr
+
+    refuse_oversized_qr(LabelData(source_app="x", qr_payload="u" * QR_PAYLOAD_MAX))
+    with pytest.raises(LookupFailedError):
+        refuse_oversized_qr(LabelData(source_app="x", qr_payload="u" * (QR_PAYLOAD_MAX + 1)))
+    with pytest.raises(LookupFailedError):
+        refuse_oversized_qr(
+            LabelData(
+                source_app="x",
+                items=(LabelDataItem(item="r", qr_payload="u" * (QR_PAYLOAD_MAX + 1)),),
+            )
+        )
