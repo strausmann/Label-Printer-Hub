@@ -330,7 +330,8 @@ jobs:
           fi
           git show "v${VERSION}:licences/snapshot.json" > "$work/new.json"
           git show "${prev}:licences/snapshot.json" > "$work/old.json"
-          python3 scripts/licence_snapshot.py notes --old "$work/old.json" --new "$work/new.json" > "$work/section.md"
+          # The script comes from the tag; it gets no write token.
+          env -u GH_TOKEN python3 scripts/licence_snapshot.py notes --old "$work/old.json" --new "$work/new.json" > "$work/section.md"
           if [ ! -s "$work/section.md" ]; then
             echo "No licence changes since ${prev}"
             exit 0
