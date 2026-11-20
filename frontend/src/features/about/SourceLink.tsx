@@ -3,6 +3,7 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { useInfo } from "../../app/session";
+import { safeHref } from "../lookup/apps";
 
 export const SOURCE_LINK_CLASS =
   "press inline-flex min-h-11 items-center text-link underline underline-offset-2 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-link";
@@ -13,7 +14,7 @@ export const SOURCE_LINK_CLASS =
  */
 export function SourceLink({ className = SOURCE_LINK_CLASS }: { className?: string }) {
   const { t } = useLingui();
-  const sourceUrl = useInfo().data?.source_url;
+  const sourceUrl = safeHref(useInfo().data?.source_url);
   if (!sourceUrl) return null;
   return (
     // D20

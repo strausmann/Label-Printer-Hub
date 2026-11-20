@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderApp } from "../../test-utils";
 import { lookupKey } from "../lookup/api";
+import { grocyObjectUrl } from "./GrocycodePage";
 import { knownBaseKey } from "../integrations/useKnownBase";
 import { apiErrorBody, mockApi } from "../test-api";
 
@@ -194,5 +195,11 @@ describe("the Grocycode page, other paths", () => {
     const { calls } = await open("/grocycode/p/4", {});
     expect(await screen.findByRole("heading", { name: /not found/i })).toBeVisible();
     expect(calls.filter((c) => c.path.includes("/lookup/grocy/"))).toEqual([]);
+  });
+});
+
+describe("grocyObjectUrl", () => {
+  it("an id with / ? # stays inside one path segment", () => {
+    expect(grocyObjectUrl(GROCY, "battery", "a/b?c#d")).toBe(`${GROCY}/battery/a%2Fb%3Fc%23d`);
   });
 });

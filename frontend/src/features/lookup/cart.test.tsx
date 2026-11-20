@@ -253,4 +253,33 @@ describe("cart after a failed write", () => {
     expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43", "44"]);
     expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(4);
   });
+
+  it("a storage event while a write is failing keeps the memory-only lines", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    act(() => result.current.add(spool));
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: CART_KEY }));
+    });
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7"]);
+    act(() => result.current.add({ ...asset, id: "43" }));
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43"]);
+    spy.mockRestore();
+  });
+
+  it("a failed clear() empties the cart and storage does not bring the lines back", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    act(() => result.current.clear());
+    expect(result.current.items).toEqual([]);
+    act(() => result.current.add(spool));
+    expect(result.current.items.map((i) => i.id)).toEqual(["7"]);
+    spy.mockRestore();
+  });
 });

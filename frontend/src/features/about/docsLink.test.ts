@@ -18,3 +18,9 @@ describe("docsUrl", () => {
     expect(docsUrl(undefined, "docs/a.md")).toBeNull();
   });
 });
+
+describe("docsUrl with an unsafe source address", () => {
+  it.each(["javascript:alert(1)", "data:text/html,x", "not a url"])("%s gives no link", (source) => {
+    expect(docsUrl(source, "docs/a.md")).toBeNull();
+  });
+});

@@ -41,7 +41,7 @@ export function useSaveSettings() {
 export const useTestIntegration = (name: string) =>
   useMutation({
     mutationFn: (values: Record<string, unknown>) =>
-      apiFetch<IntegrationTestResult>(`/api/v1/settings/integrations/${name}/test`, { method: "POST", json: { values } }),
+      apiFetch<IntegrationTestResult>(`/api/v1/settings/integrations/${encodeURIComponent(name)}/test`, { method: "POST", json: { values } }),
   });
 
 export const useAdminPrinters = () =>

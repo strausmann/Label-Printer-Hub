@@ -80,6 +80,8 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
   const video = useRef<HTMLVideoElement>(null);
   const decoder = useRef<Decoder | null>(null);
   const stream = useRef<MediaStream | null>(null);
+  // Set when the reader failed: the camera then stays shut (tab hide/show, a camera that opens late) until "Try again".
+  const readerFailed = useRef(false);
   const live = phase.kind === "scanning" && !hidden && !paused;
 
   useEffect(() => {
@@ -90,7 +92,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
 
   // Opens the camera; leaving the screen, hiding the tab or a retry stops it.
   useEffect(() => {
-    if (!secure || hidden) return;
+    if (!secure || hidden || readerFailed.current) return;
     let cancelled = false;
     let opened: MediaStream | null = null;
     const element = video.current;
@@ -101,7 +103,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
           video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
-        if (cancelled) {
+        if (cancelled || readerFailed.current) {
           opened.getTracks().forEach((track) => track.stop());
           return;
         }
@@ -141,6 +143,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
 
   /** Releases the camera: the light goes off even though the screen stays open on its error message. */
   const stopStream = useCallback(() => {
+    readerFailed.current = true;
     stream.current?.getTracks().forEach((track) => track.stop());
     stream.current = null;
     if (video.current) video.current.srcObject = null;
@@ -220,6 +223,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
   };
 
   const retry = () => {
+    readerFailed.current = false;
     setPhase({ kind: "starting" });
     setAttempt((n) => n + 1);
   };

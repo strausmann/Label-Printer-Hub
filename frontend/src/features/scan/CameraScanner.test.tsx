@@ -10,7 +10,8 @@ import { CameraScanner, setScanDeps, type ScanDeps } from "./CameraScanner";
 import type { Decoder, ScanHit } from "./decoder";
 
 const track = { stop: vi.fn() };
-const stream = { getTracks: () => [track] } as unknown as MediaStream;
+const track2 = { stop: vi.fn() };
+const stream = { getTracks: () => [track, track2] } as unknown as MediaStream;
 const HIT: ScanHit = { format: "qr_code", text: "sheet:L4736-0002" };
 
 function deps(hits: Array<ScanHit | null>): { deps: ScanDeps; decode: ReturnType<typeof vi.fn> } {
@@ -29,6 +30,7 @@ const ui = (props: Parameters<typeof CameraScanner>[0]) => (
 beforeEach(async () => {
   await initI18n("en");
   track.stop.mockClear();
+  track2.stop.mockClear();
   HTMLMediaElement.prototype.play = vi.fn(async () => {});
   Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: vi.fn(async () => stream) }, configurable: true });
   Object.defineProperty(window, "isSecureContext", { value: true, configurable: true });
@@ -95,24 +97,67 @@ describe("CameraScanner", () => {
     const decoder: Decoder = { engine: "native", decode: vi.fn(async () => { throw new Error("boom"); }), close: vi.fn() };
     setScanDeps({ createDecoder: async () => decoder, grabFrame: async () => ({ close() {} }) as unknown as ImageBitmap, intervalMs: 5 });
     const view = render(ui({ onHit: vi.fn() }));
+    const element = view.container.querySelector("video")!;
     await waitFor(() => expect(track.stop).toHaveBeenCalledTimes(1));
     await act(async () => {
       await new Promise((r) => setTimeout(r, 30));
     });
     view.unmount();
     expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(track2.stop).toHaveBeenCalledTimes(1);
+    expect(element.srcObject).toBeNull();
   });
 
   it("reader failure stops the camera tracks (photo path)", async () => {
     const decoder: Decoder = { engine: "native", decode: vi.fn(async () => { throw new Error("boom"); }), close: vi.fn() };
     setScanDeps({ createDecoder: async () => decoder, grabFrame: async (source) => (source instanceof Blob ? ({ close() {} } as unknown as ImageBitmap) : null), intervalMs: 5 });
-    render(ui({ onHit: vi.fn() }));
-    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    const view = render(ui({ onHit: vi.fn() }));
+    const element = view.container.querySelector("video")!;
+    await waitFor(() => expect(element.srcObject).toBe(stream));
     expect(track.stop).not.toHaveBeenCalled();
     await userEvent.upload(screen.getByLabelText("Choose a photo of a code"), new File(["x"], "a.png", { type: "image/png" }));
     await waitFor(() => expect(track.stop).toHaveBeenCalledTimes(1));
+    expect(track2.stop).toHaveBeenCalledTimes(1);
+    expect(element.srcObject).toBeNull();
+  });
+
+  const failingDeps = (): ScanDeps => {
+    const decoder: Decoder = { engine: "native", decode: vi.fn(async () => { throw new Error("boom"); }), close: vi.fn() };
+    return { createDecoder: async () => decoder, grabFrame: async () => ({ close() {} }) as unknown as ImageBitmap, intervalMs: 5 };
+  };
+
+  it("after a reader failure, hiding and showing the tab does not reopen the camera", async () => {
+    setScanDeps(failingDeps());
+    render(ui({ onHit: vi.fn() }));
+    await waitFor(() => expect(track.stop).toHaveBeenCalledTimes(1));
+    const getUserMedia = navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>;
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    for (const hidden of [true, false]) {
+      Object.defineProperty(document, "hidden", { value: hidden, configurable: true });
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    }
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "The code reader did not start" })).toBeVisible();
+  });
+
+  it("a photo failure while the camera is still starting does not let the camera open afterwards", async () => {
+    let release: (value: MediaStream) => void = () => {};
+    (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockImplementationOnce(() => new Promise<MediaStream>((r) => (release = r)));
+    setScanDeps({ ...failingDeps(), grabFrame: async (source) => (source instanceof Blob ? ({ close() {} } as unknown as ImageBitmap) : null) });
+    const view = render(ui({ onHit: vi.fn() }));
+    const element = view.container.querySelector("video");
+    await userEvent.upload(screen.getByLabelText("Choose a photo of a code"), new File(["x"], "a.png", { type: "image/png" }));
+    await screen.findByText(/reader|read/i);
+    await act(async () => {
+      release(stream);
+    });
+    expect(track.stop).toHaveBeenCalledTimes(1);
+    expect(track2.stop).toHaveBeenCalledTimes(1);
+    expect(element?.srcObject ?? null).toBeNull();
   });
 });

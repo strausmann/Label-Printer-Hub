@@ -86,6 +86,8 @@ function mutate(fn: (stored: CartItem[]) => CartItem[]): void {
 
 /** Takes the cart from storage again (another tab changed it; tests use it to simulate a fresh page). */
 export function reloadCart(): void {
+  // While a write is failing the memory copy is the newer one; storage would only bring the older cart back.
+  if (storageBroken) return;
   items = read();
   listeners.forEach((l) => l());
 }

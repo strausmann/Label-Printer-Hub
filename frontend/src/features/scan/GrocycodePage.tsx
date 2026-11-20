@@ -14,6 +14,9 @@ import { useGrocyObject, type GrocyBattery, type GrocyChore } from "./grocyObjec
 
 const route = getRouteApi("/grocycode/$entity/$id");
 
+/** The Grocy page of an object under a checked base; the id stays one path segment whatever it contains. */
+export const grocyObjectUrl = (base: string, path: "battery" | "chore", id: string): string => `${base}/${path}/${encodeURIComponent(id)}`;
+
 /**
  * Where a scanned battery or chore code lands: a few facts about it from Grocy, and a link to it
  * in Grocy. The link comes with the answer; until there is one, the address the hub saw earlier does.
@@ -32,7 +35,7 @@ function Reading({ entity, id }: { entity: "b" | "c"; id: string }) {
   const path = entity === "b" ? "battery" : "chore";
   const data = query.data;
   const notFound = query.error instanceof ApiError && query.error.status === 404;
-  const href = safeHref(data?.url) ?? (known && !notFound ? `${known}/${path}/${id}` : null);
+  const href = safeHref(data?.url) ?? (known && !notFound ? grocyObjectUrl(known, path, id) : null);
 
   // No date reads in words (the caller says which); a date that cannot be read is a dash, never "Invalid Date".
   const when = (value: string | null | undefined, none: string) => {
