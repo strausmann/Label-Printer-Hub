@@ -40,3 +40,7 @@ Die QL-Bibliothek ist jetzt `brother-ql-next`. Ein QL-Etikett, das kürzer als e
 ## Kalibrierseite
 
 Der Download der Kalibrierseite (`GET /api/v1/printers/{id}/calibration/{tray}/page/pdf`) zeichnet jetzt unter denselben Render-Plätzen wie die Bogenvorschau. Er antwortet mit `504` (`render-timeout`) nach `LABELYARD_RENDER_TIMEOUT_S`, mit `503` (`render-unavailable`), wenn nicht rechtzeitig ein Platz frei wird, und mit `429` (`too-many-previews`), solange ein Zeichnen desselben Schlüssels hängt. Ein Bogentyp mit mehr als 2500 Zellen (Spalten × Zeilen) wird mit `422` und dem Fehlercode `calibration_grid_too_large` abgewiesen (`error_detail`: `cells`, `max_cells`), beim Download wie beim Drucken der Seite. Über die API angelegte Typen haben höchstens 400 Zellen; das Limit erreicht also nur ein Typ, der auf anderem Weg gespeichert wurde.
+
+## IDs neuer Drucker
+
+Ein Drucker, den du ab 1.7.x anlegst, bekommt eine zufällige ID. Bisher wurde die ID aus Modell, Adresse und Anlagezeit abgeleitet und ließ sich daraus errechnen. Bestehende Drucker behalten ihre ID; für Skripte, die sie nutzen, ändert sich nichts. Ein Skript, das die ID eines neuen Druckers selbst berechnet hat, muss sie aus der API lesen.

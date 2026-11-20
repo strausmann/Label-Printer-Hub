@@ -1,46 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Deterministischer Drucker-UUIDv5 aus Umgebungskonfiguration.
+"""The id of a new printer row.
 
-Phase 7b Cluster 1b: Der Lifespan berechnet eine stabile Kennung aus
-``(model, host, port)`` damit Runtime-Drucker (driver.make_queue_printer)
-und DB-Zeile (upsert_runtime_printer) beim Neustart dieselbe ``printer.id``
-teilen.
+Until 1.7.1 a printer's id was a UUIDv5 over ``model|host|port|created_at`` with a namespace
+that sits in the public repository. Every read key sees the id, the model and ``created_at``, so
+the address could be recovered offline by hashing candidate hosts and ports (run-30 R30-3). A new
+printer now gets a random UUIDv4 that says nothing about where it is.
 
-Issue #124: Erweiterung auf 4-arg mit timezone-aware ``created_at_utc``.
-Bestandsdrucker nutzen noch den 3-arg-Aufruf in upsert_runtime_printers —
-dieser wird in Phase 5 entfernt.
-
-Die Namespace-UUID ist eine Repo-Konstante — NICHT ändern ohne koordinierte
-DB-Migration: jede bestehende Drucker-Zeile würde verwaisen.
+Rows created earlier keep their id: nothing derives an id to find a printer (rows are looked up
+by id, slug or name), so no migration is needed and the old ids simply stay.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-
-# Phase 7b Namespace-Konstante; zufällig gewählt. Nicht verändern.
-_PRINTER_NAMESPACE = uuid.UUID("6f1b3c7e-9d6a-4f48-9a8c-d4e0e1c5a3b2")
 
 
-def derive_printer_id(
-    model: str,
-    host: str,
-    port: int,
-    created_at_utc: datetime,
-) -> uuid.UUID:
-    """UUIDv5 aus Model+Host+Port+Created-At (UTC).
-
-    ``model`` wird vor dem Hashing in Kleinbuchstaben umgewandelt, damit
-    umgebungsbedingte Schreibweisen wie ``'PT-P750W'`` und ``'pt-p750w'``
-    zur selben Kennung führen.
-
-    ``created_at_utc`` MUSS timezone-aware sein. Naive datetime → ValueError.
-    Der Salt ist TZ-sensitiv — der ISO-String würde je nach lokaler TZ variieren.
-    """
-    if created_at_utc.tzinfo is None:
-        raise ValueError("created_at_utc must be timezone-aware (UTC)")
-    salt = f"{model.lower()}|{host}|{port}|{created_at_utc.isoformat()}"
-    return uuid.uuid5(_PRINTER_NAMESPACE, salt)
+def new_printer_id() -> uuid.UUID:
+    """A fresh random id for a printer that is being created."""
+    return uuid.uuid4()

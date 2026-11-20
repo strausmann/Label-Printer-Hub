@@ -40,3 +40,7 @@ The QL library is now `brother-ql-next`. A QL label shorter than about 12.7 mm (
 ## Calibration page
 
 The calibration page download (`GET /api/v1/printers/{id}/calibration/{tray}/page/pdf`) now draws under the same render slots as the sheet preview. It answers `504` (`render-timeout`) past `LABELYARD_RENDER_TIMEOUT_S`, `503` (`render-unavailable`) when no slot is free in time, and `429` (`too-many-previews`) while a render of the same key is stuck. A sheet type with more than 2500 cells (columns × rows) is refused with `422` and the error code `calibration_grid_too_large` (`error_detail`: `cells`, `max_cells`), for the download and for printing the page alike. Types created through the API have at most 400 cells, so only a type stored by other means can reach the limit.
+
+## Ids of new printers
+
+A printer you create from 1.7.x on gets a random id. Before, the id was derived from the model, address and creation time, so it could be worked out from those values. Printers that already exist keep their id; nothing changes for scripts that use it. A script that computed the id of a new printer itself must read it from the API instead.

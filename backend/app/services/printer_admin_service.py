@@ -25,7 +25,6 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -42,7 +41,7 @@ from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.models.printer_tray_loading import PrinterTrayLoading
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
-from app.printer_backends.ipp.client import IppClient, to_http_url
+from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.ipp.errors import (
     IppError,
     IppStatusError,
@@ -62,7 +61,7 @@ from app.schemas.printer_admin import (
     TrayIn,
 )
 from app.services.audit_redaction import redact_secrets
-from app.services.printer_identity import derive_printer_id
+from app.services.printer_identity import new_printer_id
 from app.sheets.errors import (
     IppBadResponseApiError,
     IppPdfUnsupportedError,
@@ -307,13 +306,6 @@ def _ipp_model(summary: ProbeSummary, given: str | None) -> str:
         if candidate and candidate.strip():
             return candidate.strip()[:MAX_MODEL_LENGTH]
     return IPP_MODEL_FALLBACK
-
-
-def _ipp_host_port(uri: str) -> tuple[str, int]:
-    """Host and effective port of an IPP URI, the identity salt for ``derive_printer_id``."""
-    parts = urlsplit(to_http_url(uri))
-    port = parts.port or (443 if parts.scheme == "https" else 80)
-    return parts.hostname or "", port
 
 
 def _check_ipp_save(summary: ProbeSummary, tray_keys: Sequence[str]) -> None:
@@ -581,18 +573,11 @@ class PrinterAdminService:
             )
             _check_ipp_save(summary, [t.key for t in trays])
             model = _ipp_model(summary, payload.model)
-            host, port = _ipp_host_port(payload.connection.uri)
         else:
             model = payload.model or ""
             _check_tape_model(payload.model)
-            host, port = payload.connection.host, payload.connection.port
         created_at = datetime.now(UTC)
-        printer_id = derive_printer_id(
-            model=model,
-            host=host,
-            port=port,
-            created_at_utc=created_at,
-        )
+        printer_id = new_printer_id()
         row = _payload_to_row(payload, printer_id, created_at)
         row["model"] = model
         printer = Printer(**row)

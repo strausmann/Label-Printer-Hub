@@ -246,18 +246,6 @@ def test_ipp_model_from_make_and_model_cut_to_120() -> None:
     assert _ipp_model(_summary(make_and_model=" "), None) == "IPP printer"
 
 
-def test_ipp_identity_salt_uses_effective_host_and_port() -> None:
-    from app.services.printer_admin_service import _ipp_host_port
-
-    assert _ipp_host_port("ipp://printer.example.invalid/ipp") == ("printer.example.invalid", 631)
-    assert _ipp_host_port("https://printer.example.invalid/ipp") == ("printer.example.invalid", 443)
-    assert _ipp_host_port("http://printer.example.invalid/ipp") == ("printer.example.invalid", 80)
-    assert _ipp_host_port("ipps://printer.example.invalid:8631/") == (
-        "printer.example.invalid",
-        8631,
-    )
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("exc", "code"),
