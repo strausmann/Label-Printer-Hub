@@ -24,6 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-cell-number: var(--cell-number);
+  --color-reserved-line: var(--reserved-line);
   --color-link: var(--link);
   --color-ok: var(--ok);
   --color-warn: var(--warn);

@@ -114,18 +114,58 @@ describe("cell states are never colour alone", () => {
     expect(screen.getByText("1 = cell number (not printed)")).toBeInTheDocument();
   });
 
+  /** The pattern a cell's fill points at, looked up inside the same svg. */
+  const referencedPattern = (shape: Element | null): Element | null => {
+    const id = /^url\(#(.+)\)$/.exec(shape?.getAttribute("fill") ?? "")?.[1];
+    if (!id) return null;
+    const svg = shape!.closest("svg")!;
+    return [...svg.querySelectorAll("pattern")].find((p) => p.id === id) ?? null;
+  };
+
   it.each([false, true])("reserved and new cells differ in fill (overlay %s)", (overlay) => {
-    const { container } = render(
+    render(
       <SheetGrid geometry={L4736} cells={[mk(1, "reserved"), mk(2, "new")]} mode="view" label="g" containerWidth={360}
         overlayPng={overlay ? "data:image/png;base64,AAAA" : undefined} />,
     );
     const reserved = cell(1).querySelector('[data-shape="cell"]');
     const created = cell(2).querySelector('[data-shape="cell"]');
-    expect(reserved).toHaveAttribute("fill", "url(#reserved-hatch)");
-    expect(container.querySelector("pattern#reserved-hatch")).not.toBeNull();
-    expect(created).not.toHaveAttribute("fill", "url(#reserved-hatch)");
+    const pattern = referencedPattern(reserved);
+    expect(pattern, "the reserved fill points at a pattern of its own grid").not.toBeNull();
+    expect(pattern!.id.endsWith("-reserved")).toBe(true);
+    // over a rendered page the hatch is lines only: no ground that would hide the page
+    expect(pattern!.querySelector("rect") === null).toBe(overlay);
+    expect(pattern!.querySelector("line")).not.toBeNull();
+    expect(created?.getAttribute("fill") ?? "").not.toMatch(/^url\(/);
     // new: solid on the plain grid; over a rendered page it stays unfilled (the page must stay readable)
     expect(created).toHaveClass(overlay ? "fill-transparent" : "fill-accent");
+  });
+
+  it("two grids on one page keep their own hatch: unique ids, each cell points at its own grid's pattern", () => {
+    const { container } = render(
+      <div>
+        <SheetGrid geometry={L4736} cells={[mk(1, "reserved")]} mode="select" label="plain" containerWidth={360} />
+        <SheetGrid geometry={L4736} cells={[mk(1, "reserved")]} mode="view" label="over page" containerWidth={360}
+          overlayPng="data:image/png;base64,AAAA" />
+      </div>,
+    );
+    const ids = [...container.querySelectorAll("[id]")].map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const [plain, over] = [...container.querySelectorAll("svg")];
+    const own = (svg: Element) => {
+      const shape = svg.querySelector('[data-state="reserved"] [data-shape="cell"]');
+      const pattern = referencedPattern(shape);
+      expect(pattern).not.toBeNull();
+      return pattern!;
+    };
+    expect(own(plain!).querySelector("rect")).not.toBeNull(); // plain grid: with its ground
+    expect(own(over!).querySelector("rect")).toBeNull(); // over a page: lines only
+  });
+
+  it("a reserved cell's number has a halo against the hatch, like a used one", () => {
+    render(<SheetGrid geometry={L4736} cells={[mk(1, "reserved")]} mode="view" label="g" containerWidth={360} />);
+    const text = cell(1).querySelector("text");
+    expect(text).toHaveClass("stroke-accent-soft");
+    expect(text).toHaveAttribute("stroke-width", "0.7");
   });
 
   it("no class attribute ends with a space", () => {
@@ -192,10 +232,11 @@ describe("overlay", () => {
     expect(shapes).toHaveLength(48);
     // the hatch of a reserved cell is lines only over a page: no ground, so the page stays readable
     for (const shape of shapes) {
-      if (shape.closest("[data-state]")?.getAttribute("data-state") === "reserved") expect(shape).toHaveAttribute("fill", "url(#reserved-hatch)");
-      else expect(shape.getAttribute("class")).toContain("fill-transparent");
+      if (shape.closest("[data-state]")?.getAttribute("data-state") === "reserved") {
+        expect(shape.getAttribute("fill")).toMatch(/^url\(#.+-reserved\)$/);
+      } else expect(shape.getAttribute("class")).toContain("fill-transparent");
     }
-    expect(container.querySelector("pattern#reserved-hatch rect")).toBeNull();
+    expect(container.querySelector("pattern[id$='-reserved'] rect")).toBeNull();
     // the hatch of used cells is thinned, and a new cell is told apart by a thick outline
     expect(cell(2).querySelector('[data-marker="hatch"]')).toHaveAttribute("opacity", "0.4");
     expect(cell(5).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-width", "1");

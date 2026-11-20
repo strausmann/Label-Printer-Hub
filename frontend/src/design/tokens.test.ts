@@ -43,7 +43,7 @@ function resolveVars(decls: Record<string, string>, base: Record<string, string>
 
 const roles: (keyof Semantic)[] = [
   "bg", "surface", "sunken", "line", "line-strong", "ink", "ink-2", "ink-3",
-  "accent", "accent-ink", "accent-soft", "cell-number", "link", "ok", "warn", "bad",
+  "accent", "accent-ink", "accent-soft", "cell-number", "reserved-line", "link", "ok", "warn", "bad",
 ];
 
 describe("contrast", () => {
@@ -88,6 +88,13 @@ describe("contrast", () => {
       const t = themes[theme];
       expect(contrastRatio(t["cell-number"], t.surface), `${theme} on surface`).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(t["cell-number"], t.sunken), `${theme} on sunken`).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("the reserved hatch lines reach 3:1 against their own ground in both themes", () => {
+    for (const theme of ["light", "dark"] as const) {
+      const t = themes[theme];
+      expect(contrastRatio(t["reserved-line"], t["accent-soft"]), theme).toBeGreaterThanOrEqual(3);
     }
   });
 
