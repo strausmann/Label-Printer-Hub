@@ -222,9 +222,9 @@ async def test_error_texts_are_fixed_strings(
     headers = await _key(["read"])
 
     def boom(*a: Any, **k: Any) -> Any:
-        raise render_slots.RenderUnavailableError("printer 10.9.8.7 said no")
+        raise render_slots.RenderUnavailableError("printer 203.0.113.7 said no")
 
     monkeypatch.setattr(calibration_routes.render_slots, "render_bounded", boom)
     r = await api_client_with_seed.get(_pdf_url(pid, "fixed-txt"), headers=headers)
     assert r.status_code == 503, r.text
-    assert "10.9.8.7" not in r.text
+    assert "203.0.113.7" not in r.text
