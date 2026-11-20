@@ -202,6 +202,20 @@ jobs:
       - name: Install Vale
         run: scripts/vale_setup.sh
 
+      # Pinned to the version the backend dev environment resolves today (backend/pyproject.toml
+      # has no lockfile for it), so both jobs lint alike. Rules: scripts/ruff.toml.
+      - name: Install ruff
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ruff"
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet "ruff==0.17.6"
+          echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+
+      - name: Lint the scripts
+        run: ruff check scripts/
+
+      - name: Check the script formatting
+        run: ruff format --check scripts/
+
       - name: Run the script tests
         run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
