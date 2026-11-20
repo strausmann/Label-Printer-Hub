@@ -44,3 +44,7 @@ Der Download der Kalibrierseite (`GET /api/v1/printers/{id}/calibration/{tray}/p
 ## IDs neuer Drucker
 
 Ein Drucker, den du ab 1.7.x anlegst, bekommt eine zufällige ID. Bisher wurde die ID aus Modell, Adresse und Anlagezeit abgeleitet und ließ sich daraus errechnen. Bestehende Drucker behalten ihre ID; für Skripte, die sie nutzen, ändert sich nichts. Ein Skript, das die ID eines neuen Druckers selbst berechnet hat, muss sie aus der API lesen.
+
+## Lange Texte aus Grocy, Snipe-IT und Spoolman
+
+Ein Lookup kürzt jetzt jeden Text der Antwort (Titel, ID, weitere Zeilen, Listenzeilen) auf 512 Zeichen und beendet einen gekürzten Text mit `…`. Von den weiteren Zeilen bleiben höchstens 10, von den Listenzeilen höchstens 100. Etiketten aus Lookups, die Renderprüfung und Webhooks verwenden den gekürzten Text, ebenso der gespeicherte Auftrag. Der Bogendruck tat das schon. Im normalen Betrieb ist nichts so lang.

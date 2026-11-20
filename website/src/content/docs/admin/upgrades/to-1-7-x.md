@@ -44,3 +44,7 @@ The calibration page download (`GET /api/v1/printers/{id}/calibration/{tray}/pag
 ## Ids of new printers
 
 A printer you create from 1.7.x on gets a random id. Before, the id was derived from the model, address and creation time, so it could be worked out from those values. Printers that already exist keep their id; nothing changes for scripts that use it. A script that computed the id of a new printer itself must read it from the API instead.
+
+## Long texts from Grocy, Snipe-IT and Spoolman
+
+A lookup now cuts every text of the answer (title, id, secondary lines, listing rows) to 512 characters and ends a cut text with `…`. At most 10 secondary lines and 100 listing rows are kept. Labels printed from lookups, the render check and webhooks use the cut text, and so does the stored job. Sheet printing already did this. Nothing in normal use is that long.
