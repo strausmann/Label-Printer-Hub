@@ -397,6 +397,17 @@ class CalibrationTypeUnsuitableError(SheetApiError):
         super().__init__(detail={"cols": cols, "rows": rows})
 
 
+class CalibrationGridTooLargeError(SheetApiError):
+    """A calibration page of this type would draw more cells than the render allows (#358)."""
+
+    status = 422
+    error_code = "calibration_grid_too_large"
+    message = "This sheet type has too many cells for a calibration page."
+
+    def __init__(self, cells: int, max_cells: int) -> None:
+        super().__init__(detail={"cells": cells, "max_cells": max_cells})
+
+
 # ---------------------------------------------------------------------------- sheet printing
 
 
