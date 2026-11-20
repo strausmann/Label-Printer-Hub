@@ -442,9 +442,12 @@ class PrinterRuntime:
                 )
             )
         finally:  # 263-16: a failing queue stop must not leave the page clients open
-            for wiring in wirings:
-                await self._close_confirmation(wiring)  # #398: before the engine goes away
-                await self._close_page_client(wiring)
+            try:
+                for wiring in wirings:
+                    await self._close_confirmation(wiring)  # #398: before the engine goes away
+            finally:  # #398 (review N-2): a cancel during that wait must not skip them either
+                for wiring in wirings:
+                    await self._close_page_client(wiring)
 
     def describe_tape_for(self, printer_id: UUID, width_mm: int) -> TapeDescription:
         """The attached model driver's tape label; the generic ``"{N}mm"`` otherwise."""
@@ -713,16 +716,20 @@ class PrinterRuntime:
             await self._stop_producer(wiring)
             await self._queue().remove_printer(printer_id, timeout_s=wiring.queue_timeout_s)
         finally:
-            if wiring.kind == "tape":
-                await self._close_confirmation(wiring)
-                self.roll_tracker.forget(printer_id)
-                self._router.unregister(wiring.slug)
-                if self._slug_to_id.get(wiring.slug) == printer_id:
-                    del self._slug_to_id[wiring.slug]
-            else:
-                self._ipp_states.pop(printer_id, None)
-                await self._close_page_client(wiring)
-            self._refresh_backcompat()
+            try:
+                if wiring.kind == "tape":
+                    try:
+                        await self._close_confirmation(wiring)
+                    finally:  # #398 (review N-2): a cancel during that wait still unwires it
+                        self.roll_tracker.forget(printer_id)
+                        self._router.unregister(wiring.slug)
+                        if self._slug_to_id.get(wiring.slug) == printer_id:
+                            del self._slug_to_id[wiring.slug]
+                else:
+                    self._ipp_states.pop(printer_id, None)
+                    await self._close_page_client(wiring)
+            finally:
+                self._refresh_backcompat()
 
     # ------------------------------------------------------------------ helpers
 

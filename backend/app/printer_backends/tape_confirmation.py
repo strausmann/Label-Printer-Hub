@@ -545,6 +545,9 @@ class TapeSendState:
             _logger.warning(
                 "The print confirmation of a printer was not stored before it was detached"
             )
+        except asyncio.CancelledError:
+            task.cancel()  # the caller gave up waiting: the write does not outlive the backend
+            raise
 
     def begin(self, *, detect: bool = False) -> None:
         """A new send starts (right after the read before sending)."""

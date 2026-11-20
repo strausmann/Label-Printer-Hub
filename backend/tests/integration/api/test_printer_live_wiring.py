@@ -12,6 +12,7 @@ every wait is short; each is bounded.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
@@ -801,3 +802,80 @@ async def test_detaching_a_printer_settles_its_record_write(
     else:
         assert task.cancelled() and stored == []
     release.set()
+
+
+@pytest.mark.parametrize("action", ["detach", "stop"])
+async def test_a_cancel_during_the_record_wait_still_cleans_up(
+    live: Live, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """#398 (review N-2): a detach or stop cancelled while it waits for a record write still
+    unregisters the tape backend (detach) and closes every page client (stop)."""
+    from datetime import UTC, datetime
+
+    from app.printer_backends.brother_ql_backend import BrotherQLBackend
+    from app.printer_backends.tape_confirmation import ConfirmationRecord
+
+    body = {
+        "name": "Cart QL",
+        "slug": "cart-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.18", "port": 9100},
+    }
+    resolve = patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    )
+    with resolve:
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+    pid = UUID(resp.json()["id"])
+    backend = BrotherQLBackend(host="192.0.2.18")
+    live.runtime._router._backends["cart-ql"] = backend
+    state = backend.send_state
+
+    async def sink(record: ConfirmationRecord) -> None:  # a database that never frees up
+        await asyncio.Event().wait()
+
+    state.sink = sink
+    state.record = ConfirmationRecord(
+        "raw", True, datetime(2026, 11, 19, 9, 0, tzinfo=UTC), counter_off=True
+    )
+    state.reset_counter_gate()
+    await state.flush()
+    write = state._flush_task
+    assert write is not None
+
+    waiting = asyncio.Event()
+    real_close = state.close
+
+    async def close(timeout_s: float | None = None) -> None:
+        waiting.set()
+        await real_close(timeout_s)
+
+    monkeypatch.setattr(state, "close", close)
+    closed_clients: list[UUID] = []
+    real_close_client = live.runtime._close_page_client
+
+    async def close_client(wiring: Any) -> None:
+        closed_clients.append(wiring.printer_id)
+        await real_close_client(wiring)
+
+    monkeypatch.setattr(live.runtime, "_close_page_client", close_client)
+    wired = list(live.runtime._wired)
+
+    run = asyncio.create_task(
+        live.runtime.detach(pid) if action == "detach" else live.runtime.stop()
+    )
+    await asyncio.wait_for(waiting.wait(), 5.0)
+    await asyncio.sleep(0)
+    run.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await run
+
+    assert write.done(), "the record write outlived the cancelled wait"
+    if action == "detach":
+        assert live.runtime._router.get("cart-ql") is None
+        assert pid not in live.runtime._wired
+    else:
+        assert sorted(map(str, closed_clients)) == sorted(map(str, wired))
