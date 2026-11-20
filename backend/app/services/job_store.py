@@ -65,7 +65,8 @@ class JobStore(Protocol):
         Returns True when the worker may print: the transition happened.
         Returns False when the row is no longer QUEUED (e.g. cancelled through the
         API) or does not exist (cancelled, then removed): the worker must NOT print
-        such a job.
+        such a job. ``MemoryJobStore`` is the exception: it treats a missing row as "go",
+        because ``PrintQueue.submit()`` creates no row.
 
         Must NOT raise on missing jobs.
         """
