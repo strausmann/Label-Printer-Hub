@@ -152,7 +152,7 @@ describe("CameraScanner", () => {
     const view = render(ui({ onHit: vi.fn() }));
     const element = view.container.querySelector("video");
     await userEvent.upload(screen.getByLabelText("Choose a photo of a code"), new File(["x"], "a.png", { type: "image/png" }));
-    await screen.findByText(/reader|read/i);
+    await screen.findByRole("heading", { name: "The code reader did not start" });
     await act(async () => {
       release(stream);
     });

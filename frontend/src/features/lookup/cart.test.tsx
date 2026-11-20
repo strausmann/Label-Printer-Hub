@@ -20,9 +20,14 @@ const spool: CartItem = { app: "spoolman", id: "7", name: "PLA red", content_typ
 
 beforeEach(() => {
   localStorage.clear();
+  // A successful write clears the module's `storageBroken` flag, which an earlier test may have left set.
+  const reset = renderHook(() => useCart(), { wrapper });
+  act(() => reset.result.current.clear());
+  reset.unmount();
   reloadCart();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
