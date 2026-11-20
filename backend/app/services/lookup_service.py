@@ -35,13 +35,20 @@ from app.integrations.registry import (
 )
 from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
+from app.schemas.print_request import RAW_LISTING_MAX, RAW_SECONDARY_MAX, RAW_TEXT_MAX
 from app.services.errors import (
     AppLookupNotFoundError,
     IntegrationNotConfiguredError,
     LookupFailedError,
 )
 
-__all__ = ["LOOKUP_DEADLINE_S", "AppLookupService", "LookupFailedError", "UnknownAppError"]
+__all__ = [
+    "LOOKUP_DEADLINE_S",
+    "AppLookupService",
+    "LookupFailedError",
+    "UnknownAppError",
+    "cap_label_text",
+]
 
 #: Upper bound for one whole lookup, covering every upstream call the plugin makes
 #: (a product lookup may fall back to a barcode request, an asset tag to an id request).
@@ -49,6 +56,36 @@ __all__ = ["LOOKUP_DEADLINE_S", "AppLookupService", "LookupFailedError", "Unknow
 LOOKUP_DEADLINE_S: Final = 15.0
 
 _log = logging.getLogger(__name__)
+
+
+def _shortened(text: str) -> str:
+    """``text`` cut to :data:`RAW_TEXT_MAX` characters, the last one an ellipsis."""
+    if len(text) <= RAW_TEXT_MAX:
+        return text
+    return text[: RAW_TEXT_MAX - 1] + "\N{HORIZONTAL ELLIPSIS}"
+
+
+def cap_label_text(label: LabelData) -> LabelData:
+    """A lookup's answer held to the text caps of a raw label (``RawLabelData``).
+
+    The integration is not trusted to stay small: a hostile or broken one can answer a name of
+    close to a megabyte, and every renderer, job row and preview would carry it whole. Text is
+    cut with an ellipsis, the secondary lines and listing rows keep their first
+    ``RAW_SECONDARY_MAX`` and ``RAW_LISTING_MAX`` entries. The QR payload is never cut (a cut
+    payload is another code); plugins build it from the configured base URL and an id they
+    checked, not from the upstream's text.
+    """
+    return label.model_copy(
+        update={
+            "title": None if label.title is None else _shortened(label.title),
+            "primary_id": None if label.primary_id is None else _shortened(label.primary_id),
+            "secondary": tuple(_shortened(line) for line in label.secondary[:RAW_SECONDARY_MAX]),
+            "items": tuple(
+                row.model_copy(update={"item": _shortened(row.item)})
+                for row in label.items[:RAW_LISTING_MAX]
+            ),
+        }
+    )
 
 
 class UnknownAppError(LookupFailedError):
@@ -72,7 +109,8 @@ class AppLookupService:
             plugin = IntegrationRegistry.get(source_app)
         except IntegrationNotFoundError as e:
             raise UnknownAppError(str(e)) from e
-        return await self._run(plugin.lookup(identifier), f"{source_app} lookup")
+        label = await self._run(plugin.lookup(identifier), f"{source_app} lookup")
+        return cap_label_text(label)
 
     async def grocy_battery(self, battery_id: str) -> GrocyBatteryResult:
         """Read-only details of one Grocy battery; errors map exactly like :meth:`lookup`."""

@@ -298,3 +298,63 @@ async def test_compressed_answer_maps_to_502_integration_lookup_failed(
     ours = " ".join(r.getMessage() for r in caplog.records if r.name.startswith("app"))
     assert "compressed although identity was requested" in ours
     assert "spoolman.example" not in ours
+
+
+# ---------------------------------------------------------------------------
+# Text caps on the answer (run-30 R30-2): the tape render paths read it unbounded otherwise
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("plugin_cls", "identifier"), _CASES, ids=lambda v: str(v))
+async def test_a_huge_name_in_the_answer_is_cut_to_the_text_cap(
+    plugin_cls: type[StoreBoundPlugin], identifier: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.schemas.print_request import RAW_TEXT_MAX
+
+    big = "W" * 250_000  # three of them stay under the 1 MiB answer limit
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # One answer that every plugin can read: the id fields, a name, a serial and a filament.
+        return httpx.Response(
+            200,
+            json={
+                "id": 1,
+                "asset_tag": identifier,
+                "name": big,
+                "serial": big,
+                "filament": {"name": big, "vendor": {"name": "V"}},
+            },
+        )
+
+    plugin = bound(plugin_cls)
+    _serve(plugin, handler)
+    monkeypatch.setattr(
+        "app.integrations.registry.IntegrationRegistry.get", classmethod(lambda _c, _n: plugin)
+    )
+    label = await AppLookupService().lookup(plugin.name, identifier)
+
+    texts = [label.title or "", label.primary_id or "", *label.secondary]
+    assert max(len(t) for t in texts) <= RAW_TEXT_MAX
+    assert label.title is not None and label.title.endswith("\N{HORIZONTAL ELLIPSIS}")
+    assert len(label.title) == RAW_TEXT_MAX
+
+
+def test_cap_label_text_leaves_short_text_and_the_qr_payload_alone() -> None:
+    from app.schemas.label_data_item import LabelDataItem
+    from app.schemas.print_request import RAW_LISTING_MAX, RAW_SECONDARY_MAX, RAW_TEXT_MAX
+    from app.services.lookup_service import cap_label_text
+
+    short = LabelData(source_app="grocy", title="Milk", primary_id="1", qr_payload="u" * 600)
+    assert cap_label_text(short) == short
+
+    many = LabelData(
+        source_app="grocy",
+        secondary=tuple("s" * (RAW_TEXT_MAX + 5) for _ in range(RAW_SECONDARY_MAX + 3)),
+        items=tuple(LabelDataItem(item="r" * 9_000) for _ in range(RAW_LISTING_MAX + 5)),
+    )
+    capped = cap_label_text(many)
+    assert len(capped.secondary) == RAW_SECONDARY_MAX
+    assert len(capped.items) == RAW_LISTING_MAX
+    assert all(len(line) == RAW_TEXT_MAX for line in capped.secondary)
+    assert all(len(row.item) == RAW_TEXT_MAX for row in capped.items)
