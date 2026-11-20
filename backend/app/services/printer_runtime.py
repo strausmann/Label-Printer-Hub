@@ -443,6 +443,7 @@ class PrinterRuntime:
             )
         finally:  # 263-16: a failing queue stop must not leave the page clients open
             for wiring in wirings:
+                await self._close_confirmation(wiring)  # #398: before the engine goes away
                 await self._close_page_client(wiring)
 
     def describe_tape_for(self, printer_id: UUID, width_mm: int) -> TapeDescription:
@@ -466,11 +467,20 @@ class PrinterRuntime:
         """The live print-confirmation state of an attached tape printer, else ``None``
         (#398: the printer view derives ``counter_read`` from it)."""
         wiring = self._wired.get(printer_id)
-        if wiring is None or wiring.kind != "tape":
+        return self._send_state_of(wiring) if wiring is not None else None
+
+    def _send_state_of(self, wiring: _Wiring) -> TapeSendState | None:
+        if wiring.kind != "tape":
             return None
-        backend = self._router.get(wiring.slug)
-        state = getattr(backend, "send_state", None)
+        state = getattr(self._router.get(wiring.slug), "send_state", None)
         return state if isinstance(state, TapeSendState) else None
+
+    async def _close_confirmation(self, wiring: _Wiring) -> None:
+        """#398 (review N-1): a record write still running finishes, or is cancelled after
+        ``STORE_TIMEOUT_S``, before the backend is dropped or the engine disposed."""
+        state = self._send_state_of(wiring)
+        if state is not None:
+            await state.close()
 
     def print_service_for(self, printer_id: UUID) -> PrintService | None:
         """The ``PrintService`` of an attached tape printer, else ``None``."""
@@ -704,6 +714,7 @@ class PrinterRuntime:
             await self._queue().remove_printer(printer_id, timeout_s=wiring.queue_timeout_s)
         finally:
             if wiring.kind == "tape":
+                await self._close_confirmation(wiring)
                 self.roll_tracker.forget(printer_id)
                 self._router.unregister(wiring.slug)
                 if self._slug_to_id.get(wiring.slug) == printer_id:

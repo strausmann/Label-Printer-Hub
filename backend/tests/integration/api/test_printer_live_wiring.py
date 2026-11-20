@@ -732,3 +732,72 @@ async def test_the_printer_view_shows_the_live_counter_state(live: Live) -> None
     state.counter_off_at = tape_confirmation._monotonic() - COUNTER_RETRY_S  # the hour passed
     for view in await shown():
         assert view["counter_read"] is True and view["channel"] == "label_counter"
+
+
+@pytest.mark.parametrize(
+    ("action", "released"),
+    [("detach", True), ("detach", False), ("stop", False)],
+    ids=["detach-finishes", "detach-times-out", "stop-times-out"],
+)
+async def test_detaching_a_printer_settles_its_record_write(
+    live: Live, monkeypatch: pytest.MonkeyPatch, action: str, released: bool
+) -> None:
+    """#398 (review N-1): a record write that ``flush`` started is finished, or cancelled after
+    the store timeout, when the printer is detached; no task is left pending to run against a
+    disposed engine."""
+    from datetime import UTC, datetime
+
+    from app.printer_backends import tape_confirmation
+    from app.printer_backends.brother_ql_backend import BrotherQLBackend
+    from app.printer_backends.tape_confirmation import ConfirmationRecord
+
+    body = {
+        "name": "Desk QL",
+        "slug": "desk-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.17", "port": 9100},
+    }
+    resolve = patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    )
+    with resolve:
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+    pid = UUID(resp.json()["id"])
+    backend = BrotherQLBackend(host="192.0.2.17")
+    live.runtime._router._backends["desk-ql"] = backend
+    state = backend.send_state
+
+    release = asyncio.Event()
+    stored: list[ConfirmationRecord] = []
+
+    async def sink(record: ConfirmationRecord) -> None:  # held on a busy database
+        await release.wait()
+        stored.append(record)
+
+    state.sink = sink
+    state.record = ConfirmationRecord(
+        "raw", True, datetime(2026, 11, 19, 9, 0, tzinfo=UTC), counter_off=True
+    )
+    state.reset_counter_gate()  # unstored: the next flush writes it
+    await state.flush()
+    task = state._flush_task
+    assert task is not None and not task.done()
+    await asyncio.sleep(0)  # the write is inside its own 10 s bound, waiting on the sink
+    monkeypatch.setattr(tape_confirmation, "STORE_TIMEOUT_S", 0.3)  # the detach's bound
+    if released:
+        asyncio.get_running_loop().call_later(0.05, release.set)
+
+    if action == "detach":
+        await live.runtime.detach(pid)
+    else:  # the hub shuts down
+        await live.runtime.stop()
+
+    assert task.done(), f"the record write is still pending after the {action}"
+    if released:
+        assert not task.cancelled() and len(stored) == 1
+    else:
+        assert task.cancelled() and stored == []
+    release.set()

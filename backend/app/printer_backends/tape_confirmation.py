@@ -22,6 +22,7 @@ sending and the check after sending (``post_send.check_after_send``).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import math
@@ -519,9 +520,31 @@ class TapeSendState:
         self._flush_task = asyncio.create_task(self._write(None))
 
     async def flushed(self) -> None:
-        """Wait for the write ``flush`` started, if one runs (tests, shutdown)."""
+        """Wait for the write ``flush`` started, if one runs (tests; ``close`` bounds it)."""
         if self._flush_task is not None:
             await asyncio.shield(self._flush_task)
+
+    async def close(self, timeout_s: float | None = None) -> None:
+        """Let a write ``flush`` started finish before the backend goes away (#398, review N-1).
+
+        The runtime calls it when it detaches the printer and when the hub stops, so no write
+        is left to run against a disposed database engine. Bounded by *timeout_s* (default
+        ``STORE_TIMEOUT_S``); a write still running then is cancelled and awaited, so no task
+        is left pending.
+        """
+        task = self._flush_task
+        if task is None or task.done():
+            return
+        try:
+            async with asyncio.timeout(STORE_TIMEOUT_S if timeout_s is None else timeout_s):
+                await asyncio.shield(task)
+        except TimeoutError:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            _logger.warning(
+                "The print confirmation of a printer was not stored before it was detached"
+            )
 
     def begin(self, *, detect: bool = False) -> None:
         """A new send starts (right after the read before sending)."""
