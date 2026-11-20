@@ -16,7 +16,7 @@ import { SheetTiles } from "./SheetTiles";
 import { usePrinters, usePrinterStatuses, useRecentJobs, type Job, type Printer, type PrinterStatus } from "../printers/api";
 import { formatAge } from "../printers/age";
 import { describePrinter, unknownKind, isPagePrinter, tapeWidthOf, useJobStateBadge, useKindLabel } from "../printers/model";
-import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "../printers/PageStatus";
+import { MarkerList, noAnswerYet, ReasonLine, supplyEmpty, supplyLowOnly } from "../printers/PageStatus";
 import { PauseReason } from "../printers/PauseReason";
 import { PauseResumeButton } from "../printers/PauseResumeButton";
 import { PrinterGrid } from "../printers/PrinterGrid";
@@ -53,7 +53,9 @@ export function OverviewPage() {
   const busy = new Set(running.map((j) => j.printer_id));
   // The same entries as the notification centre: unresolved errors and warnings that were neither cleared nor dismissed.
   const attention = useAttention();
-  const lowCount = list.filter((p) => runningOut(statuses.get(p.id))).length;
+  // Empty and low are told apart (#274): a printer with one of each counts under both headlines.
+  const emptyCount = list.filter((p) => supplyEmpty(statuses.get(p.id))).length;
+  const lowCount = list.filter((p) => supplyLowOnly(statuses.get(p.id))).length;
   const recent = [...all].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 8);
 
   return (
@@ -107,12 +109,20 @@ export function OverviewPage() {
             <p className="text-ink-2">{t`No printers yet.`}</p>
           ) : (
             <>
+              {emptyCount > 0 && (
+                <p className="flex items-center gap-2 text-small font-bold text-bad">
+                  <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" focusable="false" className="shrink-0 fill-current">
+                    <rect x="0.5" y="0.5" width="9" height="9" />
+                  </svg>
+                  {plural(emptyCount, { one: "# printer reports material empty", other: "# printers report material empty" })}
+                </p>
+              )}
               {lowCount > 0 && (
                 <p className="flex items-center gap-2 text-small font-bold">
                   <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" focusable="false" className="shrink-0 fill-current text-warn">
                     <polygon points="5,0 10,5 5,10 0,5" />
                   </svg>
-                  {plural(lowCount, { one: "# printer is running out of material", other: "# printers are running out of material" })}
+                  {plural(lowCount, { one: "# printer is running low", other: "# printers are running low" })}
                 </p>
               )}
               <ul className="flex flex-col gap-3">

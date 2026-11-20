@@ -46,6 +46,15 @@ describe("page printer card", () => {
     expect(within(c).getByText("0 %, low")).toBeVisible();
   });
 
+  it("a ready printer with an empty marker says Ready and names the empty one (#274)", async () => {
+    mockApi(listRoutes(pageStatus(P, { markers: [black({ low: false, empty: true })] })));
+    await renderApp({ path: "/printers" });
+    const c = await card(/Office laser/);
+    expect(await within(c).findByText("Ready")).toBeVisible();
+    expect(within(c).getByText("black reported empty")).toBeVisible();
+    expect(within(c).queryByText("Stopped")).toBeNull();
+  });
+
   it("shows toner instead of tape, and no tape wording", async () => {
     mockApi(listRoutes(pageStatus(P)));
     await renderApp({ path: "/printers" });

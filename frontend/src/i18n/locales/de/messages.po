@@ -166,6 +166,10 @@ msgstr "{count} von {needed} Zellen gewählt"
 msgid "{dpi} dpi"
 msgstr "{dpi} dpi"
 
+#: src/features/overview/OverviewPage.tsx
+msgid "{emptyCount, plural, one {# printer reports material empty} other {# printers report material empty}}"
+msgstr "{emptyCount, plural, one {# Drucker meldet das Material als leer} other {# Drucker melden das Material als leer}}"
+
 #: src/shell/CartButton.tsx
 msgid "{entries, plural, one {Cart, # item} other {Cart, # items}}"
 msgstr "{entries, plural, one {Warenkorb, # Eintrag} other {Warenkorb, # Einträge}}"
@@ -279,9 +283,13 @@ msgstr "{level} %"
 msgid "{level} %, low"
 msgstr "{level} %, niedrig"
 
+#: src/features/printers/PageStatus.tsx
+msgid "{list} reported empty"
+msgstr "{list} als leer gemeldet"
+
 #: src/features/overview/OverviewPage.tsx
-msgid "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
-msgstr "{lowCount, plural, one {# Drucker hat bald kein Material mehr} other {# Drucker haben bald kein Material mehr}}"
+msgid "{lowCount, plural, one {# printer is running low} other {# printers are running low}}"
+msgstr "{lowCount, plural, one {# Drucker hat nur noch wenig Material} other {# Drucker haben nur noch wenig Material}}"
 
 #: src/features/jobs/RunControls.tsx
 msgid "{n} (all of {unknownFrom} to {unknownTo} printed)"
