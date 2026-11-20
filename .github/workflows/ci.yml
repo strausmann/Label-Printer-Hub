@@ -216,8 +216,16 @@ jobs:
       - name: Check the script formatting
         run: ruff format --check scripts/
 
+      # test_licence_snapshot.py and test_release_workflow.py read the workflow files with PyYAML,
+      # which the runner's system Python does not ship. Pinned to the version the backend dev
+      # environment resolves today (6.0.3); the other script tests stay stdlib-only.
+      - name: Install PyYAML for the workflow tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/scripttests"
+          "$RUNNER_TEMP/scripttests/bin/pip" install --quiet "pyyaml==6.0.3"
+
       - name: Run the script tests
-        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+        run: '"$RUNNER_TEMP/scripttests/bin/python" -m unittest discover -s scripts -p "test_*.py" -v'
 
   brand-guard:
     name: Brand guard — old product name
