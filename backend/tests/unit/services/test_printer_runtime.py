@@ -31,7 +31,7 @@ from app.models.printer import Printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.snmp_helper import PreflightStatus
-from app.printer_models.registry import ModelRegistry
+from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.services.event_bus import EventBus
 from app.services.job_store_sqlite import SQLiteJobStore
 from app.services.layout_engine import LayoutEngine
@@ -418,16 +418,81 @@ async def test_attach_unresolvable_tape_model_degrades_at_runtime(
     assert all("192.0.2.10" not in r.getMessage() for r in caplog.records)
 
 
-async def test_attach_unresolvable_tape_model_is_fatal_at_startup(env: Env) -> None:
+async def test_attach_unresolvable_tape_model_is_skipped_before_start(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """#166: the same skip-and-log before the runtime started (the lifespan path)."""
     printer = _tape(discover=True)
     with (
         patch(
             "app.services.printer_runtime._resolve_model_id_from_config",
             AsyncMock(side_effect=SnmpDiscoveryError("no answer")),
         ),
-        pytest.raises(SnmpDiscoveryError),
+        caplog.at_level(logging.WARNING, logger="app.services.printer_runtime"),
     ):
-        await env.runtime.attach(printer, fatal=True)
+        await env.runtime.attach(printer)  # does not raise
+    assert env.runtime.print_service_for(printer.id) is None
+    assert any(
+        printer.slug in r.getMessage() and "SnmpDiscoveryError" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+async def test_expected_wiring_error_is_a_warning_without_traceback(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """M1: a bad stored row or an unreachable device is routine: WARNING, no traceback."""
+    printer = _tape(discover=True)
+    with (
+        patch(
+            "app.services.printer_runtime._resolve_model_id_from_config",
+            AsyncMock(side_effect=ModelNotFoundError("nope")),
+        ),
+        caplog.at_level(logging.DEBUG, logger="app.services.printer_runtime"),
+    ):
+        await env.runtime.attach(printer)
+    records = [r for r in caplog.records if printer.slug in r.getMessage()]
+    assert records
+    assert all(r.levelno == logging.WARNING and r.exc_info is None for r in records)
+
+
+async def test_unexpected_wiring_error_is_an_error_with_traceback(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """M1: a programming error is still skipped (the hub starts) but logged at ERROR with
+    the traceback, so a regression is not mistaken for a routine bad row."""
+    printer = _tape(discover=True)
+    with (
+        patch(
+            "app.services.printer_runtime._resolve_model_id_from_config",
+            AsyncMock(side_effect=TypeError("bug")),
+        ),
+        caplog.at_level(logging.DEBUG, logger="app.services.printer_runtime"),
+    ):
+        await env.runtime.attach(printer)  # does not raise
+    assert env.runtime.print_service_for(printer.id) is None
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
+    assert printer.slug in errors[0].getMessage() and "TypeError" in errors[0].getMessage()
+    assert errors[0].exc_info is not None
+    assert "192.0.2.10" not in errors[0].getMessage()
+
+
+async def test_unexpected_error_while_building_the_driver_is_an_error(
+    env: Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """M1, second block: a bug after the model is resolved is also ERROR with traceback."""
+    printer = _tape()
+    with (
+        patch(
+            "app.services.printer_runtime.PrintService",
+            side_effect=AttributeError("bug"),
+        ),
+        caplog.at_level(logging.DEBUG, logger="app.services.printer_runtime"),
+    ):
+        await env.runtime.attach(printer)
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1 and errors[0].exc_info is not None
     assert env.runtime.print_service_for(printer.id) is None
 
 
@@ -1030,7 +1095,7 @@ async def test_unbuildable_producer_pauses_page_printer_before_the_queue_runs(
     printer = _ipp()
     try:
         with patch.object(ipp_status_producer.IppStatusProducer, "__init__", _raising_init):
-            await e.runtime.attach(printer, fatal=True)
+            await e.runtime.attach(printer)
         info = e.queue.pause_info(printer.id)
         assert info is not None and info.reason_code == "status-unavailable"
         await _start(e)

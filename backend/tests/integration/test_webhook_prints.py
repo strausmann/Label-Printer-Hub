@@ -378,3 +378,55 @@ async def test_webhook_disabled_printer_body_matches_print_route(hub: Hub) -> No
         assert set(web.json()) == {"error", "slug"}
         assert web.json()["error"] == "printer_disabled"
         assert web.content == direct.content
+
+
+async def test_spoolman_type_over_64_is_422(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        r = await client.post(SPOOLMAN, json={**SPOOL_BODY, "type": "t" * 65}, headers=_headers())
+        assert r.status_code == 422, r.text
+        assert "type" in r.text
+        assert await _row_count() == 0
+
+
+async def test_spoolman_spool_id_over_64_is_422(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        r = await client.post(
+            SPOOLMAN, json={**SPOOL_BODY, "spool_id": "9" * 65}, headers=_headers()
+        )
+        assert r.status_code == 422, r.text
+        assert await _row_count() == 0
+
+
+async def test_grocy_product_id_over_64_is_422(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        r = await client.post(
+            GROCY, json={**GROCY_BODY, "product_id": "9" * 65}, headers=_headers()
+        )
+        assert r.status_code == 422, r.text
+        assert "product_id" in r.text
+        assert await _row_count() == 0
+
+
+async def test_grocy_type_over_64_is_422(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        r = await client.post(GROCY, json={**GROCY_BODY, "type": "t" * 65}, headers=_headers())
+        assert r.status_code == 422, r.text
+        assert await _row_count() == 0
+
+
+async def test_ids_of_64_are_accepted(hub: Hub) -> None:
+    async with hub.running() as (client, _app):
+        spool = await client.post(
+            SPOOLMAN,
+            json={"spool_id": "9" * 64, "type": "t" * 64},
+            headers=_headers(),
+        )
+        assert spool.status_code == 202, spool.text
+        grocy = await client.post(
+            GROCY,
+            json={"product_id": "9" * 64, "type": "t" * 64},
+            headers=_headers(),
+        )
+        assert grocy.status_code == 202, grocy.text
+        await _done(spool.json()["job_id"])
+        await _done(grocy.json()["job_id"])

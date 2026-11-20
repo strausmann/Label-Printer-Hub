@@ -206,10 +206,10 @@ class _GatedStore(MemoryJobStore):
         await self.printing_gate.wait()
         return await super().mark_printing(job_id)
 
-    async def mark_cancelled(self, job_id: UUID) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         self.cancelled_entered.set()
         await self.cancelled_gate.wait()
-        await super().mark_cancelled(job_id)
+        return await super().mark_cancelled(job_id, allow_printing=allow_printing)
 
 
 @pytest.mark.asyncio

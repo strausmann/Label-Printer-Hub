@@ -32,6 +32,11 @@ msgstr "{0, plural, one {# column} other {# columns}}"
 msgid "{0, plural, one {# item will not print.} other {# items will not print.}}"
 msgstr "{0, plural, one {# item will not print.} other {# items will not print.}}"
 
+#. placeholder {0}: p.cells.length
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{0, plural, one {# label → cells {cells} on {sheet}} other {# labels → cells {cells} on {sheet}}}"
+msgstr "{0, plural, one {# label → cells {cells} on {sheet}} other {# labels → cells {cells} on {sheet}}}"
+
 #. placeholder {0}: g.cols * g.rows
 #. placeholder {0}: page.cellCount
 #: src/features/archive/ArchivePage.tsx
@@ -161,6 +166,10 @@ msgstr "{count} of {needed} cells chosen"
 msgid "{dpi} dpi"
 msgstr "{dpi} dpi"
 
+#: src/features/overview/OverviewPage.tsx
+msgid "{emptyCount, plural, one {# printer reports material empty} other {# printers report material empty}}"
+msgstr "{emptyCount, plural, one {# printer reports material empty} other {# printers report material empty}}"
+
 #: src/shell/CartButton.tsx
 msgid "{entries, plural, one {Cart, # item} other {Cart, # items}}"
 msgstr "{entries, plural, one {Cart, # item} other {Cart, # items}}"
@@ -274,9 +283,13 @@ msgstr "{level} %"
 msgid "{level} %, low"
 msgstr "{level} %, low"
 
+#: src/features/printers/PageStatus.tsx
+msgid "{list} reported empty"
+msgstr "{list} reported empty"
+
 #: src/features/overview/OverviewPage.tsx
-msgid "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
-msgstr "{lowCount, plural, one {# printer is running out of material} other {# printers are running out of material}}"
+msgid "{lowCount, plural, one {# printer is running low} other {# printers are running low}}"
+msgstr "{lowCount, plural, one {# printer is running low} other {# printers are running low}}"
 
 #: src/features/jobs/RunControls.tsx
 msgid "{n} (all of {unknownFrom} to {unknownTo} printed)"
@@ -508,6 +521,10 @@ msgstr "+ down = the ink lies below the cut, − down = above it."
 #: src/features/archive/IdPlacementSection.tsx
 msgid "1 (top left)"
 msgstr "1 (top left)"
+
+#: src/features/sheets/SheetGrid.tsx
+msgid "1 = cell number (not printed)"
+msgstr "1 = cell number (not printed)"
 
 #: src/features/sheets/backSide/LoadingPicture.tsx
 msgid "1 Turn"
@@ -2282,10 +2299,6 @@ msgstr "Key"
 msgid "Key name"
 msgstr "Key name"
 
-#: src/features/archive/ArchivePage.tsx
-msgid "Key, description or product code"
-msgstr "Key, description or product code"
-
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Keys of the extra fields in your Spoolman."
 msgstr "Keys of the extra fields in your Spoolman."
@@ -3141,6 +3154,10 @@ msgstr "Now at this address"
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Nozzle temperature field"
 msgstr "Nozzle temperature field"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "Number of labels"
+msgstr "Number of labels"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "off"
@@ -4834,6 +4851,10 @@ msgid "That did not work. Try again."
 msgstr "That did not work. Try again."
 
 #: src/features/sheets/print/SheetPicker.tsx
+msgid "That is an item label, not the sheet code. Aim at the code in the sheet margin."
+msgstr "That is an item label, not the sheet code. Aim at the code in the sheet margin."
+
+#: src/features/sheets/print/SheetPicker.tsx
 msgid "That is not a sheet code."
 msgstr "That is not a sheet code."
 
@@ -6351,6 +6372,10 @@ msgstr "Usually public."
 #: src/features/archive/TypeForm.tsx
 msgid "Vendor"
 msgstr "Vendor"
+
+#: src/features/archive/ArchivePage.tsx
+msgid "Vendor, key, description or product code"
+msgstr "Vendor, key, description or product code"
 
 #: src/features/archive/TypeForm.tsx
 msgid "Verified against a real sheet"

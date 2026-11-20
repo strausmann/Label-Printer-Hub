@@ -38,6 +38,16 @@ async function open(sheet: SheetRead, extra: Record<string, unknown> = {}, sessi
 }
 
 describe("the sheet detail page", () => {
+  it("names the sheet type by its readable name, like the list", async () => {
+    await open(sheetRead(CODE), { "GET /api/v1/sheet-types": [SHEET_TYPE] });
+    expect(await screen.findAllByText(/^Example Labels L4736REV-25 · 48 labels, 45\.7 x 21\.2 mm/)).toHaveLength(2);
+  });
+
+  it("falls back to the label of the server for a type the list does not know", async () => {
+    await open({ ...sheetRead(CODE), type_key: "gone-type", type_label: "Gone Type 1" }, { "GET /api/v1/sheet-types": [SHEET_TYPE] });
+    expect(await screen.findAllByText(/^Gone Type 1/)).toHaveLength(2);
+  });
+
   it("id cell from flag", async () => {
     const base = sheetRead(CODE, { used: [1, 2] }, { id_placement: "cell", id_printed: true });
     // Both cells are written by the hub; only the flagged one holds the ID label.

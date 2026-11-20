@@ -31,7 +31,7 @@ export const MAX_COPIES = 10;
 export type SubmittedLine = CartKey & Pick<CartItem, "copies">;
 
 const sameItem = (a: CartKey, b: CartKey) => a.app === b.app && a.id === b.id;
-const clampCopies = (n: number) => Math.min(MAX_COPIES, Math.max(1, Math.round(Number.isFinite(n) ? n : 1)));
+export const clampCopies = (n: number) => Math.min(MAX_COPIES, Math.max(1, Math.round(Number.isFinite(n) ? n : 1)));
 
 function isItem(value: unknown): value is CartItem {
   if (typeof value !== "object" || value === null) return false;
@@ -57,14 +57,18 @@ function readStored(): CartItem[] | null {
 const read = (): CartItem[] => readStored() ?? [];
 
 let items: CartItem[] = read();
+/** Set when a write failed: storage then holds an older cart than the memory copy, so the memory copy wins until a write succeeds. */
+let storageBroken = false;
 const listeners = new Set<() => void>();
 
 function commit(next: CartItem[]): void {
   items = next;
   try {
     localStorage.setItem(CART_KEY, JSON.stringify(next));
+    storageBroken = false;
   } catch {
     /* keep the in-memory cart; it just will not survive a reload */
+    storageBroken = true;
   }
   listeners.forEach((l) => l());
 }
@@ -73,7 +77,7 @@ function commit(next: CartItem[]): void {
  * The cart as it is stored right now. The in-memory copy only follows the asynchronous `storage` event, so
  * another tab may have written since. Unreadable or corrupt storage falls back to the in-memory cart.
  */
-const current = (): CartItem[] => readStored() ?? items;
+const current = (): CartItem[] => (storageBroken ? items : (readStored() ?? items));
 
 /** Every change of the cart goes through here: it starts from the stored cart, never from the possibly stale copy. */
 function mutate(fn: (stored: CartItem[]) => CartItem[]): void {
@@ -82,6 +86,8 @@ function mutate(fn: (stored: CartItem[]) => CartItem[]): void {
 
 /** Takes the cart from storage again (another tab changed it; tests use it to simulate a fresh page). */
 export function reloadCart(): void {
+  // While a write is failing the memory copy is the newer one; storage would only bring the older cart back.
+  if (storageBroken) return;
   items = read();
   listeners.forEach((l) => l());
 }
@@ -179,7 +185,7 @@ export function useCart(): Cart {
       watchBatch("cart", accepted);
       void client.invalidateQueries({ queryKey: ["jobs"] });
       try {
-        return await apiFetch<BatchRead>(`/api/v1/batches/${accepted.batch_id}`);
+        return await apiFetch<BatchRead>(`/api/v1/batches/${encodeURIComponent(accepted.batch_id)}`);
       } catch (error) {
         throw new BatchStatusError(accepted.batch_id, error);
       }

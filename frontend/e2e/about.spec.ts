@@ -59,15 +59,15 @@ test.describe.serial("about", () => {
     await expect(table.getByRole("row", { name: /^react 19/ })).toBeVisible();
   });
 
-  test("desktop: brother-ql is listed by the filter and its text opens on demand", async () => {
+  test("desktop: brother-ql-next is listed by the filter and its text opens on demand", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/about");
     await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
     const table = page.getByRole("table");
-    const row = table.getByRole("row", { name: /brother-ql/ });
+    const row = table.getByRole("row", { name: /brother-ql-next/ });
     await expect(row).toBeVisible();
     await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toHaveCount(0);
-    await row.getByRole("button", { name: "Show licence text of brother-ql" }).click();
+    await row.getByRole("button", { name: "Show licence text of brother-ql-next" }).click();
     await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toBeVisible();
     await page.getByRole("searchbox", { name: "Filter packages" }).fill("fastapi");
     // A package that ships no text links its licence id to the SPDX text instead.
@@ -78,7 +78,7 @@ test.describe.serial("about", () => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/about");
     await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
-    const button = page.getByRole("button", { name: "Show licence text of brother-ql" });
+    const button = page.getByRole("button", { name: "Show licence text of brother-ql-next" });
     await button.focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Shift+Tab");
@@ -102,7 +102,7 @@ test.describe.serial("about", () => {
     await page.goto("/about");
     const filter = page.getByRole("searchbox", { name: "Filter packages" });
     await filter.fill("brother");
-    await expect(page.getByRole("table").getByRole("row")).toHaveCount(2); // header + brother-ql
+    await expect(page.getByRole("table").getByRole("row")).toHaveCount(2); // header + brother-ql-next
     await expect(filter).toBeInViewport();
   });
 
@@ -122,8 +122,8 @@ test.describe.serial("about", () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/about");
     await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
-    const row = page.getByRole("table").getByRole("row", { name: /brother-ql/ });
-    await row.getByRole("button", { name: "Show licence text of brother-ql" }).click();
+    const row = page.getByRole("table").getByRole("row", { name: /brother-ql-next/ });
+    await row.getByRole("button", { name: "Show licence text of brother-ql-next" }).click();
     await expect(page.getByText("GNU GENERAL PUBLIC LICENSE")).toBeVisible();
     expect(await noSideScroll(page)).toBe(true);
     await shot(page, "about-en-phone-licences.png");
@@ -183,8 +183,8 @@ test.describe.serial("about", () => {
         await page.getByRole("heading", { name: "Third-party software" }).evaluate((el) => el.scrollIntoView());
         await shot(page, `about-licences-${name}-${scheme}.png`, false);
         await page.getByRole("searchbox", { name: "Filter packages" }).fill("brother");
-        await page.getByRole("button", { name: "Show licence text of brother-ql" }).click();
-        await page.getByRole("button", { name: "Hide licence text of brother-ql" }).focus();
+        await page.getByRole("button", { name: "Show licence text of brother-ql-next" }).click();
+        await page.getByRole("button", { name: "Hide licence text of brother-ql-next" }).focus();
         await page.keyboard.press("Tab");
         await page.keyboard.press("Shift+Tab");
         await shot(page, `about-licences-${name}-${scheme}-open.png`, false);

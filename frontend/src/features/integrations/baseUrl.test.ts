@@ -23,3 +23,9 @@ describe("baseUrlOf", () => {
     expect(baseUrlOf(app, link)).toBeNull();
   });
 });
+
+describe("baseUrlOf scheme check", () => {
+  it.each(["javascript:alert(1)//hardware/7", "data:text/html,x/hardware/7", "ftp://example.invalid/hardware/7"])("baseUrlOf refuses javascript and data URLs: %s", (link) => {
+    expect(baseUrlOf("snipeit", link)).toBeNull();
+  });
+});

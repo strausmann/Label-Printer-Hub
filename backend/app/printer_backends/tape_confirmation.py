@@ -22,6 +22,7 @@ sending and the check after sending (``post_send.check_after_send``).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import math
@@ -97,7 +98,12 @@ STORE_TIMEOUT_S: Final = 10.0
 """Seconds one write of the confirmation record may take (review round 4, L3). Writes are
 serialised per printer, so a write stuck on a locked database would hold every later writer
 (status reads, the end of a test print); it is given up and logged instead. A SQLite commit of
-one row takes milliseconds; ten seconds is far above any busy wait of the hub's database."""
+one row takes milliseconds; ten seconds is far above any busy wait of the hub's database.
+
+The timeout bounds the wait, not a call already running inside SQLite (#398): a statement that
+waits on a locked database runs in the driver's thread and is not interrupted by the cancel;
+there the bound is SQLite's busy timeout (5000 ms, ``app/db/engine.py``). A write that is given
+up or fails is stored again by the next status read (``TapeSendState.flush``)."""
 
 IPP_PORT: Final = 631
 IPP_PATH: Final = "/ipp/print"
@@ -474,6 +480,74 @@ class TapeSendState:
     _probed: bool | None = None
     _probe_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _store_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # #398: ``record`` is newer than what the sink last stored (a write failed, or the record
+    # was changed in memory only); the next status read stores it (``flush``).
+    _unstored: bool = False
+    # #398 (review I-2): the store ``flush`` started; it runs beside the status read.
+    _flush_task: asyncio.Task[None] | None = None
+
+    def load(self, record: ConfirmationRecord | None) -> None:
+        """Take the record stored with the printer, when the backend is wired (#398, finding 4).
+
+        A new backend asks for the label counter (its gate starts open), so a stored
+        ``counter_off`` is stale: it is cleared in memory and stored by the first status read.
+        Synchronous, like the wiring that calls it.
+        """
+        self.record = record
+        self._reopen_counter_in_record()
+
+    def _reopen_counter_in_record(self) -> None:
+        if self.record is not None and self.record.counter_off:
+            self.record = dataclasses.replace(self.record, counter_off=False)
+            self._unstored = True
+
+    async def flush(self) -> None:
+        """Start storing ``record`` again if the last write of it did not reach the sink (#398).
+
+        Both backends call it at the start of every status read, so a write that failed (a busy
+        database), was given up or was only made in memory is stored at the next read, which
+        is the next print or test print. It never waits on the database (review I-2): the
+        write runs as a task beside the read, and nothing is started while a write of this
+        printer is still running, so a busy database cannot make the preflight or the polls of
+        a confirmation wait slower, nor stack up writes.
+        """
+        if not self._unstored or self.record is None or self.sink is None:
+            return
+        if self._store_lock.locked() or (
+            self._flush_task is not None and not self._flush_task.done()
+        ):
+            return
+        self._flush_task = asyncio.create_task(self._write(None))
+
+    async def flushed(self) -> None:
+        """Wait for the write ``flush`` started, if one runs (tests; ``close`` bounds it)."""
+        if self._flush_task is not None:
+            await asyncio.shield(self._flush_task)
+
+    async def close(self, timeout_s: float | None = None) -> None:
+        """Let a write ``flush`` started finish before the backend goes away (#398, review N-1).
+
+        The runtime calls it when it detaches the printer and when the hub stops, so no write
+        is left to run against a disposed database engine. Bounded by *timeout_s* (default
+        ``STORE_TIMEOUT_S``); a write still running then is cancelled and awaited, so no task
+        is left pending.
+        """
+        task = self._flush_task
+        if task is None or task.done():
+            return
+        try:
+            async with asyncio.timeout(STORE_TIMEOUT_S if timeout_s is None else timeout_s):
+                await asyncio.shield(task)
+        except TimeoutError:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            _logger.warning(
+                "The print confirmation of a printer was not stored before it was detached"
+            )
+        except asyncio.CancelledError:
+            task.cancel()  # the caller gave up waiting: the write does not outlive the backend
+            raise
 
     def begin(self, *, detect: bool = False) -> None:
         """A new send starts (right after the read before sending)."""
@@ -490,10 +564,17 @@ class TapeSendState:
     def reset_counter_gate(self) -> None:
         """A test print re-decides everything, the label counter included (R26-1). The backend
         calls this before the test print's own read before sending (R3-2), so that read already
-        asks for the counter; ``begin`` repeats it."""
+        asks for the counter; ``begin`` repeats it.
+
+        A stored ``counter_off`` is cleared in memory at once and stored by the test print's own
+        status read, which follows right away (#398, finding 3): a test print that is refused
+        there leaves no "counter off" stored while the hub asks for the counter again.
+        Synchronous, because ``begin`` is.
+        """
         self.counter_refusals = 0
         self.counter_off_at = None
         self._counter_streak_at = None
+        self._reopen_counter_in_record()
 
     def ask_counter(self) -> bool:
         """Whether the next status read asks for the label counter (R26-1).
@@ -634,23 +715,52 @@ class TapeSendState:
         """Keep *record* and hand it to the sink; a failing sink is logged, never raised.
 
         Writes go to the sink one at a time, in the order they were made (audit run 27, R27-1):
-        a slow write cannot commit after a later one and leave an outdated record stored.
+        a slow write cannot commit after a later one and leave an outdated record stored. A
+        write that fails, is given up or is cancelled marks the record unstored; the next status
+        read stores it again (``flush``, #398 finding 2).
         """
         self.record = record
         if self.sink is None:
             return
+        # Unstored until the write below succeeds, also when it is cancelled while it waits for
+        # the lock (review M-1).
+        self._unstored = True
+        await self._write(record)
+
+    async def _write(self, record: ConfirmationRecord | None) -> None:
+        """Hand *record* to the sink under the store lock; ``None``: the record current when the
+        lock is taken (``flush``, which must not write back an older one)."""
+        sink = self.sink
+        if sink is None:
+            return
         async with self._store_lock:
+            if record is None:
+                record = self.record
+                if record is None or not self._unstored:
+                    return
+            stored = False
+            scope = asyncio.timeout(STORE_TIMEOUT_S)
             try:
-                await asyncio.wait_for(self.sink(record), STORE_TIMEOUT_S)
+                async with scope:
+                    await sink(record)
+                stored = True
             except TimeoutError:
-                _logger.warning(
-                    "The print confirmation of a printer was not stored in time (%.0f s); "
-                    "the stored record may lag until the next write",
-                    STORE_TIMEOUT_S,
-                )
+                if scope.expired():
+                    _logger.warning(
+                        "The print confirmation of a printer was not stored in time (%.0f s); "
+                        "it is stored again by the next status read",
+                        STORE_TIMEOUT_S,
+                    )
+                else:  # #398, finding 7: the sink itself raised it
+                    _logger.warning(
+                        "The print confirmation of a printer could not be stored", exc_info=True
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 _logger.warning(
                     "The print confirmation of a printer could not be stored", exc_info=True
                 )
+            finally:
+                if stored and self.record is record:  # a newer record in memory stays unstored
+                    self._unstored = False

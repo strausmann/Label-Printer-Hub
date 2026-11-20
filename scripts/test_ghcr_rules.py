@@ -144,7 +144,9 @@ class KeepRegexTest(unittest.TestCase):
 
 class NextPreviewTest(unittest.TestCase):
     def test_patch_milestone_after_release(self) -> None:
-        self.assertEqual(g.next_preview_tag("1.5.x", ["1.5.0", "1.5.2"], ["1.5.0", "1.5.2"]), "1.5.3-rc.1")
+        self.assertEqual(
+            g.next_preview_tag("1.5.x", ["1.5.0", "1.5.2"], ["1.5.0", "1.5.2"]), "1.5.3-rc.1"
+        )
 
     def test_patch_milestone_counts_up(self) -> None:
         tags = ["1.5.2", "1.5.3-rc.1"]
@@ -189,8 +191,22 @@ class SelectDeletionsTest(unittest.TestCase):
 
     def test_select_agrees_with_keep_regex(self) -> None:
         tags = [
-            "dev", "latest", "1", "1.6", "1.6.0", "1.5.1", "1.4", "1.3.9", "1.0.1", "2", "2.0",
-            "1.6.0-rc.1", "1.6.0-rc.2", "1.7.0-rc.1", "1.5.2-rc.4", "1.5.1-rc.1",
+            "dev",
+            "latest",
+            "1",
+            "1.6",
+            "1.6.0",
+            "1.5.1",
+            "1.4",
+            "1.3.9",
+            "1.0.1",
+            "2",
+            "2.0",
+            "1.6.0-rc.1",
+            "1.6.0-rc.2",
+            "1.7.0-rc.1",
+            "1.5.2-rc.4",
+            "1.5.1-rc.1",
         ]
         released = set(g.released_versions(tags))
         rule = re.compile(g.keep_regex(tags))
@@ -200,7 +216,9 @@ class SelectDeletionsTest(unittest.TestCase):
         self.assertNotIn("1.7.0-rc.1", expected)
 
     def test_duplicates_are_listed_once(self) -> None:
-        self.assertEqual(g.select_deletions(["1.6.0-rc.1", "1.6.0-rc.1"], {"1.6.0"}), ["1.6.0-rc.1"])
+        self.assertEqual(
+            g.select_deletions(["1.6.0-rc.1", "1.6.0-rc.1"], {"1.6.0"}), ["1.6.0-rc.1"]
+        )
 
     def test_signature_tag_is_never_selected(self) -> None:
         # Guards the summary and the Docker Hub deletion only: neither lists cosign's signature
@@ -212,10 +230,8 @@ class SelectDeletionsTest(unittest.TestCase):
         self.assertEqual(g.select_deletions([signature], set()), [])
 
 
-
-
 class _Response(io.BytesIO):
-    def __enter__(self) -> "_Response":
+    def __enter__(self) -> _Response:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -317,11 +333,15 @@ class DockerHubTest(unittest.TestCase):
 
     def test_tags_follow_next(self) -> None:
         page2 = f"{TAGS_URL}&page=2"
-        opener = _hub_opener({
-            TAGS_URL: (200, {"results": [{"name": "1.6.0"}], "next": page2}),
-            page2: (200, {"results": [{"name": "dev"}], "next": None}),
-        })
-        self.assertEqual(g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener), ["1.6.0", "dev"])
+        opener = _hub_opener(
+            {
+                TAGS_URL: (200, {"results": [{"name": "1.6.0"}], "next": page2}),
+                page2: (200, {"results": [{"name": "dev"}], "next": None}),
+            }
+        )
+        self.assertEqual(
+            g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener), ["1.6.0", "dev"]
+        )
 
     def test_tags_404_is_empty_with_a_warning(self) -> None:
         opener = _hub_opener({TAGS_URL: (404, None)})
@@ -339,10 +359,12 @@ class DockerHubTest(unittest.TestCase):
 
     def test_tags_404_on_a_later_page_is_an_error(self) -> None:
         page2 = f"{TAGS_URL}&page=2"
-        opener = _hub_opener({
-            TAGS_URL: (200, {"results": [{"name": "1.6.0"}], "next": page2}),
-            page2: (404, None),
-        })
+        opener = _hub_opener(
+            {
+                TAGS_URL: (200, {"results": [{"name": "1.6.0"}], "next": page2}),
+                page2: (404, None),
+            }
+        )
         with self.assertRaises(urllib.error.HTTPError):
             g.fetch_dockerhub_tags("ns", "labelyard", "jwt", opener=opener)
 
@@ -364,23 +386,31 @@ class DockerHubTest(unittest.TestCase):
     def test_delete_uses_the_tag_endpoint(self) -> None:
         seen: list[urllib.request.Request] = []
         url = f"{HUB}/repositories/ns/labelyard/tags/1.6.0-rc.1/"
-        g.delete_dockerhub_tag("ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (204, None)}, seen))
+        g.delete_dockerhub_tag(
+            "ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (204, None)}, seen)
+        )
         self.assertEqual(seen[0].get_method(), "DELETE")
         self.assertEqual(seen[0].get_header("Authorization"), "Bearer jwt")
 
     def test_delete_404_means_already_gone(self) -> None:
         url = f"{HUB}/repositories/ns/labelyard/tags/1.6.0-rc.1/"
-        g.delete_dockerhub_tag("ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (404, None)}))
+        g.delete_dockerhub_tag(
+            "ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (404, None)})
+        )
 
     def test_delete_403_is_an_error(self) -> None:
         url = f"{HUB}/repositories/ns/labelyard/tags/1.6.0-rc.1/"
         with self.assertRaises(urllib.error.HTTPError):
-            g.delete_dockerhub_tag("ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (403, None)}))
+            g.delete_dockerhub_tag(
+                "ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (403, None)})
+            )
 
     def test_delete_network_error_is_raised(self) -> None:
         url = f"{HUB}/repositories/ns/labelyard/tags/1.6.0-rc.1/"
         with self.assertRaises(urllib.error.URLError):
-            g.delete_dockerhub_tag("ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (-1, None)}))
+            g.delete_dockerhub_tag(
+                "ns", "labelyard", "1.6.0-rc.1", "jwt", opener=_hub_opener({url: (-1, None)})
+            )
 
     def test_delete_refuses_a_tag_that_is_not_a_tag(self) -> None:
         for bad in ["../x", "a/b", "", "1.6.0\n"]:
@@ -453,7 +483,8 @@ class CliTest(unittest.TestCase):
         err = io.StringIO()
         with mock.patch("sys.stderr", err):
             code, out = self.run_cli(
-                ["select-deletions", "--released", str(released)], "1.6.0\n1.6.0-rc.1\nfeat-x\n1.7.0-rc.1\n"
+                ["select-deletions", "--released", str(released)],
+                "1.6.0\n1.6.0-rc.1\nfeat-x\n1.7.0-rc.1\n",
             )
         self.assertEqual((code, out), (0, "1.6.0-rc.1\n"))
         self.assertIn("feat-x", err.getvalue())
@@ -480,7 +511,10 @@ class CliTest(unittest.TestCase):
         token.assert_called_once_with("User", "pat")
         self.assertEqual(
             delete.call_args_list,
-            [mock.call("org", "labelyard", "1.6.0-rc.1", "jwt"), mock.call("org", "labelyard", "1.6.0-rc.2", "jwt")],
+            [
+                mock.call("org", "labelyard", "1.6.0-rc.1", "jwt"),
+                mock.call("org", "labelyard", "1.6.0-rc.2", "jwt"),
+            ],
         )
         self.assertNotIn("pat", out)
 
@@ -525,7 +559,11 @@ class CliTest(unittest.TestCase):
         # The login uses the secret name, the repository path the namespace.
 
     def test_dockerhub_namespace_is_required_and_not_the_login(self) -> None:
-        env = {"DOCKERHUB_USERNAME": "User", "DOCKERHUB_ADMIN_TOKEN": "pat", "HUB_REPOSITORY": "labelyard"}
+        env = {
+            "DOCKERHUB_USERNAME": "User",
+            "DOCKERHUB_ADMIN_TOKEN": "pat",
+            "HUB_REPOSITORY": "labelyard",
+        }
         with (
             mock.patch.dict("os.environ", env, clear=True),
             mock.patch.object(g, "dockerhub_token", return_value="jwt"),
@@ -557,7 +595,10 @@ class WorkflowsCallTheScriptTest(unittest.TestCase):
                 "scripts/ghcr_rules.py select-deletions --released",
                 "scripts/ghcr_rules.py dockerhub-delete",
             ],
-            "preview-image.yml": ["scripts/ghcr_rules.py fetch-tags", "scripts/ghcr_rules.py next-preview"],
+            "preview-image.yml": [
+                "scripts/ghcr_rules.py fetch-tags",
+                "scripts/ghcr_rules.py next-preview",
+            ],
         }.items():
             text = (WORKFLOWS / name).read_text()
             for needle in needles:
@@ -566,7 +607,9 @@ class WorkflowsCallTheScriptTest(unittest.TestCase):
 
     def test_cleanup_aborts_on_an_empty_tag_list(self) -> None:
         text = (WORKFLOWS / "registry-cleanup.yml").read_text()
-        self.assertIn("fetch-tags --on-empty=", text, "registry-cleanup.yml: fetch-tags without --on-empty")
+        self.assertIn(
+            "fetch-tags --on-empty=", text, "registry-cleanup.yml: fetch-tags without --on-empty"
+        )
         self.assertIn("on_empty=fail", text)
 
     def test_no_inline_keep_regex_or_tag_curl(self) -> None:

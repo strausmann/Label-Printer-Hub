@@ -36,19 +36,19 @@ export const usePrinters = () =>
   useQuery({ queryKey: printersKey, queryFn: () => apiFetch<Printer[]>("/api/v1/printers") });
 
 export const usePrinter = (id: string) =>
-  useQuery({ queryKey: printerKey(id), queryFn: () => apiFetch<Printer>(`/api/v1/printers/${id}`) });
+  useQuery({ queryKey: printerKey(id), queryFn: () => apiFetch<Printer>(`/api/v1/printers/${encodeURIComponent(id)}`) });
 
 /** `options` is for the one screen that must not decide on a cached status (the calibration page picks its tray from it). */
 export const usePrinterStatus = (
   id: string,
   enabled = true,
   options: { staleTime?: number; refetchOnMount?: boolean | "always"; retry?: boolean } = {},
-) => useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`), enabled, ...options });
+) => useQuery({ queryKey: statusKey(id), queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${encodeURIComponent(id)}/status`), enabled, ...options });
 
 /** The query of one printer's status; every reader of statuses shares this key, so they share one request. */
 export const printerStatusQuery = (id: string) => ({
   queryKey: statusKey(id),
-  queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${id}/status`),
+  queryFn: () => apiFetch<PrinterStatus>(`/api/v1/printers/${encodeURIComponent(id)}/status`),
 });
 
 /** One status per printer, keyed by printer id (a failed probe simply has no entry). */
@@ -63,7 +63,7 @@ export function usePrinterStatuses(printers: Printer[] | undefined): Map<string,
 }
 
 export const useQueue = (id: string) =>
-  useQuery({ queryKey: queueKey(id), queryFn: () => apiFetch<QueueJob[]>(`/api/v1/printers/${id}/queue`) });
+  useQuery({ queryKey: queueKey(id), queryFn: () => apiFetch<QueueJob[]>(`/api/v1/printers/${encodeURIComponent(id)}/queue`) });
 
 /** The newest jobs of all printers; the overview sorts out running, failed and recent ones. */
 export const useRecentJobs = () =>
@@ -74,7 +74,7 @@ export function usePauseResume() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, action }: { id: string; action: "pause" | "resume" }) =>
-      apiFetch<void>(`/api/v1/printers/${id}/${action}`, { method: "POST" }),
+      apiFetch<void>(`/api/v1/printers/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
     onSettled: () => client.invalidateQueries({ queryKey: printersKey }),
   });
 }
@@ -82,7 +82,7 @@ export function usePauseResume() {
 export function useCancelJob(printerId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (jobId: string) => apiFetch<Job>(`/api/v1/jobs/${jobId}/cancel`, { method: "POST" }),
+    mutationFn: (jobId: string) => apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: queueKey(printerId) });
       void client.invalidateQueries({ queryKey: ["jobs"] });
@@ -93,7 +93,7 @@ export function useCancelJob(printerId: string) {
 export function useClearQueue(printerId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<void>(`/api/v1/printers/${printerId}/queue/clear`, { method: "POST" }),
+    mutationFn: () => apiFetch<void>(`/api/v1/printers/${encodeURIComponent(printerId)}/queue/clear`, { method: "POST" }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: queueKey(printerId) });
       void client.invalidateQueries({ queryKey: ["jobs"] });
@@ -112,7 +112,7 @@ export function useResolveIdentity(printerId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (body: { resolution: IdentityResolution; expected_observed_id: string; expected_observed_kind: string }) =>
-      apiFetch<unknown>(`/api/v1/admin/printers/${printerId}/identity/resolve`, { method: "POST", json: body }),
+      apiFetch<unknown>(`/api/v1/admin/printers/${encodeURIComponent(printerId)}/identity/resolve`, { method: "POST", json: body }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: printerKey(printerId) });
       void client.invalidateQueries({ queryKey: printersKey });
@@ -122,7 +122,7 @@ export function useResolveIdentity(printerId: string) {
 
 /** The recorded roll of a printer: the width and media text the colour question is about. */
 export const useRoll = (id: string, enabled = true) =>
-  useQuery({ queryKey: rollKey(id), queryFn: () => apiFetch<Roll>(`/api/v1/printers/${id}/roll`), enabled });
+  useQuery({ queryKey: rollKey(id), queryFn: () => apiFetch<Roll>(`/api/v1/printers/${encodeURIComponent(id)}/roll`), enabled });
 
 /** True for the 409 that says the roll changed after the operator saw the question. */
 export const isRollChanged = (error: unknown): boolean =>
@@ -137,7 +137,7 @@ export function useSetRollColour(printerId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (body: { colour: RollColour | null; width_mm: number | null; media_raw: string | null }) =>
-      apiFetch<Roll>(`/api/v1/printers/${printerId}/roll`, { method: "PUT", json: body }),
+      apiFetch<Roll>(`/api/v1/printers/${encodeURIComponent(printerId)}/roll`, { method: "PUT", json: body }),
     onSettled: () => {
       void client.invalidateQueries({ queryKey: statusKey(printerId) });
       void client.invalidateQueries({ queryKey: rollKey(printerId) });
@@ -153,7 +153,7 @@ export function useTestPrint(printerId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (tray: string | null) =>
-      apiFetch<components["schemas"]["TestPrintAccepted"]>(`/api/v1/printers/${printerId}/test-print`, {
+      apiFetch<components["schemas"]["TestPrintAccepted"]>(`/api/v1/printers/${encodeURIComponent(printerId)}/test-print`, {
         method: "POST",
         ...(tray === null ? {} : { json: { tray } }),
       }),

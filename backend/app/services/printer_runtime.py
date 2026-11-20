@@ -47,18 +47,21 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, cast
 from uuid import UUID
 
+from pyasn1.error import PyAsn1Error
+from pysnmp.error import PySnmpError
 from sqlalchemy import select
 from sqlmodel import col
 
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_state import PrinterState
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.exceptions import SnmpDiscoveryError
 from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
 from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
-from app.printer_models.registry import ModelRegistry
+from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.repositories import printer_identity as identity_repo
+from app.repositories.write_lock import write_transaction
 from app.schemas.label_layout import parse_layout_defaults
 from app.services.backend_router import (
     BackendRouter,
@@ -111,13 +114,17 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
     """The runtime config of a stored tape printer (missing connection fields get defaults)."""
     conn: dict[str, Any] = p.connection or {}
     snmp_raw: dict[str, Any] = conn.get("snmp", {}) or {}
+    try:
+        port = int(conn.get("port", 9100))
+    except (TypeError, ValueError):
+        raise ValueError("stored connection port is not a number") from None
     return PrinterYAMLConfig.model_construct(
         slug=p.slug,
         name=p.name,
         backend=p.backend,
         model=p.model,
         host=conn.get("host", ""),
-        port=int(conn.get("port", 9100)),
+        port=port,
         snmp=SNMPConfig(
             discover=snmp_raw.get("discover", False),
             community=snmp_raw.get("community") or "public",
@@ -130,11 +137,36 @@ def tape_config(p: Any) -> PrinterYAMLConfig:
     )
 
 
+# Discovery failures with a configured model to fall back on: a timeout, DNS or network error
+# (``OSError``, ``TimeoutError`` included), a malformed reply, a device no driver claims.
+_DISCOVERY_ERRORS = (SnmpDiscoveryError, PySnmpError, PyAsn1Error, OSError, ModelNotFoundError)
+# What a stored printer row can legitimately cause when it is wired: logged at WARNING. Any
+# other exception is a bug and is logged at ERROR with its traceback; the printer is skipped
+# either way, so one bad row never stops the hub.
+_EXPECTED_WIRING_ERRORS = (ValueError, *_DISCOVERY_ERRORS)
+
+
+def _log_not_wired(slug: str, exc: Exception, what: str) -> None:
+    """Log a printer that could not be wired. The message carries the class name only."""
+    if isinstance(exc, _EXPECTED_WIRING_ERRORS):
+        _log.warning("Printer slug=%s not wired: %s (%s)", slug, what, type(exc).__name__)
+    else:
+        _log.error(
+            "Printer slug=%s not wired: %s (%s), unexpected",
+            slug,
+            what,
+            type(exc).__name__,
+            exc_info=True,
+        )
+
+
 async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
     """SNMP discovery first, fall back to ``printer_cfg.model`` on failure.
 
-    Raises ``ValueError`` when neither source has a model, ``SnmpDiscoveryError`` when the
-    discovery fails and there is no fallback.
+    Raises ``ValueError`` when neither source has a model, and the discovery error
+    (``SnmpDiscoveryError``, ``PySnmpError``, ``PyAsn1Error``, ``OSError`` or
+    ``ModelNotFoundError`` for a device no driver claims) when the discovery fails and there
+    is no fallback.
     """
     host: str = printer_cfg.host
     community: str = printer_cfg.snmp.community
@@ -148,19 +180,22 @@ async def _resolve_model_id_from_config(printer_cfg: PrinterYAMLConfig) -> str:
             )
         return model_fallback
 
+    ModelRegistry.ensure_discovered()
     try:
         pjl = await query_model_pjl(host, community=community)
-    except SnmpDiscoveryError as exc:
+        driver_cls = ModelRegistry.find_by_pjl(pjl)
+    except _DISCOVERY_ERRORS as exc:
+        # Discovery failed (timeout, DNS, malformed reply) or the device names a model no
+        # driver claims: the configured model decides.
         if model_fallback:
             _log.warning(
-                "SNMP discovery failed for slug=%s (%s); falling back to model=%r",
+                "Model discovery failed for slug=%s (%s); falling back to model=%r",
                 printer_cfg.slug,
                 type(exc).__name__,
                 model_fallback,
             )
             return model_fallback
         raise
-    driver_cls = ModelRegistry.find_by_pjl(pjl)
     return driver_cls.model_id
 
 
@@ -176,7 +211,7 @@ def wiring_key(printer: Printer, *, tray_keys: Sequence[str] = ()) -> tuple[obje
     The SNMP settings of a tape printer (discovery switch, community) are part of the
     connection JSON (element 3), so a change of either changes the key.
     """
-    is_ipp = printer.backend == "ipp"
+    is_ipp = is_page_printer(printer)
     conn = dict(printer.connection or {})
     return (
         bool(printer.enabled),
@@ -276,12 +311,12 @@ class PrinterRuntime:
 
     # ------------------------------------------------------------------ public
 
-    async def attach(self, printer: Printer, *, fatal: bool = False) -> None:
+    async def attach(self, printer: Printer) -> None:
         """Wire *printer* (a disabled one is not wired). An attached id is re-wired.
 
-        ``fatal=True`` (lifespan only): an unresolvable tape model raises, as before #224.
-        Otherwise a wiring failure is logged (slug and error class) and the printer stays
-        detached. Re-wiring an attached id detaches it first, and a store failure there
+        A wiring failure (unknown model, unreachable discovery, a bad backend) is logged with
+        the slug and the error class and the printer stays detached, at startup as at runtime.
+        Re-wiring an attached id detaches it first, and a store failure there
         (``remove_printer`` ending the in-flight job) can still raise; ``reconcile`` catches it.
         """
         if self._closed:
@@ -289,7 +324,7 @@ class PrinterRuntime:
         async with self._serialized(printer.id):
             if self._is_closed():  # stop() may have run while this waited for the lock
                 return
-            await self._attach_locked(printer, fatal=fatal)
+            await self._attach_locked(printer)
 
     async def detach(self, printer_id: UUID) -> None:
         """Unwire a printer: stop its producer, take it out of the queue, close its clients.
@@ -345,7 +380,7 @@ class PrinterRuntime:
             row = await session.get(Printer, printer_id)
         wiring = self._wired.get(printer_id)
         if row is not None and row.enabled and wiring is not None:
-            trays = await self._tray_keys(printer_id) if row.backend == "ipp" else []
+            trays = await self._tray_keys(printer_id) if is_page_printer(row) else []
             same_key = _key_digest(wiring_key(row, tray_keys=trays)) == wiring.key_digest
             # 263-23: an equal key is no reason to keep a printer that should be polled but
             # has no producer (its start failed); re-wiring gives it a fresh one.
@@ -359,14 +394,14 @@ class PrinterRuntime:
                 return
         await self._detach_locked(printer_id)
         if row is not None and row.enabled:
-            await self._attach_locked(row, fatal=False)
+            await self._attach_locked(row)
 
     @staticmethod
     def _producer_missing(row: Printer, wiring: _Wiring) -> bool:
         """True iff *row* is polled by design but *wiring* has no producer."""
         if wiring.producer is not None:
             return False
-        if row.backend == "ipp":
+        if is_page_printer(row):
             return True
         cfg = tape_config(row)
         return bool(cfg.host and cfg.snmp.discover)
@@ -407,8 +442,12 @@ class PrinterRuntime:
                 )
             )
         finally:  # 263-16: a failing queue stop must not leave the page clients open
-            for wiring in wirings:
-                await self._close_page_client(wiring)
+            try:
+                for wiring in wirings:
+                    await self._close_confirmation(wiring)  # #398: before the engine goes away
+            finally:  # #398 (review N-2): a cancel during that wait must not skip them either
+                for wiring in wirings:
+                    await self._close_page_client(wiring)
 
     def describe_tape_for(self, printer_id: UUID, width_mm: int) -> TapeDescription:
         """The attached model driver's tape label; the generic ``"{N}mm"`` otherwise."""
@@ -427,6 +466,25 @@ class PrinterRuntime:
             and (wiring.producer is not None)
         )
 
+    def send_state_for(self, printer_id: UUID) -> TapeSendState | None:
+        """The live print-confirmation state of an attached tape printer, else ``None``
+        (#398: the printer view derives ``counter_read`` from it)."""
+        wiring = self._wired.get(printer_id)
+        return self._send_state_of(wiring) if wiring is not None else None
+
+    def _send_state_of(self, wiring: _Wiring) -> TapeSendState | None:
+        if wiring.kind != "tape":
+            return None
+        state = getattr(self._router.get(wiring.slug), "send_state", None)
+        return state if isinstance(state, TapeSendState) else None
+
+    async def _close_confirmation(self, wiring: _Wiring) -> None:
+        """#398 (review N-1): a record write still running finishes, or is cancelled after
+        ``STORE_TIMEOUT_S``, before the backend is dropped or the engine disposed."""
+        state = self._send_state_of(wiring)
+        if state is not None:
+            await state.close()
+
     def print_service_for(self, printer_id: UUID) -> PrintService | None:
         """The ``PrintService`` of an attached tape printer, else ``None``."""
         wiring = self._wired.get(printer_id)
@@ -434,17 +492,17 @@ class PrinterRuntime:
 
     # ------------------------------------------------------------------ attach
 
-    async def _attach_locked(self, printer: Printer, *, fatal: bool) -> None:
+    async def _attach_locked(self, printer: Printer) -> None:
         if printer.id in self._wired:
             await self._detach_locked(printer.id)
         if not printer.enabled:
             return
         paused_since = await self._paused_since(printer.id)
         await self._load_identity_hold(printer.id)  # #231: before any worker for it can run
-        if printer.backend == "ipp":
+        if is_page_printer(printer):
             wiring = await self._attach_page(printer, paused_since)
         else:
-            wiring = await self._attach_tape(printer, paused_since, fatal=fatal)
+            wiring = await self._attach_tape(printer, paused_since)
         if wiring is None:
             return
         self._wired[printer.id] = wiring
@@ -462,21 +520,13 @@ class PrinterRuntime:
                 await self._detach_locked(printer.id)
             raise
 
-    async def _attach_tape(
-        self, printer: Printer, paused_since: datetime | None, *, fatal: bool
-    ) -> _Wiring | None:
-        cfg = tape_config(printer)
+    async def _attach_tape(self, printer: Printer, paused_since: datetime | None) -> _Wiring | None:
         try:
+            cfg = tape_config(printer)  # a malformed stored row (port, snmp) fails here
             model_id = await _resolve_model_id_from_config(cfg)
             driver_cls: Any = ModelRegistry.find_by_model_id(model_id)
         except Exception as exc:
-            if fatal:
-                raise
-            _log.warning(
-                "Printer slug=%s not wired: tape model unresolved (%s)",
-                cfg.slug,
-                type(exc).__name__,
-            )
+            _log_not_wired(printer.slug, exc, "tape model unresolved")
             return None
         queue = self._queue()
         registered = False
@@ -508,9 +558,7 @@ class PrinterRuntime:
         except Exception as exc:
             if registered:
                 self._router.unregister(cfg.slug)
-            if fatal:
-                raise
-            _log.warning("Printer slug=%s not wired (%s)", cfg.slug, type(exc).__name__)
+            _log_not_wired(cfg.slug, exc, "wiring failed")
             return None
         self._slug_to_id[cfg.slug] = printer.id
         return _Wiring(
@@ -668,15 +716,20 @@ class PrinterRuntime:
             await self._stop_producer(wiring)
             await self._queue().remove_printer(printer_id, timeout_s=wiring.queue_timeout_s)
         finally:
-            if wiring.kind == "tape":
-                self.roll_tracker.forget(printer_id)
-                self._router.unregister(wiring.slug)
-                if self._slug_to_id.get(wiring.slug) == printer_id:
-                    del self._slug_to_id[wiring.slug]
-            else:
-                self._ipp_states.pop(printer_id, None)
-                await self._close_page_client(wiring)
-            self._refresh_backcompat()
+            try:
+                if wiring.kind == "tape":
+                    try:
+                        await self._close_confirmation(wiring)
+                    finally:  # #398 (review N-2): a cancel during that wait still unwires it
+                        self.roll_tracker.forget(printer_id)
+                        self._router.unregister(wiring.slug)
+                        if self._slug_to_id.get(wiring.slug) == printer_id:
+                            del self._slug_to_id[wiring.slug]
+                else:
+                    self._ipp_states.pop(printer_id, None)
+                    await self._close_page_client(wiring)
+            finally:
+                self._refresh_backcompat()
 
     # ------------------------------------------------------------------ helpers
 
@@ -712,12 +765,13 @@ class PrinterRuntime:
 
         The sink is bound to the address the backend was wired for: a test print still running
         against the old host after an address change cannot write over the record the change
-        cleared (audit run 28, hardening note 1).
+        cleared (audit run 28, hardening note 1). A stored ``counter_off`` is cleared in memory
+        (the new backend asks for the counter) and stored by the first status read (#398).
         """
         state = getattr(backend, "send_state", None)
         if not isinstance(state, TapeSendState):
             return
-        state.record = ConfirmationRecord.from_json(printer.print_confirmation)
+        state.load(ConfirmationRecord.from_json(printer.print_confirmation))
         state.sink = functools.partial(
             self._store_confirmation, printer.id, address=_tape_address(printer.connection)
         )
@@ -730,8 +784,13 @@ class PrinterRuntime:
         address: tuple[object, object] | None = None,
     ) -> None:
         """Write *record* to the printer row (#393). A gone row is left alone, and so is a row
-        whose host or port is no longer *address*, the one the writer was wired for."""
-        async with self._sessions()() as session:
+        whose host or port is no longer *address*, the one the writer was wired for.
+
+        Read, compare and write run inside one write transaction (#398, finding 6): the lock is
+        taken before the read, so an address change that commits meanwhile is seen by the
+        compare instead of being overwritten by a record of the old address.
+        """
+        async with self._sessions()() as session, write_transaction(session):
             row = await session.get(Printer, printer_id)
             if row is None:
                 return

@@ -4,7 +4,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { renderApp } from "../../test-utils";
+import { renderApp, SIGNED_IN } from "../../test-utils";
 import { job, mockApi, PAGE_PRINTER, PRINTER_A, PRINTER_B, status } from "../test-api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -74,6 +74,24 @@ describe("PrinterDetail", () => {
     expect(within(connection).getByText("Printer-B.Example.invalid")).toBeVisible();
     expect(within(connection).getByText("QL-820NWB")).toBeVisible();
     expect(within(connection).getByText("brother_ql")).toBeVisible();
+  });
+
+  it("a read user sees no host row on a tape printer", async () => {
+    mockApi(routes({ ...PRINTER_B, connection: {} }));
+    await renderApp({ path: `/printers/${PRINTER_B.id}`, session: { ...SIGNED_IN, scope: "read" } });
+    const connection = await screen.findByRole("region", { name: "Connection" });
+    expect(within(connection).queryByText("Host")).toBeNull();
+    expect(within(connection).queryByText("Port")).toBeNull();
+    expect(within(connection).queryByText("—")).toBeNull();
+    expect(within(connection).getByText("Print confirmation")).toBeVisible();
+  });
+
+  it("an admin sees host and port", async () => {
+    mockApi(routes(PRINTER_B));
+    await renderApp({ path: `/printers/${PRINTER_B.id}` });
+    const connection = await screen.findByRole("region", { name: "Connection" });
+    expect(within(connection).getByText("Host")).toBeVisible();
+    expect(within(connection).getByText("Port")).toBeVisible();
   });
 
   it("a tape printer shows how it confirms a print (#393), read-only", async () => {

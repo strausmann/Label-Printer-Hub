@@ -236,9 +236,11 @@ jobs:
 
   # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced to
   # the DRAFT release (`gh release` finds a draft by its pending tag). A draft is
-  # not immutable yet, so `--clobber` makes a rerun safe. Only GITHUB_TOKEN, no
-  # checkout, no other secret. The version reaches the shell through env and is
-  # validated first.
+  # not immutable yet, so `--clobber` makes a rerun safe. The job checks out two
+  # files only (sparse, at the tag, full history for the licence-notes step) with
+  # `persist-credentials: false`, so the token is not left in the clone; the tag is
+  # already pushed when it runs. Only GITHUB_TOKEN, no other secret. The version
+  # reaches the shell through env and is validated first.
   release-sbom:
     name: Release SBOM
     needs: [release, images]
@@ -247,6 +249,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only the two files the licence-notes step runs and reads, at the release tag. Full
+      # history is fetched (for the previous tag), but the working tree holds nothing else, so
+      # no other repository file is on disk next to the job's write token.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: v${{ needs.release.outputs.new-release-version }}
+          fetch-depth: 0
+          persist-credentials: false
+          sparse-checkout: |
+            licences/snapshot.json
+            scripts/licence_snapshot.py
+          sparse-checkout-cone-mode: false
+
       - name: Download the SBOM
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -276,6 +291,58 @@ jobs:
           gh release upload "v${VERSION}" ./*.cdx.json --clobber
           count=$(gh release view "v${VERSION}" --json assets --jq '[.assets[].name | select(endswith(".cdx.json"))] | length')
           test "$count" -eq 1
+
+      # Appends a "Licence changes" section to the draft's notes: the difference of
+      # licences/snapshot.json between the previous tag and this one. Nothing is added when no
+      # licence moved, and a rerun does not add it twice. A draft is still editable.
+      - name: Add the licence changes to the release notes
+        env:
+          VERSION: ${{ needs.release.outputs.new-release-version }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::Invalid release version: not a semantic version"
+            exit 1
+          fi
+          VERSION="${VERSION#v}"
+          work="$RUNNER_TEMP/licence-notes"
+          mkdir -p "$work"
+          # A tag that is missing or was not fetched must fail the step: it would look the
+          # same as "no licence changed". Only a missing snapshot FILE is a soft skip.
+          if ! git rev-parse -q --verify "refs/tags/v${VERSION}^{commit}" > /dev/null; then
+            echo "::error::Tag v${VERSION} is not available in this checkout"
+            exit 1
+          fi
+          prev=$(git describe --tags --abbrev=0 "v${VERSION}^" 2> /dev/null) || {
+            echo "::error::No previous tag found before v${VERSION}; cannot compare licences"
+            exit 1
+          }
+          if ! git cat-file -e "v${VERSION}:licences/snapshot.json" 2> /dev/null; then
+            echo "::notice::v${VERSION} carries no licences/snapshot.json; no licence section"
+            exit 0
+          fi
+          if ! git cat-file -e "${prev}:licences/snapshot.json" 2> /dev/null; then
+            echo "::notice::${prev} carries no licences/snapshot.json; no licence section"
+            exit 0
+          fi
+          git show "v${VERSION}:licences/snapshot.json" > "$work/new.json"
+          git show "${prev}:licences/snapshot.json" > "$work/old.json"
+          # The script comes from the tag; it gets no write token.
+          env -u GH_TOKEN python3 scripts/licence_snapshot.py notes --old "$work/old.json" --new "$work/new.json" > "$work/section.md"
+          if [ ! -s "$work/section.md" ]; then
+            echo "No licence changes since ${prev}"
+            exit 0
+          fi
+          gh release view "v${VERSION}" --json body --jq .body > "$work/body.md"
+          if grep -q '^## Licence changes' "$work/body.md"; then
+            echo "The notes already carry the licence changes"
+            exit 0
+          fi
+          { cat "$work/body.md"; echo; cat "$work/section.md"; } > "$work/notes.md"
+          gh release edit "v${VERSION}" --notes-file "$work/notes.md"
 
   # Publishes the draft once the images and the SBOM asset are in place. Runs
   # only when every job before it succeeded (no always()), so a failed image or

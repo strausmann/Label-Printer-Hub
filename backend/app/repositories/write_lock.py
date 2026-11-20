@@ -1,10 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Write-lock helper for sheet transactions."""
+"""The database write lock: one write transaction at a time, taken before the first read.
+
+Used by the sheet writes and by the printer writes that decide before they write (the admin
+service and the print confirmation record, #398): they share the one lock on purpose, so a
+printer row read and written under it cannot interleave with an admin change of that row.
+"""
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import event, text
@@ -70,3 +77,23 @@ async def acquire_sheet_write_lock(session: AsyncSession) -> None:
             "ON CONFLICT (id) DO UPDATE SET seq = seq + 1"
         )
     )
+
+
+@asynccontextmanager
+async def write_transaction(session: AsyncSession) -> AsyncIterator[None]:
+    """One write transaction: lock first, roll back on any failure.
+
+    Callers that decide before they write (import) enter this once and use the ``*_locked``
+    functions inside; those assume the lock is already held and neither lock nor commit.
+    """
+    # Authentication reads (browser session, API key) share this session and leave a read
+    # transaction open. A read snapshot that later asks for the write lock can fail with
+    # SQLITE_BUSY_SNAPSHOT, so that transaction ends first.
+    if session.in_transaction():
+        await session.commit()
+    try:
+        await acquire_sheet_write_lock(session)
+        yield
+    except BaseException:
+        await session.rollback()
+        raise

@@ -21,8 +21,8 @@ def is_page_payload(payload: dict[str, Any] | None) -> bool:
 
     The definition of "is a page job" for *stored payloads*: the job stores, the repository
     and the retry route ask this function. Other components key on what they hold instead:
-    the in-memory queue on ``job.kind``, capabilities and calibration on
-    ``printer.backend == "ipp"``, and the status route on the cache row's ``kind``.
+    the in-memory queue on ``job.kind``, and the routes and services on the printer row
+    (``is_page_printer`` in ``app.models.printer``).
     """
     return bool(payload) and "kind" in (payload or {})
 

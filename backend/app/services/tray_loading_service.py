@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
+from app.models.printer import is_page_printer
 from app.models.printer_tray import PrinterTray
 from app.models.printer_tray_loading import PrinterTrayLoading
 from app.services.page_jobs import PagePayload
@@ -136,7 +137,7 @@ async def build_test_page(
     printer = await session.get(Printer, printer_id)
     if printer is None:
         raise PrinterNotFoundError()
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     tray_key = await calibration_service.resolve_tray(session, printer_id, tray)
     return loading_page_payload(tray_key, "A4", language)

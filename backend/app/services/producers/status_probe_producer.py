@@ -232,7 +232,9 @@ class StatusProbeProducer:
             row = await s.get(PrinterStatusCache, printer_uuid)
             parsed: dict[str, object] = dict(row.parsed) if (row is not None and row.parsed) else {}
             parsed["online"] = False
-            parsed["last_error"] = str(exc)
+            # The class name only: the message names the printer's address, and the status
+            # route hands this field to every key. The log holds the full exception.
+            parsed["last_error"] = type(exc).__name__
             parsed["loaded_tape_mm"] = None
             parsed["media_raw"] = None
             if row is not None:

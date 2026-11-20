@@ -6,16 +6,17 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import delete, exists, func, literal_column, select, update
+from sqlalchemy import and_, delete, exists, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.models.job import PAGE_KIND_EXPR, Job, JobState, is_page_payload, json_at
-from app.models.sheet import SheetCell
+from app.models.sheet import Sheet, SheetCell
 
 
 async def get(session: AsyncSession, job_id: UUID) -> Job | None:
@@ -294,20 +295,26 @@ async def cancel_queued_unhanded(
     return await session.get(Job, job_id, populate_existing=True)
 
 
-async def mark_cancelled(session: AsyncSession, job_id: UUID) -> Job:
-    """Transition QUEUED|PRINTING → CANCELLED. Sets finished_at."""
-    job = await _get_or_raise(session, job_id)
-    if job.state not in (JobState.QUEUED.value, JobState.PRINTING.value):
-        raise ValueError(
-            f"Cannot mark_cancelled: job {job_id} is in state '{job.state}', "
-            "expected 'queued' or 'printing'"
-        )
-    job.state = JobState.CANCELLED.value
-    job.finished_at = datetime.now(UTC)
-    session.add(job)
+async def mark_cancelled(
+    session: AsyncSession, job_id: UUID, *, states: Collection[str]
+) -> Job | None:
+    """Move a job from one of ``states`` to CANCELLED in one guarded statement (sets finished_at).
+
+    The statement is the check and the write at once: a row a worker moved to ``printing``
+    between a caller's read and this write is not overwritten. ``None`` when no row changed
+    (unknown id, or the row is in another state).
+    """
+    stmt = (
+        update(Job)
+        .where(col(Job.id) == job_id, col(Job.state).in_(tuple(states)))
+        .values(state=JobState.CANCELLED.value, finished_at=datetime.now(UTC))
+        .execution_options(synchronize_session=False)
+    )
+    result = await session.execute(stmt)
     await session.commit()
-    await session.refresh(job)
-    return job
+    if int(result.rowcount) == 0:  # type: ignore[attr-defined]
+        return None
+    return await session.get(Job, job_id, populate_existing=True)
 
 
 async def mark_inflight_as_failed_restart(session: AsyncSession) -> int:
@@ -462,12 +469,19 @@ async def evict_terminal_older_than(
         .where(col(Job.finished_at) < cutoff)
         # A job whose sheet cells are still reserved is not yet settled: without its row the
         # startup sweep could not tell a printed page from one that was never saved (T5-1).
-        # Nor one whose cells are still unconfirmed: the margin ID and feed mark it carried
-        # count as maybe printed, and resolving the cells as printed reads its row (F3-1).
+        # Nor one whose cells are still unconfirmed on an active sheet: the margin ID and feed
+        # mark it carried count as maybe printed, and resolving the cells as printed reads its
+        # row (F3-1). A discarded sheet is never resolved, so its unconfirmed cells pin nothing
+        # (#215); ``reserved`` pins whatever the sheet's state.
         .where(
-            ~exists().where(
-                col(SheetCell.job_id) == col(Job.id),
-                col(SheetCell.state).in_(("reserved", "unconfirmed")),
+            ~exists()
+            .where(col(SheetCell.job_id) == col(Job.id))
+            .where(col(Sheet.id) == col(SheetCell.sheet_id))
+            .where(
+                or_(
+                    col(SheetCell.state) == "reserved",
+                    and_(col(SheetCell.state) == "unconfirmed", col(Sheet.state) == "active"),
+                )
             )
         )
         .execution_options(synchronize_session="fetch")

@@ -686,8 +686,11 @@ def test_sbom_uses_merge_image_ref() -> None:
     assert "--select-catalogers +sbom-cataloger" in runs
     assert "--platform linux/amd64" in runs
     assert "jq -e" in runs
-    for name in ("react", "brother-ql", "tini"):
+    for name in ("react", "tini"):
         assert f'index("{name}")' in runs, name
+    # #256: the QL library is brother-ql-next; its metadata name is brother_ql_next, and the
+    # SBOM catalogers spell it with a hyphen or an underscore. The old name must not satisfy it.
+    assert 'any(test("^brother[-_.]ql[-_.]next$"))' in runs
     upload = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
     assert len(upload) == 1
     assert upload[0]["with"]["name"] == "release-sbom"
@@ -702,7 +705,19 @@ def test_release_sbom_job() -> None:
     assert job["if"] == images["if"]
     assert job["permissions"] == {"contents": "write"}
     steps = job["steps"]
-    assert not _checkout_steps(job), "the job needs no repository contents"
+    # The licence-notes step runs scripts/licence_snapshot.py on licences/snapshot.json, so the
+    # job may check out exactly those two files at the release tag, without credentials. A full
+    # checkout would put the whole repository next to a contents:write token.
+    checkouts = _checkout_steps(job)
+    assert len(checkouts) == 1, "the job checks out the two licence files, once"
+    with_ = checkouts[0]["with"]
+    assert with_.get("persist-credentials") is False
+    assert with_["ref"] == "v${{ needs.release.outputs.new-release-version }}"
+    assert with_.get("sparse-checkout-cone-mode") is False
+    assert set(str(with_.get("sparse-checkout", "")).split()) == {
+        "licences/snapshot.json",
+        "scripts/licence_snapshot.py",
+    }, "the job needs no repository contents beyond the licence snapshot and its script"
     for step in steps:
         assert "${{ inputs." not in str(step.get("run", ""))
         assert "${{ needs." not in str(step.get("run", ""))

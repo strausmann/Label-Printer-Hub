@@ -102,8 +102,6 @@ class SheetItem(_Body):
             raise ValueError("exactly one of data or lookup must be set")
         if self.source == RESERVED_SOURCE:
             raise ValueError("source is reserved for the sheet ID label")
-        if self.lookup is not None and len(self.lookup.identifier) > TEXT_MAX:
-            raise ValueError("lookup identifier is longer than 120 characters")
         return self
 
 

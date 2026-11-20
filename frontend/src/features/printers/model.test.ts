@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from "vitest";
-import { job, PRINTER_A, status } from "../test-api";
+import { job, PAGE_PRINTER, PRINTER_A, pageStatus, status } from "../test-api";
 import { deriveNotifications } from "../notifications/derive";
 import type { Job, Printer, PrinterStatus } from "./api";
 import { printerWaiting } from "./flags";
 import { describePrinter, staleAgeSeconds, tapeWidthOf } from "./model";
+import { supplyEmpty, supplyLowOnly } from "./PageStatus";
 
 describe("tapeWidthOf", () => {
   it("prefers the reported width, then reads the text", () => {
@@ -186,5 +187,68 @@ describe("describePrinter for a tape printer's flags (#376)", () => {
   it("a page printer's view has no flags", () => {
     const view = describePrinter({ ...P, backend: "ipp" }, status(PRINTER_A.id, { kind: "page", error_flags: ["doorOpen"] }) as unknown as PrinterStatus, false);
     expect(view.flags).toEqual([]);
+  });
+});
+
+describe("describePrinter with reported-empty material (#274)", () => {
+  const marker = (name: string, over: Record<string, unknown> = {}) => ({
+    name,
+    color: null,
+    level_percent: 50,
+    low: false,
+    empty: false,
+    some_remaining: false,
+    type: "toner",
+    ...over,
+  });
+  const page = (over: Partial<PrinterStatus> = {}) => pageStatus(PAGE_PRINTER.id, { printer_state: "idle", ...over });
+
+  it("ready with an empty black marker says reported empty", () => {
+    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black", { level_percent: 0, empty: true })] }), false);
+    expect(view).toMatchObject({ kind: "ready", badge: "ok", reportedEmpty: ["black"] });
+  });
+
+  it("toner-empty-error with stopped is blocked", () => {
+    const view = describePrinter(
+      PAGE_PRINTER,
+      page({
+        printer_state: "stopped",
+        state_reasons: [{ keyword: "toner-empty-error", severity: "error", blocking: true }],
+        markers: [marker("black", { level_percent: 0, empty: true })],
+      }),
+      false,
+    );
+    expect(view).toMatchObject({ kind: "stopped", badge: "bad", reasons: ["toner-empty-error"] });
+  });
+
+  it("an empty cyan does not block", () => {
+    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black"), marker("cyan", { level_percent: 0, empty: true })] }), false);
+    expect(view.kind).toBe("ready");
+    expect(view.reportedEmpty).toEqual(["cyan"]);
+  });
+
+  it("-1 (unknown) and -3 (some remaining) levels are neither low nor empty", () => {
+    // The hub reports -1 as no percentage and -3 as no percentage with `some_remaining`; both flags stay off.
+    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black", { level_percent: null }), marker("cyan", { level_percent: null, some_remaining: true })] }), false);
+    expect(view).toMatchObject({ kind: "ready", reportedEmpty: [] });
+    expect(supplyEmpty(page({ markers: [marker("black", { level_percent: null })] }))).toBe(false);
+    expect(supplyLowOnly(page({ markers: [marker("black", { level_percent: null })] }))).toBe(false);
+  });
+
+  it("a marker that is empty at a level above 0 is named and does not block", () => {
+    // A single supply plus a toner-empty reason can set `empty` while the level is still positive.
+    const view = describePrinter(PAGE_PRINTER, page({ markers: [marker("black", { level_percent: 30, empty: true })] }), false);
+    expect(view).toMatchObject({ kind: "ready", badge: "ok", reportedEmpty: ["black"] });
+  });
+
+  it("a tape status names nothing as reported empty, even with an empty marker", () => {
+    const tape = status(PRINTER_A.id, { markers: [marker("black", { level_percent: 0, empty: true })] });
+    expect(describePrinter(PRINTER_A, tape, false)).toMatchObject({ kind: "ready", reportedEmpty: [] });
+  });
+
+  it("a printer that is not ready names nothing as reported empty", () => {
+    const empty = page({ markers: [marker("black", { level_percent: 0, empty: true })] });
+    expect(describePrinter(PAGE_PRINTER, empty, true).reportedEmpty).toEqual([]);
+    expect(describePrinter(PAGE_PRINTER, { ...empty, online: false }, false).reportedEmpty).toEqual([]);
   });
 });

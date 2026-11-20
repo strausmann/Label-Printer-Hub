@@ -24,7 +24,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import date
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 from uuid import UUID
 
 from app.calibration import scale
@@ -32,11 +32,16 @@ from app.calibration.fit import crossing_point
 from app.calibration.scale import LINE_MM
 from app.page_render.pdf import VectorPen, text_width_mm, write_pdf
 from app.services.page_jobs import PagePayload, snapshot_to_deviation
-from app.sheets.errors import CalibrationTypeUnsuitableError
+from app.sheets.errors import CalibrationGridTooLargeError, CalibrationTypeUnsuitableError
 from app.sheets.geometry import Geometry
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+#: Most cells (columns x rows) a calibration page draws; a bigger grid is refused (#358).
+#: A second line of defence: every API, import and seed path already caps a type at
+#: ``geometry.MAX_CELLS`` (400) in ``validate_geometry``; this bound covers rows stored past it.
+MAX_CALIBRATION_CELLS: Final = 2500
 
 #: Plan 2 decision: the page size the squares are measured on is the sheet's own.
 CORNER_SQUARE_MM = 15.0
@@ -414,7 +419,8 @@ async def build_payload(
     """Validate printer, tray and type and build the payload; the only place that does.
 
     Raises the ``SheetApiError``s of the calibration service and the type service, and
-    ``CalibrationTypeUnsuitableError`` for a type without crossings.
+    ``CalibrationTypeUnsuitableError`` for a type without crossings and
+    ``CalibrationGridTooLargeError`` for more than ``MAX_CALIBRATION_CELLS`` cells.
     """
     from app.calibration import service
     from app.models.printer import Printer
@@ -431,6 +437,8 @@ async def build_payload(
     g = ts.version_geometry(v)
     if g.cols < 2 or g.rows < 2:
         raise CalibrationTypeUnsuitableError(g.cols, g.rows)
+    if g.cols * g.rows > MAX_CALIBRATION_CELLS:
+        raise CalibrationGridTooLargeError(g.cols * g.rows, MAX_CALIBRATION_CELLS)
     detail: dict[str, Any] = {
         "type_key": sheet_type.key,
         "version": v.version,

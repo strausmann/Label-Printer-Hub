@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 from app.models.sheet import Sheet, SheetType, SheetTypeVersion
+from app.repositories import write_lock
 from app.sheets import type_service as ts
 from app.sheets.errors import (
     InvalidFieldError,
@@ -180,13 +181,13 @@ async def test_an_open_read_transaction_ends_before_the_write_lock(
     session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen: list[bool] = []
-    real = ts.acquire_sheet_write_lock
+    real = write_lock.acquire_sheet_write_lock
 
     async def spy(s: AsyncSession) -> None:
         seen.append(s.in_transaction())
         await real(s)
 
-    monkeypatch.setattr(ts, "acquire_sheet_write_lock", spy)
+    monkeypatch.setattr(write_lock, "acquire_sheet_write_lock", spy)
     await session.execute(select(func.count()).select_from(SheetType))  # an auth-style read
     assert session.in_transaction()
     await ts.create_type(session, fields(), G_4X12, actor="t")
@@ -431,6 +432,26 @@ async def test_list_filters(session: AsyncSession) -> None:
                     ("TINY", ["zweckform-small"]), ("small", ["zweckform-small"])):  # fmt: skip
         got = await ts.list_types(session, include_archived=False, **{**kw, "q": q})
         assert keys(got) == want, q
+
+
+async def test_list_search_finds_a_type_by_its_vendor(session: AsyncSession) -> None:
+    # The vendor is in no other searched part, so only a vendor clause finds it.
+    await ts.create_type(
+        session,
+        fields("l4736", "L4736", vendor="Avery", product_codes=["L4736REV-25"]),
+        G_4X12,
+        actor="t",
+    )  # fmt: skip
+    await ts.create_type(
+        session,
+        fields("j8651", "J8651", vendor="Zweckform", product_codes=["J8651"]),
+        G_SMALL,
+        actor="t",
+    )  # fmt: skip
+    kw: dict[str, Any] = {"page": None, "vendor": None, "w": None, "h": None}
+    for q in ("Avery", "avery", "AVE"):
+        got = await ts.list_types(session, include_archived=False, **{**kw, "q": q})
+        assert [r.key for r in got] == ["l4736"], q
 
 
 async def test_list_size_tolerance_boundary_is_exact(session: AsyncSession) -> None:

@@ -24,7 +24,7 @@ export function useJobs(state: string | null) {
 }
 
 export const useJob = (id: string, enabled = true) =>
-  useQuery({ queryKey: jobKey(id), queryFn: () => apiFetch<Job>(`/api/v1/jobs/${id}`), enabled: enabled && id !== "" });
+  useQuery({ queryKey: jobKey(id), queryFn: () => apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(id)}`), enabled: enabled && id !== "" });
 
 /** Refreshes every job view and the printer queues they feed. */
 function useRefreshJobs() {
@@ -48,7 +48,7 @@ export function useRetryJob() {
     mutationFn: (id: string) => {
       let request = retrying.get(id);
       if (!request) {
-        request = apiFetch<Job>(`/api/v1/jobs/${id}/retry`, { method: "POST" }).finally(() => retrying.delete(id));
+        request = apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(id)}/retry`, { method: "POST" }).finally(() => retrying.delete(id));
         retrying.set(id, request);
       }
       return request;
@@ -64,7 +64,7 @@ export type ReprintResponse = components["schemas"]["ReprintResponse"];
 export function useContinueBatch() {
   const refresh = useRefreshJobs();
   return useMutation({
-    mutationFn: (batchId: string) => apiFetch<TapeRunRead>(`/api/v1/batches/${batchId}/continue`, { method: "POST" }),
+    mutationFn: (batchId: string) => apiFetch<TapeRunRead>(`/api/v1/batches/${encodeURIComponent(batchId)}/continue`, { method: "POST" }),
     onSettled: refresh,
   });
 }
@@ -74,7 +74,7 @@ export function useReprintBatch() {
   const refresh = useRefreshJobs();
   return useMutation({
     mutationFn: ({ batchId, fromLabel }: { batchId: string; fromLabel: number }) =>
-      apiFetch<ReprintResponse>(`/api/v1/batches/${batchId}/reprint`, { method: "POST", json: { from_label: fromLabel } }),
+      apiFetch<ReprintResponse>(`/api/v1/batches/${encodeURIComponent(batchId)}/reprint`, { method: "POST", json: { from_label: fromLabel } }),
     onSettled: refresh,
   });
 }
@@ -83,7 +83,7 @@ export function useReprintBatch() {
 export function useDiscardBatch() {
   const refresh = useRefreshJobs();
   return useMutation({
-    mutationFn: (batchId: string) => apiFetch<null>(`/api/v1/batches/${batchId}/discard`, { method: "POST" }),
+    mutationFn: (batchId: string) => apiFetch<null>(`/api/v1/batches/${encodeURIComponent(batchId)}/discard`, { method: "POST" }),
     onSettled: refresh,
   });
 }
@@ -95,7 +95,7 @@ export const useHeldRuns = () => useQuery({ queryKey: heldRunsKey, queryFn: () =
 export function useCancelJobById() {
   const refresh = useRefreshJobs();
   return useMutation({
-    mutationFn: (id: string) => apiFetch<Job>(`/api/v1/jobs/${id}/cancel`, { method: "POST" }),
+    mutationFn: (id: string) => apiFetch<Job>(`/api/v1/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
     onSettled: refresh,
   });
 }

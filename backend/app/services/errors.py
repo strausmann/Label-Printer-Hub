@@ -17,3 +17,19 @@ class AppLookupNotFoundError(Exception):
 
 class IntegrationNotConfiguredError(Exception):
     """Raised when a lookup targets an integration without URL (or key) in the settings."""
+
+
+class LookupFailedError(Exception):
+    """Resolving label data via an integration plugin failed.
+
+    This is the umbrella exception for all lookup failures:
+
+    - UnknownAppError: config mismatch (unknown app name)
+    - LookupResponseTooLargeError: the upstream answer exceeded the size limit
+    - LookupResponseCompressedError: the upstream compressed its answer despite ``identity``
+    - Any runtime exception from a plugin is wrapped into this type
+
+    The REST layer catches this single type to return HTTP 502. It lives here, not in
+    ``lookup_service``, so the plugin base can raise subclasses without an import cycle;
+    ``app.services.lookup_service`` re-exports it.
+    """

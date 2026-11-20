@@ -515,7 +515,6 @@ async def test_double_cancel_in_the_fallback_wins_once(
 
     barrier = asyncio.Barrier(2)
     guarded = jobs_repo.cancel_queued_unhanded
-    plain = jobs_repo.mark_cancelled
 
     async def together() -> None:
         async with asyncio.timeout(2):
@@ -526,12 +525,7 @@ async def test_double_cancel_in_the_fallback_wins_once(
             await together()
         return await guarded(session, job_id, unhanded_only=unhanded_only)
 
-    async def plain_together(session: Any, job_id: UUID) -> Any:
-        await together()
-        return await plain(session, job_id)
-
     monkeypatch.setattr(jobs_repo, "cancel_queued_unhanded", last_resort)
-    monkeypatch.setattr(jobs_repo, "mark_cancelled", plain_together)
     bus = _Bus()
     env.app.state.event_bus = bus
     job_id = await _untracked(env, _PAGE)

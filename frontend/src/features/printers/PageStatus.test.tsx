@@ -6,7 +6,7 @@ import { I18nProvider } from "@lingui/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { i18n, initI18n } from "../../i18n";
 import { pageStatus } from "../test-api";
-import { MarkerList, noAnswerYet, ReasonLine, runningOut } from "./PageStatus";
+import { MarkerList, noAnswerYet, ReasonLine, supplyEmpty, supplyLowOnly } from "./PageStatus";
 
 const wrap = (node: React.ReactNode) => <I18nProvider i18n={i18n}>{node}</I18nProvider>;
 const ID = "33333333-3333-4333-8333-333333333333";
@@ -25,14 +25,39 @@ describe("noAnswerYet (#206)", () => {
   });
 });
 
-describe("runningOut", () => {
+describe("supplyLowOnly and supplyEmpty", () => {
   const marker = { name: "x", color: null, level_percent: 50, low: false, empty: false, some_remaining: false, type: null };
-  it("counts low and empty markers, nothing else", () => {
-    expect(runningOut(pageStatus(ID, { markers: [{ ...marker, low: true }] }))).toBe(true);
-    expect(runningOut(pageStatus(ID, { markers: [{ ...marker }, { ...marker, empty: true }] }))).toBe(true);
-    expect(runningOut(pageStatus(ID, { markers: [{ ...marker }] }))).toBe(false);
-    expect(runningOut(pageStatus(ID, { markers: null }))).toBe(false);
-    expect(runningOut(undefined)).toBe(false);
+  it("tell a low supply from an empty one", () => {
+    const low = pageStatus(ID, { markers: [{ ...marker, low: true }] });
+    const empty = pageStatus(ID, { markers: [{ ...marker }, { ...marker, empty: true }] });
+    expect(supplyLowOnly(low)).toBe(true);
+    expect(supplyEmpty(low)).toBe(false);
+    expect(supplyEmpty(empty)).toBe(true);
+    expect(supplyLowOnly(empty)).toBe(false);
+  });
+  it("an empty supply that is also flagged low counts as empty only", () => {
+    const both = pageStatus(ID, { markers: [{ ...marker, low: true, empty: true }] });
+    expect(supplyEmpty(both)).toBe(true);
+    expect(supplyLowOnly(both)).toBe(false);
+  });
+  it("a printer with one empty and one low supply counts in both", () => {
+    const mixed = pageStatus(ID, { markers: [{ ...marker, empty: true }, { ...marker, low: true }] });
+    expect(supplyEmpty(mixed)).toBe(true);
+    expect(supplyLowOnly(mixed)).toBe(true);
+  });
+  it("a status nobody refreshes counts as nothing (its row says supplies not known)", () => {
+    const markers = [{ ...marker, empty: true }, { ...marker, low: true }];
+    for (const over of [{ stale: true }, { polled: false }]) {
+      const unknown = pageStatus(ID, { markers, ...over });
+      expect(supplyEmpty(unknown)).toBe(false);
+      expect(supplyLowOnly(unknown)).toBe(false);
+    }
+  });
+  it("nothing else counts", () => {
+    for (const status of [pageStatus(ID, { markers: [{ ...marker }] }), pageStatus(ID, { markers: null }), undefined]) {
+      expect(supplyLowOnly(status)).toBe(false);
+      expect(supplyEmpty(status)).toBe(false);
+    }
   });
 });
 

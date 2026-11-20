@@ -16,6 +16,13 @@ const EDGE = "L4731-0001"; // the 189-cell sheet, 120 cells used with purposes o
 /** API writes of the cleanup go with the admin key: the browser session's cookie needs the page's CSRF header. */
 const KEY = () => ({ "X-Label-Hub-Key": mainKey() });
 const noSideScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+/** The element is the one at the middle of its own box: it is on screen and nothing lies over it. */
+const uncovered = (loc: Locator) =>
+  loc.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return at === el || el.contains(at);
+  });
 const setLanguage = (page: Page, lang: "de" | "en") => page.evaluate((l) => localStorage.setItem("lph.lang", l), lang);
 
 /** Opens a react-aria select and takes the option whose name contains the text. */
@@ -75,6 +82,55 @@ test.describe.serial("sheets", () => {
     const gone = page.getByRole("row").filter({ has: page.getByRole("link", { name: DISCARDED }) });
     await expect(gone).toContainText("discarded");
     await expect(gone.getByRole("button", { name: /Discard/ })).toHaveCount(0);
+  });
+
+  // #253: the sheet section of the item view shows and edits the number of labels, and the preview plans exactly that many cells.
+  test("set 5 labels on an item and see 5 planned cells", async () => {
+    await setLanguage(page, "en");
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const printers = (await (await page.request.get("/api/v1/printers")).json()) as Array<{ id: string; name: string }>;
+    const printerId = printers.find((p) => p.name === "Office page printer")!.id;
+    await page.goto("/");
+    await page.evaluate((id) => localStorage.setItem("lph.printer", id), printerId);
+    const usedBefore = async () => ((await (await page.request.get("/api/v1/sheets?state=active")).json()) as Array<{ used: number }>).map((s) => s.used);
+    const before = await usedBefore();
+    try {
+      await page.goto("/lookup/grocy/7");
+      const section = page.getByRole("region", { name: "Print onto a sheet" });
+      const count = section.getByRole("spinbutton", { name: "Number of labels" });
+      await expect(count).toHaveValue("1");
+      await count.fill("5");
+      // The Print panel's Copies field is the same number.
+      await expect(page.getByRole("spinbutton", { name: "Copies" })).toHaveValue("5");
+      const line = section.getByText(/^5 labels → cells [\d–, ]+ on L\d{4}-\d{4}$/);
+      await expect(line).toBeVisible({ timeout: 30_000 });
+      // "a–b" is a run, "a" a single cell: five cells in all.
+      const spans = ((await line.textContent()) ?? "").replace(/^5 labels → cells /, "").replace(/ on .*$/, "").split(", ");
+      const cells = spans.reduce((n, span) => {
+        const [from, to] = span.split("–").map(Number);
+        return n + (to === undefined ? 1 : to! - from! + 1);
+      }, 0);
+      expect(cells).toBe(5);
+      await expect(section.getByRole("gridcell", { name: /, new/ })).toHaveCount(5);
+      // A preview reserves nothing.
+      expect(await usedBefore()).toEqual(before);
+
+      // A phone, and a short screen as with the on-screen keyboard open: the field and the print button stay reachable.
+      for (const size of [{ width: 390, height: 844 }, { width: 390, height: 400 }]) {
+        await page.setViewportSize(size);
+        await expect(count).toBeVisible();
+        // Scrolled to the middle of the screen, as the browser does for the focused field when the keyboard opens:
+        // nothing fixed (the tab bar) may lie over the field or over the print button.
+        await count.evaluate((el) => el.scrollIntoView({ block: "center" }));
+        expect(await uncovered(count)).toBe(true);
+        const print = section.getByRole("button", { name: "Print onto sheet" });
+        await print.evaluate((el) => el.scrollIntoView({ block: "center" }));
+        expect(await uncovered(print)).toBe(true);
+        expect(await noSideScroll(page)).toBe(true);
+      }
+    } finally {
+      await page.evaluate(() => localStorage.removeItem("lph.printer"));
+    }
   });
 
   // #350: 3490 has no usable margin, so its code goes on the back of the liner.

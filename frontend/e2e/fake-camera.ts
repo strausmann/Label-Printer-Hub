@@ -70,9 +70,15 @@ function decodeGrayPng(png: Uint8Array): Gray {
   return { width, height, pixels };
 }
 
-/** Writes `text` as a code of `format`, scaled to fill most of a 640x480 white frame, to `file`. */
-export async function writeFakeCameraFile(file: string, text: string, format: "QRCode" | "DataMatrix"): Promise<void> {
-  await writerReady;
+/** One stretch of the clip: `frames` pictures (30 per second) of `text` drawn as a code of `format`. */
+export interface CameraSection {
+  text: string;
+  format: "QRCode" | "DataMatrix";
+  frames: number;
+}
+
+/** The YUV4MPEG2 frame (header line, luma, two chroma planes) of `text` as a code scaled to fill most of a 640x480 white sheet. */
+async function drawFrame(text: string, format: CameraSection["format"]): Promise<Buffer> {
   const result = await writeBarcode(text, { format, scale: 4, withQuietZones: true });
   if (result.error || !result.image) throw new Error(`could not draw ${format}: ${result.error}`);
   const code = decodeGrayPng(new Uint8Array(await result.image.arrayBuffer()));
@@ -90,8 +96,24 @@ export async function writeFakeCameraFile(file: string, text: string, format: "Q
     }
   }
   const chroma = new Uint8Array((WIDTH / 2) * (HEIGHT / 2)).fill(128);
-  const header = Buffer.from(`YUV4MPEG2 W${WIDTH} H${HEIGHT} F30:1 Ip A1:1 C420jpeg\n`, "ascii");
-  const frame = Buffer.concat([Buffer.from("FRAME\n", "ascii"), luma, chroma, chroma]);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, Buffer.concat([header, ...Array.from({ length: FRAMES }, () => frame)]));
+  return Buffer.concat([Buffer.from("FRAME\n", "ascii"), luma, chroma, chroma]);
 }
+
+/**
+ * Writes the sections one after another to `file` as one clip, which the browser loops. A single
+ * code is one section of `FRAMES` pictures; several sections make the camera show a code, then the next.
+ */
+export async function writeFakeCameraFile(file: string, sections: readonly CameraSection[]): Promise<void> {
+  await writerReady;
+  const header = Buffer.from(`YUV4MPEG2 W${WIDTH} H${HEIGHT} F30:1 Ip A1:1 C420jpeg\n`, "ascii");
+  const parts: Buffer[] = [header];
+  for (const { text, format, frames } of sections) {
+    const frame = await drawFrame(text, format);
+    for (let n = 0; n < frames; n++) parts.push(frame);
+  }
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, Buffer.concat(parts));
+}
+
+/** A clip of one code, `FRAMES` pictures long. */
+export const singleCode = (text: string, format: CameraSection["format"]): CameraSection[] => [{ text, format, frames: FRAMES }];

@@ -284,7 +284,7 @@ test.describe("shell", () => {
 
   test("sign-in rejects a wrong key and signing out returns to sign-in", async ({ page }) => {
     await page.goto("/");
-    await signInWith(page, "lh_pat_not-a-real-key-at-all");
+    await signInWith(page, "lh_pat_not-a-real-key-at-all", { expect: "refused" });
     await expect(page.getByRole("alert")).toHaveText("That key was not accepted.");
     await expect(page.getByLabel("API key")).toHaveValue("");
     await signInWith(page, mainKey());
@@ -322,7 +322,7 @@ test.describe("bootstrap", () => {
     await expect(page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first()).toBeVisible();
     await page.context().clearCookies();
     await page.goto("/");
-    await signInWith(page, bootstrapKey());
+    await signInWith(page, bootstrapKey(), { expect: "refused" });
     await expect(page.getByRole("alert")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Create the first admin key" })).toHaveCount(0);
   });

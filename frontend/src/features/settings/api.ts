@@ -41,7 +41,7 @@ export function useSaveSettings() {
 export const useTestIntegration = (name: string) =>
   useMutation({
     mutationFn: (values: Record<string, unknown>) =>
-      apiFetch<IntegrationTestResult>(`/api/v1/settings/integrations/${name}/test`, { method: "POST", json: { values } }),
+      apiFetch<IntegrationTestResult>(`/api/v1/settings/integrations/${encodeURIComponent(name)}/test`, { method: "POST", json: { values } }),
   });
 
 export const useAdminPrinters = () =>
@@ -81,13 +81,13 @@ export function usePrinterAdmin() {
     update: useMutation({
       mutationKey: PRINTER_UPDATE_KEY,
       mutationFn: ({ slug, body }: { slug: string; body: PrinterUpdate }) =>
-        apiFetch<AdminPrinter>(`/api/v1/admin/printers/${slug}`, { method: "PUT", json: body }),
+        apiFetch<AdminPrinter>(`/api/v1/admin/printers/${encodeURIComponent(slug)}`, { method: "PUT", json: body }),
       onSuccess: done,
     }),
     toggle: useMutation({
       mutationKey: PRINTER_TOGGLE_KEY,
       mutationFn: ({ slug, enable }: { slug: string; enable: boolean }) =>
-        apiFetch<AdminPrinter>(`/api/v1/admin/printers/${slug}/${enable ? "enable" : "disable"}`, { method: "POST" }),
+        apiFetch<AdminPrinter>(`/api/v1/admin/printers/${encodeURIComponent(slug)}/${enable ? "enable" : "disable"}`, { method: "POST" }),
       onSuccess: done,
     }),
   };
@@ -113,7 +113,7 @@ export function useApiKeyAdmin() {
       onSuccess: done,
     }),
     revoke: useMutation({
-      mutationFn: (id: string) => apiFetch<void>(`/api/v1/admin/api-keys/${id}`, { method: "DELETE" }),
+      mutationFn: (id: string) => apiFetch<void>(`/api/v1/admin/api-keys/${encodeURIComponent(id)}`, { method: "DELETE" }),
       onSuccess: done,
     }),
   };

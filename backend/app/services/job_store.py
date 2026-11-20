@@ -62,11 +62,11 @@ class JobStore(Protocol):
     async def mark_printing(self, job_id: UUID) -> bool:
         """Transition QUEUED -> PRINTING. Called by worker when it picks up the job.
 
-        Returns True when the worker may print: the transition happened, or the
-        store does not know the job at all (callers may race against eviction, and
-        a job submitted without a row has nothing that could have cancelled it).
-        Returns False when the row exists but is no longer QUEUED (e.g. cancelled
-        through the API): the worker must NOT print such a job.
+        Returns True when the worker may print: the transition happened.
+        Returns False when the row is no longer QUEUED (e.g. cancelled through the
+        API) or does not exist (cancelled, then removed): the worker must NOT print
+        such a job. ``MemoryJobStore`` is the exception: it treats a missing row as "go",
+        because ``PrintQueue.submit()`` creates no row.
 
         Must NOT raise on missing jobs.
         """
@@ -85,12 +85,13 @@ class JobStore(Protocol):
         must NOT raise on missing jobs — callers may race against eviction.
         """
 
-    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         """Transition QUEUED -> CANCELLED. Called by PrintQueue.cancel()/clear_queue().
 
         Only a QUEUED job can be cancelled: a PRINTING tape job is already on the wire
         (mid-print abort is unsafe over TCP/9100) and terminal jobs stay as they
-        are.  Silently no-op if job_id does not exist or is not QUEUED.
+        are.  Silently no-op if job_id does not exist or is not QUEUED.  Returns True when
+        the row changed, False when it was left as it was.
 
         ``allow_printing=True`` also ends a PRINTING row: only the page-job runner passes
         it, after the IPP printer confirmed the cancel of a job that never started.
@@ -223,13 +224,14 @@ class MemoryJobStore(JobStore):
         job.error = error
         job.finished_at = datetime.now(UTC)
 
-    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> None:
+    async def mark_cancelled(self, job_id: UUID, *, allow_printing: bool = False) -> bool:
         job = self._jobs.get(job_id)
         allowed = _CANCELLABLE_PAGE if allow_printing else (JobState.QUEUED.value,)
         if job is None or job.state not in allowed:
-            return
+            return False
         job.state = JobState.CANCELLED.value
         job.finished_at = datetime.now(UTC)
+        return True
 
     async def set_result(self, job_id: UUID, result: dict[str, Any]) -> None:
         job = self._jobs.get(job_id)

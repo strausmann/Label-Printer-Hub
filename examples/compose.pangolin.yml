@@ -55,6 +55,8 @@ services:
       retries: 3
       start_period: 30s
     labels:
+      # The hub refuses request bodies above 2 MiB itself (413 body_too_large); Pangolin needs no
+      # extra setting for it.
       # Main UI — behind Pangolin SSO
       - "pangolin.public-resources.labelyard.name=Labelyard"
       - "pangolin.public-resources.labelyard.full-domain=${LABELYARD_HOST}"

@@ -11,6 +11,7 @@ import { ApiError } from "../../api/client";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { Badge } from "../archive/fields";
+import { useSheetTypes } from "../archive/api";
 import { isLookupApp, useAppName } from "../lookup/apps";
 import { ModalDialog, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON, SECTION_HEADING } from "../ui";
@@ -21,6 +22,7 @@ import { sheetKey } from "./keys";
 import { SheetGrid, SheetLegend } from "./SheetGrid";
 import { DiscardDialog, Usage } from "./SheetsPage";
 import { SheetCodePanel } from "./SheetCodePanel";
+import { typeTitle } from "./typeLabel";
 
 /** The server's limit for the purpose of one cell (`MarkedCellIn.purpose`). */
 const MAX_PURPOSE = 120;
@@ -88,6 +90,10 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
   const cellLine = useCellLine();
   const client = useQueryClient();
   const code = sheet.code;
+  // The same readable name as the list; the server's short label while the types load or when the type is not known.
+  const types = useSheetTypes({ include_archived: true });
+  const type = types.data?.find((x) => x.key === sheet.type_key);
+  const typeName = type ? typeTitle(type) : sheet.type_label;
   const mark = useMarkCells();
   const unmark = useUnmarkCells();
   const resolve = useResolveCells();
@@ -205,7 +211,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
           {discarded ? <Badge tone="warn">{t({ message: "discarded", context: "sheet state" })}</Badge> : null}
         </div>
         <p className="text-ink-2 [overflow-wrap:anywhere]">
-          {sheet.type_label} · {sizeLine}
+          {typeName} · {sizeLine}
         </p>
         {discarded && sheet.discarded_at ? (
           <p className="font-bold">{t`Discarded on ${discardedOn}, this code is not used again.`}</p>
@@ -223,7 +229,7 @@ function SheetBody({ sheet, canWrite }: { sheet: SheetRead; canWrite: boolean })
               <Fact label={t`Feed mark printed`}>{sheet.feed_mark_printed ? t`yes` : t`no`}</Fact>
               <Fact label={t`Last used`}>{sheet.last_used_at ? <Time iso={sheet.last_used_at} withTime /> : t`Not used yet`}</Fact>
               <Fact label={t`Sheet type`}>
-                {sheet.type_label} (v{sheet.version})
+                {typeName} (v{sheet.version})
               </Fact>
               {sheet.note ? <Fact label={t`Note`}>{sheet.note}</Fact> : null}
             </dl>

@@ -63,6 +63,7 @@ from sqlmodel import col
 from app.models.app_setting import AppSetting
 from app.models.backing_design import BackingDesign
 from app.models.sheet import Sheet, SheetType, SheetTypeVersion
+from app.repositories.write_lock import write_transaction
 from app.sheets import type_service as ts
 from app.sheets.exchange import ExportDoc, geometry_from_doc
 from app.sheets.geometry import geometry_hash
@@ -228,7 +229,7 @@ async def _load_known(session: AsyncSession) -> _Known:
 async def run_sheet_seed(session_factory: async_sessionmaker[AsyncSession]) -> SeedReport:
     seed = load_seed()
     report = SeedReport()
-    async with session_factory() as session, ts.write_transaction(session):
+    async with session_factory() as session, write_transaction(session):
         known = await _load_known(session)
         for doc in seed.docs:
             try:

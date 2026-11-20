@@ -120,6 +120,21 @@ async def test_tape_label_falls_back_to_generic(api) -> None:
     assert body["label"] == "99mm"
 
 
+async def test_tape_endpoint_takes_the_staleness_bound_from_the_printer_row(api) -> None:
+    # A cache row that says kind "page" belongs to a tape printer here (left from an earlier
+    # printer with the same id). The printer row wins: a tape row 200 s old is stale, the 600 s
+    # bound of a page printer would still serve it.
+    client, app, factory = api
+    pid = await _printer(factory)
+    await _cache_row(
+        factory, pid, {"online": True, "loaded_tape_mm": 12, "kind": "page"}, age_s=200
+    )
+    app.dependency_overrides[get_printer_runtime] = lambda: FakeRuntime({pid})
+    r = await client.get(f"/api/v1/printers/{pid}/tape")
+    assert r.status_code == 404
+    assert "Status older than" in r.json()["detail"]
+
+
 async def test_status_has_structured_width(api) -> None:
     client, app, factory = api
     pid = await _printer(factory)

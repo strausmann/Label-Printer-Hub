@@ -198,32 +198,45 @@ class EvaluatePrTest(unittest.TestCase):
 
     def test_milestone_name_that_does_not_match_the_computed_version_fails(self) -> None:
         result = self.evaluate(
-            title="feat: a", head_ref="milestone/1.6.0", commits=commits("feat: a"), milestones=milestones("1.6.0")
+            title="feat: a",
+            head_ref="milestone/1.6.0",
+            commits=commits("feat: a"),
+            milestones=milestones("1.6.0"),
         )
         self.assertFalse(result.ok)
         self.assertIn("compute version 1.5.0", result.errors[0])
         self.assertIn("milestone/1.6.0", result.errors[0])
 
     def test_breaking_change_in_minor_milestone_fails(self) -> None:
-        result = self.evaluate(title="feat: a", head_ref="milestone/1.5.0", commits=commits("feat!: a"))
+        result = self.evaluate(
+            title="feat: a", head_ref="milestone/1.5.0", commits=commits("feat!: a")
+        )
         self.assertFalse(result.ok)
         self.assertEqual(result.computed, "2.0.0")
 
     def test_major_milestone_passes(self) -> None:
         result = self.evaluate(
-            title="feat!: v2", head_ref="milestone/2.0.0", commits=commits("feat!: a"), milestones=milestones("2.0.0")
+            title="feat!: v2",
+            head_ref="milestone/2.0.0",
+            commits=commits("feat!: a"),
+            milestones=milestones("2.0.0"),
         )
         self.assertTrue(result.ok, result.errors)
 
     def test_milestone_without_open_github_milestone_fails(self) -> None:
         result = self.evaluate(
-            title="feat: a", head_ref="milestone/1.5.0", commits=commits("feat: a"), milestones=milestones("1.6.0")
+            title="feat: a",
+            head_ref="milestone/1.5.0",
+            commits=commits("feat: a"),
+            milestones=milestones("1.6.0"),
         )
         self.assertFalse(result.ok)
         self.assertIn("no open GitHub milestone titled '1.5.0'", result.errors[-1])
 
     def test_milestone_without_releasable_change_fails(self) -> None:
-        result = self.evaluate(title="chore: a", head_ref="milestone/1.5.0", commits=commits("docs: a"))
+        result = self.evaluate(
+            title="chore: a", head_ref="milestone/1.5.0", commits=commits("docs: a")
+        )
         self.assertFalse(result.ok)
         self.assertIn("no releasable change", result.errors[0])
 
@@ -240,7 +253,10 @@ class EvaluatePrTest(unittest.TestCase):
 
     def test_patch_milestone_passes(self) -> None:
         result = self.evaluate(
-            title="fix: a", head_ref="milestone/1.4.2", commits=commits("fix: a"), milestones=milestones("1.4.2")
+            title="fix: a",
+            head_ref="milestone/1.4.2",
+            commits=commits("fix: a"),
+            milestones=milestones("1.4.2"),
         )
         self.assertTrue(result.ok, result.errors)
 
@@ -302,7 +318,10 @@ class EvaluatePrTest(unittest.TestCase):
 
     def test_patch_milestone_without_open_github_milestone_fails(self) -> None:
         result = self.evaluate(
-            head_ref="milestone/1.5.x", commits=commits("fix: a"), last_release="1.5.0", milestones=milestones("1.6.0")
+            head_ref="milestone/1.5.x",
+            commits=commits("fix: a"),
+            last_release="1.5.0",
+            milestones=milestones("1.6.0"),
         )
         self.assertFalse(result.ok)
         self.assertIn("no open GitHub milestone titled '1.5.x'", result.errors[-1])
@@ -331,7 +350,9 @@ class EvaluatePrTest(unittest.TestCase):
     def test_milestone_pr_title_is_ignored(self) -> None:
         # Milestone PRs are merged with a merge commit, never squashed: the title
         # never reaches main, so only the commits decide the impact.
-        result = self.evaluate(title="feat: x", head_ref="milestone/1.5.0", commits=commits("docs: a"))
+        result = self.evaluate(
+            title="feat: x", head_ref="milestone/1.5.0", commits=commits("docs: a")
+        )
         self.assertFalse(result.ok)
         self.assertIn("no releasable change", result.errors[0])
         self.assertNotIn("PR title", [e.label for e in result.entries])
@@ -345,7 +366,9 @@ class EvaluatePrTest(unittest.TestCase):
     def test_malformed_milestone_branch_keeps_the_title(self) -> None:
         # milestone/1.5 is not a milestone branch (MILESTONE_BRANCH_RE): it is squash-merged
         # like any other branch, so its title becomes the commit on main and must be checked.
-        result = self.evaluate(title="feat: x", head_ref="milestone/1.5", commits=commits("chore: a"))
+        result = self.evaluate(
+            title="feat: x", head_ref="milestone/1.5", commits=commits("chore: a")
+        )
         self.assertFalse(result.ok)
         self.assertIn("PR title", result.errors[0])
 
@@ -421,7 +444,9 @@ class GuardTest(unittest.TestCase):
             ri.open_block_issue("o/r", "1.5.0", "1.4.1", request=fake_request)
         self.assertIn("#5", out.getvalue())
 
-    def run_provenance_guard(self, env: dict[str, str], violation: Any) -> tuple[int, str, list[Any]]:
+    def run_provenance_guard(
+        self, env: dict[str, str], violation: Any
+    ) -> tuple[int, str, list[Any]]:
         calls: list[Any] = []
 
         def fake_request(method: str, url: str, body: Any = None) -> Any:
@@ -503,7 +528,9 @@ class TempRepoCase(unittest.TestCase):
         self.git("tag", "v1.4.1")
 
     def git(self, *args: str) -> str:
-        return subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True, text=True).stdout.strip()
+        return subprocess.run(
+            ["git", *args], cwd=self.repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
 
     def commit(self, message: str) -> str:
         self.git("commit", "-q", "--allow-empty", "-m", message)
@@ -571,7 +598,12 @@ class ProvenanceTest(TempRepoCase):
         self.commit("feat: inside")
         self.git("switch", "-q", "main")
         self.git(
-            "merge", "-q", "--no-ff", "milestone/1.5.0", "-m", "Merge pull request #7 from fork-owner/milestone/1.5.0"
+            "merge",
+            "-q",
+            "--no-ff",
+            "milestone/1.5.0",
+            "-m",
+            "Merge pull request #7 from fork-owner/milestone/1.5.0",
         )
         self.assertIsNone(ri.provenance_violation("1.5.0", "1.4.1", RULES, cwd=self.repo))
         message = ri.provenance_violation("1.5.0", "1.4.1", RULES, cwd=self.repo, owner="o")
@@ -624,7 +656,9 @@ class MilestoneMergesTest(TempRepoCase):
         self.git("switch", "-q", "-c", "ci/topic")
         self.commit("fix: topic")
         self.git("switch", "-q", "milestone/1.5.x")
-        self.git("merge", "-q", "--no-ff", "ci/topic", "-m", "Merge pull request #269 from o/ci/topic")
+        self.git(
+            "merge", "-q", "--no-ff", "ci/topic", "-m", "Merge pull request #269 from o/ci/topic"
+        )
         self.git("switch", "-q", "main")
         self.commit("fix: released from main")
         self.git("switch", "-q", "milestone/1.5.x")
@@ -640,7 +674,14 @@ class MilestoneMergesTest(TempRepoCase):
         self.commit("fix: inside")
         self.git("switch", "-q", "main")
         self.git("switch", "-q", "-c", "side")
-        self.git("merge", "-q", "--no-ff", "milestone/1.5.x", "-m", "Merge pull request #9 from o/milestone/1.5.x")
+        self.git(
+            "merge",
+            "-q",
+            "--no-ff",
+            "milestone/1.5.x",
+            "-m",
+            "Merge pull request #9 from o/milestone/1.5.x",
+        )
         self.git("switch", "-q", "main")
         self.commit("fix: on main")
         self.git("merge", "-q", "--no-ff", "side", "-m", "Merge pull request #10 from o/side")
@@ -651,7 +692,12 @@ class MilestoneMergesTest(TempRepoCase):
         self.commit("fix: inside")
         self.git("switch", "-q", "main")
         self.git(
-            "merge", "-q", "--no-ff", "milestone/1.5.x", "-m", "Merge remote-tracking branch 'origin/milestone/1.5.x'"
+            "merge",
+            "-q",
+            "--no-ff",
+            "milestone/1.5.x",
+            "-m",
+            "Merge remote-tracking branch 'origin/milestone/1.5.x'",
         )
         self.assertEqual(self.merges(), [])
 
@@ -659,7 +705,9 @@ class MilestoneMergesTest(TempRepoCase):
         self.git("switch", "-q", "-c", "milestone/1.6.0")
         self.commit("fix: inside")
         self.git("switch", "-q", "main")
-        self.git("merge", "-q", "--no-ff", "milestone/1.6.0", "-m", "Merge branch 'milestone/1.6.0'")
+        self.git(
+            "merge", "-q", "--no-ff", "milestone/1.6.0", "-m", "Merge branch 'milestone/1.6.0'"
+        )
         self.assertEqual(self.merges(), ["1.6.0"])
 
     def test_rebased_or_squashed_milestone_has_no_merge(self) -> None:
@@ -704,12 +752,18 @@ class MilestoneIssuesTest(unittest.TestCase):
 
     def test_waived_issues_are_separated_and_sorted(self) -> None:
         found = ri.milestone_issues(
-            "o/r", "1.5.x", get=self.getter([issue(9), issue(150, ri.WAIVER_LABEL), issue(3, "bug", ri.WAIVER_LABEL)])
+            "o/r",
+            "1.5.x",
+            get=self.getter(
+                [issue(9), issue(150, ri.WAIVER_LABEL), issue(3, "bug", ri.WAIVER_LABEL)]
+            ),
         )
         self.assertEqual(found, ri.MilestoneIssues(open=[9], waived=[3, 150]))
 
     def test_milestone_title_with_surrounding_spaces_is_found(self) -> None:
-        found = ri.milestone_issues("o/r", "1.5.x", get=self.getter([issue(5)], milestone=" 1.5.x "))
+        found = ri.milestone_issues(
+            "o/r", "1.5.x", get=self.getter([issue(5)], milestone=" 1.5.x ")
+        )
         assert found is not None
         self.assertEqual(found.open, [5])
 
@@ -728,7 +782,9 @@ class GuardDecisionTest(unittest.TestCase):
 
     def test_open_issues_block_in_ascending_order(self) -> None:
         issues = {"1.5.x": ri.MilestoneIssues(open=[3, 7], waived=[])}
-        allowed, errors, warnings = ri.guard_decision("1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, issues)
+        allowed, errors, warnings = ri.guard_decision(
+            "1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, issues
+        )
         self.assertFalse(allowed)
         self.assertEqual(errors, ["release blocked: milestone 1.5.x has open issues: #3, #7"])
         self.assertEqual(warnings, [])
@@ -755,7 +811,9 @@ class GuardDecisionTest(unittest.TestCase):
         self.assertIn("1.6.0", errors[0])
 
     def test_missing_milestone_blocks(self) -> None:
-        allowed, errors, _ = ri.guard_decision("1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, {"1.5.x": None})
+        allowed, errors, _ = ri.guard_decision(
+            "1.5.1", "1.5.0", ["1.5.x"], {"1.5.x"}, {"1.5.x": None}
+        )
         self.assertFalse(allowed)
         self.assertIn("1.5.x", errors[0])
 
@@ -804,7 +862,10 @@ class MilestoneRuleGuardTest(unittest.TestCase):
                 mock.patch.object(ri, "_request", fake_request),
                 mock.patch.object(ri, "provenance_violation", lambda *a, **k: None),
                 mock.patch.object(ri, "milestone_merges", merges_fn or (lambda *a, **k: merged)),
-                mock.patch.dict(os.environ, {"DRY_RUN": "false", "GITHUB_STEP_SUMMARY": str(summary), **(env or {})}),
+                mock.patch.dict(
+                    os.environ,
+                    {"DRY_RUN": "false", "GITHUB_STEP_SUMMARY": str(summary), **(env or {})},
+                ),
                 redirect_stdout(out),
             ):
                 code = ri.main(["guard", "--repo", "o/r", "--next", next_version, "--last", last])
@@ -819,7 +880,9 @@ class MilestoneRuleGuardTest(unittest.TestCase):
                 seen.append(rev_range)
                 return []
 
-            self.run_guard(["1.5.x"], [], last=last, next_version="1.5.1" if last else "1.6.0", merges_fn=spy)
+            self.run_guard(
+                ["1.5.x"], [], last=last, next_version="1.5.1" if last else "1.6.0", merges_fn=spy
+            )
             self.assertEqual(seen, [expected])
 
     def test_fix_only_release_ignores_open_milestone(self) -> None:

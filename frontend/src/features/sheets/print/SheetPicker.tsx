@@ -3,7 +3,7 @@
 
 import { useLingui } from "@lingui/react/macro";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ComboBox, Input, Label, ListBox, ListBoxItem, Popover } from "react-aria-components";
 import { apiFetch, ApiError } from "../../../api/client";
 import { FIELD } from "../../../shell/SignIn";
@@ -11,6 +11,7 @@ import { LABEL, ModalDialog } from "../../settings/controls";
 import { SECONDARY_BUTTON } from "../../ui";
 import { CameraScanner } from "../../scan/CameraScanner";
 import type { ScanHit } from "../../scan/decoder";
+import { resolveScan } from "../../scan/resolvers";
 import type { SheetRead, SheetSummary } from "../api";
 import { sheetKey } from "../keys";
 import { parseSheetCode } from "../resolver";
@@ -64,6 +65,22 @@ function useScanNote(typeKey: string, typeLabel: string) {
 }
 
 /**
+ * What the camera saw instead of a sheet code, right under the picture. It is read out (alert) and,
+ * on a phone where the picture fills the dialog, scrolled into view so it is not hidden below it.
+ */
+function ScanHint({ text }: { text: string }) {
+  const element = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    element.current?.scrollIntoView?.({ block: "nearest" });
+  }, []);
+  return (
+    <p ref={element} role="alert" className="text-small font-bold text-ink [overflow-wrap:anywhere] animate-[fadein_140ms_cubic-bezier(0.23,1,0.32,1)]">
+      {text}
+    </p>
+  );
+}
+
+/**
  * The combobox of sheets: the ones that hold the whole print first, then the too small ones, and
  * "New sheet" last; typing searches by code. The scan button reads a sheet's printed code with the
  * camera and selects that sheet, or says why it cannot be used.
@@ -74,6 +91,8 @@ export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChang
   const [scanning, setScanning] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [typed, setTyped] = useState<string | null>(null);
+  // What the camera saw that is not a sheet code; shown inside the dialog, which stays open for the next try.
+  const [hint, setHint] = useState<string | null>(null);
 
   const ranked = fittingFirst(sheets, needed);
   const newText = newCode ? t`New ${typeLabel} sheet, becomes ${newCode}` : t`New ${typeLabel} sheet`;
@@ -81,6 +100,15 @@ export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChang
   const selectedText = value === null ? "" : value.kind === "new" ? newText : value.code;
   const search = (typed ?? "").trim().toLowerCase();
   const shown = ranked.filter(({ sheet }) => search === "" || sheet.code.toLowerCase().includes(search));
+
+  /** Only a sheet code ends the scan: a label of an item in view (or anything else) is told apart and skipped. */
+  const accept = (hit: ScanHit) => parseSheetCode(hit.text) !== null;
+  const reject = (hit: ScanHit) =>
+    setHint(resolveScan(hit) ? t`That is an item label, not the sheet code. Aim at the code in the sheet margin.` : t`That is not a sheet code.`);
+  const openScan = () => {
+    setHint(null);
+    setScanning(true);
+  };
 
   async function onHit(hit: ScanHit) {
     setScanning(false);
@@ -137,13 +165,17 @@ export function SheetPicker({ typeKey, typeLabel, sheets, needed, value, onChang
             </ListBox>
           </Popover>
         </ComboBox>
-        <Button className={SECONDARY_BUTTON} onPress={() => setScanning(true)}>
+        <Button className={SECONDARY_BUTTON} onPress={openScan}>
           {t`Scan a sheet code`}
         </Button>
       </div>
       {note && <p role="alert" className="text-small font-bold text-ink [overflow-wrap:anywhere]">{note}</p>}
       <ModalDialog title={t`Scan a sheet code`} isOpen={scanning} onClose={() => setScanning(false)}>
-        {scanning && <CameraScanner onHit={(hit) => void onHit(hit)} onClose={() => setScanning(false)} />}
+        {scanning && (
+          <CameraScanner accept={accept} onReject={reject} onHit={(hit) => void onHit(hit)} onClose={() => setScanning(false)}>
+            {hint && <ScanHint key={hint} text={hint} />}
+          </CameraScanner>
+        )}
       </ModalDialog>
     </div>
   );

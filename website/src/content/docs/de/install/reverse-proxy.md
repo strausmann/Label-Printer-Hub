@@ -15,6 +15,14 @@ Im Repository liegt unter `examples/` für jeden dieser Proxys eine fertige Comp
 
 Leg die Adresse des Proxys in seinem eigenen Stack fest (`ipv4_address`). Eine nicht festgelegte Adresse kann nach einem Neustart an einen anderen Container gehen, und dem würde der Hub dann `X-Forwarded-For` glauben. Die Anmeldegrenze zählt IPv6-Clients je /64-Netz (eine Unique-Local- oder Link-Local-Adresse zählt für sich), und eine IPv4-gemappte IPv6-Adresse zählt als ihre IPv4-Adresse. Reicht ein vertrauter Proxy einen Wert weiter, der keine IP-Adresse ist, oder kommt die Anfrage über einen Unix-Socket, teilen sich alle solchen Anmeldungen einen Topf.
 
+## Größe des Anfragekörpers
+
+Labelyard weist einen Anfragekörper über 2 MiB (2.097.152 Byte) mit `413` und dem Fehlercode `body_too_large` ab, vor der Anmeldung. Eine angegebene `Content-Length` über der Grenze wird abgewiesen, bevor der Körper gelesen wird; ein Körper ohne Angabe wird beim Eintreffen gezählt und abgewiesen, sobald er 2 MiB überschreitet. Eine Grenze im Proxy ist freiwillig und erspart dem Proxy nur, so einen Körper weiterzureichen. Setzt du eine, nimm dieselbe Größe:
+
+- **Caddy:** `request_body { max_size 2MiB }` (als Compose-Eintrag `caddy.request_body.max_size: 2MiB`). Caddy liest `2MB` als 2.000.000 Byte.
+- **Traefik:** die Buffering-Middleware mit `buffering.maxRequestBodyBytes=2097152`. Sie puffert auch Antworten; häng sie deshalb nur an einen Router, der nicht auf `/api/v1/events` passt, oder überlass die Grenze dem Hub.
+- **Pangolin:** nichts einzustellen.
+
 ## Caddy
 
 Das Beispiel nutzt die Labels von caddy-docker-proxy:

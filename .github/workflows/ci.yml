@@ -202,8 +202,30 @@ jobs:
       - name: Install Vale
         run: scripts/vale_setup.sh
 
+      # Pinned to the version the backend dev environment resolves today (backend/pyproject.toml
+      # has no lockfile for it), so both jobs lint alike. Rules: scripts/ruff.toml.
+      - name: Install ruff
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ruff"
+          "$RUNNER_TEMP/ruff/bin/pip" install --quiet "ruff==0.17.6"
+          echo "$RUNNER_TEMP/ruff/bin" >> "$GITHUB_PATH"
+
+      - name: Lint the scripts
+        run: ruff check scripts/
+
+      - name: Check the script formatting
+        run: ruff format --check scripts/
+
+      # test_licence_snapshot.py and test_release_workflow.py read the workflow files with PyYAML,
+      # which the runner's system Python does not ship. Pinned to the version the backend dev
+      # environment resolves today (6.0.3); the other script tests stay stdlib-only.
+      - name: Install PyYAML for the workflow tests
+        run: |
+          python3 -m venv "$RUNNER_TEMP/scripttests"
+          "$RUNNER_TEMP/scripttests/bin/pip" install --quiet "pyyaml==6.0.3"
+
       - name: Run the script tests
-        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+        run: '"$RUNNER_TEMP/scripttests/bin/python" -m unittest discover -s scripts -p "test_*.py" -v'
 
   brand-guard:
     name: Brand guard — old product name
@@ -339,11 +361,27 @@ jobs:
           SYFT: ${{ steps.syft.outputs.cmd }}
         run: |
           "$SYFT" "$IMAGE" --select-catalogers +sbom-cataloger -o json \
-            | jq -e '[.artifacts[].name] as $n | ($n|index("react")) and ($n|index("react-dom")) and ($n|index("brother-ql")) and ($n|index("tini"))'
+            | jq -e '[.artifacts[].name] as $n | ($n|index("react")) and ($n|index("react-dom")) and ($n|any(test("^brother[-_.]ql[-_.]next$"))) and ($n|index("tini"))'
 
       - name: Check the licence files in the image
         run: |
-          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py'
+          docker run --rm --entrypoint sh "$IMAGE" -c 'test -s /opt/app/web/licenses/backend.json && test -s /opt/app/web/licenses/frontend.json && test -s /opt/app/web/frontend.cdx.json && test -s /opt/app/LICENSE && test -s /opt/app/web/licenses/agpl-3.0.txt && test -s /usr/share/doc/tini/copyright && test -f /opt/venv/lib/python3.12/site-packages/brother_ql/__init__.py && test -d /opt/app && test -z "$(find / -xdev \( -path /proc -o -path /sys \) -prune -o \( -name e2e_app.py -o -path "/opt/app/*" -type d -name tests -o -path "*/site-packages/tests/conftest.py" -o -path "*/site-packages/tests/integration" \) -print 2>/dev/null)"'
+
+      # The licences the image carries, compared with licences/snapshot.json. A licence that moves
+      # between two allowed licences passes the policy but fails here until the snapshot is updated
+      # on purpose. A package that is only new or only removed is reported in the step summary and
+      # does not fail (the weekly run is strict; the image build's licence policy judges new
+      # packages): python3 scripts/licence_snapshot.py update --backend ... --frontend ...
+      - name: Check the licence snapshot
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/image-licences"
+          mkdir -p "$out"
+          cid=$(docker create "$IMAGE")
+          docker cp "$cid:/opt/app/web/licenses/backend.json" "$out/backend.json"
+          docker cp "$cid:/opt/app/web/licenses/frontend.json" "$out/frontend.json"
+          docker rm "$cid" > /dev/null
+          python3 scripts/licence_snapshot.py check --backend "$out/backend.json" --frontend "$out/frontend.json"
 
       # Informational only, never a gate: what the default catalogues find without the SBOM cataloger.
       - name: Default catalogue (informational)

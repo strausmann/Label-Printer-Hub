@@ -79,8 +79,8 @@ def test_readme_states_licence_history() -> None:
 def test_notices_name_copyleft_dependencies() -> None:
     notices = _read("THIRD_PARTY_NOTICES.md")
     for needle in (
-        "brother_ql",
-        "GPL-3.0-or-later",
+        "brother_ql_next",
+        "GPL-3.0-only",
         "ptouch",
         "LGPL-2.1-or-later",
         "/licenses/backend.json",

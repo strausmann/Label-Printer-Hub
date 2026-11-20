@@ -643,7 +643,7 @@ async def test_ipp_uri_hidden_from_read_keys(hub: Hub) -> None:
         assert listed.status_code == 200, listed.text
         by_slug = {p["slug"]: p for p in listed.json()}
         assert by_slug["office-laser"]["connection"] == {"tls_verify": True}
-        assert by_slug["workshop"]["connection"]["host"] == "192.0.2.10"  # unchanged
+        assert by_slug["workshop"]["connection"] == {}  # a tape address is admin-only (#234)
         one = await hub.client.get(f"/api/v1/printers/{row.id}", headers=headers)
         assert one.status_code == 200, one.text
         assert one.json()["connection"] == {"tls_verify": True}

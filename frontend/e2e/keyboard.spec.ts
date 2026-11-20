@@ -40,7 +40,7 @@ async function tabThrough(page: Page): Promise<Report> {
       (el) => el.tabIndex >= 0 && !(el as HTMLButtonElement).disabled && visible(el),
     );
     candidates.forEach((el, i) => el.setAttribute("data-kbd", String(i)));
-    (window as unknown as { __kbd: unknown }).__kbd = { candidates: candidates.map(describe), reached: new Set<number>(), noRing: [] as string[] };
+    (window as unknown as { __kbd: unknown }).__kbd = { candidates: candidates.map(describe), reached: new Set<number>(), noRing: [] as string[], late: 0 };
     content.focus();
   });
   const total = await page.evaluate(() => (window as unknown as { __kbd: { candidates: string[] } }).__kbd.candidates.length);
@@ -50,15 +50,25 @@ async function tabThrough(page: Page): Promise<Report> {
   for (let i = 0; i < total + 6; i++) {
     await page.keyboard.press("Tab");
     const state = await page.evaluate(() => {
-      const kbd = (window as unknown as { __kbd: { reached: Set<number>; noRing: string[] } }).__kbd;
+      const kbd = (window as unknown as { __kbd: { reached: Set<number>; noRing: string[]; late: number } }).__kbd;
       const el = document.activeElement as HTMLElement | null;
       const content = document.querySelector("#content")!;
       if (!el || !content.contains(el) || el === content) return { inside: false, id: "" };
       const index = el.getAttribute("data-kbd");
       if (index !== null) kbd.reached.add(Number(index));
+      // A control that was not in the tab order when the candidates were listed (a list that renders on after the data) still
+      // has its own identity: the "stuck" check compares elements, never tag names (four late links are not one stuck link).
+      let id = index;
+      if (id === null) {
+        id = el.getAttribute("data-kbd-late");
+        if (id === null) {
+          id = `late-${kbd.late++}`;
+          el.setAttribute("data-kbd-late", id);
+        }
+      }
       const ring = (node: Element) => {
         const s = getComputedStyle(node);
-        return (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) || s.boxShadow !== "none";
+        return s.outlineStyle !== "none" && parseFloat(s.outlineWidth) >= 2;
       };
       // A sheet cell is an SVG group: its ring is a stroke on an inner shape (`data-ring`), not an outline.
       const stroked = (node: Element) => {
@@ -72,7 +82,7 @@ async function tabThrough(page: Page): Promise<Report> {
         ok = !!scope && (ring(scope) || [...scope.querySelectorAll("*")].some(ring)) && el.getBoundingClientRect().width < 4;
       }
       if (!ok) kbd.noRing.push(`${el.tagName.toLowerCase()}[${(el.getAttribute("aria-label") || el.textContent || "").trim().slice(0, 40)}]`);
-      return { inside: true, id: index ?? el.tagName };
+      return { inside: true, id };
     });
     if (!state.inside) break;
     same = state.id === last ? same + 1 : 0;
@@ -147,4 +157,47 @@ test.describe.serial("keyboard only", () => {
       });
     }
   }
+
+  // #222: Tab reaching a control is not the same as the control working from the keyboard. One button, one link and one
+  // switch, each activated with the key the platform gives it (probed in the browser: Enter and Space on a button, Enter on
+  // a link, Space on a switch; a link is not activated by Space nor a switch by Enter, which is not asserted here).
+  test.describe("activation from the keyboard", () => {
+    test.beforeEach(async () => {
+      await setLanguage(page, "en");
+      await page.setViewportSize({ width: 1280, height: 800 });
+    });
+
+    for (const key of ["Enter", "Space"] as const) {
+      test(`a button is activated by ${key}`, async () => {
+        await page.goto("/settings/printers");
+        const add = page.getByRole("button", { name: "Add printer" });
+        await expect(add).toBeVisible();
+        await add.focus();
+        await expect(page.getByRole("form", { name: "Add a printer" })).toHaveCount(0);
+        await page.keyboard.press(key);
+        await expect(page.getByRole("form", { name: "Add a printer" })).toBeVisible();
+      });
+    }
+
+    test("a link is activated by Enter", async () => {
+      await page.goto("/settings/printers");
+      const link = page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first().getByRole("link", { name: /^Sheets$/ });
+      await link.focus();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/\/sheets$/);
+    });
+
+    test("a switch is toggled by Space", async () => {
+      await page.goto("/settings/printers");
+      await page.getByRole("button", { name: "Add printer" }).click();
+      const form = page.getByRole("form", { name: "Add a printer" });
+      const discovery = form.getByRole("switch", { name: "Status discovery" });
+      await expect(discovery).not.toBeChecked();
+      await discovery.focus();
+      await page.keyboard.press("Space");
+      await expect(discovery).toBeChecked();
+      await page.keyboard.press("Space");
+      await expect(discovery).not.toBeChecked();
+    });
+  });
 });

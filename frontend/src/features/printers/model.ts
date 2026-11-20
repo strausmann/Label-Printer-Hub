@@ -16,6 +16,11 @@ export interface PrinterView {
   detail: string | null;
   /** Page printers: why a printer is stopped or has a problem (`printer-state-reasons` keywords, in the order sent). */
   reasons: string[];
+  /**
+   * Page printers: the supplies the printer reports as empty while it is ready. Information only (#274): the level never
+   * blocks a printer, only `printer-state = stopped` or an `-error` reason does, and `kind` already follows those.
+   */
+  reportedEmpty: string[];
   /** Tape printers: the RFC 3805 error flags the status reports (`error_flags`), put into words by `flags.ts`. */
   flags: string[];
   /** Tape printers: the roll the hub cannot print on yet (die-cut labels), when one is loaded. */
@@ -70,10 +75,10 @@ export const staleAgeSeconds = (status: PrinterStatus | undefined): number | nul
  * offline, and a held printer (another device answered at its address) says so instead of Ready. The reason for a pause comes from `printer.pause` (see PauseReason).
  */
 export function describePrinter(printer: Printer, status: PrinterStatus | undefined, printing: boolean, waiting: Waiting = NOT_WAITING): PrinterView {
-  return { flags: [], ...describe(printer, status, printing, waiting) };
+  return { flags: [], reportedEmpty: [], ...describe(printer, status, printing, waiting) };
 }
 
-function describe(printer: Printer, status: PrinterStatus | undefined, printing: boolean, waiting: Waiting): Omit<PrinterView, "flags"> & Partial<Pick<PrinterView, "flags">> {
+function describe(printer: Printer, status: PrinterStatus | undefined, printing: boolean, waiting: Waiting): Omit<PrinterView, "flags" | "reportedEmpty"> & Partial<Pick<PrinterView, "flags" | "reportedEmpty">> {
   if (printer.paused) return { kind: "paused", badge: "warn", detail: null, reasons: [] };
   // Before any `online` branch: a status nobody refreshes says nothing about the printer (#227).
   const unknown = unknownKind(status);
@@ -119,7 +124,11 @@ function describe(printer: Printer, status: PrinterStatus | undefined, printing:
   if (printing || (page && status?.printer_state === "printing")) {
     return { kind: "printing", badge: "ok", detail: null, reasons: [] };
   }
-  if (status?.online === true) return { kind: "ready", badge: "ok", detail: null, reasons: [] };
+  if (status?.online === true) {
+    // An empty level is a report, not a block (maintainer rule, 2026-11-09): the printer stays ready and says what it reports.
+    const reportedEmpty = page ? (status.markers ?? []).filter((m) => m.empty).map((m) => m.name) : [];
+    return { kind: "ready", badge: "ok", detail: null, reasons: [], reportedEmpty };
+  }
   return { kind: "unknown", badge: "idle", detail: status?.note ?? null, reasons: [] };
 }
 

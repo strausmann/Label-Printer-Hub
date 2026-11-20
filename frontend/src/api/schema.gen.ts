@@ -2987,7 +2987,7 @@ export interface components {
             confirmed_at: string;
             /**
              * Counter Read
-             * @description ``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour and with every test print
+             * @description ``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour, with every test print and after a restart; for an attached printer this follows what the hub does now, not only the last stored record
              */
             counter_read: boolean;
             /**
@@ -3213,12 +3213,13 @@ export interface components {
          *     ``error_state`` mirrors the active PrinterError flags as a string, or
          *     ``None`` when the printer is ready.
          *     ``captured_at`` is the UTC timestamp of the probe that last updated the
-         *     cache row.  ``None`` means no probe has completed yet.  For a page printer
-         *     (``kind="page"``) that went offline it stays the time of the last
+         *     cache row.  ``None`` means no successful answer yet: either no probe has completed
+         *     or every probe so far failed (``online`` is then ``False`` with ``last_error``).
+         *     For a page printer (``kind="page"``) that went offline it stays the time of the last
          *     *successful* reading; ``online`` and ``last_error`` tell that it is stale.
          *     ``last_probe_age_s`` is the age of the cached reading in seconds (for an
          *     offline page printer: since its last successful reading).
-         *     ``last_error`` is the exception message from the most recent failed probe.
+         *     ``last_error`` is the error class name of the most recent failed probe.
          *     ``note`` carries a human-readable hint (e.g. "No probe yet").
          *     ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
          *     off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
@@ -3233,7 +3234,7 @@ export interface components {
         PrinterStatus: {
             /**
              * Captured At
-             * @description UTC timestamp of the probe that produced this reading; None if no probe yet. A page printer that went offline keeps the time of its last successful reading.
+             * @description UTC timestamp of the probe that produced this reading; None if the printer has not answered yet (no probe yet, or only failed probes). A page printer that went offline keeps the time of its last successful reading.
              */
             captured_at?: string | null;
             /**
@@ -3271,7 +3272,7 @@ export interface components {
             last_calibration_print?: components["schemas"]["CalibrationPrintRead"] | null;
             /**
              * Last Error
-             * @description Exception message from the most recent failed probe
+             * @description Error class name of the most recent failed probe (the full message is in the server log)
              */
             last_error?: string | null;
             /**
@@ -4946,7 +4947,7 @@ export interface components {
             backend: string;
             /**
              * Connection
-             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296). Only an admin key receives a tape printer's connection (``host``, ``port``, ``snmp``); every other key gets an empty object (#234).
              */
             connection: {
                 [key: string]: unknown;
@@ -5025,7 +5026,7 @@ export interface components {
             backend: string;
             /**
              * Connection
-             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).
+             * @description Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296). Only an admin key receives a tape printer's connection (``host``, ``port``, ``snmp``); every other key gets an empty object (#234).
              */
             connection: {
                 [key: string]: unknown;
@@ -6929,14 +6930,12 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Validation Error */
+            /** @description The sheet type has no crossings to measure (`calibration_type_unsuitable`), or its grid has more than 2500 cells (`calibration_grid_too_large`, with `cells` and `max_cells`). Other errors of the type, printer and tray lookups carry their own codes. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
+                content?: never;
             };
         };
     };
@@ -6969,14 +6968,33 @@ export interface operations {
                     "application/pdf": unknown;
                 };
             };
-            /** @description Validation Error */
+            /** @description The sheet type has no crossings to measure (`calibration_type_unsuitable`), or its grid has more than 2500 cells (`calibration_grid_too_large`, with `cells` and `max_cells`). Other errors of the type, printer and tray lookups carry their own codes. */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                content?: never;
+            };
+            /** @description A render of the key is stuck past the time limit (`too-many-previews`). The body has the rate limit's shape (`retry_after_seconds`). */
+            429: {
+                headers: {
+                    [name: string]: unknown;
                 };
+                content?: never;
+            };
+            /** @description No render slot became free in time (`render-unavailable`): every slot is held by a stuck render, or the wait for the caller's turn reached `LABELYARD_RENDER_TIMEOUT_S`. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The page took longer than `LABELYARD_RENDER_TIMEOUT_S` to draw (`render-timeout`). The drawing goes on: the key's next download answers 429 until it has ended. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

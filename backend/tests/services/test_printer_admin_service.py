@@ -295,6 +295,33 @@ class TestCreatePrinter:
         assert printer.slug == "test-drucker"
         assert printer.name == "Test Drucker"
 
+    async def test_ids_do_not_follow_from_model_host_port_and_created_at(
+        self, db_session, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two printers with the same model, address and creation time still get different ids,
+        and neither is the UUIDv5 that 1.7.0 derived from those values (run-30 R30-3)."""
+        import uuid
+
+        from app.services import printer_admin_service as module
+
+        fixed = datetime(2026, 11, 20, 10, 0, 0, tzinfo=UTC)
+
+        class _FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[override]
+                return fixed
+
+        monkeypatch.setattr(module, "datetime", _FrozenDatetime)
+        svc = PrinterAdminService(db_session, audit_user="testuser")
+        first = await svc.create_printer(_make_payload(name="Eins", slug="eins"))
+        second = await svc.create_printer(_make_payload(name="Zwei", slug="zwei"))
+
+        old_namespace = uuid.UUID("6f1b3c7e-9d6a-4f48-9a8c-d4e0e1c5a3b2")
+        old = uuid.uuid5(old_namespace, f"pt-p750w|192.0.2.10|9100|{fixed.isoformat()}")
+        assert first.id != second.id
+        assert old not in (first.id, second.id)
+        assert first.id.version == 4
+
     async def test_happy_path_creates_audit_row(self, db_session) -> None:
         from app.models.printer import PrinterAudit
         from sqlmodel import select

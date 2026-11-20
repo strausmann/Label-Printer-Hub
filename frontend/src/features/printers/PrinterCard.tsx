@@ -10,7 +10,7 @@ import { PauseReason } from "./PauseReason";
 import { formatAge } from "./age";
 import { useFlagText, usePrinterWaiting } from "./flags";
 import { describePrinter, isPagePrinter, staleAgeSeconds, statusIsUnknown, tapeWidthOf, useKindLabel } from "./model";
-import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine } from "./PageStatus";
+import { MarkerList, noAnswerYet, NotMonitoredHint, ReasonLine, ReportedEmptyLine } from "./PageStatus";
 import { unsupportedRoll, useRollWords, type UnsupportedRoll } from "./roll";
 import { TapeSwatch } from "./TapeSwatch";
 
@@ -52,6 +52,7 @@ export function PrinterCard({
         <span className="text-small text-ink-2 [overflow-wrap:anywhere]">{t`Last status ${ageWord}`}</span>
       )}
       <ReasonLine reasons={view.reasons} />
+      <ReportedEmptyLine names={view.reportedEmpty} />
       <span className="mt-auto min-w-0 text-small">
         {unknown ? (
           <span className="text-ink-2">{page ? t`Supplies not known` : t`Tape not known`}</span>

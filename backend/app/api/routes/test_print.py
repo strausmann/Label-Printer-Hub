@@ -31,7 +31,7 @@ from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_print
 from app.config import get_settings
 from app.db.session import get_session
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.page_render.test_page import build_test_page_payload
 from app.printer_backends.exceptions import (
     PrinterDisabledError,
@@ -152,7 +152,7 @@ async def test_print(
     version = _version()
     now = datetime.now().astimezone()
 
-    if printer.backend == "ipp":
+    if is_page_printer(printer):
         queue: PrintQueue | None = getattr(request.app.state, "print_queue", None)
         try:
             tray = await resolve_tray(session, printer_id, requested_tray)

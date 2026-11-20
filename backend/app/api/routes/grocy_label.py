@@ -51,7 +51,7 @@ from app.api.dependencies.token_auth import require_print_token
 from app.api.routes.webhooks import _resolve_default_printer_id
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.db.session import get_session
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.repositories import printers as printers_repo
 from app.repositories import sheet_types as types_repo
 from app.schemas.content_type import ContentType
@@ -197,7 +197,7 @@ async def _target_printer(
     check_printer_access(auth, printer_id, default_printer=True)
     if printer is not None and not printer.enabled:
         raise _unavailable()
-    if printer is not None and printer.backend == "ipp":
+    if printer is not None and is_page_printer(printer):
         # Checked at request time: the settings store knows no other entities (R-281-14).
         sheet_type = resolve_grocy_sheet_type(store, label_type)
         known = None if sheet_type is None else await types_repo.get_by_key(session, sheet_type)

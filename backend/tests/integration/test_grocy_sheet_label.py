@@ -32,6 +32,7 @@ from app.printer_backends.mock_backend import MockPrinterBackend
 from app.schemas.grocy_label import GROCY_LABEL_BUDGET_S
 from app.services.backend_router import BackendRouter
 from app.services.event_bus import BusEvent
+from app.services.page_job_runner import PageJobRunner
 from app.services.print_queue import PrintQueue
 from app.services.rate_limiter import _rate_limiter
 from app.sheets import print_service as sheet_print_service
@@ -86,6 +87,19 @@ class Rig:
             for e in self.events
             if e.event_type == "job.state_changed" and e.data.get("job_id") == job_id
         ]
+
+
+@pytest.fixture(autouse=True)
+def _page_polls_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The page runner asks the printer how a job is doing every 2 s (production). The worker takes
+    one page job at a time, so two labels posted together end 2 x 2 s plus the 0.5 s meeting point
+    apart; the label whose job runs second is not necessarily the one whose response came first,
+    so the first ``_ends`` could need ~4.5 of its 5 s and failed once in ~20 runs under load
+    (#299). Polling at once makes the job end when the printer says so, not when a timer does."""
+    monkeypatch.setattr(
+        "app.services.print_queue.PageJobRunner",
+        lambda **kw: PageJobRunner(**kw, poll_interval_s=0.01, max_backoff_s=0),
+    )
 
 
 @pytest.fixture(autouse=True)

@@ -10,8 +10,6 @@ transaction back, so a rejected request leaves nothing behind.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,6 +22,7 @@ from sqlmodel import col
 
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.repositories import sheet_types as repo
+from app.repositories.write_lock import write_transaction
 from app.sheets.errors import (
     BackingDesignPageSizeMismatchError,
     IdCellOutOfRangeError,
@@ -44,7 +43,6 @@ from app.sheets.geometry import (
     normalise_shape,
     validate_geometry,
 )
-from app.sheets.locking import acquire_sheet_write_lock
 from app.sheets.naming import KEY_PATTERN, PREFIX_PATTERN, default_allow_qr
 from app.sheets.text import check_http_url, log_value, sanitise_text
 
@@ -86,26 +84,6 @@ class TypeFields:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-@asynccontextmanager
-async def write_transaction(session: AsyncSession) -> AsyncIterator[None]:
-    """One write transaction: lock first, roll back on any failure.
-
-    Callers that decide before they write (import) enter this once and use the ``*_locked``
-    functions inside; those assume the lock is already held and neither lock nor commit.
-    """
-    # Authentication reads (browser session, API key) share this session and leave a read
-    # transaction open. A read snapshot that later asks for the write lock can fail with
-    # SQLITE_BUSY_SNAPSHOT, so that transaction ends first.
-    if session.in_transaction():
-        await session.commit()
-    try:
-        await acquire_sheet_write_lock(session)
-        yield
-    except BaseException:
-        await session.rollback()
-        raise
 
 
 def version_geometry(v: SheetTypeVersion) -> Geometry:
@@ -510,7 +488,7 @@ async def list_types(
         if h_hmm is not None and abs(v.label_h - h_hmm) > _SIZE_TOLERANCE_HMM:
             continue
         if needle is not None:
-            haystack = [t.key, t.description or "", *t.product_codes]
+            haystack = [t.key, t.vendor or "", t.description or "", *t.product_codes]
             if not any(needle in part.lower() for part in haystack):
                 continue
         out.append(t)

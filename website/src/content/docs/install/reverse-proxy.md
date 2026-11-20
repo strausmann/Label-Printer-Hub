@@ -15,6 +15,14 @@ The repository has a ready compose file for each of these proxies under `example
 
 Pin the proxy's address in its own stack (`ipv4_address`). An unpinned address can go to another container after a restart, and that container would then be trusted to set `X-Forwarded-For`. The sign-in limit counts IPv6 clients per /64 network (a unique-local or link-local address counts on its own), and an IPv4-mapped IPv6 address counts as its IPv4 address. If a trusted proxy forwards a value that is not an IP address, or the request arrives over a unix socket, all such sign-ins share one bucket.
 
+## Request body size
+
+Labelyard refuses a request body above 2 MiB (2,097,152 bytes) with `413` and the error code `body_too_large`, before authentication. A declared `Content-Length` above the limit is refused before the body is read; a body sent without one is counted as it arrives and refused once it passes 2 MiB. A proxy limit is optional and only saves the proxy from passing such a body on. If you set one, use the same size:
+
+- **Caddy:** `request_body { max_size 2MiB }` (the label form is `caddy.request_body.max_size: 2MiB`). Caddy reads `2MB` as 2,000,000 bytes.
+- **Traefik:** the buffering middleware with `buffering.maxRequestBodyBytes=2097152`. It buffers responses too, so attach it only to a router that does not match `/api/v1/events`, or leave the limit to the hub.
+- **Pangolin:** nothing to set.
+
 ## Caddy
 
 The example uses the labels of caddy-docker-proxy:

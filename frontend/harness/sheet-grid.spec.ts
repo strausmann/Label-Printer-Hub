@@ -111,10 +111,28 @@ test.describe("SheetGrid in a real browser", () => {
   test("the page image stays readable under the cells", async ({ page }, testInfo) => {
     await page.setViewportSize(DESKTOP);
     await open(page, "type=l4736&mode=view&overlay=1");
-    // the grid draws no opaque fill over the image: every cell shape is transparent
-    const fills = await page.locator('svg[role="grid"] [data-shape="cell"]').evaluateAll((els) => els.map((el) => getComputedStyle(el).fill));
-    expect(fills.length).toBe(48);
-    for (const fill of fills) expect(fill).toMatch(/^(none|rgba\(0, 0, 0, 0\)|transparent)$/);
+    // The grid draws no opaque fill over the image. Cell shapes are unfilled, with one exception:
+    // a reserved cell is filled with its hatch pattern (#249), and that pattern must be lines only.
+    const cells = await page.locator('svg[role="grid"] [data-shape="cell"]').evaluateAll((els) =>
+      els.map((el) => ({ state: el.closest("[data-state]")?.getAttribute("data-state") ?? "", fill: getComputedStyle(el).fill })),
+    );
+    expect(cells.length).toBe(48);
+    const reserved = cells.filter((c) => c.state === "reserved");
+    expect(reserved.length).toBeGreaterThan(0); // the harness data has one, or this test proves nothing about it
+    for (const c of cells.filter((c) => c.state !== "reserved")) expect(c.fill, `a ${c.state} cell`).toMatch(/^(none|rgba\(0, 0, 0, 0\)|transparent)$/);
+    for (const c of reserved) expect(c.fill).toMatch(/^url\(["']?#hatch-[A-Za-z0-9]+-reserved["']?\)$/);
+    // The hatch pattern itself has no opaque ground: only stroked lines, no filled shape, no background rect.
+    const patterns = await page.locator('svg[role="grid"] pattern[id$="-reserved"]').evaluateAll((els) =>
+      els.map((el) => ({ children: [...el.children].map((c) => ({ tag: c.tagName.toLowerCase(), stroke: getComputedStyle(c).stroke })) })),
+    );
+    expect(patterns.length).toBeGreaterThan(0);
+    for (const pattern of patterns) {
+      expect(pattern.children.length).toBeGreaterThan(0);
+      for (const child of pattern.children) {
+        expect(child.tag).toBe("line");
+        expect(child.stroke).not.toMatch(/^(none|rgba\(0, 0, 0, 0\))$/);
+      }
+    }
     await page.screenshot({ path: testInfo.outputPath("overlay-1280-l4736-en.png") });
   });
 });

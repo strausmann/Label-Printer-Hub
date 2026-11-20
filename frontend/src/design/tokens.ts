@@ -40,6 +40,10 @@ export interface Semantic {
   accent: string;
   "accent-ink": string;
   "accent-soft": string;
+  /** The cell numbers of the sheet grid: help for choosing, never printed. A blue-grey apart from the warm ink of real content. */
+  "cell-number": string;
+  /** The lines of the hatch on reserved cells: 3:1 against accent-soft, which the plain accent misses in the light theme. */
+  "reserved-line": string;
   link: string;
   ok: string;
   warn: string;
@@ -59,6 +63,8 @@ export const themes: { light: Semantic; dark: Semantic } = {
     accent: primitives["amber-500"],
     "accent-ink": "#2B1D06",
     "accent-soft": primitives["amber-100"],
+    "cell-number": "#4F6490",
+    "reserved-line": "#A5691A",
     link: primitives["stamp-600"],
     ok: primitives["green-600"],
     warn: primitives["orange-600"],
@@ -76,6 +82,8 @@ export const themes: { light: Semantic; dark: Semantic } = {
     accent: "#E2A445",
     "accent-ink": "#241703",
     "accent-soft": "#3A2D16",
+    "cell-number": "#93A6CC",
+    "reserved-line": "#E2A445",
     link: "#8FAEE6",
     ok: "#6CC58F",
     warn: "#E39A4F",

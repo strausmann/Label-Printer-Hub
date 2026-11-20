@@ -154,28 +154,6 @@ async def test_square_image_at_printable_width_is_left_alone(
     assert convert_inputs[0].size == (696, 696)
 
 
-# --- Pillow compatibility shim -------------------------------------------------------
-
-
-def test_shim_maps_missing_antialias_to_lanczos(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.printer_backends._pillow_compat import ensure_antialias_alias
-
-    # Register the attribute with monkeypatch first, so teardown restores "absent" instead of
-    # leaking the alias into later tests (which would mask a missing import-time shim).
-    monkeypatch.setattr(Image, "ANTIALIAS", None, raising=False)
-    monkeypatch.delattr(Image, "ANTIALIAS")
-    ensure_antialias_alias()
-    assert Image.ANTIALIAS == Image.Resampling.LANCZOS  # type: ignore[attr-defined]
-
-
-def test_shim_does_not_override_existing_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.printer_backends._pillow_compat import ensure_antialias_alias
-
-    monkeypatch.setattr(Image, "ANTIALIAS", "sentinel", raising=False)
-    ensure_antialias_alias()
-    assert Image.ANTIALIAS == "sentinel"  # type: ignore[attr-defined]
-
-
 async def test_mismatched_size_degrades_instead_of_crashing(
     sent: list[bytes], caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -221,7 +199,9 @@ async def test_hub_rendered_12mm_label_is_rotated_padded_and_not_resized(
 
     assert _no_resize(caplog), "12 mm label was stretched by convert()"
     # rotated (length kept as height) and padded to the printable width, not scaled
-    assert convert_inputs[0].size == (106, image.size[0])
+    # The QL-820NWB raster must be at least 150 dots long (brother-ql-next, #256): the short
+    # text layouts (120 dots) are padded with white at the end.
+    assert convert_inputs[0].size == (106, max(image.size[0], 150))
     assert sent
 
 

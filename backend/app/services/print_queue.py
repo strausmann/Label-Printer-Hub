@@ -197,6 +197,12 @@ _ERROR_CODE_MAP: dict[type[PrinterError], str] = {
 }
 
 
+_UNREACHABLE_TEXT: dict[str, str] = {
+    "printer_offline": "The printer could not be reached.",
+    "printer_status_unavailable": "The printer's status could not be read.",
+}
+
+
 def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any] | None]:
     """Map a PrinterError subclass to (error_code, error_message, error_detail)."""
     code = _ERROR_CODE_MAP.get(type(exc), "print_failed")
@@ -211,6 +217,16 @@ def _printer_error_to_record(exc: PrinterError) -> tuple[str, str, dict[str, Any
         detail = {"printed": exc.printed, "expected": exc.expected}
     elif isinstance(exc, TapeLabelTooLongError):
         detail = {"length_mm": exc.length_mm, "max_mm": exc.max_mm}
+    if isinstance(exc, (PrinterOfflineError, StatusQueryFailedError)):
+        # The cause names the printer's address (a ptouch connection error) and the record is
+        # readable with a read key (#234): a fixed text is stored, the cause goes to the log.
+        logger.warning("Printer unreachable (%s): %s", code, exc)
+        text = _UNREACHABLE_TEXT[
+            "printer_offline"
+            if isinstance(exc, PrinterOfflineError)
+            else "printer_status_unavailable"
+        ]
+        return code, text, detail
     return code, str(exc) or code, detail
 
 
@@ -898,26 +914,13 @@ class PrintQueue:
                     f"recovery_skip_legacy_payload: {skip_msg}",
                 )
                 continue
-            try:
-                image = self._rerender_from_db_payload(db_job.payload)
-            except Exception as exc:  # defensive: per-job failure must not abort startup
-                logger.warning(
-                    "Recovery: Job %s rerender fehlgeschlagen (%s),"
-                    " wird als FAILED markiert und übersprungen",
-                    db_job.id,
-                    exc.__class__.__name__,
-                    exc_info=True,
-                )
-                await self._store.mark_failed(
-                    db_job.id,
-                    f"recovery_rerender_failed: {exc.__class__.__name__}",
-                )
-                continue
-            payload_bytes = await asyncio.to_thread(_serialize_image_to_png, image)
+            # #168: no render here. The worker draws the picture when it takes the job
+            # (``_materialise``), so startup does not grow with the backlog; a render that
+            # fails then fails only that job.
             wrapper = Job(
                 id=str(db_job.id),
                 printer_id=db_job.printer_id,
-                image_payload=payload_bytes,
+                rerender=self._lazy_render(db_job.payload),
                 tape_mm=db_job.payload.get("tape_mm"),
                 options=db_job.payload.get("options", {}),
             )
@@ -948,6 +951,70 @@ class PrintQueue:
                 await self._queues[printer_id].put(self._recovered_batch(printer_id, entry, runs))
             else:
                 await self._queues[printer_id].put(entry)
+
+    def _lazy_render(self, payload: Mapping[str, Any]) -> Callable[[], bytes]:
+        """The deferred render of a recovered row (#168): PNG bytes of its stored payload.
+
+        Blocking (render and encode); ``_materialise`` runs it in a thread. The payload is
+        copied, so a later change to the row's dict does not reach the picture.
+        """
+        stored = dict(payload)
+
+        def render() -> bytes:
+            return _serialize_image_to_png(self._rerender_from_db_payload(stored))
+
+        return render
+
+    async def _materialise(self, job: Job) -> bool:
+        """Give *job* its picture before it is taken; ``False`` when it must not be printed.
+
+        A job that is no longer queued (cancelled before its turn) is not drawn. A job with a
+        picture, or with neither a picture nor a renderer (a dropped picture: the caller handles
+        it as before #168), is left as it is. Otherwise the recovered job is drawn now (#168).
+
+        A render that raises fails the job, unless its state changed during the render (a
+        cancel won): then nothing is written. The caller checks the state again, with no
+        ``await`` before its ``PRINTING`` transition, so a cancel during the render is honoured.
+        """
+        if job.state != JobState.QUEUED:
+            return False
+        if job.image_payload is not None or job.rerender is None:
+            return True
+        try:
+            job.image_payload = await asyncio.to_thread(job.rerender)
+        except Exception as exc:
+            # Read again after the await (mypy keeps the narrowing from the check above).
+            state_now: JobState = job.state
+            if state_now != JobState.QUEUED:
+                return False  # cancelled (or paused) during the render: its state stands
+            logger.warning(
+                "Recovered job %s cannot be drawn (%s); it fails",
+                job.id,
+                exc.__class__.__name__,
+                exc_info=True,
+            )
+            error = f"recovery_rerender_failed: {exc.__class__.__name__}"
+            job.error_code = "recovery_rerender_failed"
+            job.error_msg = error
+            JobStateMachine.transition(job, JobState.FAILED)
+            self._notify_state_change(
+                job,
+                JobState.QUEUED,
+                JobState.FAILED,
+                queue_depth=self._queue_depth(job.printer_id),
+            )
+            try:
+                await self._store.mark_failed(UUID(job.id), error)
+            except BaseException as write_exc:
+                # The row stays ``queued``: drop the in-memory claim, or a recovery of this
+                # printer after a remove and re-add would skip the row (its id is known). The
+                # worker goes on; a cancel (removal timeout, stop) propagates.
+                self._jobs.pop(job.id, None)
+                if not isinstance(write_exc, Exception):
+                    raise
+                logger.exception("Recovered job %s: its failure could not be stored", job.id)
+            return False
+        return True
 
     def _recovered_batch(
         self, printer_id: UUID, run_id: UUID, runs: Mapping[UUID, Sequence[Job]]
@@ -2245,12 +2312,15 @@ class PrintQueue:
         # The held limit may have discarded runs in this step; their rows follow the cancelled
         # label's, and are written even when that write fails or the client goes away (N1).
         try:
-            await self._store.mark_cancelled(UUID(job.id))
+            stored = await self._store.mark_cancelled(UUID(job.id))
         except BaseException:
             self._unpersisted.add(job.id)
             if discarded:
                 await self._persist_discarded(settled_run, discarded, keep_original=True)
             raise
+        if not stored:
+            # The in-memory CANCELLED is terminal and stays; the row was changed elsewhere.
+            logger.info("cancel of job %s not stored: the row was no longer cancellable", job.id)
         if discarded:
             await self._persist_discarded(settled_run, discarded, keep_original=False)
         if job.kind is not None:
@@ -2260,7 +2330,13 @@ class PrintQueue:
         return True
 
     async def retry_job(self, job_id: str) -> str | None:
-        """Submit a fresh copy of a FAILED job. Returns new job id or None."""
+        """Submit a fresh copy of a FAILED job. Returns new job id or None.
+
+        Not used by the API: its retry routes write the new row first and hand it to
+        :meth:`enqueue_persisted`. The copy here is queue-only, so a store that keeps rows
+        vetoes it at ``mark_printing`` (a missing row never prints); it serves a queue without
+        a store.
+        """
         original = self._jobs[job_id]
         if original.state != JobState.FAILED:
             return None
@@ -2268,6 +2344,7 @@ class PrintQueue:
             id=str(uuid.uuid4()),
             printer_id=original.printer_id,
             image_payload=original.image_payload,
+            rerender=original.rerender,  # #168: a recovered job that failed undrawn draws now
             tape_mm=original.tape_mm,
             options=dict(original.options),
             retry_count=original.retry_count + 1,
@@ -2438,10 +2515,10 @@ class PrintQueue:
     async def enqueue_persisted(self, db_job: DbJob) -> None:
         """Hand an already-persisted QUEUED row to the worker (used by retry).
 
-        The row is re-rendered from its stored payload exactly like startup
-        recovery does.  Idempotent: a row the queue already tracks is not
-        enqueued a second time, so neither a repeated call nor a later
-        ``start()`` recovery can print it twice.
+        The row is re-rendered from its stored payload at once (startup
+        recovery defers the render to the worker, #168).  Idempotent: a row
+        the queue already tracks is not enqueued a second time, so neither a
+        repeated call nor a later ``start()`` recovery can print it twice.
 
         Raises:
             KeyError: the row's printer is not known to the queue.
@@ -2581,13 +2658,25 @@ class PrintQueue:
             job = item
 
             # Wait while paused — pause may have been set while we were idle at
-            # queue.get(), so this check must come AFTER the pop.
-            while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
-                if self._stopping or self._removing(printer_id):
-                    return
-                await self._wait_for_resume(printer_id)
-            if self._removing(printer_id):
-                return  # resumed and removed at once
+            # queue.get(), so this check must come AFTER the pop. #168: a recovered job is
+            # drawn after the wait, on its turn; a pause or a removal during that render is
+            # honoured by waiting (or leaving) again before the job is taken. A cancel during
+            # the render is seen by the state check below (no await between it and PRINTING).
+            drawn = False
+            while True:
+                while self._worker_states[printer_id] == PrinterWorkerState.PAUSED:
+                    if self._stopping or self._removing(printer_id):
+                        return
+                    await self._wait_for_resume(printer_id)
+                if self._removing(printer_id):
+                    return  # resumed and removed at once
+                if drawn:
+                    break
+                if not await self._materialise(job):
+                    break
+                drawn = True
+            if not drawn:
+                continue
 
             # Job may have been cancelled or paused between submit and pop.
             if job.state != JobState.QUEUED:
@@ -2693,7 +2782,9 @@ class PrintQueue:
                     # to release the queue.
                     await self.pause_printer(printer_id, reason=code)
             except Exception as exc:
-                job.error_msg = str(exc)
+                # The class name only: the message may name a printer address, and the job is
+                # readable with a read key (#234). The traceback is logged below.
+                job.error_msg = type(exc).__name__
                 _from = job.state
                 try:
                     JobStateMachine.transition(job, JobState.FAILED)
@@ -2712,7 +2803,7 @@ class PrintQueue:
                         exc,
                     )
                 # Phase 2: DB-State persistieren (auch wenn Transition fehlschlug)
-                await self._store.mark_failed(UUID(job.id), str(exc))
+                await self._store.mark_failed(UUID(job.id), type(exc).__name__)
                 logger.exception("Job %s failed on %s", job.id, printer_id)
 
     def set_roll_colour(self, roll_colour: RollColour | None) -> None:
@@ -3003,13 +3094,26 @@ class PrintQueue:
 
         try:
             for start in range(0, len(batch.job_ids), TAPE_GROUP_SIZE):
-                if start > 0 and (
+                group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
+                # #168: the recovered members of the group are drawn first, so the check below
+                # sees a stop, a removal or a pause that came during their renders. A run whose
+                # members all have their pictures awaits nothing here (unchanged path).
+                drew = False
+                for idx in group:
+                    member = self._jobs.get(str(batch.job_ids[idx]))
+                    if (
+                        member is not None
+                        and member.image_payload is None
+                        and member.rerender is not None
+                    ):
+                        drew = True
+                        await self._materialise(member)
+                if (start > 0 or drew) and (
                     self._stopping
                     or self._removing(printer_id)
                     or not await self._wait_until_active(printer_id)
                 ):
                     return  # the labels not taken stay ``queued``
-                group = range(start, min(start + TAPE_GROUP_SIZE, len(batch.job_ids)))
                 active, payloads = await self._take_group(printer_id, batch, group)
                 if not active:
                     continue
@@ -3143,6 +3247,11 @@ class PrintQueue:
             if job is None:
                 logger.warning("Batch %s: job_id %s not in _jobs (cancelled?)", batch.batch_id, jid)
                 continue
+            # #168: ``_process_batch`` drew the recovered members already, so this awaits nothing;
+            # a member that failed to draw is terminal and skipped like a cancelled one. A member
+            # cancelled during its render fails the PRINTING transition and is skipped below.
+            if not await self._materialise(job):
+                continue
             try:
                 JobStateMachine.transition(job, JobState.PRINTING)
                 if not await self._store.mark_printing(UUID(job.id)):
@@ -3155,7 +3264,9 @@ class PrintQueue:
                     queue_depth=self._queue_depth(printer_id),
                 )
                 active_jobs.append(job)
-                payloads.append(batch.image_payloads[idx])
+                # A recovered member's batch slot is empty (``_recovered_batch``): its
+                # picture was drawn onto the job above.
+                payloads.append(batch.image_payloads[idx] or job.image_payload or b"")
             except InvalidStateTransitionError:
                 logger.warning(
                     "Batch %s: job %s skipped — state already %s (cancelled?)",
@@ -3312,7 +3423,11 @@ class PrintQueue:
         if isinstance(exc, PrinterError):
             cause, cause_msg, cause_detail = _printer_error_to_record(exc)
         else:
-            cause, cause_msg, cause_detail = "batch_failed", f"batch print failed: {exc}", None
+            cause, cause_msg, cause_detail = (
+                "batch_failed",
+                f"batch print failed: {type(exc).__name__}",
+                None,
+            )
         if (
             isinstance(exc, PrinterError)
             # A shortfall and a label too long for the tape are not the printer's state: the

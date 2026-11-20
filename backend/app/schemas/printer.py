@@ -10,13 +10,14 @@ References:
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from app.printer_backends.tape_confirmation import ConfirmationRecord
+from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault
 from app.schemas.tape import TapeColourName
@@ -24,7 +25,8 @@ from app.schemas.tape import TapeColourName
 CONNECTION_READ_DOC = (
     "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and "
     "``community_set`` (true when a community is stored); the SNMP community itself is never "
-    "returned (#296)."
+    "returned (#296). Only an admin key receives a tape printer's connection (``host``, "
+    "``port``, ``snmp``); every other key gets an empty object (#234)."
 )
 
 
@@ -45,7 +47,8 @@ class PrintConfirmationRead(BaseModel):
         description=(
             "``false`` while the hub does not read the label counter, because the printer "
             "refused it several times in a row; ``channel`` is then ``none``. It is asked again "
-            "after an hour and with every test print"
+            "after an hour, with every test print and after a restart; for an attached printer "
+            "this follows what the hub does now, not only the last stored record"
         )
     )
     ipp_incomplete: bool = Field(
@@ -62,11 +65,21 @@ class PrintConfirmationRead(BaseModel):
         return serialize_datetime_utc(dt, _info)
 
     @classmethod
-    def from_stored(cls, stored: object) -> PrintConfirmationRead | None:
-        """The read view of a stored record; ``None`` for none (never test-printed)."""
+    def from_stored(
+        cls, stored: object, live: TapeSendState | None = None
+    ) -> PrintConfirmationRead | None:
+        """The read view of a stored record; ``None`` for none (never test-printed).
+
+        *live*: the attached backend's confirmation state. Whether the hub reads the label
+        counter is then taken from it, not from the stored ``counter_off`` (#398): after a
+        restart, and once the retry hour has passed, the hub asks for the counter again at
+        once, and the view says so without waiting for a print to store it.
+        """
         record = ConfirmationRecord.from_json(stored)
         if record is None:
             return None
+        if live is not None:
+            record = dataclasses.replace(record, counter_off=not live.ask_counter())
         return cls(
             channel=record.channel,
             confirm_transport=record.confirm_transport,
@@ -265,12 +278,13 @@ class PrinterStatus(BaseModel):
     ``error_state`` mirrors the active PrinterError flags as a string, or
     ``None`` when the printer is ready.
     ``captured_at`` is the UTC timestamp of the probe that last updated the
-    cache row.  ``None`` means no probe has completed yet.  For a page printer
-    (``kind="page"``) that went offline it stays the time of the last
+    cache row.  ``None`` means no successful answer yet: either no probe has completed
+    or every probe so far failed (``online`` is then ``False`` with ``last_error``).
+    For a page printer (``kind="page"``) that went offline it stays the time of the last
     *successful* reading; ``online`` and ``last_error`` tell that it is stale.
     ``last_probe_age_s`` is the age of the cached reading in seconds (for an
     offline page printer: since its last successful reading).
-    ``last_error`` is the exception message from the most recent failed probe.
+    ``last_error`` is the error class name of the most recent failed probe.
     ``note`` carries a human-readable hint (e.g. "No probe yet").
     ``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery
     off, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt
@@ -341,7 +355,8 @@ class PrinterStatus(BaseModel):
     captured_at: datetime | None = Field(
         default=None,
         description=(
-            "UTC timestamp of the probe that produced this reading; None if no probe yet. "
+            "UTC timestamp of the probe that produced this reading; None if the printer has "
+            "not answered yet (no probe yet, or only failed probes). "
             "A page printer that went offline keeps the time of its last successful reading."
         ),
     )
@@ -354,7 +369,10 @@ class PrinterStatus(BaseModel):
     )
     last_error: str | None = Field(
         default=None,
-        description="Exception message from the most recent failed probe",
+        description=(
+            "Error class name of the most recent failed probe "
+            "(the full message is in the server log)"
+        ),
     )
     note: str | None = Field(
         default=None,

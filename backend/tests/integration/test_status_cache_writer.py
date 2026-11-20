@@ -238,3 +238,102 @@ async def test_probe_records_the_roll_and_a_tracker_failure_does_not_fail_the_pr
     async with _eng.async_session() as s:
         cache = await s.get(PrinterStatusCache, _printer_id)
     assert cache.parsed["online"] is True  # not marked offline by the tracker failure
+
+
+async def test_probe_failure_stores_the_class_name_only(_printer_id, monkeypatch):
+    """The device error text names the host; the cache keeps the class name only (#234)."""
+
+    async def _failing_query(host, *, community="public", timeout_s=3.0):
+        raise OSError("cannot reach printer.example.invalid:9100")
+
+    monkeypatch.setattr(
+        "app.services.producers.status_probe_producer.query_preflight",
+        _failing_query,
+    )
+
+    await _make_producer(_printer_id)._probe_once()
+
+    import app.db.engine as _eng
+    from app.models.printer_status_cache import PrinterStatusCache
+
+    async with _eng.async_session() as s:
+        row = await s.get(PrinterStatusCache, _printer_id)
+
+    assert row is not None and row.parsed is not None
+    assert row.parsed["last_error"] == "OSError"
+
+
+# ---------------------------------------------------------------------------
+# IPP producer: an offline write never invents a capture time (#206)
+# ---------------------------------------------------------------------------
+
+
+def _failing_ipp_producer(printer_id):
+    """An ``IppStatusProducer`` whose printer never answers, writing into the test DB."""
+    from unittest.mock import MagicMock
+
+    import app.db.engine as _eng
+    import httpx
+    from app.printer_backends.ipp.client import IppClient
+    from app.services.event_bus import EventBus
+    from app.services.producers.ipp_status_producer import IppPrinterState, IppStatusProducer
+
+    from tests.helpers.fake_ipp_printer import FAKE_URI, FailingTransport, FakeIppPrinter
+
+    fake = FakeIppPrinter()
+    bus = MagicMock(spec=EventBus)
+    bus.next_event_id.return_value = 1
+    return IppStatusProducer(
+        bus=bus,
+        printer_id=printer_id,
+        client=IppClient(
+            FAKE_URI,
+            transport=FailingTransport(
+                httpx.ASGITransport(app=fake), "Get-Printer-Attributes", httpx.ConnectError
+            ),
+        ),
+        session_factory=_eng.async_session,
+        state=IppPrinterState(),
+        pause_control=None,
+        interval_s=30.0,
+    )
+
+
+async def _ipp_printer_id():
+    import app.db.engine as _eng
+    from app.models.printer import Printer
+
+    async with _eng.async_session() as s:
+        p = Printer(
+            name="cache-writer-ipp",
+            model="IPP printer",
+            backend="ipp",
+            connection={"uri": "ipp://127.0.0.1:631/ipp/print", "tls_verify": True},
+        )
+        s.add(p)
+        await s.commit()
+        await s.refresh(p)
+        return p.id
+
+
+async def test_offline_write_keeps_a_null_captured_at():
+    """A row that never held a reading stays without a capture time on the next failure."""
+    import app.db.engine as _eng
+    from app.models.printer_status_cache import PrinterStatusCache
+
+    pid = await _ipp_printer_id()
+    producer = _failing_ipp_producer(pid)
+    assert await producer.probe_once() is None
+    async with _eng.async_session() as s:
+        row = await s.get(PrinterStatusCache, pid)
+        assert row is not None and row.captured_at is None
+        first_updated = row.updated_at
+
+    assert await producer.probe_once() is None
+    async with _eng.async_session() as s:
+        row = await s.get(PrinterStatusCache, pid)
+        assert row is not None
+        assert row.captured_at is None
+        assert row.parsed["online"] is False
+        assert row.updated_at >= first_updated
+    await producer.stop()

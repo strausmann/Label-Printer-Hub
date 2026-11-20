@@ -34,6 +34,12 @@ describe("AboutPage", () => {
     expect(page.getByRole("link", { name: "About the GNU AGPL" })).toHaveAttribute("href", AGPL_INFO_URL);
   });
 
+  it("renders no source link for a javascript: source address", async () => {
+    await renderApp({ path: "/about", info: { source_url: "javascript:alert(1)" } });
+    await screen.findByRole("heading", { level: 1, name: "About" });
+    expect(screen.queryByRole("link", { name: "Source code" })).toBeNull();
+  });
+
   it("is open to a session that is not an admin", async () => {
     await renderApp({ path: "/about", session: { ...SIGNED_IN, scope: "print" } });
     expect(await screen.findByRole("heading", { level: 1, name: "About" })).toBeInTheDocument();

@@ -13,7 +13,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
-from app.sheets.locking import install_statement_counter
+from app.repositories.write_lock import install_statement_counter
 
 # Single source of truth: Settings.database_url (env var LABELYARD_DATABASE_URL).
 # The previous code read an older, undocumented database URL variable, a

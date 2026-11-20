@@ -23,10 +23,11 @@ from app.calibration.model import (
     deviation_to_values,
     to_deviation,
 )
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import SheetType, SheetTypeVersion
+from app.repositories.write_lock import write_transaction
 from app.services.page_jobs import CalibrationSnapshot
 from app.sheets import type_service as ts
 from app.sheets.errors import MediaKindMismatchError, PrinterNotFoundError, TrayUnknownError
@@ -36,7 +37,7 @@ async def _page_printer(session: AsyncSession, printer_id: UUID) -> Printer:
     printer = await session.get(Printer, printer_id)
     if printer is None:
         raise PrinterNotFoundError()
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     return printer
 
@@ -141,7 +142,7 @@ async def put(
         (await ts.get_version(session, measured_on[0], measured_on[1])).id if measured_on else None
     )
     dev = to_deviation(values)  # raises calibration_out_of_range before any write
-    async with ts.write_transaction(session):
+    async with write_transaction(session):
         await _check_tray(session, printer_id, tray)  # inside the lock: no race with a tray edit
         row = await session.get(PrinterCalibration, (printer_id, tray))
         if row is None:
@@ -172,7 +173,7 @@ async def put(
 async def delete(session: AsyncSession, printer_id: UUID, tray: str, *, actor: str) -> None:  # noqa: ARG001 - kept for the call contract; not logged
     """Reset a tray to the identity; a stored row is removed even if its tray is gone."""
     await _page_printer(session, printer_id)
-    async with ts.write_transaction(session):
+    async with write_transaction(session):
         row = await session.get(PrinterCalibration, (printer_id, tray))
         if row is None:
             # Nothing to clear: an unknown tray is still an error, a known one is a no-op.

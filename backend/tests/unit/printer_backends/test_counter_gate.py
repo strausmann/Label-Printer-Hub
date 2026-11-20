@@ -149,6 +149,7 @@ async def test_switching_the_counter_off_and_on_is_stored_and_shown(
 
     backend.send_state.begin(detect=True)  # a test print asks again, the agent answers
     await backend.read_status()
+    await backend.send_state.flushed()  # #398: the read stores the cleared flag beside itself
     assert [r.counter_off for r in sink.records] == [True, False]
     shown = PrintConfirmationRead.from_stored(sink.records[-1].to_json())
     assert shown is not None and (shown.channel, shown.counter_read) == ("label_counter", True)

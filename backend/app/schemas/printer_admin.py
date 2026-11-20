@@ -20,6 +20,7 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.models.printer import is_page_backend
 from app.printer_backends.ipp.client import validate_ipp_uri
 from app.schemas.label_layout import LayoutDefault, check_layout_defaults
 from app.sheets.text import sanitise_text
@@ -180,7 +181,7 @@ class PrinterCreatePayload(BaseModel):
 
     @model_validator(mode="after")
     def _backend_rules(self) -> Self:
-        if self.backend == "ipp":
+        if is_page_backend(self.backend):
             if not isinstance(self.connection, IppConnection):
                 raise ValueError("connection of an ipp printer must be {uri, tls_verify}")
             if self.trays is None:

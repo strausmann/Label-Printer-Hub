@@ -91,6 +91,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.integrations as _integrations_init  # triggers integration plugin discovery
 from app import __version__
+from app.api.body_limit import install_body_limit
 from app.api.error_handlers import (
     SHEET_ERROR_SCHEMA,
     SHEET_ERROR_SCHEMA_NAME,
@@ -146,6 +147,7 @@ from app.observability.redact_query import install_query_token_redaction
 from app.page_render.pdf import register_pdf_font
 from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
+from app.repositories import printer_status_cache as printer_status_cache_repo
 from app.repositories import printers as printers_repo
 from app.schemas.readiness import ReadinessResponse
 from app.services.cleanup_task import CleanupTask
@@ -172,6 +174,7 @@ from app.sheets.outcome import SheetCellsOutcome, sweep_orphan_reservations
 from app.sheets.sheet_page import render_sheet_page
 from app.sheets.sweep import SheetReservationSweep
 from app.web.api_docs import mount_api_docs
+from app.web.no_store import add_no_store
 from app.web.spa import add_security_headers, mount_spa
 from app.web.version_header import add_version_header
 
@@ -275,9 +278,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     1. Load seed templates (idempotent, skipped when directory is absent).
     2. Discover model + backend plugins via entry_points (idempotent).
     3. Load the enabled printers in creation order.
-    4. Build the queue (not running), then ``PrinterRuntime.attach(fatal=True)`` each printer:
+    4. Build the queue (not running), then ``PrinterRuntime.attach`` each printer:
        backend, model driver, ``PrintService``, IPP clients and states, producers (not
-       started). An unresolvable tape model aborts startup; a bad IPP URI is degraded.
+       started). A printer that cannot be wired (unknown model, unreachable discovery, a
+       bad IPP URI) is logged and skipped; the hub starts without it.
     5. Register the sheet outcome handler, start the queue (manual pauses first), sweep
        orphan sheet reservations, start the cleanup task.
     6. ``PrinterRuntime.start()``: the status producers, each probing once at start.
@@ -334,6 +338,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Enabled printers in creation order: the order the back-compat fields use.
         _db_printers = await printers_repo.list_all(s)
         await ensure_printer_state(s)
+        # 1.7.0 stored the full error text, with the tape printer's address, in the status
+        # cache; clear it before the first request can read it (the next probe rewrites it).
+        _scrubbed = await printer_status_cache_repo.drop_free_text_errors(s)
+        if _scrubbed:
+            _log.info("Cleared %d free-text status error(s) left by an older hub", _scrubbed)
         await s.commit()
         # D4/D5: runtime settings (env-locked values, encrypted secrets).
         settings_store = SettingsStore()
@@ -392,11 +401,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # #224: every printer is wired by the runtime, at startup and on an admin change. The
     # queue is not running yet, so an attach only registers the printer and builds its
     # backend, service and producer; nothing probes before ``runtime.start()`` below.
-    # An unresolvable tape model still aborts startup (fatal); a bad IPP URI is degraded.
+    # A printer that cannot be wired is logged and skipped; it never stops the hub.
     runtime = PrinterRuntime(app, settings, session_factory=async_session)
     app.state.printer_runtime = runtime
     for _db_printer in _db_printers:
-        await runtime.attach(_db_printer, fatal=True)
+        await runtime.attach(_db_printer)
 
     # D15: restart recovery calls the handler's ``on_unknown`` from inside ``start()``, so the
     # handler is registered first (a registry without it would hand the call to a no-op).
@@ -735,10 +744,14 @@ def create_app() -> _LifespanManager:
     app.include_router(info_routes.router)
     app.include_router(notices_routes.router)
 
+    # #164: inside the security headers and the access log, around every router.
+    install_body_limit(app)
     # D1: the same process serves the web app. Mounted after every router so the
     # catch-all only sees what no API route claimed.
     add_security_headers(app)
     add_version_header(app, HUB_VERSION)
+    # #160: an API answer is never kept by a shared cache.
+    add_no_store(app)
     mount_api_docs(app, get_settings().web_dist_dir)
     mount_spa(app, get_settings().web_dist_dir)
     # #366: last, so it is the outermost of the hub's middlewares and logs the final status.

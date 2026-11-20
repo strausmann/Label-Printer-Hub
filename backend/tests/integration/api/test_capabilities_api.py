@@ -383,6 +383,22 @@ async def test_stale_tape_is_reported_as_unknown(api_client_with_seed):
     assert body["captured_at"] is not None  # kept: the client shows the age
 
 
+async def test_capabilities_take_the_staleness_bound_from_the_printer_row(api_client_with_seed):
+    # The cache row claims kind "page", the printer row is a tape printer: the tape bound
+    # applies, so a reading 200 s old is stale (a page printer's bound would still accept it).
+    c, reader = api_client_with_seed, await _key(["read"])
+    pid = await _tape_printer("PT-P750W", 12)
+    async with _factory()() as s:
+        row = await s.get(PrinterStatusCache, pid)
+        assert row is not None
+        row.parsed = {**(row.parsed or {}), "kind": "page"}
+        await s.commit()
+    await _age_cache(pid, 200)
+    body = (await c.get(f"/api/v1/printers/{pid}/capabilities", headers=reader)).json()
+    assert body["stale"] is True
+    assert body["media"] is None
+
+
 async def test_fresh_tape_is_not_stale(api_client_with_seed):
     c, reader = api_client_with_seed, await _key(["read"])
     pid = await _tape_printer("PT-P750W", 12)

@@ -45,6 +45,7 @@ from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import IppStatusRecord
@@ -82,14 +83,16 @@ router = APIRouter(prefix="/api/v1/printers", tags=["printers"])
 def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object]:
     """The ``connection`` a caller may see.
 
-    For an ``ipp`` printer the URI is connection detail (spec 14, 18): only admin callers
-    see it; everyone else gets ``{"tls_verify": ...}``. Tape rows show ``snmp.community_set``
-    instead of the SNMP community, for every caller (#296).
+    The address of a printer is connection detail (spec 14, 18), for tape and page printers
+    alike: only admin callers see it. For an ``ipp`` printer everyone else gets
+    ``{"tls_verify": ...}``; for a tape printer everyone else gets ``{}``. An admin sees the
+    tape row with ``snmp.community_set`` instead of the SNMP community (#296).
     """
     connection = dict(printer.connection or {})
-    if printer.backend != "ipp":
-        return snmp_view(connection)
-    if auth is not None and auth.scope == "admin":
+    is_admin = auth is not None and auth.scope == "admin"
+    if not is_page_printer(printer):
+        return snmp_view(connection) if is_admin else {}
+    if is_admin:
         return connection
     return {"tls_verify": bool(connection.get("tls_verify", True))}
 
@@ -137,6 +140,16 @@ async def _identity_view(
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 RuntimeDep = Annotated[PrinterRuntime | None, Depends(get_printer_runtime)]
+
+
+def _confirmation_view(request: Request, printer: Printer) -> PrintConfirmationRead | None:
+    """The stored print confirmation, with the live counter state of the attached backend
+    (#398): after a restart or the retry hour the view shows the counter as read at once."""
+    runtime = get_printer_runtime(request)
+    live = runtime.send_state_for(printer.id) if runtime is not None else None
+    return PrintConfirmationRead.from_stored(printer.print_confirmation, live=live)
+
+
 PrintAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 
@@ -234,7 +247,7 @@ async def list_printers(
                 created_at=p.created_at,
                 updated_at=p.updated_at,
                 layout_defaults=_layout_defaults_view(p),
-                print_confirmation=PrintConfirmationRead.from_stored(p.print_confirmation),
+                print_confirmation=_confirmation_view(request, p),
                 **_identity_fields(identities.get(p.id)),
             )
         )
@@ -280,7 +293,7 @@ async def get_printer(
         created_at=printer.created_at,
         updated_at=printer.updated_at,
         layout_defaults=_layout_defaults_view(printer),
-        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
+        print_confirmation=_confirmation_view(request, printer),
         **await _identity_view(session, printer_id, _auth),
     )
 
@@ -398,8 +411,8 @@ async def get_printer_status(
     printer = await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
-    status_ = await _cached_status(session, printer_id, runtime)
-    if printer.backend == "ipp":
+    status_ = await _cached_status(session, printer, runtime)
+    if is_page_printer(printer):
         # #344: the trays the newest sheet and calibration pages used, on every branch of the
         # status (also never probed, not polled, stale): they come from the hub's own jobs.
         trays = await jobs_repo.last_page_trays(session, printer_id)
@@ -416,11 +429,38 @@ async def get_printer_status(
 
 
 async def _cached_status(
-    session: AsyncSession, printer_id: UUID, runtime: PrinterRuntime | None
+    session: AsyncSession, printer: Printer, runtime: PrinterRuntime | None
 ) -> PrinterStatus:
+    printer_id = printer.id
+    # The printer row decides page or tape: a cache row written before a backend change would
+    # otherwise answer with the old kind.
+    is_page = is_page_printer(printer)
     polled = runtime is not None and runtime.is_polled(printer_id)
     row = await cache_repo.get(session, printer_id)
     if row is None or row.captured_at is None:
+        parsed_early = (row.parsed if row is not None else None) or {}
+        if (
+            row is not None
+            and polled
+            and parsed_early.get("online") is False
+            and not is_stale(
+                row.updated_at,
+                datetime.now(UTC),
+                get_settings().sse_probe_interval_s,
+                backoff_of(parsed_early, page=is_page),
+            )
+        ):
+            # The printer has been probed and never answered: it is offline, not "not yet
+            # probed". There is no capture time to report.
+            return PrinterStatus(
+                printer_id=printer_id,
+                online=False,
+                captured_at=None,
+                last_probe_age_s=None,
+                last_error=parsed_early.get("last_error"),
+                kind="page" if is_page else None,
+                polled=polled,
+            )
         return PrinterStatus(
             printer_id=printer_id,
             online=None,
@@ -439,7 +479,7 @@ async def _cached_status(
     age_s = int((now - captured).total_seconds())
 
     interval_s = get_settings().sse_probe_interval_s
-    backoff_s = backoff_of(parsed)
+    backoff_s = backoff_of(parsed, page=is_page)
     stale = polled and is_stale(row.updated_at, now, interval_s, backoff_s)
     if not polled or stale:
         # The cached values describe a printer nobody has looked at for a while (or at all):
@@ -456,12 +496,12 @@ async def _cached_status(
                 if not polled
                 else f"Status older than {int(stale_after_s(interval_s, backoff_s))} s"
             ),
-            kind="page" if parsed.get("kind") == "page" else None,
+            kind="page" if is_page else None,
             stale=stale,
             polled=polled,
         )
 
-    if parsed.get("kind") == "page":
+    if is_page:
         return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
 
     tape = read_tape_status(parsed)
@@ -540,7 +580,7 @@ async def get_printer_tape(
     runtime: RuntimeDep = None,
 ) -> TapeRead:
     """Return the tape loaded in a polled, reachable tape printer."""
-    await _get_printer_or_404(session, printer_id)
+    printer = await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
 
@@ -553,7 +593,7 @@ async def get_printer_tape(
 
     parsed = cache.parsed
     interval_s = get_settings().sse_probe_interval_s
-    backoff_s = backoff_of(parsed)
+    backoff_s = backoff_of(parsed, page=is_page_printer(printer))
     if runtime is None or not runtime.is_polled(printer_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not polled")
     if is_stale(cache.updated_at, datetime.now(UTC), interval_s, backoff_s):
@@ -715,7 +755,16 @@ async def _clear_own_queued_jobs(
                 if live.state.value == JobState.QUEUED.value:
                     await queue.cancel(str(job.id))
             continue
-        await jobs_repo.mark_cancelled(session, job.id)
+        # Conditional write: a row the worker took since the read stays as it is.
+        await jobs_repo.mark_cancelled(session, job.id, states=(JobState.QUEUED.value,))
+        if queue is not None and queue.has_job(job.id):
+            # Handed to the queue while the write ran and the write won: end the in-memory job
+            # too, or it would only be vetoed (FAILED) when the worker pops it. Only this job,
+            # never the whole queue (it would cancel other keys' jobs).
+            with contextlib.suppress(KeyError):
+                live = await queue.get(job.id)
+                if live.state.value in (JobState.QUEUED.value, "paused"):
+                    await queue.cancel(str(job.id))
 
 
 @router.post(
@@ -771,4 +820,12 @@ async def clear_printer_queue(
     ]
 
     for job in queued_jobs:
-        await jobs_repo.mark_cancelled(session, job.id)
+        # Conditional write: a row the worker took since the read stays as it is.
+        await jobs_repo.mark_cancelled(session, job.id, states=(JobState.QUEUED.value,))
+
+    # A job registered with the queue while the rows were read is skipped by the filter above
+    # and was not there for the first sweep: cancel it in memory now (a job the worker already
+    # took is PRINTING and is left alone).
+    if queue is not None:
+        with contextlib.suppress(KeyError):
+            await queue.clear_queue(printer_id)

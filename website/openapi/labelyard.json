@@ -1699,6 +1699,7 @@
         "properties": {
           "product_id": {
             "description": "Grocy product identifier",
+            "maxLength": 64,
             "title": "Product Id",
             "type": "string"
           },
@@ -1716,6 +1717,7 @@
           },
           "type": {
             "description": "Event type string (e.g. 'stock_added', 'stock_removed')",
+            "maxLength": 64,
             "title": "Type",
             "type": "string"
           }
@@ -3107,7 +3109,7 @@
             "type": "string"
           },
           "counter_read": {
-            "description": "``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour and with every test print",
+            "description": "``false`` while the hub does not read the label counter, because the printer refused it several times in a row; ``channel`` is then ``none``. It is asked again after an hour, with every test print and after a restart; for an attached printer this follows what the hub does now, not only the last stored record",
             "title": "Counter Read",
             "type": "boolean"
           },
@@ -3158,10 +3160,12 @@
         "description": "Resolve label data via an integration plugin.",
         "properties": {
           "app": {
+            "maxLength": 32,
             "title": "App",
             "type": "string"
           },
           "identifier": {
+            "maxLength": 120,
             "title": "Identifier",
             "type": "string"
           }
@@ -3502,7 +3506,7 @@
         "type": "object"
       },
       "PrinterStatus": {
-        "description": "Printer status sourced from the printer_status_cache table.\n\nThe endpoint reads the cache row written by StatusProbeProducer instead\nof doing a synchronous SNMP probe inline.  This makes the response fast\n(<10 ms) even when the printer is offline.\n\n``tape_loaded`` is a human-readable string such as\n``\"12mm laminated black/clear\"`` or ``None`` when no tape is inserted.\n``error_state`` mirrors the active PrinterError flags as a string, or\n``None`` when the printer is ready.\n``captured_at`` is the UTC timestamp of the probe that last updated the\ncache row.  ``None`` means no probe has completed yet.  For a page printer\n(``kind=\"page\"``) that went offline it stays the time of the last\n*successful* reading; ``online`` and ``last_error`` tell that it is stale.\n``last_probe_age_s`` is the age of the cached reading in seconds (for an\noffline page printer: since its last successful reading).\n``last_error`` is the exception message from the most recent failed probe.\n``note`` carries a human-readable hint (e.g. \"No probe yet\").\n``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery\noff, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt\n(``printer_status_cache.updated_at``) is older than\n``max(90, 3 * probe interval, 2 * max backoff)`` seconds (an IPP printer that stopped answering\nis probed with a backoff of up to 300 s, so its bound is 600 s),\nor implausibly in the future. For an unpolled or stale printer ``online`` is\n``None`` and the cached values (tape, error state, markers, trays) are not returned;\n``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last\nreading is.",
+        "description": "Printer status sourced from the printer_status_cache table.\n\nThe endpoint reads the cache row written by StatusProbeProducer instead\nof doing a synchronous SNMP probe inline.  This makes the response fast\n(<10 ms) even when the printer is offline.\n\n``tape_loaded`` is a human-readable string such as\n``\"12mm laminated black/clear\"`` or ``None`` when no tape is inserted.\n``error_state`` mirrors the active PrinterError flags as a string, or\n``None`` when the printer is ready.\n``captured_at`` is the UTC timestamp of the probe that last updated the\ncache row.  ``None`` means no successful answer yet: either no probe has completed\nor every probe so far failed (``online`` is then ``False`` with ``last_error``).\nFor a page printer (``kind=\"page\"``) that went offline it stays the time of the last\n*successful* reading; ``online`` and ``last_error`` tell that it is stale.\n``last_probe_age_s`` is the age of the cached reading in seconds (for an\noffline page printer: since its last successful reading).\n``last_error`` is the error class name of the most recent failed probe.\n``note`` carries a human-readable hint (e.g. \"No probe yet\").\n``polled`` is ``False`` when no status producer runs for the printer (SNMP discovery\noff, printer disabled or not wired). ``stale`` is ``True`` when the last probe attempt\n(``printer_status_cache.updated_at``) is older than\n``max(90, 3 * probe interval, 2 * max backoff)`` seconds (an IPP printer that stopped answering\nis probed with a backoff of up to 300 s, so its bound is 600 s),\nor implausibly in the future. For an unpolled or stale printer ``online`` is\n``None`` and the cached values (tape, error state, markers, trays) are not returned;\n``captured_at`` and ``last_probe_age_s`` stay so a client can show how old the last\nreading is.",
         "properties": {
           "captured_at": {
             "anyOf": [
@@ -3513,7 +3517,7 @@
                 "type": "null"
               }
             ],
-            "description": "UTC timestamp of the probe that produced this reading; None if no probe yet. A page printer that went offline keeps the time of its last successful reading.",
+            "description": "UTC timestamp of the probe that produced this reading; None if the printer has not answered yet (no probe yet, or only failed probes). A page printer that went offline keeps the time of its last successful reading.",
             "title": "Captured At"
           },
           "error_flags": {
@@ -3602,7 +3606,7 @@
                 "type": "null"
               }
             ],
-            "description": "Exception message from the most recent failed probe",
+            "description": "Error class name of the most recent failed probe (the full message is in the server log)",
             "title": "Last Error"
           },
           "last_probe_age_s": {
@@ -6942,11 +6946,13 @@
           },
           "spool_id": {
             "description": "Spoolman spool identifier (as a string to accept both int and str JSON input)",
+            "maxLength": 64,
             "title": "Spool Id",
             "type": "string"
           },
           "type": {
             "description": "Event type string (e.g. 'updated', 'created', 'consumed')",
+            "maxLength": 64,
             "title": "Type",
             "type": "string"
           }
@@ -7934,7 +7940,7 @@
           },
           "connection": {
             "additionalProperties": true,
-            "description": "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).",
+            "description": "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296). Only an admin key receives a tape printer's connection (``host``, ``port``, ``snmp``); every other key gets an empty object (#234).",
             "title": "Connection",
             "type": "object"
           },
@@ -8085,7 +8091,7 @@
           },
           "connection": {
             "additionalProperties": true,
-            "description": "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296).",
+            "description": "Connection of the printer. A tape printer's ``snmp`` object carries ``discover`` and ``community_set`` (true when a community is stored); the SNMP community itself is never returned (#296). Only an admin key receives a tape printer's connection (``host``, ``port``, ``snmp``); every other key gets an empty object (#234).",
             "title": "Connection",
             "type": "object"
           },
@@ -9979,6 +9985,7 @@
             "name": "entity_id",
             "required": true,
             "schema": {
+              "maxLength": 120,
               "title": "Entity Id",
               "type": "string"
             }
@@ -10892,14 +10899,7 @@
             "description": "The printer is a tape printer (`media_kind_mismatch`), is not known to the print queue (`printer-unavailable`), or the device behind it changed (`printer-identity-mismatch`)."
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The sheet type has no crossings to measure (`calibration_type_unsuitable`), or its grid has more than 2500 cells (`calibration_grid_too_large`, with `cells` and `max_cells`). Other errors of the type, printer and tray lookups carry their own codes."
           }
         },
         "security": [
@@ -10993,14 +10993,16 @@
             "description": "The calibration page."
           },
           "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
+            "description": "The sheet type has no crossings to measure (`calibration_type_unsuitable`), or its grid has more than 2500 cells (`calibration_grid_too_large`, with `cells` and `max_cells`). Other errors of the type, printer and tray lookups carry their own codes."
+          },
+          "429": {
+            "description": "A render of the key is stuck past the time limit (`too-many-previews`). The body has the rate limit's shape (`retry_after_seconds`)."
+          },
+          "503": {
+            "description": "No render slot became free in time (`render-unavailable`): every slot is held by a stuck render, or the wait for the caller's turn reached `LABELYARD_RENDER_TIMEOUT_S`."
+          },
+          "504": {
+            "description": "The page took longer than `LABELYARD_RENDER_TIMEOUT_S` to draw (`render-timeout`). The drawing goes on: the key's next download answers 429 until it has ended."
           }
         },
         "security": [

@@ -10,6 +10,7 @@ test tree end up in the container image.
 
 from __future__ import annotations
 
+import fnmatch
 import re
 from pathlib import Path
 
@@ -37,22 +38,28 @@ _BROAD_SOURCES = {".", "./", "backend", "backend/", "./backend", "./backend/", "
 
 
 def _copy_offenders(dockerfile: str, dockerignore: str) -> list[str]:
-    """COPY lines that could bring the test tree into the image.
+    """COPY and ADD lines that could bring the test tree into the image.
 
     A source with a ``tests`` path segment is always an offender. A broad source (the whole
-    context or the whole ``backend/``) is one unless ``.dockerignore`` excludes ``backend/tests``.
+    context or the whole ``backend/``) is one unless ``.dockerignore`` excludes ``backend/tests``;
+    so is a glob that would match a ``tests`` directory (``backend/*``).
     """
     ignored = {line.strip().rstrip("/") for line in dockerignore.splitlines()}
     excluded = "backend/tests" in ignored or "**/tests" in ignored
     offenders = []
     for line in dockerfile.splitlines():
-        if not re.match(r"\s*COPY\b", line, re.I):
+        if not re.match(r"\s*(COPY|ADD)\b", line, re.I):
             continue
+        if re.search(r"\s--from=", line):
+            continue  # a stage copy reads another stage, not the build context
         args = [a for a in line.split()[1:] if not a.startswith("--")]
         for source in args[:-1]:  # the last argument is the destination
             segments = source.strip("/").split("/")
             has_tests = "tests" in segments or "test" in segments
-            if has_tests or (source in _BROAD_SOURCES and not excluded):
+            globs_tests = any(
+                fnmatch.fnmatchcase("tests", seg) for seg in segments if re.search(r"[*?\[]", seg)
+            )
+            if has_tests or ((source in _BROAD_SOURCES or globs_tests) and not excluded):
                 offenders.append(line)
     return offenders
 
@@ -64,8 +71,14 @@ def _copy_offenders(dockerfile: str, dockerignore: str) -> list[str]:
         ("COPY backend/tests/ ./tests/", "backend/tests", True),
         ("COPY backend/ ./", "", True),
         ("COPY . .", "", True),
+        ("ADD backend/ ./", "", True),
+        ("COPY backend/* ./", "", True),
+        ("COPY backend/* ./", "backend/tests\n", False),
+        ("COPY backend/*.toml ./", "", False),
+        ("ADD backend/app/ ./app/", "", False),
         ("COPY --chown=hub:hub backend/ ./", "backend/tests\n", False),
         ("COPY --from=builder /opt/venv /opt/venv", "", False),
+        ("COPY --from=builder /build/* /x", "", False),
     ],
 )
 def test_copy_guard_flags_broad_and_test_sources(

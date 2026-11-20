@@ -93,8 +93,90 @@ describe("cell states are never colour alone", () => {
     render(<SheetGrid geometry={L4736} cells={[mk(1, "free"), mk(2, "new"), mk(3, "used")]} mode="view" label="g" containerWidth={360} />);
     expect(cell(1).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-dasharray");
     expect(cell(2).querySelector("text")).toHaveAttribute("font-weight", "800");
-    expect(cell(3).querySelector("text")).toHaveAttribute("font-weight", "600");
+    expect(cell(3).querySelector("text")).toHaveAttribute("font-weight", "500");
     expect(cell(2).querySelector('[data-shape="cell"]')).not.toHaveAttribute("stroke-dasharray");
+  });
+
+  it("cell numbers use the cell-number token", () => {
+    render(<SheetGrid geometry={L4736} cells={[mk(2, "new"), mk(3, "used")]} mode="view" label="g" containerWidth={360} />);
+    for (const n of [1, 3]) {
+      const text = cell(n).querySelector("text");
+      expect(text).toHaveClass("fill-cell-number");
+      expect(text).toHaveAttribute("font-weight", "500");
+    }
+    // a new cell keeps its bold accent number on the accent fill
+    expect(cell(2).querySelector("text")).toHaveClass("fill-accent-ink");
+    expect(cell(2).querySelector("text")).toHaveAttribute("font-weight", "800");
+  });
+
+  it("the legend explains the cell numbers", () => {
+    render(<SheetLegend />);
+    expect(screen.getByText("1 = cell number (not printed)")).toBeInTheDocument();
+  });
+
+  /** The pattern a cell's fill points at, looked up inside the same svg. */
+  const referencedPattern = (shape: Element | null): Element | null => {
+    const id = /^url\(#(.+)\)$/.exec(shape?.getAttribute("fill") ?? "")?.[1];
+    if (!id) return null;
+    const svg = shape!.closest("svg")!;
+    return [...svg.querySelectorAll("pattern")].find((p) => p.id === id) ?? null;
+  };
+
+  it.each([false, true])("reserved and new cells differ in fill (overlay %s)", (overlay) => {
+    render(
+      <SheetGrid geometry={L4736} cells={[mk(1, "reserved"), mk(2, "new")]} mode="view" label="g" containerWidth={360}
+        overlayPng={overlay ? "data:image/png;base64,AAAA" : undefined} />,
+    );
+    const reserved = cell(1).querySelector('[data-shape="cell"]');
+    const created = cell(2).querySelector('[data-shape="cell"]');
+    const pattern = referencedPattern(reserved);
+    expect(pattern, "the reserved fill points at a pattern of its own grid").not.toBeNull();
+    expect(pattern!.id.endsWith("-reserved")).toBe(true);
+    // over a rendered page the hatch is lines only: no ground that would hide the page
+    expect(pattern!.querySelector("rect") === null).toBe(overlay);
+    expect(pattern!.querySelector("line")).not.toBeNull();
+    expect(created?.getAttribute("fill") ?? "").not.toMatch(/^url\(/);
+    // new: solid on the plain grid; over a rendered page it stays unfilled (the page must stay readable)
+    expect(created).toHaveClass(overlay ? "fill-transparent" : "fill-accent");
+  });
+
+  it("two grids on one page keep their own hatch: unique ids, each cell points at its own grid's pattern", () => {
+    const { container } = render(
+      <div>
+        <SheetGrid geometry={L4736} cells={[mk(1, "reserved")]} mode="select" label="plain" containerWidth={360} />
+        <SheetGrid geometry={L4736} cells={[mk(1, "reserved")]} mode="view" label="over page" containerWidth={360}
+          overlayPng="data:image/png;base64,AAAA" />
+      </div>,
+    );
+    const ids = [...container.querySelectorAll("[id]")].map((el) => el.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const [plain, over] = [...container.querySelectorAll("svg")];
+    const own = (svg: Element) => {
+      const shape = svg.querySelector('[data-state="reserved"] [data-shape="cell"]');
+      const pattern = referencedPattern(shape);
+      expect(pattern).not.toBeNull();
+      return pattern!;
+    };
+    expect(own(plain!).querySelector("rect")).not.toBeNull(); // plain grid: with its ground
+    expect(own(over!).querySelector("rect")).toBeNull(); // over a page: lines only
+  });
+
+  it("a reserved cell's number has a halo against the hatch, like a used one", () => {
+    render(<SheetGrid geometry={L4736} cells={[mk(1, "reserved")]} mode="view" label="g" containerWidth={360} />);
+    const text = cell(1).querySelector("text");
+    expect(text).toHaveClass("stroke-accent-soft");
+    expect(text).toHaveAttribute("stroke-width", "0.7");
+  });
+
+  it("no class attribute ends with a space", () => {
+    const { container } = render(
+      <div>
+        <SheetGrid geometry={L4736} cells={[mk(1, "reserved"), mk(2, "new"), mk(3, "used")]} mode="select" label="g" containerWidth={360} />
+        <SheetLegend />
+      </div>,
+    );
+    const bad = [...container.querySelectorAll("[class]")].map((el) => el.getAttribute("class")!).filter((c) => c !== c.trim());
+    expect(bad).toEqual([]);
   });
 
   it("the legend names every state with its marker", () => {
@@ -148,7 +230,13 @@ describe("overlay", () => {
     );
     const shapes = [...container.querySelectorAll('[data-shape="cell"]')];
     expect(shapes).toHaveLength(48);
-    for (const shape of shapes) expect(shape.getAttribute("class")).toContain("fill-transparent");
+    // the hatch of a reserved cell is lines only over a page: no ground, so the page stays readable
+    for (const shape of shapes) {
+      if (shape.closest("[data-state]")?.getAttribute("data-state") === "reserved") {
+        expect(shape.getAttribute("fill")).toMatch(/^url\(#.+-reserved\)$/);
+      } else expect(shape.getAttribute("class")).toContain("fill-transparent");
+    }
+    expect(container.querySelector("pattern[id$='-reserved'] rect")).toBeNull();
     // the hatch of used cells is thinned, and a new cell is told apart by a thick outline
     expect(cell(2).querySelector('[data-marker="hatch"]')).toHaveAttribute("opacity", "0.4");
     expect(cell(5).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-width", "1");

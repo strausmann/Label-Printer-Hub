@@ -20,9 +20,14 @@ const spool: CartItem = { app: "spoolman", id: "7", name: "PLA red", content_typ
 
 beforeEach(() => {
   localStorage.clear();
+  // A successful write clears the module's `storageBroken` flag, which an earlier test may have left set.
+  const reset = renderHook(() => useCart(), { wrapper });
+  act(() => reset.result.current.clear());
+  reset.unmount();
   reloadCart();
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.resetModules();
 });
@@ -233,5 +238,53 @@ describe("cart", () => {
     // The labels are queued: the cart must not offer to print them a second time.
     expect(result.current.items).toEqual([]);
     expect((error as { batchId?: string }).batchId).toBe(BATCH_ID);
+  });
+});
+
+describe("cart after a failed write", () => {
+  it("a failed setItem keeps memory-only lines on the next change", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    act(() => result.current.add(spool));
+    // storage still holds only the first line; the next change must not start from it
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(1);
+    act(() => result.current.add({ ...asset, id: "43" }));
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43"]);
+    spy.mockRestore();
+    act(() => result.current.add({ ...asset, id: "44" }));
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43", "44"]);
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(4);
+  });
+
+  it("a storage event while a write is failing keeps the memory-only lines", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    act(() => result.current.add(spool));
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: CART_KEY }));
+    });
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7"]);
+    act(() => result.current.add({ ...asset, id: "43" }));
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43"]);
+    spy.mockRestore();
+  });
+
+  it("a failed clear() empties the cart and storage does not bring the lines back", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    act(() => result.current.clear());
+    expect(result.current.items).toEqual([]);
+    act(() => result.current.add(spool));
+    expect(result.current.items.map((i) => i.id)).toEqual(["7"]);
+    spy.mockRestore();
   });
 });

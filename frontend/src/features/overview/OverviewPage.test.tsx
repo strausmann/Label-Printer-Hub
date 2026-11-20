@@ -250,20 +250,39 @@ describe("Overview", () => {
     });
     const lowBlack = { name: "Black toner", color: "#000000", level_percent: 4, low: true, empty: false, some_remaining: false, type: "toner" };
 
-    it("counts a printer with a low toner as running out of material", async () => {
+    it("counts a printer with a low toner as running low, not empty", async () => {
       mockApi(withPage(pageStatus(PAGE_PRINTER.id, { markers: [lowBlack] })));
       await renderApp({ path: "/" });
       const section = await screen.findByRole("region", { name: "Material" });
-      expect(await within(section).findByText("1 printer is running out of material")).toBeVisible();
+      expect(await within(section).findByText("1 printer is running low")).toBeVisible();
+      expect(within(section).queryByText(/report material empty/)).toBeNull();
       expect(within(section).getByText("4 %, low")).toBeVisible();
     });
 
-    it("says nothing about running out while the toner is fine", async () => {
+    it("the material card counts empty and low apart", async () => {
+      const second = { ...PAGE_PRINTER, id: "44444444-4444-4444-8444-444444444444", name: "Second laser" };
+      const third = { ...PAGE_PRINTER, id: "55555555-5555-4555-8555-555555555555", name: "Third laser" };
+      const emptyBlack = { ...lowBlack, level_percent: 0, low: false, empty: true };
+      mockApi({
+        ...base(),
+        "GET /api/v1/printers": [PRINTER_A, PAGE_PRINTER, second, third],
+        [`GET /api/v1/printers/${PAGE_PRINTER.id}/status`]: pageStatus(PAGE_PRINTER.id, { markers: [emptyBlack] }),
+        [`GET /api/v1/printers/${second.id}/status`]: pageStatus(second.id, { markers: [lowBlack] }),
+        [`GET /api/v1/printers/${third.id}/status`]: pageStatus(third.id, { markers: [lowBlack] }),
+      });
+      await renderApp({ path: "/" });
+      const section = await screen.findByRole("region", { name: "Material" });
+      expect(await within(section).findByText("1 printer reports material empty")).toBeVisible();
+      expect(within(section).getByText("2 printers are running low")).toBeVisible();
+    });
+
+    it("says nothing about running low or empty while the toner is fine", async () => {
       mockApi(withPage(pageStatus(PAGE_PRINTER.id)));
       await renderApp({ path: "/" });
       const section = await screen.findByRole("region", { name: "Material" });
       expect(await within(section).findByText("Black toner")).toBeVisible();
-      expect(within(section).queryByText(/running out/)).toBeNull();
+      expect(within(section).queryByText(/running low/)).toBeNull();
+      expect(within(section).queryByText(/report material empty/)).toBeNull();
     });
 
     it("a stopped page printer needs attention, with the reason in words", async () => {

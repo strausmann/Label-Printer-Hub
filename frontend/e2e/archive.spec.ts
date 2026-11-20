@@ -164,6 +164,49 @@ test.describe.serial("sheet archive", () => {
       await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
     }
   });
+  test("a long vendor and description wrap at 390 px without an ellipsis", async () => {
+    const key = "readable-long-name";
+    const geometry = {
+      page_size: "A4", shape: "rectangle", cols: 2, rows: 5, label_w: 90, label_h: 50, pitch_x: 100, pitch_y: 55,
+      margin_top: 10, margin_left: 5, corner_radius: null,
+    };
+    const vendor = "Ünïcödé Etikettenfabrik Gesellschaft";
+    const description = "Very long description of this sheet that has to run over several lines on a phone";
+    await setLanguage(page, "en");
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    try {
+      expect(
+        await api(page, "POST", "/api/v1/sheet-types", { key, prefix: "RLN", vendor, description, product_codes: ["RLN-0001"], geometry }),
+      ).toBe(201);
+      await page.goto(`/sheets/archive?q=${key}`);
+      const card = page.getByRole("link", { name: new RegExp(key) });
+      const title = card.getByText(`${vendor} RLN-0001 · ${description}`, { exact: true });
+      await expect(title).toBeVisible();
+      // The key stays under the name, in its own monospace line.
+      await expect(card.getByText(key, { exact: true })).toBeVisible();
+      const look = await title.evaluate((el) => {
+        const style = getComputedStyle(el);
+        const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;
+        return { overflow: style.textOverflow, whiteSpace: style.whiteSpace, scroll: el.scrollWidth, client: el.clientWidth, lines: Math.round(el.getBoundingClientRect().height / lineHeight) };
+      });
+      expect(look.overflow).not.toBe("ellipsis");
+      expect(look.whiteSpace).not.toBe("nowrap");
+      expect(look.scroll).toBeLessThanOrEqual(look.client);
+      expect(look.lines).toBeGreaterThan(1);
+      expect(await noSideScroll(page)).toBe(true);
+      const box = (await card.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      const SHOTS = process.env.E2E_SHOTS_DIR;
+      if (SHOTS) {
+        mkdirSync(SHOTS, { recursive: true });
+        await page.screenshot({ path: resolve(SHOTS, "task-17-archive-phone.png"), fullPage: true });
+      }
+    } finally {
+      await api(page, "DELETE", `/api/v1/sheet-types/${key}`);
+    }
+  });
+
   test("worst-case vendor and product codes keep the feedback section inside the page and the link under 8000", async () => {
     const SHOTS = process.env.E2E_SHOTS_DIR;
     const key = "feedback-long-type";

@@ -25,7 +25,6 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Literal
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import httpx
@@ -35,21 +34,24 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.printer import Printer, PrinterAudit
+from app.models.printer import IPP_BACKEND as IPP_BACKEND  # re-export
+from app.models.printer import Printer, PrinterAudit, is_page_backend, is_page_printer
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.models.printer_tray_loading import PrinterTrayLoading
 from app.printer_backends.ipp.attributes import PRINTER_ATTRS, ProbeSummary, summarise
-from app.printer_backends.ipp.client import IppClient, to_http_url
+from app.printer_backends.ipp.client import IppClient
 from app.printer_backends.ipp.errors import (
     IppError,
     IppStatusError,
     IppTransportError,
     IppUnreachableError,
 )
+from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printers as printers_repo
+from app.repositories.write_lock import write_transaction
 from app.schemas.label_layout import LayoutDefault
 from app.schemas.printer_admin import (
     IppConnection,
@@ -59,21 +61,20 @@ from app.schemas.printer_admin import (
     TrayIn,
 )
 from app.services.audit_redaction import redact_secrets
-from app.services.printer_identity import derive_printer_id
+from app.services.printer_identity import new_printer_id
 from app.sheets.errors import (
     IppBadResponseApiError,
     IppPdfUnsupportedError,
     IppRejectedError,
     IppUnreachableApiError,
+    PrinterModelUnknownError,
     StoredConnectionInvalidError,
     TrayUnknownError,
 )
 from app.sheets.text import log_value
-from app.sheets.type_service import write_transaction
 
 _log = logging.getLogger(__name__)
 
-IPP_BACKEND = "ipp"
 AUTO_TRAY = "auto"
 IPP_MODEL_FALLBACK = "IPP printer"
 MAX_MODEL_LENGTH = 120
@@ -139,6 +140,23 @@ class ConnectionKindMismatchError(Exception):
 
 class TraysNotAllowedError(Exception):
     """``trays`` were sent for a tape printer."""
+
+
+def _check_tape_model(model: str | None) -> None:
+    """A tape printer is stored only with a model some driver is registered for (#166)."""
+    if model is None:
+        return
+    ModelRegistry.ensure_discovered()
+    try:
+        ModelRegistry.find_by_model_id(model)
+    except ModelNotFoundError:
+        known = sorted(
+            {
+                str(getattr(e if isinstance(e, type) else type(e), "model_id", "?"))
+                for e in ModelRegistry.all()
+            }
+        )
+        raise PrinterModelUnknownError(known) from None
 
 
 class SnmpCommunityRequiredError(Exception):
@@ -290,13 +308,6 @@ def _ipp_model(summary: ProbeSummary, given: str | None) -> str:
     return IPP_MODEL_FALLBACK
 
 
-def _ipp_host_port(uri: str) -> tuple[str, int]:
-    """Host and effective port of an IPP URI, the identity salt for ``derive_printer_id``."""
-    parts = urlsplit(to_http_url(uri))
-    port = parts.port or (443 if parts.scheme == "https" else 80)
-    return parts.hostname or "", port
-
-
 def _check_ipp_save(summary: ProbeSummary, tray_keys: Sequence[str]) -> None:
     """OC-18 (PDF required) and every tray other than ``auto`` reported by the printer."""
     if not summary.pdf_supported:
@@ -362,10 +373,10 @@ def _payload_to_row(
         "queue_timeout_s": payload.queue.timeout_s,
         # Cut defaults do not apply to page printers (spec 11.1).
         "cut_defaults_half_cut": (
-            False if payload.backend == IPP_BACKEND else payload.cut_defaults.half_cut
+            False if is_page_backend(payload.backend) else payload.cut_defaults.half_cut
         ),
         "layout_defaults": (
-            {} if payload.backend == IPP_BACKEND else _layout_json(payload.layout_defaults)
+            {} if is_page_backend(payload.backend) else _layout_json(payload.layout_defaults)
         ),
         "enabled": payload.enabled,
         "created_at": created_at_utc,
@@ -562,17 +573,11 @@ class PrinterAdminService:
             )
             _check_ipp_save(summary, [t.key for t in trays])
             model = _ipp_model(summary, payload.model)
-            host, port = _ipp_host_port(payload.connection.uri)
         else:
             model = payload.model or ""
-            host, port = payload.connection.host, payload.connection.port
+            _check_tape_model(payload.model)
         created_at = datetime.now(UTC)
-        printer_id = derive_printer_id(
-            model=model,
-            host=host,
-            port=port,
-            created_at_utc=created_at,
-        )
+        printer_id = new_printer_id()
         row = _payload_to_row(payload, printer_id, created_at)
         row["model"] = model
         printer = Printer(**row)
@@ -618,7 +623,7 @@ class PrinterAdminService:
         if printer is None:
             raise PrinterNotFoundBySlugError(slug)
 
-        is_ipp = printer.backend == IPP_BACKEND
+        is_ipp = is_page_printer(printer)
         expected = IppConnection if is_ipp else PrinterConnection
         if patch.connection is not None and not isinstance(patch.connection, expected):
             raise ConnectionKindMismatchError()

@@ -19,6 +19,7 @@ description: The common problems after installing, with their cause and the fix.
 
 - **No printers on the overview.** Add them under Settings > Printers; printers are not configured through variables.
 - **The printer shows offline.** Check from the Docker host: `nc -zv <printer-address> 9100`, and SNMP as described under [connecting printers](/install/printers/).
+- **A printer shows no status after a restart and the card says it is not monitored.** The hub could not wire it at startup, for example because the printer was switched off and the hub had to look up its model. The log names it (`Printer slug=… not wired`). The hub does not retry by itself: switch the printer on, then save it once under Settings > Printers (or restart the hub) to wire it again.
 - **A job stays in printing.** The printer never reported the end of the job. Look at the printer: a cover may be open, or the tape ran out.
 - **Prints on a page printer are off by a few millimetres.** Calibrate the tray (see [connecting printers](/install/printers/)).
 

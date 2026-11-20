@@ -118,10 +118,12 @@ _AMBIGUOUS = [
     # (tape, image size, orientation, expected convert input size, marker position after)
     (62, (500, 300), LabelOrientation.ACROSS, (696, 300), ((696 - 500) // 2, 0)),
     (62, (500, 300), LabelOrientation.ALONG, (696, 500), ((696 - 300) // 2 + 299, 0)),
-    (12, (70, 80), LabelOrientation.ACROSS, (106, 80), ((106 - 70) // 2, 0)),
-    (12, (70, 80), LabelOrientation.ALONG, (106, 70), ((106 - 80) // 2 + 79, 0)),
-    (12, (106, 70), LabelOrientation.ACROSS, (106, 70), (0, 0)),
-    (12, (106, 70), LabelOrientation.ALONG, (106, 106), ((106 - 70) // 2 + 69, 0)),
+    # The 12 mm rows are 80, 70 and 70 dots long, below the 150-dot minimum of the QL-820NWB
+    # (brother-ql-next, #256): the convert input is padded with white to 150 at the end.
+    (12, (70, 80), LabelOrientation.ACROSS, (106, 150), ((106 - 70) // 2, 0)),
+    (12, (70, 80), LabelOrientation.ALONG, (106, 150), ((106 - 80) // 2 + 79, 0)),
+    (12, (106, 70), LabelOrientation.ACROSS, (106, 150), (0, 0)),
+    (12, (106, 70), LabelOrientation.ALONG, (106, 150), ((106 - 70) // 2 + 69, 0)),
 ]
 
 

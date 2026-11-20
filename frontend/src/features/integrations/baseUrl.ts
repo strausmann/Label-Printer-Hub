@@ -14,6 +14,7 @@ const DEEP_LINK: Record<LookupApp, RegExp> = {
 export function baseUrlOf(app: LookupApp, deepLink: string): string | null {
   try {
     const url = new URL(deepLink);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     const match = DEEP_LINK[app].exec(url.pathname);
     return match ? `${url.origin}${match[1]}` : null;
   } catch {

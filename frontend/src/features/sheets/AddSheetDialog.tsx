@@ -21,6 +21,7 @@ import { SheetGrid } from "./SheetGrid";
 import { SheetTypeCombobox } from "./SheetTypeCombobox";
 import { ActivateBackSide } from "./backSide/ActivateBackSide";
 import { pageSizeMm } from "./cellState";
+import { typeTitle } from "./typeLabel";
 
 type Placement = NonNullable<SheetCreate["id_placement"]>;
 
@@ -194,7 +195,7 @@ function AddSheetForm({ onClose, onTitle }: { onClose: () => void; onTitle: (tit
       <ActivateBackSide
         target={{ kind: "new", body: { type: type.key, used_cells: [...marked].sort((a, b) => a - b).map((cell) => ({ cell })) } }}
         codeLabel={next.data?.code ?? type.prefix}
-        typeLabel={type.vendor ? `${type.vendor} ${type.product_codes[0] ?? type.key}` : type.key}
+        typeLabel={typeTitle(type)}
         page={pageSizeMm(type.geometry)}
         strips={type.backing_design?.page_size === type.geometry.page_size ? type.backing_design.strips : []}
         initialPrinterId={printerId === NO_PRINTER ? undefined : printerId}

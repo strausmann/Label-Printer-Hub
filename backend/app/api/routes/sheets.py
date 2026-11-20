@@ -19,14 +19,12 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.identity_hold import ensure_sheet_not_held
-from app.api.routes.sheet_common import actor, mapped
-from app.auth.dependencies import AuthContext, check_printer_access
+from app.api.routes.sheet_common import actor, mapped, usable_printer
+from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_admin, require_print, require_read
 from app.db import engine as db_engine
 from app.db.session import get_session
-from app.models.printer import Printer
 from app.models.sheet import SheetCell, SheetType
-from app.repositories import printers as printers_repo
 from app.schemas.sheets import (
     CellHitRead,
     CellNumbers,
@@ -48,7 +46,6 @@ from app.services.event_bus import EventBus
 from app.sheets import exchange, print_service
 from app.sheets import sheet_service as ss
 from app.sheets import type_service as ts
-from app.sheets.errors import PrinterNotFoundError, SheetPrinterDisabledError
 from app.sheets.geometry import hmm_to_mm
 from app.sheets.reservation import NewSheetIn
 from app.sheets.sheet_service import MarkedCell
@@ -199,18 +196,6 @@ async def next_code(
         return NextCode(code=await ss.peek_next_code(session, type_key), hint="probable")
 
 
-async def _usable_printer(session: AsyncSession, auth: AuthContext, key: str) -> Printer:
-    """The printer a request names: it exists, the caller may use it and it is switched on
-    (pre-flight C18)."""
-    printer = await printers_repo.resolve_by_slug_or_uuid(session, key)
-    if printer is None:
-        raise PrinterNotFoundError().to_http()
-    check_printer_access(auth, printer.id)
-    if not printer.enabled:
-        raise SheetPrinterDisabledError().to_http()
-    return printer
-
-
 def _language(request: Request) -> str | None:
     language = request.app.state.settings_store.get("general.language")
     return None if language is None else str(language)
@@ -243,7 +228,7 @@ async def margin_check(
     tray: Annotated[str | None, Query(min_length=1, max_length=100)] = None,
 ) -> MarginCheckRead:
     with mapped():
-        found = await _usable_printer(session, auth, printer)
+        found = await usable_printer(session, auth, printer)
         check = await print_service.margin_check(
             session, printer=found, type_key=type_key, tray=tray, language=_language(request)
         )
@@ -349,7 +334,7 @@ async def _create_with_back_side(
     """``back_side``: create the sheet and queue the job that prints its code on the back."""
     printer_key = _printer_required(body)
     with mapped():
-        printer = await _usable_printer(session, auth, printer_key)
+        printer = await usable_printer(session, auth, printer_key)
         ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)
         await session.commit()  # the service opens its own sessions (the R10-1 class)
         code, job_id = await print_service.create_sheet_with_back_label(
@@ -378,7 +363,7 @@ async def _create_with_id_cell(
     """``cell``: create the sheet, reserve the ID cell and queue the ID-only job in one go."""
     body_printer = _printer_required(body)
     with mapped():
-        printer = await _usable_printer(session, auth, body_printer)
+        printer = await usable_printer(session, auth, body_printer)
         ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)  # #231
         # Give the connection back: the service opens its own sessions, and a request holding
         # one while it waits for another can use up the pool (the R10-1 class). The printer row
@@ -444,7 +429,7 @@ async def print_back_side(
     code: CodePath, body: SheetBackPrint, request: Request, session: SessionDep, auth: PrintDep
 ) -> PageJobQueued:
     with mapped():
-        printer = await _usable_printer(session, auth, body.printer)
+        printer = await usable_printer(session, auth, body.printer)
         ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)
         await session.commit()  # the service opens its own sessions (the R10-1 class)
         job_id = await print_service.print_sheet_back(
@@ -522,7 +507,7 @@ async def print_margin_id(
     code: CodePath, body: SheetBackPrint, request: Request, session: SessionDep, auth: PrintDep
 ) -> PageJobQueued:
     with mapped():
-        printer = await _usable_printer(session, auth, body.printer)
+        printer = await usable_printer(session, auth, body.printer)
         ensure_sheet_not_held(getattr(request.app.state, "print_queue", None), printer.id)
         await session.commit()  # the service opens its own sessions (the R10-1 class)
         job_id = await print_service.print_margin_id(

@@ -93,7 +93,9 @@ DEFAULT_RELEASE_RULES: list[dict[str, Any]] = [
 HEADER_RE = re.compile(r"^(\w*)(?:\((.*)\))?!?: (.*)$", re.ASCII)
 BREAKING_HEADER_RE = re.compile(r"^(\w*)(?:\((.*)\))?!: (.*)$", re.ASCII)
 NOTES_RE = re.compile(r"^[\s|*]*(BREAKING CHANGE|BREAKING-CHANGE)[:\s]+(.*)", re.IGNORECASE)
-REVERT_RE = re.compile(r'^(?:Revert|revert:)\s"?([\s\S]+?)"?\s*This reverts commit (\w*)\.', re.IGNORECASE)
+REVERT_RE = re.compile(
+    r'^(?:Revert|revert:)\s"?([\s\S]+?)"?\s*This reverts commit (\w*)\.', re.IGNORECASE
+)
 
 VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 TAG_RE = re.compile(r"^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
@@ -290,7 +292,9 @@ def last_release_from_tags(tags: Iterable[str]) -> str | None:
 
 
 def git(*args: str, cwd: Path | None = None) -> str:
-    return subprocess.run(["git", *args], cwd=cwd or REPO_ROOT, check=True, capture_output=True, text=True).stdout
+    return subprocess.run(
+        ["git", *args], cwd=cwd or REPO_ROOT, check=True, capture_output=True, text=True
+    ).stdout
 
 
 def git_last_release(ref: str) -> str | None:
@@ -505,7 +509,9 @@ def run_check(args: argparse.Namespace) -> int:
     base_impact = None
     if MILESTONE_BRANCH_RE.match(args.head_ref):
         base_range = f"v{last}..{args.base_sha}" if last else args.base_sha
-        base_impact = max_impact(commit_impact(c, rules) for c in filter_reverted(git_commits(base_range)))
+        base_impact = max_impact(
+            commit_impact(c, rules) for c in filter_reverted(git_commits(base_range))
+        )
     result = evaluate_pr(
         title=args.title,
         commits=commits,
@@ -522,7 +528,9 @@ def run_check(args: argparse.Namespace) -> int:
         f"Last release on main: `{result.last_release or 'none'}`",
     ]
     if result.milestone:
-        lines.append(f"Milestone branch: `{result.milestone}`, computed version: `{result.computed or 'none'}`")
+        lines.append(
+            f"Milestone branch: `{result.milestone}`, computed version: `{result.computed or 'none'}`"
+        )
     lines += ["", summary_table(result.entries)]
     if result.errors:
         lines += ["**Failed:**", ""] + [f"- {md_cell(e)}" for e in result.errors]
@@ -552,7 +560,9 @@ def guard_allows(next_version: str, last: str | None, milestones: Callable[[], s
 
 
 _MILESTONE_TITLE = r"(\d+\.\d+\.(?:\d+|x))"
-MILESTONE_MERGE_RE = re.compile(rf"^Merge pull request #\d+ from ([^/\s]+)/milestone/{_MILESTONE_TITLE}$")
+MILESTONE_MERGE_RE = re.compile(
+    rf"^Merge pull request #\d+ from ([^/\s]+)/milestone/{_MILESTONE_TITLE}$"
+)
 MILESTONE_LOCAL_MERGE_RE = re.compile(rf"^Merge branch 'milestone/{_MILESTONE_TITLE}'$")
 
 
@@ -564,7 +574,9 @@ def milestone_merges(rev_range: str, cwd: Path | None = None) -> list[str]:
     Merges inside the milestone branch are not on the first-parent line of main.
     """
     titles: list[str] = []
-    for subject in git("log", "--first-parent", "--merges", "--format=%s", rev_range, cwd=cwd).splitlines():
+    for subject in git(
+        "log", "--first-parent", "--merges", "--format=%s", rev_range, cwd=cwd
+    ).splitlines():
         found = MILESTONE_MERGE_RE.match(subject)
         if found:
             titles.append(found.group(2))
@@ -610,7 +622,9 @@ def guard_decision(
             errors.append(f"release blocked: milestone {title} not found, could not decide")
             continue
         if found.open:
-            errors.append(f"release blocked: milestone {title} has open issues: {_numbers(found.open)}")
+            errors.append(
+                f"release blocked: milestone {title} has open issues: {_numbers(found.open)}"
+            )
         elif found.waived:
             warnings.append(f"release proceeds with waived issues: {_numbers(found.waived)}")
     return not errors, errors, warnings
@@ -624,7 +638,9 @@ ABOVE_PATCH = ("major", "premajor", "minor", "preminor")
 
 
 def _is_ancestor(cwd: Path, commit: str, descendant: str) -> bool:
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", commit, descendant], cwd=cwd, check=False)
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, descendant], cwd=cwd, check=False
+    )
     return result.returncode == 0
 
 
@@ -650,7 +666,9 @@ def provenance_violation(
     rules = rules if rules is not None else load_release_rules()
 
     def run(*args: str) -> str:
-        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout
+        return subprocess.run(
+            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+        ).stdout
 
     rev_range = f"v{last}..HEAD" if last else "HEAD"
     merges: list[str] = []
@@ -658,7 +676,11 @@ def provenance_violation(
         sha, _, subject = line.partition(" ")
         found = MILESTONE_MERGE_RE.match(subject)
         # The merge must come from this repository's own milestone branch, not a fork's.
-        if found and milestone_matches(found.group(2), next_version) and (owner is None or found.group(1) == owner):
+        if (
+            found
+            and milestone_matches(found.group(2), next_version)
+            and (owner is None or found.group(1) == owner)
+        ):
             merges.append(sha)
     out = run("log", "--format=%H%x1f%B%x1e", rev_range)
     commits = []
@@ -670,13 +692,17 @@ def provenance_violation(
     above = [c for c in filter_reverted(commits) if commit_impact(c, rules) in ABOVE_PATCH]
     if not merges:
         shas = ", ".join(c.hash[:7] for c in above)
-        return f"no merge of milestone/{next_version} on the first-parent line since v{last or 'start'}" + (
-            f"; minor/major commits outside the milestone merge: {shas}" if shas else ""
+        return (
+            f"no merge of milestone/{next_version} on the first-parent line since v{last or 'start'}"
+            + (f"; minor/major commits outside the milestone merge: {shas}" if shas else "")
         )
     outside = [
         c.hash[:7]
         for c in above
-        if not any(_is_ancestor(cwd, c.hash, f"{m}^2") and not _is_ancestor(cwd, c.hash, f"{m}^1") for m in merges)
+        if not any(
+            _is_ancestor(cwd, c.hash, f"{m}^2") and not _is_ancestor(cwd, c.hash, f"{m}^1")
+            for m in merges
+        )
     ]
     if outside:
         return f"minor/major commits outside the milestone merge: {', '.join(outside)}"
@@ -751,10 +777,19 @@ def run_guard(args: argparse.Namespace) -> int:
         try:
             violation = provenance_violation(args.next, last, owner=args.repo.split("/")[0])
         except (subprocess.CalledProcessError, OSError, ValueError) as exc:
-            print(annotation("error", f"release guard could not read the history, refusing to release: {exc}"))
+            print(
+                annotation(
+                    "error", f"release guard could not read the history, refusing to release: {exc}"
+                )
+            )
             return 1
         if violation:
-            print(annotation("error", f"release blocked: {args.next} does not come from its milestone: {violation}"))
+            print(
+                annotation(
+                    "error",
+                    f"release blocked: {args.next} does not come from its milestone: {violation}",
+                )
+            )
             if dry_run:
                 print("  dry run: no issue opened")
             else:
@@ -765,9 +800,18 @@ def run_guard(args: argparse.Namespace) -> int:
             return 1
         try:
             merged = milestone_merges(f"v{last}..HEAD" if last else "HEAD")
-            found = {t: milestone_issues(args.repo, t) for t in set(merged) if milestone_matches(t, args.next)}
+            found = {
+                t: milestone_issues(args.repo, t)
+                for t in set(merged)
+                if milestone_matches(t, args.next)
+            }
         except (subprocess.CalledProcessError, OSError, ValueError, urllib.error.URLError) as exc:
-            print(annotation("error", f"release guard could not read the milestone, refusing to release: {exc}"))
+            print(
+                annotation(
+                    "error",
+                    f"release guard could not read the milestone, refusing to release: {exc}",
+                )
+            )
             return 1
         ok, errors, warnings = guard_decision(args.next, last, merged, titles, found)
         for warning in warnings:

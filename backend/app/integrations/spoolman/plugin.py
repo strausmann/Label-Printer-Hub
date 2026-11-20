@@ -15,7 +15,7 @@ import math
 import re
 from typing import Any
 
-from app.integrations.live_config import StoreBoundPlugin
+from app.integrations.live_config import StoreBoundPlugin, read_json_bounded
 from app.integrations.spoolman.swatch import DEFAULT_SWATCH_KEYS, SwatchKeys, build_swatch
 from app.schemas.label_data import LabelData
 from app.schemas.spool_swatch import SpoolSwatch
@@ -66,7 +66,7 @@ class SpoolmanPlugin(StoreBoundPlugin):
         # decide whether to treat them as configuration errors vs transient failures.
         response.raise_for_status()
 
-        payload = response.json()
+        payload = await read_json_bounded(response)
         if not isinstance(payload, dict):
             raise ValueError(f"Spoolman response for {spool_id!r} is not an object")
         return self._payload_to_label(payload, spool_id, base)

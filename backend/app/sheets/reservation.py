@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.sheet import Sheet, SheetCell, SheetTypeVersion
 from app.printer_backends.ipp.attributes import Margins
 from app.repositories import sheets as repo
+from app.repositories.write_lock import write_transaction
 from app.services.event_bus import EventBus
 from app.sheets.errors import (
     CellOutOfRangeError,
@@ -66,7 +67,7 @@ from app.sheets.sheet_service import (
     prepare_new_sheet,
 )
 from app.sheets.text import log_value
-from app.sheets.type_service import version_geometry, write_transaction
+from app.sheets.type_service import version_geometry
 
 logger = logging.getLogger(__name__)
 

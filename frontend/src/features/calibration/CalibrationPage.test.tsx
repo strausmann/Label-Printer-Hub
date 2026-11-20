@@ -222,7 +222,7 @@ describe("the reading guide in step 2", () => {
     expect(trigger.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     await userEvent.click(trigger);
-    expect(within(step2).getByRole("img", { name: "The crossings to read on Example Labels L4736REV-25 (L4736REV)" })).toBeVisible();
+    expect(within(step2).getByRole("img", { name: /^The crossings to read on Example Labels L4736REV-25\b.*\(L4736REV\)$/ })).toBeVisible();
   });
 
   it("the current values end with the still-off card and its link to the guide", async () => {

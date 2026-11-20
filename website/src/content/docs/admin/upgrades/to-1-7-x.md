@@ -1,0 +1,50 @@
+---
+title: Upgrading within 1.7.x
+description: What changes for API clients with the 1.7.x patch releases.
+sidebar:
+  order: 4
+---
+
+The 1.7.x releases are patch releases. Your data, keys and settings carry over; update the tag as described in [Tags and updating](/admin/upgrades/). Check the points below if a script or integration reads printer data from the API or sends large or long values.
+
+## A tape printer's address is for admin keys only
+
+A tape printer's address is connection detail, like the address of a page printer. From 1.7.x:
+
+- Read and print keys no longer receive `connection.host`, `connection.port` and `connection.snmp` for tape printers; `connection` is an empty object for them. Admin keys still receive all three.
+- A tape printer's `last_error` in the status names the error class only, for example `PySnmpError`, like a page printer's. The server log keeps the full message.
+- The `error` of a failed tape job (`GET /api/v1/jobs`) no longer carries the printer's address: an unreachable printer is reported with a fixed text (`The printer could not be reached.`), and an unexpected error with its class name only. The server log keeps the full message.
+
+If a script with a read or print key reads the host of a tape printer, use an admin key for it.
+
+The first start of 1.7.x clears a `last_error` in the stored printer status that is not a bare class name (the next probe of the printer writes the class name). The `error` of tape jobs that failed before the upgrade is not rewritten; it keeps the old text, including the address, for the key that owns the job and for admin keys.
+
+## Limits on request size and field length
+
+Request bodies above 2 MiB are refused with `413` and the error code `body_too_large`, for every route and before authentication (a declared `Content-Length` before the body is read, a body without one as soon as it passes 2 MiB). Webhook ids and event types above 64 characters (`spool_id`, `product_id`, `type`) and lookup identifiers above 120 characters are refused with `422`; a lookup `app` above 32 characters too. Nothing sends values of that size in normal use. See [request body size](/install/reverse-proxy/#request-body-size) for the matching proxy limits.
+
+## Queued labels after a restart
+
+After a restart the hub no longer draws every queued label before it starts, so startup no longer grows with the queue. A queued label is drawn when its turn comes: a label that cannot be drawn again now fails at that moment, with the same error (`recovery_rerender_failed: …`), not during startup. On a printer that was paused when the hub stopped, such a label stays `queued` until you resume the printer.
+
+## Short labels on QL printers
+
+The QL library is now `brother-ql-next`. A QL label shorter than about 12.7 mm (150 dots) gets blank tape at its end, so it prints slightly longer than the preview shows. A QL label longer than 1000 mm (500 mm at 600 dpi) is refused with `422` and the error code `tape_label_too_long`.
+
+## Print confirmation of tape printers
+
+- `counter_read` in `print_confirmation` (printer and capabilities) now says whether the hub reads the label counter right now. After a restart, an hour after it was switched off and with every test print it is `true` at once, without waiting for a print; it turns `false` only when the printer refuses the counter three times in a row. The stored record follows at the next print or test print.
+- A record the hub could not store (a busy database) is stored again at the next print or test print, instead of at the next change. That write runs beside the print and does not delay it.
+- The tape length of a QL label that is wider than the printable width is now the length the printer feeds after scaling it to the roll, not the label's long side. Such a label is no longer refused with `tape_label_too_long` for a length it does not have, and the confirmation wait follows the real length. The blank tape added to a short label counts towards it.
+
+## Calibration page
+
+The calibration page download (`GET /api/v1/printers/{id}/calibration/{tray}/page/pdf`) now draws under the same render slots as the sheet preview. It answers `504` (`render-timeout`) past `LABELYARD_RENDER_TIMEOUT_S`, `503` (`render-unavailable`) when no slot is free in time, and `429` (`too-many-previews`) while a render of the same key is stuck. A sheet type with more than 2500 cells (columns × rows) is refused with `422` and the error code `calibration_grid_too_large` (`error_detail`: `cells`, `max_cells`), for the download and for printing the page alike. Types created through the API have at most 400 cells, so only a type stored by other means can reach the limit.
+
+## Ids of new printers
+
+A printer you create from 1.7.x on gets a random id. Before, the id was derived from the model, address and creation time, so it could be worked out from those values. Printers that already exist keep their id; nothing changes for scripts that use it. A script that computed the id of a new printer itself must read it from the API instead.
+
+## Long texts from Grocy, Snipe-IT and Spoolman
+
+A lookup now cuts every text of the answer (title, id, secondary lines, listing rows) to 512 characters and ends a cut text with `…`. At most 10 secondary lines and 100 listing rows are kept. Labels printed from lookups, the render check and webhooks use the cut text, and so does the stored job. Sheet printing already did this. Nothing in normal use is that long.

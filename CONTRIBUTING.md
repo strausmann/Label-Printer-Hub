@@ -222,6 +222,11 @@ pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build
 pnpm e2e                      # Playwright end-to-end tests against the e2e hub
 ```
 
+The e2e hubs listen on 8765 (main), 8766 (bootstrap) and 8795 (README screenshots). When one of those ports is taken on
+your machine, move it with `LABELYARD_E2E_MAIN_PORT`, `LABELYARD_E2E_BOOTSTRAP_PORT` and `LABELYARD_E2E_SHOTS_PORT`
+(for example `LABELYARD_E2E_MAIN_PORT=8775 LABELYARD_E2E_BOOTSTRAP_PORT=8776 pnpm e2e shell.spec.ts`). A value that is not
+a port number fails the config with a message naming the variable.
+
 The CI workflow runs the same. **All of them are hard gates** — no warn-only:
 
 - `ruff check` and `ruff format --check` reject style/lint issues
@@ -310,6 +315,8 @@ cd backend && /tmp/tool/bin/python -m scripts.licence_report \
 ```
 
 It prints every package the policy refuses as `name (licence)` and exits 1.
+
+The image build also compares every package's declared licence with `licences/snapshot.json` (`scripts/licence_snapshot.py check`), so a move between two allowed licences does not go unnoticed. To accept a change, take the lists out of the built image and run `update`: `docker create --name lic <image>`, then `docker cp lic:/opt/app/web/licenses/backend.json .` and `docker cp lic:/opt/app/web/licenses/frontend.json .`, `docker rm lic`, then `python3 scripts/licence_snapshot.py update --backend backend.json --frontend frontend.json`. In a pull request the check fails only when a package that is in both lists changed its licence. A package that is only new or only removed is listed in the step summary without failing the job: the backend has no lockfile, so a rebuild without a warm cache can resolve a different set of transitive packages, and every new package is judged by the licence policy of the image build anyway. The weekly no-cache run uses `check --strict`, which fails on any difference, and is the early warning for a moved set. A Dependabot pull request that pulls in a new transitive package therefore passes; if it moves the licence of an existing package, a maintainer runs `update` as above and pushes the new `licences/snapshot.json` to the Dependabot branch.
 
 **A new dependency whose licence is on the list needs nothing.** If a gate refuses a package whose real licence is acceptable (package metadata that is wrong, ambiguous or missing), add an exception to `x-licence-exceptions` in the same pull request:
 

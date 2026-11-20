@@ -19,18 +19,16 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.identity_hold import ensure_sheet_not_held
-from app.api.routes.sheet_common import actor, mapped
-from app.auth.dependencies import AuthContext, check_printer_access
+from app.api.routes.sheet_common import actor, mapped, usable_printer
+from app.auth.dependencies import AuthContext
 from app.auth.scope_deps import require_print, require_read
 from app.db import engine as db_engine
 from app.db.session import get_session
-from app.repositories import printers as printers_repo
 from app.schemas.sheet_print import SheetPreview, SheetPrintRequest, SheetPrintResponse
 from app.services import render_slots
 from app.services.lookup_service import AppLookupService
 from app.sheets import print_service
 from app.sheets.cell_render import DEFAULT_CELL_RENDERER
-from app.sheets.errors import PrinterNotFoundError, SheetPrinterDisabledError
 
 router = APIRouter(prefix="/api/v1", tags=["sheets"])
 
@@ -127,12 +125,7 @@ async def preview_sheet_print(
     auth: ReadDep,
     lookup: LookupDep,
 ) -> SheetPreview:
-    printer = await printers_repo.resolve_by_slug_or_uuid(session, printer_key)
-    if printer is None:
-        raise PrinterNotFoundError().to_http()
-    check_printer_access(auth, printer.id)
-    if not printer.enabled:
-        raise SheetPrinterDisabledError().to_http()
+    printer = await usable_printer(session, auth, printer_key)
     language = http.app.state.settings_store.get("general.language")
     # Give the connection back before the lookups and the drawing (R10-1): the printer row is
     # all this request still needs from the session, and a committed session keeps it usable.
@@ -223,12 +216,7 @@ async def print_sheet(
     auth: PrintDep,
     lookup: LookupDep,
 ) -> SheetPrintResponse:
-    printer = await printers_repo.resolve_by_slug_or_uuid(session, printer_key)
-    if printer is None:
-        raise PrinterNotFoundError().to_http()
-    check_printer_access(auth, printer.id)
-    if not printer.enabled:
-        raise SheetPrinterDisabledError().to_http()
+    printer = await usable_printer(session, auth, printer_key)
     ensure_sheet_not_held(getattr(http.app.state, "print_queue", None), printer.id)  # #231
     language = http.app.state.settings_store.get("general.language")
     await session.commit()  # no connection held through the lookups (R10-1); see preview above

@@ -46,7 +46,7 @@ body:
     attributes:
       label: Is there an existing Python library?
       options:
-        - "Yes — pklaus/brother_ql"
+        - "Yes — LunarEclipse363/brother_ql_next"
         - "Yes — nbuchwitz/ptouch"
         - "Yes — other (please link in additional context)"
         - "No, this needs custom implementation"

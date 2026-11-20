@@ -98,9 +98,17 @@ class _FakeGhCase(unittest.TestCase):
         self.log = self.tmp / "gh.log"
         self.log.touch()
 
-    def run_script(self, script: str, *, draft: bool, assets: list[str], after_draft: bool = False,
-                   version: str = "1.6.1", releases: tuple[str, ...] = ("v1.6.0", "v1.5.2"),
-                   cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_script(
+        self,
+        script: str,
+        *,
+        draft: bool,
+        assets: list[str],
+        after_draft: bool = False,
+        version: str = "1.6.1",
+        releases: tuple[str, ...] = ("v1.6.0", "v1.5.2"),
+        cwd: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         env = {
             "PATH": f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}",
             "HOME": str(self.tmp),
@@ -113,8 +121,14 @@ class _FakeGhCase(unittest.TestCase):
             "GH_FAKE_AFTER": "true" if after_draft else "false",
             "GH_FAKE_RELEASES": ",".join(releases),
         }
-        return subprocess.run(["bash", "-c", script], cwd=cwd or self.tmp, env=env,
-                              capture_output=True, text=True, check=False)
+        return subprocess.run(
+            ["bash", "-c", script],
+            cwd=cwd or self.tmp,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     def calls(self) -> list[str]:
         return self.log.read_text(encoding="utf-8").splitlines()
@@ -123,7 +137,9 @@ class _FakeGhCase(unittest.TestCase):
 class ConfigTest(unittest.TestCase):
     def test_github_plugin_creates_a_draft(self) -> None:
         cfg = json.loads(RELEASERC.read_text(encoding="utf-8"))
-        github = [p for p in cfg["plugins"] if isinstance(p, list) and p[0] == "@semantic-release/github"]
+        github = [
+            p for p in cfg["plugins"] if isinstance(p, list) and p[0] == "@semantic-release/github"
+        ]
         self.assertEqual(len(github), 1)
         self.assertIs(github[0][1].get("draftRelease"), True)
 
@@ -243,8 +259,13 @@ def _truthy(value: object) -> bool:
     return value not in (None, False, "", 0)
 
 
-def _ctx(images: str = "success", sbom: str = "success", publish: str = "success",
-         published: str = "true", dry_run: object = None) -> dict[str, object]:
+def _ctx(
+    images: str = "success",
+    sbom: str = "success",
+    publish: str = "success",
+    published: str = "true",
+    dry_run: object = None,
+) -> dict[str, object]:
     return {
         "needs.release.result": "success",
         "needs.release.outputs.new-release-published": published,
@@ -281,15 +302,29 @@ class JobConditionTest(unittest.TestCase):
 
     def test_no_report_when_published_or_nothing_was_released(self) -> None:
         self.assertFalse(self._runs("release-unfinished", _ctx()))
-        self.assertFalse(self._runs("release-unfinished", _ctx(published="false", images="skipped",
-                                                              sbom="skipped", publish="skipped")))
-        self.assertFalse(self._runs("release-unfinished", _ctx(dry_run=True, images="skipped",
-                                                              sbom="skipped", publish="skipped")))
+        self.assertFalse(
+            self._runs(
+                "release-unfinished",
+                _ctx(published="false", images="skipped", sbom="skipped", publish="skipped"),
+            )
+        )
+        self.assertFalse(
+            self._runs(
+                "release-unfinished",
+                _ctx(dry_run=True, images="skipped", sbom="skipped", publish="skipped"),
+            )
+        )
 
     def test_evaluator_applies_implicit_success(self) -> None:
         # Guards the evaluator itself: without a status function a failed need skips the job.
-        self.assertFalse(evaluate_if("inputs.x == 'a'", {"inputs.x": "a", "needs.a.result": "failure"}, ["a"]))
-        self.assertTrue(evaluate_if("always() && inputs.x == 'a'", {"inputs.x": "a", "needs.a.result": "failure"}, ["a"]))
+        self.assertFalse(
+            evaluate_if("inputs.x == 'a'", {"inputs.x": "a", "needs.a.result": "failure"}, ["a"])
+        )
+        self.assertTrue(
+            evaluate_if(
+                "always() && inputs.x == 'a'", {"inputs.x": "a", "needs.a.result": "failure"}, ["a"]
+            )
+        )
 
 
 class PublishReleaseTest(_FakeGhCase):
@@ -306,41 +341,68 @@ class PublishReleaseTest(_FakeGhCase):
     def test_rerun_of_an_older_run_is_not_marked_latest(self) -> None:
         # `gh run rerun --failed` of the 1.6.1 run after 1.7.0 was published. The fake
         # list also carries a draft v99.0.0, which must not count.
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"],
-                                 releases=("v1.7.0", "v1.6.0"))
+        result = self.run_script(
+            self.SCRIPT,
+            draft=True,
+            assets=["labelyard-1.6.1.cdx.json"],
+            releases=("v1.7.0", "v1.6.0"),
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._edit_calls(), ["release edit v1.6.1 --draft=false --latest=false"])
         self.assertIn("not the highest published version (1.7.0)", result.stdout)
 
     def test_versions_compare_numerically_not_as_text(self) -> None:
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.10.0.cdx.json"],
-                                 version="1.10.0", releases=("v1.9.0", "v1.6.0"))
+        result = self.run_script(
+            self.SCRIPT,
+            draft=True,
+            assets=["labelyard-1.10.0.cdx.json"],
+            version="1.10.0",
+            releases=("v1.9.0", "v1.6.0"),
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._edit_calls(), ["release edit v1.10.0 --draft=false --latest"])
 
     def test_highest_published_version_is_found_numerically(self) -> None:
         # As text, 1.9.0 sorts above 1.10.0 and 1.9.1 would wrongly become latest.
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.9.1.cdx.json"],
-                                 version="1.9.1", releases=("v1.9.0", "v1.10.0"))
+        result = self.run_script(
+            self.SCRIPT,
+            draft=True,
+            assets=["labelyard-1.9.1.cdx.json"],
+            version="1.9.1",
+            releases=("v1.9.0", "v1.10.0"),
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._edit_calls(), ["release edit v1.9.1 --draft=false --latest=false"])
 
     def test_first_release_is_latest(self) -> None:
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], releases=())
+        result = self.run_script(
+            self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], releases=()
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._edit_calls(), ["release edit v1.6.1 --draft=false --latest"])
 
     def test_non_release_tags_do_not_count(self) -> None:
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"],
-                                 releases=("v2.0.0-rc.1", "nightly", "v1.6.0"))
+        result = self.run_script(
+            self.SCRIPT,
+            draft=True,
+            assets=["labelyard-1.6.1.cdx.json"],
+            releases=("v2.0.0-rc.1", "nightly", "v1.6.0"),
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._edit_calls(), ["release edit v1.6.1 --draft=false --latest"])
 
     def test_pre_release_is_never_latest(self) -> None:
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.7.0-rc.1.cdx.json"],
-                                 version="1.7.0-rc.1", releases=("v1.6.0",))
+        result = self.run_script(
+            self.SCRIPT,
+            draft=True,
+            assets=["labelyard-1.7.0-rc.1.cdx.json"],
+            version="1.7.0-rc.1",
+            releases=("v1.6.0",),
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self._edit_calls(), ["release edit v1.7.0-rc.1 --draft=false --latest=false"])
+        self.assertEqual(
+            self._edit_calls(), ["release edit v1.7.0-rc.1 --draft=false --latest=false"]
+        )
 
     def test_draft_without_sbom_is_not_published(self) -> None:
         result = self.run_script(self.SCRIPT, draft=True, assets=[])
@@ -364,7 +426,9 @@ class PublishReleaseTest(_FakeGhCase):
         self.assertFalse(any(c.startswith("release edit") for c in self.calls()))
 
     def test_release_still_a_draft_after_edit_fails(self) -> None:
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], after_draft=True)
+        result = self.run_script(
+            self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], after_draft=True
+        )
         self.assertEqual(result.returncode, 1)
 
     def test_invalid_version_is_refused_before_gh_runs(self) -> None:
@@ -384,7 +448,9 @@ class ReleaseSbomTest(_FakeGhCase):
         (self.sbom_dir / "labelyard-1.6.1.cdx.json").write_text("{}", encoding="utf-8")
 
     def test_sbom_is_uploaded_to_the_draft(self) -> None:
-        result = self.run_script(self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], cwd=self.sbom_dir)
+        result = self.run_script(
+            self.SCRIPT, draft=True, assets=["labelyard-1.6.1.cdx.json"], cwd=self.sbom_dir
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("release upload v1.6.1 ./labelyard-1.6.1.cdx.json --clobber", self.calls())
 

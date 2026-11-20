@@ -9,7 +9,6 @@ key's printer restriction (``403 printer_not_allowed`` for another printer's cal
 
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import Annotated
 from uuid import UUID
@@ -33,7 +32,9 @@ from app.calibration.model import (
 )
 from app.db.session import get_session
 from app.schemas.problem import ProblemDetail
+from app.services import render_slots
 from app.sheets import type_service as ts
+from app.sheets.print_service import RenderTimeoutApiError, RenderUnavailableApiError
 
 router = APIRouter(prefix="/api/v1/printers", tags=["calibration"])
 
@@ -186,18 +187,29 @@ class PageJobAccepted(BaseModel):
     job_id: UUID
 
 
+_PAGE_UNPROCESSABLE = {
+    "description": (
+        "The sheet type has no crossings to measure (`calibration_type_unsuitable`), or its "
+        "grid has more than 2500 cells (`calibration_grid_too_large`, with `cells` and "
+        "`max_cells`). Other errors of the type, printer and tray lookups carry their own codes."
+    )
+}
+_DOWNLOAD_RETRY_AFTER_S = 1
+
+
 @router.post(
     "/{printer_id}/calibration/{tray}/page",
     response_model=PageJobAccepted,
     status_code=status.HTTP_202_ACCEPTED,
     responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: _PAGE_UNPROCESSABLE,
         status.HTTP_409_CONFLICT: {
             "description": (
                 "The printer is a tape printer (`media_kind_mismatch`), is not known to the "
                 "print queue (`printer-unavailable`), or the device behind it changed "
                 "(`printer-identity-mismatch`)."
             )
-        }
+        },
     },
     summary="Print the calibration page (no sheet is created)",
 )
@@ -231,7 +243,30 @@ async def print_calibration_page(
 @router.get(
     "/{printer_id}/calibration/{tray}/page/pdf",
     response_class=Response,
-    responses={200: {"content": {"application/pdf": {}}, "description": "The calibration page."}},
+    responses={
+        200: {"content": {"application/pdf": {}}, "description": "The calibration page."},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: _PAGE_UNPROCESSABLE,
+        status.HTTP_429_TOO_MANY_REQUESTS: {
+            "description": (
+                "A render of the key is stuck past the time limit (`too-many-previews`). The "
+                "body has the rate limit's shape (`retry_after_seconds`)."
+            )
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "description": (
+                "No render slot became free in time (`render-unavailable`): every slot is held "
+                "by a stuck render, or the wait for the caller's turn reached "
+                "`LABELYARD_RENDER_TIMEOUT_S`."
+            )
+        },
+        status.HTTP_504_GATEWAY_TIMEOUT: {
+            "description": (
+                "The page took longer than `LABELYARD_RENDER_TIMEOUT_S` to draw "
+                "(`render-timeout`). The drawing goes on: the key's next download answers 429 "
+                "until it has ended."
+            )
+        },
+    },
     summary="Download the calibration page as a PDF",
 )
 async def download_calibration_page(
@@ -252,7 +287,31 @@ async def download_calibration_page(
         payload = await page.build_payload(
             session, printer_id, tray, type_key=type_key, version=version, corrected=corrected
         )
-    pdf = await asyncio.to_thread(page.render_calibration_page, payload)  # what the job renders
+    # What the job renders, under the process-wide render slots like the sheet preview (#358).
+    try:
+        pdf = await render_slots.render_bounded(
+            page.render_calibration_page,
+            payload,
+            label=f"calibration:{printer_id}",
+            owner=render_slots.owner_of(auth.api_key_id),
+        )
+    except render_slots.RenderTimeoutError:
+        raise RenderTimeoutApiError().to_http() from None
+    except render_slots.RenderUnavailableError:
+        raise RenderUnavailableApiError().to_http() from None
+    except render_slots.OwnerRenderStuckError:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "error_code": "too-many-previews",
+                "error_message": (
+                    "A render of this key is in progress. Retry after "
+                    f"{_DOWNLOAD_RETRY_AFTER_S} seconds."
+                ),
+                "retry_after_seconds": _DOWNLOAD_RETRY_AFTER_S,
+            },
+            headers={"Retry-After": str(_DOWNLOAD_RETRY_AFTER_S)},
+        ) from None
     name = re.sub(r"[^A-Za-z0-9._-]", "_", f"calibration-{payload.detail['type_key']}")
     return Response(
         content=pdf,

@@ -21,6 +21,7 @@ from sqlmodel import col
 
 from app.models.backing_design import BackingDesign
 from app.models.sheet import SheetType
+from app.repositories.write_lock import write_transaction
 from app.sheets.errors import (
     BackingDesignExistsError,
     BackingDesignInUseError,
@@ -31,7 +32,7 @@ from app.sheets.exchange import MAX_STRIPS, BackingDesignDoc, StripMm
 from app.sheets.geometry import PAGE_SIZES, hmm_to_mm, mm_to_hmm
 from app.sheets.naming import KEY_PATTERN
 from app.sheets.text import log_value
-from app.sheets.type_service import clean_text, write_transaction
+from app.sheets.type_service import clean_text
 
 __all__ = [
     "MIN_STRIP_HMM",

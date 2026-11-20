@@ -19,6 +19,7 @@ description: Die häufigen Probleme nach der Installation, mit Ursache und Lösu
 
 - **Keine Drucker in der Übersicht.** Füg sie unter Einstellungen > Drucker hinzu; Drucker werden nicht über Variablen eingerichtet.
 - **Der Drucker steht auf offline.** Prüf vom Docker-Host aus: `nc -zv <druckeradresse> 9100` und SNMP wie unter [Drucker anschließen](/de/install/printers/) beschrieben.
+- **Ein Drucker zeigt nach einem Neustart keinen Zustand, und die Karte sagt, er werde nicht überwacht.** Der Hub konnte ihn beim Start nicht einbinden, zum Beispiel weil der Drucker ausgeschaltet war und der Hub sein Modell nachschlagen musste. Das Protokoll nennt ihn (`Printer slug=… not wired`). Der Hub versucht es nicht von selbst erneut: Schalt den Drucker ein und speichere ihn einmal unter Einstellungen > Drucker (oder starte den Hub neu), damit er wieder eingebunden wird.
 - **Ein Auftrag bleibt auf „druckt“ stehen.** Der Drucker hat das Ende des Auftrags nie gemeldet. Schau am Drucker nach: Vielleicht ist ein Deckel offen oder das Band leer.
 - **Drucke auf einem Seitendrucker liegen ein paar Millimeter daneben.** Kalibrier das Fach (siehe [Drucker anschließen](/de/install/printers/)).
 

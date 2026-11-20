@@ -12,19 +12,83 @@ and follow every change without a restart.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Final
 
 import httpx
 
 from app.integrations.urls import base_url
-from app.services.errors import IntegrationNotConfiguredError
+from app.services.errors import IntegrationNotConfiguredError, LookupFailedError
 
 if TYPE_CHECKING:
     from app.settings_store import SettingsStore
 
 _log = logging.getLogger(__name__)
+
+#: Largest upstream answer a lookup accepts. A label lookup reads one small object; a
+#: misconfigured or hostile upstream must not make the hub buffer an unbounded body.
+MAX_LOOKUP_RESPONSE_BYTES: Final = 1_048_576
+
+
+class LookupResponseTooLargeError(LookupFailedError):
+    """The upstream answer is larger than :data:`MAX_LOOKUP_RESPONSE_BYTES` (HTTP 502)."""
+
+
+class LookupResponseCompressedError(LookupFailedError):
+    """The upstream compressed its answer although ``identity`` was requested (HTTP 502).
+
+    Typically a reverse proxy in front of the app that forces gzip. Not a size problem: the
+    answer is refused unread because its decoded size cannot be bounded.
+    """
+
+
+async def _read_bounded(response: httpx.Response) -> bytes:
+    """The body of ``response``, read in chunks and refused above the limit.
+
+    A streaming response is read with ``aiter_raw`` and every wire byte is counted, so the
+    limit holds without a ``Content-Length`` and for a chunked or lying one. The raw bytes are
+    the body bytes because lookups ask for ``Accept-Encoding: identity`` and an answer that
+    nevertheless carries a ``Content-Encoding`` is refused: httpx decodes a compressed chunk
+    in one call without an output limit (a 64 KiB gzip chunk inflates to ~64 MiB), so the
+    decoded size cannot be bounded after the fact (:class:`LookupResponseCompressedError`, its own
+    error so the operator is not pointed at the size limit). An already read response is checked
+    by its size.
+    """
+    encoding = response.headers.get("content-encoding", "").strip().lower()
+    if encoding not in ("", "identity"):
+        message = "the upstream answer is compressed although identity was requested"
+        # The REST answer is a fixed text, so this line is the operator's only pointer.
+        _log.warning("Lookup refused: %s", message)
+        raise LookupResponseCompressedError(message)
+    if (declared := response.headers.get("content-length", "")).isdigit() and (
+        int(declared) > MAX_LOOKUP_RESPONSE_BYTES
+    ):
+        raise LookupResponseTooLargeError("the upstream answer is too large")
+    try:
+        data = response.content
+    except httpx.ResponseNotRead:
+        pass
+    else:
+        if len(data) > MAX_LOOKUP_RESPONSE_BYTES:
+            raise LookupResponseTooLargeError("the upstream answer is too large")
+        return data
+    body = bytearray()
+    async for chunk in response.aiter_raw():
+        body += chunk
+        if len(body) > MAX_LOOKUP_RESPONSE_BYTES:
+            raise LookupResponseTooLargeError("the upstream answer is too large")
+    return bytes(body)
+
+
+async def read_json_bounded(response: httpx.Response) -> Any:
+    """Parse the JSON body of ``response`` after checking it against the size limit.
+
+    Raises :class:`LookupResponseTooLargeError` above the limit and ``ValueError`` for a body
+    that is not JSON (the lookup service maps both to ``integration_lookup_failed``).
+    """
+    return json.loads(await _read_bounded(response))
 
 
 class _ClientSlot:
@@ -104,11 +168,32 @@ class StoreBoundPlugin:
 
         The returned base URL is the one the request actually used, so callers
         build deep links from it instead of re-reading ``self._base_url``.
+
+        The body is streamed and refused above :data:`MAX_LOOKUP_RESPONSE_BYTES`; the returned
+        response is fully read, so ``read_json_bounded`` can parse it.
         """
         slot, base, key = self._slot, self._base_url, self._api_key
         slot.users += 1
         try:
-            return await slot.client.get(f"{base}{path}", headers=headers(key)), base
+            request = slot.client.build_request(
+                "GET", f"{base}{path}", headers={**headers(key), "Accept-Encoding": "identity"}
+            )
+            streamed = await slot.client.send(request, stream=True)
+            try:
+                body = await _read_bounded(streamed)
+            finally:
+                await streamed.aclose()
+            response = httpx.Response(
+                streamed.status_code,
+                headers=[
+                    (k, v)
+                    for k, v in streamed.headers.multi_items()
+                    if k.lower() not in ("content-encoding", "content-length", "transfer-encoding")
+                ],
+                content=body,
+                request=request,
+            )
+            return response, base
         finally:
             slot.users -= 1
             if slot.retired and slot.users == 0:

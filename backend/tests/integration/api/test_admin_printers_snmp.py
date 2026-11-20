@@ -149,15 +149,24 @@ async def test_printer_read_key_never_sees_community(api_client_with_seed, caplo
     printer = await _insert_printer()
     for scopes in (["read"], ["admin"]):
         headers = await _key(scopes)
+        # A read key gets no tape connection at all (#234); only an admin sees the snmp block,
+        # and never with the community in it (#296).
+        admin = scopes == ["admin"]
         listed = await api_client_with_seed.get("/api/v1/printers", headers=headers)
         assert listed.status_code == 200, listed.text
         row = next(p for p in listed.json() if p["id"] == str(printer.id))
-        _assert_no_community(row["connection"]["snmp"])
+        if admin:
+            _assert_no_community(row["connection"]["snmp"])
+        else:
+            assert row["connection"] == {}
         assert PLANTED not in listed.text
 
         one = await api_client_with_seed.get(f"/api/v1/printers/{printer.id}", headers=headers)
         assert one.status_code == 200, one.text
-        _assert_no_community(one.json()["connection"]["snmp"])
+        if admin:
+            _assert_no_community(one.json()["connection"]["snmp"])
+        else:
+            assert one.json()["connection"] == {}
         assert PLANTED not in one.text
     assert PLANTED not in caplog.text
 

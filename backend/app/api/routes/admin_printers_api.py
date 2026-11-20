@@ -53,7 +53,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import AuthContext, check_printer_access
 from app.auth.scope_deps import require_admin
 from app.db.session import get_session
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import ProbeSummary
@@ -63,7 +63,6 @@ from app.schemas.printer import CONNECTION_READ_DOC
 from app.schemas.printer_admin import IppConnection, PrinterCreatePayload, PrinterUpdatePayload
 from app.services.event_bus import BusEvent, EventBus
 from app.services.printer_admin_service import (
-    IPP_BACKEND,
     ConnectionKindMismatchError,
     DuplicateNameError,
     DuplicateSlugError,
@@ -197,7 +196,7 @@ async def _read(
 ) -> PrinterRead:
     """The admin view; a list passes ``identities`` (one query) instead of one read per row."""
     view = _row_to_read(printer)
-    if printer.backend == IPP_BACKEND:
+    if is_page_printer(printer):
         view.trays = [_tray_read(t) for t in await svc.list_trays(printer.id)]
     # Explicit, never from_attributes: the identity is inventory data for admins (#231).
     identity = (

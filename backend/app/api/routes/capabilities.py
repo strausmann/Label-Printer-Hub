@@ -21,12 +21,10 @@ from app.auth.scope_deps import require_read
 from app.calibration import service as calibration_service
 from app.config import get_settings
 from app.db.session import get_session
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import Margins, ProbeSummary
-from app.printer_models.pt import PTP750WDriver
-from app.printer_models.ql import QL820NWBDriver
 from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.schemas.capabilities import (
     Capabilities,
@@ -110,19 +108,17 @@ def _utc(value: datetime | None) -> datetime | None:
 
 
 def _driver_dpi(model: str) -> tuple[int, int]:
-    """The driver's dpi. The registry is asked first; the shipped drivers are the fallback,
-    because the QL driver is not an entry point and registers only when its module is imported."""
+    """The dpi of the driver registered for *model*; ``ModelNotFoundError`` when none is."""
     ModelRegistry.ensure_discovered()
-    try:
-        return ModelRegistry.find_by_model_id(model).dpi
-    except ModelNotFoundError:
-        for driver in (PTP750WDriver, QL820NWBDriver):
-            if driver.model_id == model:
-                return driver.dpi
-        raise
+    return ModelRegistry.find_by_model_id(model).dpi
 
 
-def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -> Capabilities:
+def _tape(
+    printer: Printer,
+    parsed: dict[str, Any],
+    captured: datetime | None,
+    runtime: PrinterRuntime | None = None,
+) -> Capabilities:
     try:
         dpi_x, dpi_y = _driver_dpi(printer.model)
     except ModelNotFoundError:
@@ -148,7 +144,10 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
         kind="tape",
         resolution_dpi=TapeResolution(x=dpi_x, y=dpi_y),
         media=media,
-        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
+        print_confirmation=PrintConfirmationRead.from_stored(
+            printer.print_confirmation,
+            live=runtime.send_state_for(printer.id) if runtime is not None else None,
+        ),
         trays=None,
         document_formats=None,
         captured_at=captured,
@@ -241,14 +240,17 @@ async def get_capabilities(
     # A reading nobody refreshes (stale) or nobody takes (unpolled) is unknown, not current.
     unpolled = runtime is None or not runtime.is_polled(printer_id)
     stale = row is not None and is_stale(
-        row.updated_at, datetime.now(UTC), get_settings().sse_probe_interval_s, backoff_of(parsed)
+        row.updated_at,
+        datetime.now(UTC),
+        get_settings().sse_probe_interval_s,
+        backoff_of(parsed, page=is_page_printer(printer)),
     )
     unknown = row is not None and (unpolled or stale)
     if unknown:
         parsed = {}
     caps = (
         await _page(session, printer, parsed, captured)
-        if printer.backend == "ipp"
-        else _tape(printer, parsed, captured)
+        if is_page_printer(printer)
+        else _tape(printer, parsed, captured, runtime)
     )
     return caps.model_copy(update={"stale": True}) if unknown else caps

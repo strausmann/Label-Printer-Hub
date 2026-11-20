@@ -9,6 +9,7 @@ import { Button } from "react-aria-components";
 import { useSession } from "../../app/session";
 import { PRIMARY_BUTTON } from "../../shell/SignIn";
 import { formatMm } from "../sheets/cellState";
+import { typeTitle } from "../sheets/typeLabel";
 import { SelectField, SwitchField, TextInput } from "../settings/controls";
 import { PANEL, SECONDARY_BUTTON } from "../ui";
 import { useSheetTypes, type SheetTypeRead } from "./api";
@@ -82,10 +83,8 @@ function TypeRow({ type, selected }: { type: SheetTypeRead; selected: boolean })
           selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:bg-sunken"
         }`}
       >
-        <span className="font-bold text-ink [overflow-wrap:anywhere]">{type.key}</span>
-        <span className="text-small text-ink-2 [overflow-wrap:anywhere]">
-          {[type.vendor, type.description].filter(Boolean).join(" · ")}
-        </span>
+        <span className="font-bold text-ink [overflow-wrap:anywhere]">{typeTitle(type)}</span>
+        <span className="font-mono text-small text-ink-2 [overflow-wrap:anywhere]">{type.key}</span>
         <span className="text-small text-ink-2">
           {g.page_size} · {mm(g.label_w)} × {mm(g.label_h)} · {plural(g.cols * g.rows, { one: "# label", other: "# labels" })}
         </span>
@@ -171,7 +170,7 @@ export function SheetArchivePage() {
               onSubmit={(e) => e.preventDefault()}
               className={`${PANEL} ${filtersOpen ? "flex" : "hidden"} flex-col gap-4 lg:flex`}
             >
-              <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} maxLength={MAX_QUERY} description={t`Key, description or product code`} />
+              <TextInput label={t`Search`} value={typed.q} onChange={typed.setQ} maxLength={MAX_QUERY} description={t`Vendor, key, description or product code`} />
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
                 <SelectField
                   label={t`Page size`}

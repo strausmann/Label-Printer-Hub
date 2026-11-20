@@ -28,6 +28,7 @@ job can be cancelled at the printer; the queue enforces the difference.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -89,6 +90,9 @@ class Job:
     started_at: datetime | None = None
     finished_at: datetime | None = None
     image_payload: bytes | None = field(default=None, repr=False)
+    # #168: a job recovered after a restart carries no picture yet; the worker draws it with
+    # this (PNG bytes) when it takes the job (``PrintQueue._materialise``). A retry copies it.
+    rerender: Callable[[], bytes] | None = field(default=None, repr=False)
     tape_mm: int | None = None
     # `options` carries heterogeneous per-job kwargs (e.g. parent_job_id from
     # retry, downstream printer flags). `Any` is contained to this field and

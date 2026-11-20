@@ -25,6 +25,8 @@ A secret belongs to the address it was saved with: when you change an app's addr
 
 `GET /api/v1/lookup/{app}/{id}` returns what a plugin found for an ID, without printing; `POST /api/v1/print` with a `lookup` object prints it in one step. See the [API reference](/developers/api/).
 
+A lookup answers `502` (`integration_lookup_failed`) when the app's answer is compressed although the hub asked for none (`Accept-Encoding: identity`); the log then says `the upstream answer is compressed although identity was requested`. This usually means a reverse proxy in front of the app that forces gzip. The hub refuses such an answer unread, because it cannot bound the size of the decoded body. Turn compression off for the app's address in that proxy.
+
 ## Calling Labelyard from another container
 
 Other containers on the same Docker network call the hub directly at `http://<service>:8000` (for example `http://labelyard:8000`) and authenticate with an API key in the `X-Label-Hub-Key` header. No reverse proxy and no SSO are involved.

@@ -686,7 +686,7 @@ jobs:
           set -euo pipefail
           asset="${IMAGE_REF##*/}-${TAG}.cdx.json"
           "$SYFT" "${IMAGE_REF}:${TAG}" --platform linux/amd64 --select-catalogers +sbom-cataloger -o "cyclonedx-json=${asset}"
-          jq -e '.components | map(.name) | (index("react") and index("brother-ql") and index("tini"))' "$asset"
+          jq -e '.components | map(.name) | (index("react") and any(test("^brother[-_.]ql[-_.]next$")) and index("tini"))' "$asset"
           echo "asset=${asset}" >> "$GITHUB_OUTPUT"
 
       - name: Upload the SBOM
