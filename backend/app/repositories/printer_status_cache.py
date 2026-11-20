@@ -56,7 +56,7 @@ async def upsert(
 
 
 # What a producer stores in ``last_error`` today: an exception class name, nothing else.
-_ERROR_CLASS_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ERROR_CLASS_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 async def drop_free_text_errors(session: AsyncSession) -> int:
@@ -75,7 +75,7 @@ async def drop_free_text_errors(session: AsyncSession) -> int:
         if not isinstance(parsed, dict):
             continue
         value = parsed.get("last_error")
-        if value is None or (isinstance(value, str) and _ERROR_CLASS_NAME.match(value)):
+        if value is None or (isinstance(value, str) and _ERROR_CLASS_NAME.fullmatch(value)):
             continue
         row.parsed = {k: v for k, v in parsed.items() if k != "last_error"}
         session.add(row)

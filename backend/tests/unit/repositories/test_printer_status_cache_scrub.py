@@ -58,3 +58,16 @@ async def test_a_bare_class_name_and_rows_without_an_error_are_kept(db_session) 
     assert kept.parsed == {"online": False, "last_error": "PrinterOfflineError"}
     assert clean.parsed == {"online": True}
     assert empty.parsed is None
+
+
+@pytest.mark.asyncio
+async def test_a_class_name_with_a_trailing_newline_is_not_a_bare_class_name(db_session) -> None:
+    """``$`` accepts one newline at the end; the check is for the whole value."""
+    row = await _seed(db_session, {"online": False, "last_error": "PrinterOfflineError\n"})
+
+    changed = await cache_repo.drop_free_text_errors(db_session)
+    await db_session.commit()
+    await db_session.refresh(row)
+
+    assert changed == 1
+    assert row.parsed == {"online": False}
