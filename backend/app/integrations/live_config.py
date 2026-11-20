@@ -39,15 +39,31 @@ class LookupResponseTooLargeError(LookupFailedError):
 async def _read_bounded(response: httpx.Response) -> bytes:
     """The body of ``response``, read in chunks and refused above the limit.
 
-    Counts the bytes actually received, so the limit holds without a ``Content-Length`` and
-    for a chunked or lying one. Works on a streaming response and on an already read one.
+    A streaming response is read with ``aiter_raw`` and every wire byte is counted, so the
+    limit holds without a ``Content-Length`` and for a chunked or lying one. The raw bytes are
+    the body bytes because lookups ask for ``Accept-Encoding: identity`` and an answer that
+    nevertheless carries a ``Content-Encoding`` is refused: httpx decodes a compressed chunk
+    in one call without an output limit (a 64 KiB gzip chunk inflates to ~64 MiB), so the
+    decoded size cannot be bounded after the fact. An already read response is checked by
+    its size.
     """
+    encoding = response.headers.get("content-encoding", "").strip().lower()
+    if encoding not in ("", "identity"):
+        raise LookupResponseTooLargeError("the upstream answer is compressed")
     if (declared := response.headers.get("content-length", "")).isdigit() and (
         int(declared) > MAX_LOOKUP_RESPONSE_BYTES
     ):
         raise LookupResponseTooLargeError("the upstream answer is too large")
+    try:
+        data = response.content
+    except httpx.ResponseNotRead:
+        pass
+    else:
+        if len(data) > MAX_LOOKUP_RESPONSE_BYTES:
+            raise LookupResponseTooLargeError("the upstream answer is too large")
+        return data
     body = bytearray()
-    async for chunk in response.aiter_bytes():
+    async for chunk in response.aiter_raw():
         body += chunk
         if len(body) > MAX_LOOKUP_RESPONSE_BYTES:
             raise LookupResponseTooLargeError("the upstream answer is too large")
@@ -147,7 +163,9 @@ class StoreBoundPlugin:
         slot, base, key = self._slot, self._base_url, self._api_key
         slot.users += 1
         try:
-            request = slot.client.build_request("GET", f"{base}{path}", headers=headers(key))
+            request = slot.client.build_request(
+                "GET", f"{base}{path}", headers={**headers(key), "Accept-Encoding": "identity"}
+            )
             streamed = await slot.client.send(request, stream=True)
             try:
                 body = await _read_bounded(streamed)

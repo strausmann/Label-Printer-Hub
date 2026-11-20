@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import tracemalloc
+import zlib
 from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 import httpx
 import pytest
+from app.api.routes.lookup import _answered
 from app.integrations.grocy.plugin import GrocyPlugin
 from app.integrations.live_config import (
     MAX_LOOKUP_RESPONSE_BYTES,
@@ -25,6 +28,7 @@ from app.schemas.grocy_object import GrocyBatteryResult, GrocyChoreResult
 from app.schemas.label_data import LabelData
 from app.services import lookup_service
 from app.services.lookup_service import AppLookupService, LookupFailedError
+from fastapi import HTTPException
 
 from tests.unit.integrations._bound import bound
 
@@ -73,16 +77,21 @@ _CASES: list[tuple[type[StoreBoundPlugin], str]] = [
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("plugin_cls", "identifier"), _CASES, ids=lambda v: str(v))
 async def test_lookup_answer_over_one_mib_maps_to_integration_lookup_failed(
-    plugin_cls: type[StoreBoundPlugin], identifier: str
+    plugin_cls: type[StoreBoundPlugin], identifier: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=_json_of_size(MAX_LOOKUP_RESPONSE_BYTES + 1))
 
     plugin = bound(plugin_cls)
     _serve(plugin, handler)
-    with pytest.raises(LookupResponseTooLargeError):
-        await plugin.lookup(identifier)  # type: ignore[attr-defined]
-    # The service maps it to the umbrella type the REST layer answers as 502.
+    monkeypatch.setattr(
+        "app.integrations.registry.IntegrationRegistry.get", classmethod(lambda _c, _n: plugin)
+    )
+    # Through the service and the route's error mapping: the 502 the API answers.
+    with pytest.raises(HTTPException) as info:
+        await _answered(AppLookupService().lookup(plugin.name, identifier))
+    assert info.value.status_code == 502
+    assert info.value.detail["error_code"] == "integration_lookup_failed"  # type: ignore[index]
     assert issubclass(LookupResponseTooLargeError, LookupFailedError)
 
 
@@ -117,6 +126,52 @@ async def test_declared_oversize_is_refused_before_the_body_is_read() -> None:
     with pytest.raises(LookupResponseTooLargeError):
         await plugin.lookup("7")
     assert read == 0
+
+
+def _gzip_bomb(inflated: int) -> bytes:
+    """A gzip stream that inflates to ``inflated`` zero bytes (about 0.1 % of that on the wire)."""
+    packer = zlib.compressobj(9, zlib.DEFLATED, 31)
+    out = bytearray()
+    block = b"\0" * (1 << 20)
+    for _ in range(inflated >> 20):
+        out += packer.compress(block)
+    out += packer.flush()
+    return bytes(out)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("plugin_cls", "identifier"), _CASES, ids=lambda v: str(v))
+async def test_compressed_answer_is_refused_without_inflating_it(
+    plugin_cls: type[StoreBoundPlugin], identifier: str
+) -> None:
+    """A 64 KiB gzip chunk inflates to ~64 MiB in one httpx decode call, so the 1 MiB limit
+    cannot be enforced on decoded bytes: lookups ask for identity and refuse anything else."""
+    bomb = _gzip_bomb(100 << 20)
+    assert len(bomb) < MAX_LOOKUP_RESPONSE_BYTES  # small on the wire, huge when inflated
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("accept-encoding", ""))
+
+        # A stream, not bytes: httpx.Response(content=...) would inflate it right here.
+        async def wire() -> AsyncIterator[bytes]:
+            for i in range(0, len(bomb), 65_536):
+                yield bomb[i : i + 65_536]
+
+        return httpx.Response(200, headers={"content-encoding": "gzip"}, content=wire())
+
+    plugin = bound(plugin_cls)
+    _serve(plugin, handler)
+    tracemalloc.start()
+    try:
+        with pytest.raises(LookupFailedError):
+            await plugin.lookup(identifier)  # type: ignore[attr-defined]
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert seen
+    assert set(seen) == {"identity"}
+    assert peak < 4 << 20, f"peak allocation {peak} bytes: the answer was inflated"
 
 
 @pytest.mark.asyncio
