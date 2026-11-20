@@ -62,11 +62,10 @@ class JobStore(Protocol):
     async def mark_printing(self, job_id: UUID) -> bool:
         """Transition QUEUED -> PRINTING. Called by worker when it picks up the job.
 
-        Returns True when the worker may print: the transition happened, or the
-        store does not know the job at all (callers may race against eviction, and
-        a job submitted without a row has nothing that could have cancelled it).
-        Returns False when the row exists but is no longer QUEUED (e.g. cancelled
-        through the API): the worker must NOT print such a job.
+        Returns True when the worker may print: the transition happened.
+        Returns False when the row is no longer QUEUED (e.g. cancelled through the
+        API) or does not exist (cancelled, then removed): the worker must NOT print
+        such a job.
 
         Must NOT raise on missing jobs.
         """

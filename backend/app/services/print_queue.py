@@ -2330,7 +2330,13 @@ class PrintQueue:
         return True
 
     async def retry_job(self, job_id: str) -> str | None:
-        """Submit a fresh copy of a FAILED job. Returns new job id or None."""
+        """Submit a fresh copy of a FAILED job. Returns new job id or None.
+
+        Not used by the API: its retry routes write the new row first and hand it to
+        :meth:`enqueue_persisted`. The copy here is queue-only, so a store that keeps rows
+        vetoes it at ``mark_printing`` (a missing row never prints); it serves a queue without
+        a store.
+        """
         original = self._jobs[job_id]
         if original.state != JobState.FAILED:
             return None

@@ -268,4 +268,18 @@ async def test_sqlite_store_mark_printing_reports_whether_it_transitioned(
     refused = await store.get(cancelled.id)
     assert refused is not None
     assert refused.state == JobState.CANCELLED.value
-    assert await store.mark_printing(uuid4()) is True  # unknown row: no veto
+
+
+@pytest.mark.asyncio
+async def test_sqlite_store_mark_printing_vetoes_a_job_whose_row_is_gone(
+    async_session_factory, caplog: pytest.LogCaptureFixture
+) -> None:  # type: ignore[no-untyped-def]
+    """A cancelled job whose row was removed meanwhile (retention, cleanup) must not print."""
+    store = SQLiteJobStore(async_session_factory)
+    gone = uuid4()
+
+    with caplog.at_level(logging.WARNING, logger="app.services.job_store_sqlite"):
+        assert await store.mark_printing(gone) is False
+
+    assert any(str(gone) in r.message and "missing" in r.message for r in caplog.records)
+    assert await store.get(gone) is None  # the veto wrote nothing

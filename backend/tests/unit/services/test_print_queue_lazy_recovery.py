@@ -336,8 +336,15 @@ async def test_retry_of_a_recovered_job_renders(store: JobStore, renders: _Rende
         await queue.resume_printer(_TAPE_ID)
         # The picture of a failed label may be gone (``_drop_pictures``): the retry draws it.
         queue._jobs[str(ids[0])].image_payload = None
-        retry_id = await queue.retry_job(str(ids[0]))
-        assert retry_id is not None
+        # The retry route's way: a new row first, then the queue takes it. (A queue-only copy
+        # without a row is vetoed by the store, as a cancelled-then-removed job is.)
+        original = await store.get(ids[0])
+        assert original is not None
+        retried = DbJob(
+            printer_id=_TAPE_ID, payload={**original.payload, "retry_of": str(original.id)}
+        )
+        await store.save_queued(retried)
+        await queue.enqueue_persisted(retried)
         await _until(lambda: fake.printed == ["r1"])
         assert fake.printed_widths == [101]
         assert renders.calls == ["r1", "r1"]
