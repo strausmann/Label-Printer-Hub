@@ -9,10 +9,15 @@ import { BOOTSTRAP, MAIN } from "./env";
 export const mainKey = () => readFileSync(MAIN.keyFile, "utf8").trim();
 export const bootstrapKey = () => readFileSync(BOOTSTRAP.keyFile, "utf8").trim();
 
-/** Fills the sign-in screen and waits until the shell is there. */
-export async function signInWith(page: Page, key: string): Promise<void> {
+/**
+ * Fills the sign-in screen and waits for its outcome: `"signed-in"` (the default) until the sign-in form is gone,
+ * `"refused"` until the sign-in alert shows. Returning at the click leaves the next step racing the navigation (#355).
+ */
+export async function signInWith(page: Page, key: string, { expect: outcome = "signed-in" }: { expect?: "signed-in" | "refused" } = {}): Promise<void> {
   await page.getByLabel("API key").fill(key);
   await page.getByRole("button", { name: "Sign in" }).click();
+  if (outcome === "refused") await expect(page.getByRole("alert")).toBeVisible();
+  else await expect(page.getByLabel("API key")).toHaveCount(0);
 }
 
 /** What `GET /__e2e/page-printer` answers: the fake's address and what it currently reports. */
