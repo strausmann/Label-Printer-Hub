@@ -93,8 +93,50 @@ describe("cell states are never colour alone", () => {
     render(<SheetGrid geometry={L4736} cells={[mk(1, "free"), mk(2, "new"), mk(3, "used")]} mode="view" label="g" containerWidth={360} />);
     expect(cell(1).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-dasharray");
     expect(cell(2).querySelector("text")).toHaveAttribute("font-weight", "800");
-    expect(cell(3).querySelector("text")).toHaveAttribute("font-weight", "600");
+    expect(cell(3).querySelector("text")).toHaveAttribute("font-weight", "500");
     expect(cell(2).querySelector('[data-shape="cell"]')).not.toHaveAttribute("stroke-dasharray");
+  });
+
+  it("cell numbers use the cell-number token", () => {
+    render(<SheetGrid geometry={L4736} cells={[mk(2, "new"), mk(3, "used")]} mode="view" label="g" containerWidth={360} />);
+    for (const n of [1, 3]) {
+      const text = cell(n).querySelector("text");
+      expect(text).toHaveClass("fill-cell-number");
+      expect(text).toHaveAttribute("font-weight", "500");
+    }
+    // a new cell keeps its bold accent number on the accent fill
+    expect(cell(2).querySelector("text")).toHaveClass("fill-accent-ink");
+    expect(cell(2).querySelector("text")).toHaveAttribute("font-weight", "800");
+  });
+
+  it("the legend explains the cell numbers", () => {
+    render(<SheetLegend />);
+    expect(screen.getByText("1 = cell number (not printed)")).toBeInTheDocument();
+  });
+
+  it.each([false, true])("reserved and new cells differ in fill (overlay %s)", (overlay) => {
+    const { container } = render(
+      <SheetGrid geometry={L4736} cells={[mk(1, "reserved"), mk(2, "new")]} mode="view" label="g" containerWidth={360}
+        overlayPng={overlay ? "data:image/png;base64,AAAA" : undefined} />,
+    );
+    const reserved = cell(1).querySelector('[data-shape="cell"]');
+    const created = cell(2).querySelector('[data-shape="cell"]');
+    expect(reserved).toHaveAttribute("fill", "url(#reserved-hatch)");
+    expect(container.querySelector("pattern#reserved-hatch")).not.toBeNull();
+    expect(created).not.toHaveAttribute("fill", "url(#reserved-hatch)");
+    // new: solid on the plain grid; over a rendered page it stays unfilled (the page must stay readable)
+    expect(created).toHaveClass(overlay ? "fill-transparent" : "fill-accent");
+  });
+
+  it("no class attribute ends with a space", () => {
+    const { container } = render(
+      <div>
+        <SheetGrid geometry={L4736} cells={[mk(1, "reserved"), mk(2, "new"), mk(3, "used")]} mode="select" label="g" containerWidth={360} />
+        <SheetLegend />
+      </div>,
+    );
+    const bad = [...container.querySelectorAll("[class]")].map((el) => el.getAttribute("class")!).filter((c) => c !== c.trim());
+    expect(bad).toEqual([]);
   });
 
   it("the legend names every state with its marker", () => {
@@ -148,7 +190,12 @@ describe("overlay", () => {
     );
     const shapes = [...container.querySelectorAll('[data-shape="cell"]')];
     expect(shapes).toHaveLength(48);
-    for (const shape of shapes) expect(shape.getAttribute("class")).toContain("fill-transparent");
+    // the hatch of a reserved cell is lines only over a page: no ground, so the page stays readable
+    for (const shape of shapes) {
+      if (shape.closest("[data-state]")?.getAttribute("data-state") === "reserved") expect(shape).toHaveAttribute("fill", "url(#reserved-hatch)");
+      else expect(shape.getAttribute("class")).toContain("fill-transparent");
+    }
+    expect(container.querySelector("pattern#reserved-hatch rect")).toBeNull();
     // the hatch of used cells is thinned, and a new cell is told apart by a thick outline
     expect(cell(2).querySelector('[data-marker="hatch"]')).toHaveAttribute("opacity", "0.4");
     expect(cell(5).querySelector('[data-shape="cell"]')).toHaveAttribute("stroke-width", "1");

@@ -509,6 +509,10 @@ msgstr "+ down = the ink lies below the cut, − down = above it."
 msgid "1 (top left)"
 msgstr "1 (top left)"
 
+#: src/features/sheets/SheetGrid.tsx
+msgid "1 = cell number (not printed)"
+msgstr "1 = cell number (not printed)"
+
 #: src/features/sheets/backSide/LoadingPicture.tsx
 msgid "1 Turn"
 msgstr "1 Turn"

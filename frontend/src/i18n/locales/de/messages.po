@@ -509,6 +509,10 @@ msgstr "+ abwärts = die Farbe liegt unterhalb des Schnitts, − abwärts = dar�
 msgid "1 (top left)"
 msgstr "1 (oben links)"
 
+#: src/features/sheets/SheetGrid.tsx
+msgid "1 = cell number (not printed)"
+msgstr "1 = Zellennummer (wird nicht gedruckt)"
+
 #: src/features/sheets/backSide/LoadingPicture.tsx
 msgid "1 Turn"
 msgstr "1 Umdrehen"

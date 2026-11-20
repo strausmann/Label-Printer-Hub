@@ -43,6 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   --accent: var(--amber-500);
   --accent-ink: #2B1D06;
   --accent-soft: var(--amber-100);
+  --cell-number: #4F6490;
   --link: var(--stamp-600);
   --ok: var(--green-600);
   --warn: var(--orange-600);
@@ -80,6 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   --accent: #E2A445;
   --accent-ink: #241703;
   --accent-soft: #3A2D16;
+  --cell-number: #93A6CC;
   --link: #8FAEE6;
   --ok: #6CC58F;
   --warn: #E39A4F;
@@ -100,6 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     --accent: #E2A445;
     --accent-ink: #241703;
     --accent-soft: #3A2D16;
+    --cell-number: #93A6CC;
     --link: #8FAEE6;
     --ok: #6CC58F;
     --warn: #E39A4F;

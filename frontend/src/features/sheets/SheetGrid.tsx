@@ -46,7 +46,7 @@ function useContainerWidth(ref: RefObject<HTMLElement | null>, injected?: number
 const SHAPE_CLASS: Record<GridCellState, string> = {
   free: "fill-transparent stroke-line-strong",
   used: "fill-sunken stroke-ink-3",
-  reserved: "fill-accent-soft stroke-accent",
+  reserved: "stroke-accent", // fill: the hatch, set as an attribute
   unconfirmed: "fill-surface stroke-warn",
   new: "fill-accent stroke-accent-ink",
   skipped: "fill-sunken stroke-ink-3",
@@ -55,7 +55,7 @@ const SHAPE_CLASS: Record<GridCellState, string> = {
 const OVERLAY_CLASS: Record<GridCellState, string> = {
   free: "fill-transparent stroke-line-strong",
   used: "fill-transparent stroke-ink-3",
-  reserved: "fill-transparent stroke-accent",
+  reserved: "stroke-accent", // fill: the hatch, lines only
   unconfirmed: "fill-transparent stroke-warn",
   new: "fill-transparent stroke-accent",
   skipped: "fill-transparent stroke-ink-3",
@@ -63,11 +63,22 @@ const OVERLAY_CLASS: Record<GridCellState, string> = {
 const STROKE_W: Record<GridCellState, number> = { free: 0.35, used: 0.3, reserved: 0.4, unconfirmed: 0.8, new: 0.4, skipped: 0.3 };
 const DASH: Partial<Record<GridCellState, string>> = { free: "1.4 1", skipped: "1.2 0.9" };
 
-function StatePatterns({ id }: { id: string }) {
+/** The hatch of a reserved cell. Grids share this id: every grid defines the same pattern. */
+const RESERVED_HATCH_ID = "reserved-hatch";
+
+/**
+ * `id`: the hatch of used cells (45 degrees, ink). `reservedId`: the hatch of reserved cells
+ * (the other way round, accent on a soft ground; over a rendered page the ground is left out).
+ */
+function StatePatterns({ id, reservedId = RESERVED_HATCH_ID, overlay }: { id: string; reservedId?: string; overlay?: boolean }) {
   return (
     <defs>
       <pattern id={id} patternUnits="userSpaceOnUse" width="1.8" height="1.8" patternTransform="rotate(45)">
         <line x1="0" y1="0" x2="0" y2="1.8" className="stroke-ink-3" strokeWidth="0.5" />
+      </pattern>
+      <pattern id={reservedId} patternUnits="userSpaceOnUse" width="1.6" height="1.6" patternTransform="rotate(-45)">
+        {!overlay && <rect width="1.6" height="1.6" className="fill-accent-soft" />}
+        <line x1="0" y1="0" x2="0" y2="1.6" className="stroke-accent" strokeWidth="0.55" />
       </pattern>
     </defs>
   );
@@ -82,7 +93,9 @@ interface BodyProps {
   round: boolean;
   radius: number;
   patternId: string;
-  /** Printed in the cell when set. */
+  /** The hatch pattern of reserved cells. */
+  reservedId?: string;
+  /** The cell number, an aid for choosing cells (not printed), when set. */
   number?: number;
   numberMm?: number;
   isId?: boolean;
@@ -93,7 +106,7 @@ interface BodyProps {
 }
 
 /** One cell, drawn in mm: the shape of its state plus the non-colour marker, number and flags. */
-function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberMm = 3.5, isId, hwMargin, hoverable, overlay }: BodyProps) {
+function CellBody({ state, x, y, w, h, round, radius, patternId, reservedId = RESERVED_HATCH_ID, number, numberMm = 3.5, isId, hwMargin, hoverable, overlay }: BodyProps) {
   const cx = x + w / 2;
   const cy = y + h / 2;
   const r = w / 2;
@@ -103,7 +116,8 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
   const gy = round ? cy + r * 0.5 : cy;
   const shapeProps = {
     "data-shape": "cell",
-    className: `${overlay ? OVERLAY_CLASS[state] : SHAPE_CLASS[state]} ${hoverable ? "group-hover/cell:stroke-link" : ""}`,
+    className: [overlay ? OVERLAY_CLASS[state] : SHAPE_CLASS[state], hoverable ? "group-hover/cell:stroke-link" : ""].filter(Boolean).join(" "),
+    fill: state === "reserved" ? `url(#${reservedId})` : undefined,
     strokeWidth: overlay && state === "new" ? 1 : STROKE_W[state],
     strokeDasharray: DASH[state],
     "data-marker": state === "free" ? "free" : state === "new" ? "filled" : undefined,
@@ -162,10 +176,10 @@ function CellBody({ state, x, y, w, h, round, radius, patternId, number, numberM
           x={round ? cx : x + 1.6}
           y={round ? cy - (isId ? r * 0.15 : 0) : cy}
           fontSize={numberMm}
-          fontWeight={state === "new" ? 800 : 600}
+          fontWeight={state === "new" ? 800 : 500}
           textAnchor={round ? "middle" : "start"}
           dominantBaseline="central"
-          className={`select-none ${state === "new" && !overlay ? "fill-accent-ink" : "fill-ink-2"} ${overlay ? "stroke-surface" : state === "used" ? "stroke-sunken" : "stroke-transparent"}`}
+          className={`select-none ${state === "new" && !overlay ? "fill-accent-ink" : "fill-cell-number"} ${overlay ? "stroke-surface" : state === "used" ? "stroke-sunken" : "stroke-transparent"}`}
           strokeWidth={overlay || state === "used" ? 0.7 : 0}
           paintOrder="stroke"
           pointerEvents="none"
@@ -315,7 +329,7 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, onInspect, overl
         viewBox={`0 0 ${layout.pageW} ${layout.pageH}`}
         className={`block select-none ${interactive ? "touch-manipulation" : ""}`}
       >
-        <StatePatterns id={patternId} />
+        <StatePatterns id={patternId} overlay={!!overlayPng} />
         <rect width={layout.pageW} height={layout.pageH} className="fill-surface stroke-line-strong" strokeWidth={0.4} />
         {overlayPng && <image href={overlayPng} x="0" y="0" width={layout.pageW} height={layout.pageH} preserveAspectRatio="none" />}
         {rows.map((row) => (
@@ -340,10 +354,10 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, onInspect, overl
                   }}
                   onKeyDown={(e) => onKeyDown(e, n, data)}
                   onClick={() => toggle(data)}
-                  className={`group/cell outline-none ${enabled ? "cursor-pointer" : ""}`}
+                  className={enabled ? "group/cell outline-none cursor-pointer" : "group/cell outline-none"}
                 >
                   {/* One accessible name: the aria-label. A <title> child would be announced as a second description. */}
-                  <g className={`${enabled ? "press [transform-box:fill-box] origin-center" : ""} `}>
+                  <g className={enabled ? "press [transform-box:fill-box] origin-center" : undefined}>
                     <CellBody
                       state={data.state}
                       x={rect.x}
@@ -390,21 +404,24 @@ export function SheetGrid({ geometry: g, cells, mode, onToggle, onInspect, overl
 
 /** The six states with their markers and, when given, how many cells are in each. */
 export function SheetLegend({ counts }: { counts?: Partial<Record<GridCellState, number>> }) {
-  const { i18n } = useLingui();
+  const { i18n, t: tm } = useLingui();
   const patternId = `hatch-${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   const t: Translate = (d) => i18n._(d);
   return (
-    <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-small">
-      {CELL_STATES.map((state) => (
-        <li key={state} className="flex items-center gap-2">
-          <svg width="28" height="18" viewBox="0 0 14 9" aria-hidden="true" className="block shrink-0">
-            <StatePatterns id={`${patternId}-${state}`} />
-            <CellBody state={state} x={0.5} y={0.5} w={13} h={8} round={false} radius={1.2} patternId={`${patternId}-${state}`} />
-          </svg>
-          <span>{cellStateWord(state, t)}</span>
-          {counts?.[state] !== undefined && <span className="font-bold tabular-nums">{counts[state]}</span>}
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-2">
+      <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-2 p-0 text-small">
+        {CELL_STATES.map((state) => (
+          <li key={state} className="flex items-center gap-2">
+            <svg width="28" height="18" viewBox="0 0 14 9" aria-hidden="true" className="block shrink-0">
+              <StatePatterns id={`${patternId}-${state}`} reservedId={`${patternId}-${state}-reserved`} />
+              <CellBody state={state} x={0.5} y={0.5} w={13} h={8} round={false} radius={1.2} patternId={`${patternId}-${state}`} reservedId={`${patternId}-${state}-reserved`} />
+            </svg>
+            <span>{cellStateWord(state, t)}</span>
+            {counts?.[state] !== undefined && <span className="font-bold tabular-nums">{counts[state]}</span>}
+          </li>
+        ))}
+      </ul>
+    <p className="m-0 text-small text-cell-number">{tm`1 = cell number (not printed)`}</p>
+    </div>
   );
 }
