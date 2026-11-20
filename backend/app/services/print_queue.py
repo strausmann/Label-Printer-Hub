@@ -2509,10 +2509,10 @@ class PrintQueue:
     async def enqueue_persisted(self, db_job: DbJob) -> None:
         """Hand an already-persisted QUEUED row to the worker (used by retry).
 
-        The row is re-rendered from its stored payload exactly like startup
-        recovery does.  Idempotent: a row the queue already tracks is not
-        enqueued a second time, so neither a repeated call nor a later
-        ``start()`` recovery can print it twice.
+        The row is re-rendered from its stored payload at once (startup
+        recovery defers the render to the worker, #168).  Idempotent: a row
+        the queue already tracks is not enqueued a second time, so neither a
+        repeated call nor a later ``start()`` recovery can print it twice.
 
         Raises:
             KeyError: the row's printer is not known to the queue.
