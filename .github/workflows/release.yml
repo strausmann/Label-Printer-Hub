@@ -247,6 +247,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
       - name: Download the SBOM
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -276,6 +281,46 @@ jobs:
           gh release upload "v${VERSION}" ./*.cdx.json --clobber
           count=$(gh release view "v${VERSION}" --json assets --jq '[.assets[].name | select(endswith(".cdx.json"))] | length')
           test "$count" -eq 1
+
+      # Appends a "Licence changes" section to the draft's notes: the difference of
+      # licences/snapshot.json between the previous tag and this one. Nothing is added when no
+      # licence moved, and a rerun does not add it twice. A draft is still editable.
+      - name: Add the licence changes to the release notes
+        env:
+          VERSION: ${{ needs.release.outputs.new-release-version }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::Invalid release version: not a semantic version"
+            exit 1
+          fi
+          VERSION="${VERSION#v}"
+          work="$RUNNER_TEMP/licence-notes"
+          mkdir -p "$work"
+          prev=$(git describe --tags --abbrev=0 "v${VERSION}^" 2> /dev/null || true)
+          if ! git show "v${VERSION}:licences/snapshot.json" > "$work/new.json" 2> /dev/null; then
+            echo "::notice::v${VERSION} carries no licences/snapshot.json; no licence section"
+            exit 0
+          fi
+          if [ -n "$prev" ] && git show "${prev}:licences/snapshot.json" > "$work/old.json" 2> /dev/null; then
+            python3 scripts/licence_snapshot.py notes --old "$work/old.json" --new "$work/new.json" > "$work/section.md"
+          else
+            : > "$work/section.md"
+          fi
+          if [ ! -s "$work/section.md" ]; then
+            echo "No licence changes since ${prev:-the first release}"
+            exit 0
+          fi
+          gh release view "v${VERSION}" --json body --jq .body > "$work/body.md"
+          if grep -q '^## Licence changes' "$work/body.md"; then
+            echo "The notes already carry the licence changes"
+            exit 0
+          fi
+          { cat "$work/body.md"; echo; cat "$work/section.md"; } > "$work/notes.md"
+          gh release edit "v${VERSION}" --notes-file "$work/notes.md"
 
   # Publishes the draft once the images and the SBOM asset are in place. Runs
   # only when every job before it succeeded (no always()), so a failed image or
