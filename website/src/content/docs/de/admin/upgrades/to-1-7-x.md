@@ -17,6 +17,8 @@ Die Adresse eines Banddruckers ist Verbindungsdetail, wie die Adresse eines Seit
 
 Liest ein Skript mit einem Lese- oder Druckschlüssel den Host eines Banddruckers, nimm dafür einen Admin-Schlüssel.
 
+Der erste Start von 1.7.x entfernt ein `last_error` im gespeicherten Druckerstatus, das nicht nur aus einem Klassennamen besteht (die nächste Abfrage des Druckers schreibt den Klassennamen). Das `error` von Bandaufträgen, die vor dem Upgrade fehlgeschlagen sind, wird nicht umgeschrieben; es behält den alten Text samt Adresse, für den Schlüssel, dem der Auftrag gehört, und für Admin-Schlüssel.
+
 ## Grenzen für Anfragegröße und Feldlänge
 
 Anfragekörper über 2 MiB werden für jede Route und vor der Anmeldung (eine angegebene `Content-Length` vor dem Lesen des Körpers, ein Körper ohne Angabe sobald er 2 MiB überschreitet) mit `413` und dem Fehlercode `body_too_large` abgewiesen. Webhook-IDs und Ereignistypen über 64 Zeichen (`spool_id`, `product_id`, `type`) und Lookup-Kennungen über 120 Zeichen werden mit `422` abgewiesen, ebenso ein Lookup-`app` über 32 Zeichen. Im normalen Betrieb sendet nichts Werte dieser Größe. Passende Proxy-Grenzen: [Größe des Anfragekörpers](/de/install/reverse-proxy/#größe-des-anfragekörpers).

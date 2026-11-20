@@ -147,6 +147,7 @@ from app.observability.redact_query import install_query_token_redaction
 from app.page_render.pdf import register_pdf_font
 from app.page_render.test_page import render_test_page
 from app.printer_models.registry import ModelRegistry
+from app.repositories import printer_status_cache as printer_status_cache_repo
 from app.repositories import printers as printers_repo
 from app.schemas.readiness import ReadinessResponse
 from app.services.cleanup_task import CleanupTask
@@ -337,6 +338,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Enabled printers in creation order: the order the back-compat fields use.
         _db_printers = await printers_repo.list_all(s)
         await ensure_printer_state(s)
+        # 1.7.0 stored the full error text, with the tape printer's address, in the status
+        # cache; clear it before the first request can read it (the next probe rewrites it).
+        _scrubbed = await printer_status_cache_repo.drop_free_text_errors(s)
+        if _scrubbed:
+            _log.info("Cleared %d free-text status error(s) left by an older hub", _scrubbed)
         await s.commit()
         # D4/D5: runtime settings (env-locked values, encrypted secrets).
         settings_store = SettingsStore()

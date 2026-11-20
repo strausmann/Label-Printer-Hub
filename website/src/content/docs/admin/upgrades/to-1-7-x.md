@@ -17,6 +17,8 @@ A tape printer's address is connection detail, like the address of a page printe
 
 If a script with a read or print key reads the host of a tape printer, use an admin key for it.
 
+The first start of 1.7.x clears a `last_error` in the stored printer status that is not a bare class name (the next probe of the printer writes the class name). The `error` of tape jobs that failed before the upgrade is not rewritten; it keeps the old text, including the address, for the key that owns the job and for admin keys.
+
 ## Limits on request size and field length
 
 Request bodies above 2 MiB are refused with `413` and the error code `body_too_large`, for every route and before authentication (a declared `Content-Length` before the body is read, a body without one as soon as it passes 2 MiB). Webhook ids and event types above 64 characters (`spool_id`, `product_id`, `type`) and lookup identifiers above 120 characters are refused with `422`; a lookup `app` above 32 characters too. Nothing sends values of that size in normal use. See [request body size](/install/reverse-proxy/#request-body-size) for the matching proxy limits.
