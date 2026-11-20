@@ -580,7 +580,7 @@ async def get_printer_tape(
     runtime: RuntimeDep = None,
 ) -> TapeRead:
     """Return the tape loaded in a polled, reachable tape printer."""
-    await _get_printer_or_404(session, printer_id)
+    printer = await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
 
@@ -593,7 +593,7 @@ async def get_printer_tape(
 
     parsed = cache.parsed
     interval_s = get_settings().sse_probe_interval_s
-    backoff_s = backoff_of(parsed)
+    backoff_s = backoff_of(parsed, page=is_page_printer(printer))
     if runtime is None or not runtime.is_polled(printer_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not polled")
     if is_stale(cache.updated_at, datetime.now(UTC), interval_s, backoff_s):

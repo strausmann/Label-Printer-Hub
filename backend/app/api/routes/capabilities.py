@@ -240,7 +240,10 @@ async def get_capabilities(
     # A reading nobody refreshes (stale) or nobody takes (unpolled) is unknown, not current.
     unpolled = runtime is None or not runtime.is_polled(printer_id)
     stale = row is not None and is_stale(
-        row.updated_at, datetime.now(UTC), get_settings().sse_probe_interval_s, backoff_of(parsed)
+        row.updated_at,
+        datetime.now(UTC),
+        get_settings().sse_probe_interval_s,
+        backoff_of(parsed, page=is_page_printer(printer)),
     )
     unknown = row is not None and (unpolled or stale)
     if unknown:

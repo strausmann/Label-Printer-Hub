@@ -153,7 +153,9 @@ async def plan_page_test_print(
     if row is None or row.captured_at is None:
         raise offline
     parsed = row.parsed or {}
-    if is_stale(row.updated_at, now or datetime.now(UTC), probe_interval_s, backoff_of(parsed)):
+    if is_stale(
+        row.updated_at, now or datetime.now(UTC), probe_interval_s, backoff_of(parsed, page=True)
+    ):
         raise TestPrintRefusal(
             409, "printer-offline", "The printer's status is out of date", "No recent probe"
         )

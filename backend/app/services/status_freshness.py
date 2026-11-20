@@ -45,7 +45,9 @@ def backoff_of(parsed: dict[str, Any] | None, *, page: bool | None = None) -> fl
     """The longest write gap of the producer behind a cache row: the IPP backoff for page rows.
 
     ``page`` is the printer row's verdict (``is_page_printer``) and wins when given; without it
-    the cache row's own ``kind`` decides (a reader that has no printer row at hand).
+    the cache row's own ``kind`` decides (a reader that has no printer row at hand). The status,
+    capabilities and tape routes and the test print pass the printer's verdict; the SSE snapshot
+    (``sse_snapshot``) has only the cache row and keeps using its ``kind``.
     """
     if page is None:
         page = (parsed or {}).get("kind") == "page"
