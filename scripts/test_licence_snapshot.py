@@ -89,20 +89,20 @@ class CheckTest(SnapshotCase):
         changed = [dict(BACKEND[0], license="Apache-2.0"), BACKEND[1]]
         code, out, _ = self.run_cli("check", *self.lists(changed, FRONTEND))
         self.assertEqual(code, 1)
-        self.assertEqual(out.strip().splitlines(), ["packbits: MIT → Apache-2.0"])
+        self.assertEqual(out.splitlines(), ["  - packbits: MIT → Apache-2.0"])
 
     def test_a_new_package_is_reported(self) -> None:
         self.write_snapshot(SNAPSHOT)
         extra = [*BACKEND, {"name": "newpkg", "version": "1.0", "license": "BSD-3-Clause"}]
         code, out, _ = self.run_cli("check", *self.lists(extra, FRONTEND))
         self.assertEqual(code, 1)
-        self.assertEqual(out.strip().splitlines(), ["newpkg: (new) → BSD-3-Clause"])
+        self.assertEqual(out.splitlines(), ["  - newpkg: (new) → BSD-3-Clause"])
 
     def test_a_removed_package_is_reported(self) -> None:
         self.write_snapshot(SNAPSHOT)
         code, out, _ = self.run_cli("check", *self.lists(BACKEND[:1], FRONTEND))
         self.assertEqual(code, 1)
-        self.assertEqual(out.strip().splitlines(), ["brother-ql-next: GPL-3.0-only → (removed)"])
+        self.assertEqual(out.splitlines(), ["  - brother-ql-next: GPL-3.0-only → (removed)"])
 
     def test_versions_of_one_package_with_different_licences_are_joined(self) -> None:
         frontend = [
@@ -207,6 +207,14 @@ class HostileNameTest(SnapshotCase):
     def test_a_leading_double_colon_is_rejected(self) -> None:
         self.check_rejected({"name": "::add-mask::x", "version": "1", "license": "MIT"})
 
+    def test_leading_whitespace_before_a_command_is_rejected(self) -> None:
+        # The runner trims leading whitespace before it looks for "::", so " ::error::x" is a
+        # command even though the name does not start with "::".
+        for prefix in (" ", "  ", "\u2003", "\u00a0"):
+            with self.subTest(prefix=repr(prefix)):
+                name = f"{prefix}::error::x"
+                self.check_rejected({"name": name, "version": "1", "license": "MIT"})
+
     def test_control_characters_in_a_name_are_rejected(self) -> None:
         for char in ("\r", "\n", "\x00", "\x1b", "\x7f", "\u2028", "\x85"):
             with self.subTest(char=repr(char)):
@@ -222,6 +230,17 @@ class HostileNameTest(SnapshotCase):
         self.assertEqual(code, 2)
         self.assertEqual(out, "")
         self.assertIn("error:", err)
+
+    def test_no_line_on_stdout_starts_with_a_package_name(self) -> None:
+        # Even a name the vetting lets through must sit behind a fixed prefix that the
+        # runner's trimming cannot reduce to "::".
+        self.write_snapshot({})
+        entries = [{"name": n, "version": "1", "license": "MIT"} for n in ("a", "pkg::x", "@s/p")]
+        code, out, _ = self.run_cli("check", *self.lists(entries, []))
+        self.assertEqual(code, 1)
+        for line in out.splitlines():
+            self.assertTrue(line.startswith("  - "), line)
+            self.assertFalse(line.strip().startswith("::"), line)
 
     def test_a_double_colon_inside_a_name_is_fine(self) -> None:
         # Only a leading "::" can start a workflow command.
@@ -269,7 +288,7 @@ class MarkdownTest(SnapshotCase):
         self.assertNotRegex(text, r"(?m)^- @")
         self.assertIn("`pkg[x](http://evil)`", text)
         # stdout stays plain: it is read by humans and by no markdown renderer.
-        self.assertIn("@babel/types: (new) → MIT", out)
+        self.assertIn("  - @babel/types: (new) → MIT", out)
 
     def test_the_release_notes_wrap_names_and_licences(self) -> None:
         old = self.write("old.json", {"packages": {}})

@@ -34,6 +34,10 @@ from pathlib import Path
 DEFAULT_SNAPSHOT = Path(__file__).resolve().parent.parent / "licences" / "snapshot.json"
 NEW = "(new)"
 REMOVED = "(removed)"
+# Every line `check` prints starts with this, so a package name is never at the start of a
+# line. The runner trims leading whitespace and then looks for "::"; after this prefix the
+# first character is "-", which no trimming removes.
+LINE_PREFIX = "  - "
 
 
 # Control characters (C0, DEL, C1) and the Unicode line and paragraph separators.
@@ -50,14 +54,19 @@ def _vet(name: str, licence: str, source: object) -> None:
     Names and licences are third-party metadata and are printed to stdout, where the runner
     parses lines that start with ``::`` as workflow commands (``::error::``,
     ``::stop-commands::``). A control character can start such a line, and a name can open
-    one. The entry is rejected, not cleaned: the run fails with exit 2 and names the entry,
-    so a hostile package is seen instead of silently rewritten.
+    one, also after leading whitespace, which the runner trims. The entry is rejected, not
+    cleaned: the run fails with exit 2 and names the entry, so a hostile package is seen
+    instead of silently rewritten.
     """
     for label, value in (("name", name), ("licence", licence)):
         if _CONTROL.search(value):
             raise InputError(f"{source}: the {label} of {name!r} holds a control character")
     if name.startswith("::"):
         raise InputError(f"{source}: the name {name!r} starts with '::'")
+    if name != name.lstrip():
+        # The runner trims leading whitespace before it looks for "::", so " ::error::x" is a
+        # command. str.lstrip() also covers Unicode whitespace.
+        raise InputError(f"{source}: the name {name!r} starts with whitespace")
 
 
 def code_span(value: str) -> str:
@@ -168,7 +177,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     old, new = read_snapshot(args.snapshot), _current(args)
     lines = diff(old, new)
     for line in lines:
-        print(line)
+        print(f"{LINE_PREFIX}{line}")
     _append_summary(markdown_lines(old, new))
     return 1 if lines else 0
 
