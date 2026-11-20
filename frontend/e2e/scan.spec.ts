@@ -175,6 +175,48 @@ test.describe.serial("scan", () => {
     await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
   });
 
+  test("@item-then-sheet scan picks the sheet code after an item code", async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    // The print section needs a page printer; the camera of this project shows an item label first, then the sheet's code.
+    const printers = (await (await page.request.get("/api/v1/printers")).json()) as { id: string; name: string }[];
+    const pagePrinter = printers.find((p) => p.name === "Office page printer")!;
+    await page.evaluate((id) => {
+      localStorage.setItem("lph.lang", "en");
+      localStorage.setItem("lph.printer", id);
+      localStorage.removeItem("lph.cart");
+    }, pagePrinter.id);
+    try {
+      await page.goto("/lookup/grocy/7");
+      const section = page.getByRole("region", { name: "Print onto a sheet" });
+      // Type the key so that the one option sits at the top of the list: on a phone, Playwright would otherwise scroll to a far option.
+      await section.getByRole("combobox", { name: "Sheet type" }).click();
+      await expect(page.getByRole("listbox")).toBeVisible();
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.type("avery-zweckform-l4736rev");
+      await page.getByRole("option", { name: /L4736/ }).click();
+      // Start from "New sheet", so that the scan visibly changes the selection.
+      const sheet = section.getByRole("combobox", { name: "Sheet", exact: true });
+      await sheet.click();
+      await page.getByRole("option", { name: /New .* sheet/ }).click();
+      await expect(sheet).not.toHaveValue("L4736-0001");
+
+      await section.getByRole("button", { name: "Scan a sheet code" }).click();
+      const dialog = page.getByRole("dialog", { name: "Scan a sheet code" });
+      // The item label comes first: the dialog says what it is and keeps reading.
+      const hint = dialog.getByText("That is an item label, not the sheet code. Aim at the code in the sheet margin.");
+      await expect(hint).toBeVisible({ timeout: 20_000 });
+      await shot(page, "task-14-scan-sheet-item-hint.png");
+      // Then the sheet's code: the dialog closes and the sheet is selected.
+      await expect(dialog).toBeHidden({ timeout: 20_000 });
+      await expect(sheet).toHaveValue("L4736-0001");
+      expect(await noSideScroll(page)).toBe(true);
+      await expect.poll(() => page.evaluate(() => document.querySelectorAll("video").length)).toBe(0);
+    } finally {
+      await page.evaluate(() => localStorage.removeItem("lph.printer"));
+    }
+  });
+
   test("@grocycode a scanned Grocycode opens the Grocy product", async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");

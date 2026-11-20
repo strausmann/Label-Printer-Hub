@@ -56,6 +56,16 @@ function Brackets() {
 export interface CameraScannerProps {
   /** A code was read. The scanner stops reading until `paused` turns false again. */
   onHit: (hit: ScanHit) => void;
+  /**
+   * Decides whether a read code is one the caller wants. A refused code is no hit: the scanner keeps
+   * reading, does not vibrate and does not call `onHit`. Without it every code is taken.
+   */
+  accept?: (hit: ScanHit) => boolean;
+  /**
+   * A code `accept` refused. Called once for a code that stays in view, again when a different
+   * code was seen in between; a refused photo is reported every time.
+   */
+  onReject?: (hit: ScanHit) => void;
   /** Keeps the camera on but reads no frames: a result is on screen. */
   paused?: boolean;
   /** Adds a Close button below the photo choice (the scanner inside a dialog). */
@@ -69,7 +79,7 @@ export interface CameraScannerProps {
  * (spec 5.3/5.4). `ScanScreen` navigates on a hit; the sheet picker takes the code into its form.
  * Needs a secure context for the camera; a photo of the code works everywhere.
  */
-export function CameraScanner({ onHit, paused = false, onClose, children }: CameraScannerProps) {
+export function CameraScanner({ onHit, accept, onReject, paused = false, onClose, children }: CameraScannerProps) {
   const { t } = useLingui();
   const secure = typeof window !== "undefined" && window.isSecureContext;
   const [phase, setPhase] = useState<Phase>(secure ? { kind: "starting" } : { kind: "insecure" });
@@ -82,6 +92,8 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
   const stream = useRef<MediaStream | null>(null);
   // Set when the reader failed: the camera then stays shut (tab hide/show, a camera that opens late) until "Try again".
   const readerFailed = useRef(false);
+  // The refused code last reported: one that stays in front of the camera is not reported at every frame.
+  const lastRefused = useRef<string | null>(null);
   const live = phase.kind === "scanning" && !hidden && !paused;
 
   useEffect(() => {
@@ -157,6 +169,16 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
     onHit(found);
   });
 
+  /** True when the code is wanted; a refused one is reported (`everyTime`: also when it is the one reported last). */
+  const wanted = (found: ScanHit, everyTime: boolean): boolean => {
+    if (!accept || accept(found)) return true;
+    if (everyTime || lastRefused.current !== found.text) onReject?.(found);
+    lastRefused.current = found.text;
+    return false;
+  };
+  // The frame loop asks with the caller's latest `accept`, without restarting when it changes.
+  const wantedFromVideo = useEffectEvent((found: ScanHit): boolean => wanted(found, false));
+
   // Reads the video while the camera is live, one frame at a time.
   useEffect(() => {
     if (!live) return;
@@ -176,7 +198,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
           }
         }
         if (stopped) return;
-        if (found) {
+        if (found && wantedFromVideo(found)) {
           hitFromVideo(found);
           return;
         }
@@ -216,10 +238,11 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
       setPhase({ kind: "reader-failed" });
       return;
     }
-    if (found) {
+    if (!found) setPhotoMiss(true);
+    else if (wanted(found, true)) {
       navigator.vibrate?.(30);
       onHit(found);
-    } else setPhotoMiss(true);
+    }
   };
 
   const retry = () => {

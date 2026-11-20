@@ -101,12 +101,16 @@ describe("another computer changes the sheet", () => {
   });
 });
 
+const ITEM_QR = "https://hub.example.invalid/asset/42";
+
 describe("a scanned code", () => {
-  async function scan(text: string, r: Record<string, unknown>) {
+  /** `text` is read once; with `repeatLast` the camera keeps showing the last code (it stays in view). */
+  async function scan(text: string | string[], r: Record<string, unknown>, repeatLast = false) {
     const { setScanDeps } = await import("../../scan/CameraScanner");
-    const queue = [{ format: "qr_code" as const, text }];
+    const queue = (Array.isArray(text) ? text : [text]).map((t) => ({ format: "qr_code" as const, text: t }));
+    const decode = vi.fn(async () => (repeatLast && queue.length === 1 ? queue[0]! : (queue.shift() ?? null)));
     setScanDeps({
-      createDecoder: async () => ({ engine: "native", decode: vi.fn(async () => queue.shift() ?? null), close: vi.fn() }),
+      createDecoder: async () => ({ engine: "native", decode, close: vi.fn() }),
       grabFrame: async () => ({ close() {} }) as unknown as ImageBitmap,
       intervalMs: 5,
     });
@@ -116,7 +120,7 @@ describe("a scanned code", () => {
     Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia: vi.fn(async () => stream) }, configurable: true });
     const view = await itemView(routes({ sheets: [sheet("L4736-0001", 17), sheet("L4736-0004", 0)], ...{ extra: r } }));
     await userEvent.click(await screen.findByRole("button", { name: "Scan a sheet code" }));
-    return view;
+    return { ...view, decode };
   }
   afterEach(async () => (await import("../../scan/CameraScanner")).setScanDeps(null));
 
@@ -124,6 +128,33 @@ describe("a scanned code", () => {
     const { calls } = await scan("sheet:L4736-0004", {});
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(body(previews(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "L4736-0004" }));
+  });
+
+  it("an item QR then the sheet code selects the sheet", async () => {
+    const { calls } = await scan([ITEM_QR, "sheet:L4736-0004"], {});
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(body(previews(calls).at(-1)!).placements[0]).toMatchObject({ sheet: "L4736-0004" }));
+    // The item QR on the way left no note behind.
+    expect(screen.queryByText(/item label/)).toBeNull();
+  });
+
+  it("an item QR alone shows the label hint and keeps scanning", async () => {
+    const { decode } = await scan(ITEM_QR, {}, true);
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("That is an item label, not the sheet code. Aim at the code in the sheet margin.")).toBeVisible();
+    const seen = decode.mock.calls.length;
+    await waitFor(() => expect(decode.mock.calls.length).toBeGreaterThan(seen));
+    expect(screen.getByRole("dialog")).toBeVisible();
+  });
+
+  it("unknown content keeps the old message", async () => {
+    const { decode } = await scan("just some words", {}, true);
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("That is not a sheet code.")).toBeVisible();
+    expect(within(dialog).queryByText(/item label/)).toBeNull();
+    const seen = decode.mock.calls.length;
+    await waitFor(() => expect(decode.mock.calls.length).toBeGreaterThan(seen));
+    expect(screen.getByRole("dialog")).toBeVisible();
   });
 
   it.each([

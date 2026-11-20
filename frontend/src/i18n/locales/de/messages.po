@@ -4834,6 +4834,10 @@ msgid "That did not work. Try again."
 msgstr "Das hat nicht geklappt. Versuche es noch einmal."
 
 #: src/features/sheets/print/SheetPicker.tsx
+msgid "That is an item label, not the sheet code. Aim at the code in the sheet margin."
+msgstr "Das ist das Etikett eines Eintrags, nicht der Bogencode. Halte die Kamera auf den Code am Bogenrand."
+
+#: src/features/sheets/print/SheetPicker.tsx
 msgid "That is not a sheet code."
 msgstr "Das ist kein Bogencode."
 

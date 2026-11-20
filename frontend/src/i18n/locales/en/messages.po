@@ -4834,6 +4834,10 @@ msgid "That did not work. Try again."
 msgstr "That did not work. Try again."
 
 #: src/features/sheets/print/SheetPicker.tsx
+msgid "That is an item label, not the sheet code. Aim at the code in the sheet margin."
+msgstr "That is an item label, not the sheet code. Aim at the code in the sheet margin."
+
+#: src/features/sheets/print/SheetPicker.tsx
 msgid "That is not a sheet code."
 msgstr "That is not a sheet code."
 

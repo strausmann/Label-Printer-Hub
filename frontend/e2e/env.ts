@@ -22,6 +22,8 @@ export const FAKE_CAMERA = {
   sheet: resolve(import.meta.dirname, ".tmp", "camera-sheet.y4m"),
   grocycode: resolve(import.meta.dirname, ".tmp", "camera-grocycode.y4m"),
   grocyBattery: resolve(import.meta.dirname, ".tmp", "camera-grocy-battery.y4m"),
+  /** The item label for 60 frames, then the sheet code (`qrText`, `sheetText`), looping. */
+  itemThenSheet: resolve(import.meta.dirname, ".tmp", "camera-item-then-sheet.y4m"),
   qrText: "https://hub.example.invalid/asset/42",
   dataMatrixText: "https://hub.example.invalid/spool/5",
   /** The sheet ID cell of the first seeded L4736REV sheet, as the scanner reads it. */
