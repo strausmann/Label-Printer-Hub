@@ -22,7 +22,7 @@ const VERSION = {
   sheets: 3,
 };
 const DETAIL = { ...SHEET_TYPE, sheets_in_use: 3, versions: [VERSION] };
-const CUSTOM = { ...SHEET_TYPE, key: "my-custom", origin: "custom" as const, sheets_in_use: 0, verified: false };
+const CUSTOM = { ...SHEET_TYPE, key: "my-custom", origin: "custom" as const, sheets_in_use: 0, verified: false, vendor: null, product_codes: [], description: null };
 const EXPORT_DOC = {
   format: "label-printer-hub.sheet-type",
   format_version: 1,
@@ -51,6 +51,24 @@ describe("archive list and filters", () => {
     );
   });
 
+  it("the archive card shows the readable name with the key below", async () => {
+    mockApi(LIST);
+    await renderApp({ path: "/sheets/archive" });
+    const card = await screen.findByRole("link", { name: /L4736REV-25/ });
+    expect(within(card).getByText("Example Labels L4736REV-25 · 48 labels, 45.7 x 21.2 mm")).toBeInTheDocument();
+    const key = within(card).getByText("L4736REV");
+    expect(key.className).toContain("font-mono");
+    // A type with no vendor, code or description is still named by its key.
+    expect(within(screen.getByRole("link", { name: /my-custom/ })).getAllByText("my-custom")).toHaveLength(2);
+  });
+
+  it("search still matches the key", async () => {
+    const { calls } = mockApi(LIST);
+    await renderApp({ path: "/sheets/archive?q=L4736REV" });
+    await screen.findByRole("link", { name: /L4736REV/ });
+    expect(typeCalls(calls).some((c) => c.search.includes("q=L4736REV"))).toBe(true);
+  });
+
   it("typing in the search box asks the server for it", async () => {
     const { calls } = mockApi(LIST);
     await renderApp({ path: "/sheets/archive" });
@@ -76,7 +94,7 @@ describe("archive list and filters", () => {
   });
 
   it("marks types by origin, verification and archive state with words", async () => {
-    mockApi({ "GET /api/v1/sheet-types": [SHEET_TYPE, CUSTOM, { ...SHEET_TYPE, key: "old-one", origin: "imported", archived_at: "2026-11-02T00:00:00Z" }] });
+    mockApi({ "GET /api/v1/sheet-types": [SHEET_TYPE, CUSTOM, { ...CUSTOM, key: "old-one", origin: "imported", archived_at: "2026-11-02T00:00:00Z" }] });
     await renderApp({ path: "/sheets/archive?archived=true" });
     const seed = (await screen.findByRole("link", { name: /L4736REV/ })).closest("li")!;
     expect(within(seed).getByText("seed")).toBeVisible();

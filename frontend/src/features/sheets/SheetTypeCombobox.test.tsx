@@ -15,7 +15,7 @@ import { SheetTypeCombobox } from "./SheetTypeCombobox";
 type Type = components["schemas"]["SheetTypeRead"];
 
 const geometry = (w: number, h: number) => ({ ...SHEET_TYPE.geometry, label_w: w, label_h: h });
-const L4736: Type = { ...SHEET_TYPE, geometry: geometry(45.7, 21.2) };
+const L4736: Type = { ...SHEET_TYPE, description: null, geometry: geometry(45.7, 21.2) };
 const AVERY: Type = {
   ...SHEET_TYPE,
   key: "avery-5159",
@@ -97,6 +97,11 @@ function Harness({ initial = "L4736REV", onChange = () => {}, noneOption }: { in
 const box = () => screen.getByRole("combobox", { name: "Sheet type" });
 
 describe("SheetTypeCombobox", () => {
+  it("names a type by vendor, product code and description, with the key and the size", () => {
+    render(<Harness initial="avery-5159" />);
+    expect(box()).toHaveValue("Avery 5159 · 30 address labels, Café edition (avery-5159) · 101.6 × 38.1 mm");
+  });
+
   it("shows the chosen type in the label format", () => {
     render(<Harness />);
     expect(box()).toHaveValue("Example Labels L4736REV-25 (L4736REV) · 45.7 × 21.2 mm");

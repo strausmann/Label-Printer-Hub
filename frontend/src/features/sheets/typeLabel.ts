@@ -10,9 +10,21 @@ export function typeLabel(type: { key: string; vendor: string | null; product_co
   return code ?? type.key;
 }
 
+/**
+ * The readable name of a sheet type: "<vendor> <first product code> · <description>".
+ * Without a vendor or a code only the description; without a description the short label; with nothing, the key.
+ * Vendor and description can come from an imported file, so this is text for React to escape, never markup.
+ */
+export function typeTitle(type: { key: string; vendor: string | null; product_codes: string[]; description: string | null }): string {
+  const label = typeLabel(type);
+  const description = type.description?.trim();
+  if (!description) return label;
+  return type.vendor && type.product_codes[0] ? `${label} · ${description}` : description;
+}
+
 /** What a sheet type picker lists: label, key, label size and, for an archived type, that it is archived. */
 export function typePickerLabel(
-  type: { key: string; vendor: string | null; product_codes: string[]; archived_at?: string | null; geometry: { label_w: number; label_h: number } },
+  type: { key: string; vendor: string | null; product_codes: string[]; description: string | null; archived_at?: string | null; geometry: { label_w: number; label_h: number } },
   locale: string,
   archivedWord: string,
 ): string {
@@ -21,7 +33,7 @@ export function typePickerLabel(
 }
 
 /** Label and key together, so two types with the same label can still be told apart. */
-export function typeLabelWithKey(type: { key: string; vendor: string | null; product_codes: string[] }): string {
-  const label = typeLabel(type);
+export function typeLabelWithKey(type: { key: string; vendor: string | null; product_codes: string[]; description: string | null }): string {
+  const label = typeTitle(type);
   return label === type.key ? label : `${label} (${type.key})`;
 }

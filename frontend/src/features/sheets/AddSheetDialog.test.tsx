@@ -333,17 +333,17 @@ describe("the add-a-sheet dialog", () => {
     expect(calls.some((c) => c.path === "/api/v1/sheets/margin-check")).toBe(false);
   });
 
-  it("names types by their label with the key, in the dialog's list and on the trigger with the full text as a tooltip", async () => {
+  it("names types by their readable name with the key, in the dialog's list and on the trigger with the full text as a tooltip", async () => {
     setup();
     await openDialog();
     await userEvent.click(screen.getByRole("button", { name: /Sheet type/ }));
     expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual([
       "Choose a sheet type",
-      "Example Labels L4736REV-25 (L4736REV) · 45.7 × 21.2 mm",
-      "Example Labels L4736REV-25 (my-small) · 45.7 × 21.2 mm",
+      "Example Labels L4736REV-25 · 48 labels, 45.7 x 21.2 mm (L4736REV) · 45.7 × 21.2 mm",
+      "Example Labels L4736REV-25 · Tiny (my-small) · 45.7 × 21.2 mm",
     ]);
     await userEvent.click(screen.getByRole("option", { name: /\(my-small\)/ }));
-    expect(screen.getByTitle("Example Labels L4736REV-25 (my-small) · 45.7 × 21.2 mm")).toBeInTheDocument();
+    expect(screen.getByTitle("Example Labels L4736REV-25 · Tiny (my-small) · 45.7 × 21.2 mm")).toBeInTheDocument();
   });
 
   it("starts empty when it is opened again", async () => {

@@ -237,7 +237,7 @@ describe("types in the filter", () => {
     setup();
     await renderApp({ path: "/sheets", session: PRINT_SESSION });
     await userEvent.click(await screen.findByRole("button", { name: /Sheet type/ }));
-    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["Any sheet type", "Example Labels L4736REV-25 (L4736REV)"]);
+    expect((await screen.findAllByRole("option")).map((o) => o.textContent)).toEqual(["Any sheet type", "Example Labels L4736REV-25 · 48 labels, 45.7 x 21.2 mm (L4736REV)"]);
   });
 });
 
