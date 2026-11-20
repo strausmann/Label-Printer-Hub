@@ -217,7 +217,7 @@ async def test_offline_at_startup_keeps_the_cached_real_summary(async_session_fa
     await second.stop()
 
 
-async def test_first_probe_failing_still_stamps_the_row(async_session_factory) -> None:
+async def test_first_probe_failing_leaves_captured_at_null(async_session_factory) -> None:
     fake = FakeIppPrinter()
     producer, pid, _bus, _state = _make(
         fake,
@@ -227,7 +227,8 @@ async def test_first_probe_failing_still_stamps_the_row(async_session_factory) -
         ),
     )
     assert await producer.probe_once() is None
-    assert (await _cache(async_session_factory, pid)).captured_at is not None
+    # No reading yet, so no capture time (#206).
+    assert (await _cache(async_session_factory, pid)).captured_at is None
     await producer.stop()
 
 

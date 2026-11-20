@@ -299,7 +299,8 @@ class IppStatusProducer:
         self, record: IppStatusRecord, *, last_error: str | None, keep_captured_at: bool = False
     ) -> None:
         """Write the cache row. ``keep_captured_at``: an offline write re-flags the last reading
-        and must not restamp it, so ``captured_at`` stays the time the values were read."""
+        and must not restamp it, so ``captured_at`` stays the time the values were read; a row that
+        has never held a reading keeps ``captured_at`` null."""
         from app.models.printer_status_cache import PrinterStatusCache
 
         parsed: dict[str, Any] = record.model_dump(mode="json")
@@ -312,7 +313,7 @@ class IppStatusProducer:
                 if row is not None:
                     row.parsed = parsed
                     row.raw_block = None
-                    if not keep_captured_at or row.captured_at is None:
+                    if not keep_captured_at:
                         row.captured_at = now
                     # The age of the last probe attempt; ``onupdate`` does not fire when an
                     # identical offline write changes no column.
@@ -322,7 +323,8 @@ class IppStatusProducer:
                         PrinterStatusCache(
                             printer_id=self._printer_id,
                             parsed=parsed,
-                            captured_at=now,
+                            # No reading yet: an offline first write has no capture time.
+                            captured_at=None if keep_captured_at else now,
                             updated_at=now,
                         )
                     )

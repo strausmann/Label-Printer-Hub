@@ -143,7 +143,8 @@ async def test_unpolled_status_lists_no_flags(api) -> None:
 
 async def test_page_printer_lists_no_flags(api) -> None:
     client, app, factory = api
-    pid = await _printer(factory)
+    # The printer row decides the kind (#208): a page printer is an ``ipp`` printer.
+    pid = await _printer(factory, backend="ipp")
     await _cache_row(
         factory,
         pid,

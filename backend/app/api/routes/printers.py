@@ -411,7 +411,7 @@ async def get_printer_status(
     printer = await _get_printer_or_404(session, printer_id)
     if _auth is not None:
         check_printer_access(_auth, printer_id)
-    status_ = await _cached_status(session, printer_id, runtime)
+    status_ = await _cached_status(session, printer, runtime)
     if is_page_printer(printer):
         # #344: the trays the newest sheet and calibration pages used, on every branch of the
         # status (also never probed, not polled, stale): they come from the hub's own jobs.
@@ -429,11 +429,38 @@ async def get_printer_status(
 
 
 async def _cached_status(
-    session: AsyncSession, printer_id: UUID, runtime: PrinterRuntime | None
+    session: AsyncSession, printer: Printer, runtime: PrinterRuntime | None
 ) -> PrinterStatus:
+    printer_id = printer.id
+    # The printer row decides page or tape: a cache row written before a backend change would
+    # otherwise answer with the old kind.
+    is_page = is_page_printer(printer)
     polled = runtime is not None and runtime.is_polled(printer_id)
     row = await cache_repo.get(session, printer_id)
     if row is None or row.captured_at is None:
+        parsed_early = (row.parsed if row is not None else None) or {}
+        if (
+            row is not None
+            and polled
+            and parsed_early.get("online") is False
+            and not is_stale(
+                row.updated_at,
+                datetime.now(UTC),
+                get_settings().sse_probe_interval_s,
+                backoff_of(parsed_early),
+            )
+        ):
+            # The printer has been probed and never answered: it is offline, not "not yet
+            # probed". There is no capture time to report.
+            return PrinterStatus(
+                printer_id=printer_id,
+                online=False,
+                captured_at=None,
+                last_probe_age_s=None,
+                last_error=parsed_early.get("last_error"),
+                kind="page" if is_page else None,
+                polled=polled,
+            )
         return PrinterStatus(
             printer_id=printer_id,
             online=None,
@@ -469,12 +496,12 @@ async def _cached_status(
                 if not polled
                 else f"Status older than {int(stale_after_s(interval_s, backoff_s))} s"
             ),
-            kind="page" if parsed.get("kind") == "page" else None,
+            kind="page" if is_page else None,
             stale=stale,
             polled=polled,
         )
 
-    if parsed.get("kind") == "page":
+    if is_page:
         return await _page_status(session, printer_id, parsed, row.captured_at, age_s)
 
     tape = read_tape_status(parsed)
