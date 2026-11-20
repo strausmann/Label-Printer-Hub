@@ -316,6 +316,8 @@ cd backend && /tmp/tool/bin/python -m scripts.licence_report \
 
 It prints every package the policy refuses as `name (licence)` and exits 1.
 
+The image build also compares every package's declared licence with `licences/snapshot.json` (`scripts/licence_snapshot.py check`), so a move between two allowed licences does not go unnoticed. To accept a change, take the lists out of the built image and run `update`: `docker create --name lic <image>`, then `docker cp lic:/opt/app/web/licenses/backend.json .` and `docker cp lic:/opt/app/web/licenses/frontend.json .`, `docker rm lic`, then `python3 scripts/licence_snapshot.py update --backend backend.json --frontend frontend.json`. The backend has no lockfile, so a rebuild without a warm cache can resolve newer versions and flag a change that has nothing to do with your pull request; the weekly no-cache run is the early warning for that.
+
 **A new dependency whose licence is on the list needs nothing.** If a gate refuses a package whose real licence is acceptable (package metadata that is wrong, ambiguous or missing), add an exception to `x-licence-exceptions` in the same pull request:
 
 ```json
