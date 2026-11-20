@@ -58,7 +58,7 @@ async function tabThrough(page: Page): Promise<Report> {
       if (index !== null) kbd.reached.add(Number(index));
       const ring = (node: Element) => {
         const s = getComputedStyle(node);
-        return (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) || s.boxShadow !== "none";
+        return s.outlineStyle !== "none" && parseFloat(s.outlineWidth) >= 2;
       };
       // A sheet cell is an SVG group: its ring is a stroke on an inner shape (`data-ring`), not an outline.
       const stroked = (node: Element) => {
@@ -147,4 +147,47 @@ test.describe.serial("keyboard only", () => {
       });
     }
   }
+
+  // #222: Tab reaching a control is not the same as the control working from the keyboard. One button, one link and one
+  // switch, each activated with the key the platform gives it (probed in the browser: Enter and Space on a button, Enter on
+  // a link, Space on a switch; the other keys do nothing there and are asserted not to).
+  test.describe("activation from the keyboard", () => {
+    test.beforeEach(async () => {
+      await setLanguage(page, "en");
+      await page.setViewportSize({ width: 1280, height: 800 });
+    });
+
+    for (const key of ["Enter", "Space"] as const) {
+      test(`a button is activated by ${key}`, async () => {
+        await page.goto("/settings/printers");
+        const add = page.getByRole("button", { name: "Add printer" });
+        await expect(add).toBeVisible();
+        await add.focus();
+        await expect(page.getByRole("form", { name: "Add a printer" })).toHaveCount(0);
+        await page.keyboard.press(key);
+        await expect(page.getByRole("form", { name: "Add a printer" })).toBeVisible();
+      });
+    }
+
+    test("a link is activated by Enter", async () => {
+      await page.goto("/settings/printers");
+      const link = page.getByRole("navigation", { name: /^(Main|Tabs)$/ }).first().getByRole("link", { name: /^Sheets$/ });
+      await link.focus();
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/\/sheets$/);
+    });
+
+    test("a switch is toggled by Space", async () => {
+      await page.goto("/settings/printers");
+      await page.getByRole("button", { name: "Add printer" }).click();
+      const form = page.getByRole("form", { name: "Add a printer" });
+      const discovery = form.getByRole("switch", { name: "Status discovery" });
+      await expect(discovery).not.toBeChecked();
+      await discovery.focus();
+      await page.keyboard.press("Space");
+      await expect(discovery).toBeChecked();
+      await page.keyboard.press("Space");
+      await expect(discovery).not.toBeChecked();
+    });
+  });
 });
