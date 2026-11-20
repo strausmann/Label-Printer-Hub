@@ -16,6 +16,8 @@ contains a TemplateNotFoundError entry.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from app.api.error_handlers import register_error_handlers
 from app.printer_backends.exceptions import (
@@ -171,3 +173,54 @@ def test_the_four_existing_handlers_keep_their_body() -> None:
     client = TestClient(_app_raising(PrinterCoverOpenError("cover")))
     body = client.get("/boom").json()
     assert (body["type"], body["detail"]) == ("printer-cover-open", "cover")
+
+
+def _validation_request(path: str) -> Any:
+    from starlette.requests import Request
+
+    return Request({"type": "http", "method": "POST", "path": path, "headers": []})
+
+
+def _cell_error(*loc: object) -> dict[str, Any]:
+    return {"type": "greater_than_equal", "loc": ("body", *loc), "msg": "too small", "input": 0}
+
+
+@pytest.mark.asyncio
+async def test_sheet_validation_envelope_is_linear_in_the_number_of_errors() -> None:
+    """Tens of thousands of invalid cells, each with its own path, answer at once (run-30 R30-1).
+
+    The old list-membership de-duplication cost about 38 s at this size; a bound of one second
+    separates it from any linear loop by orders of magnitude.
+    """
+    import time
+
+    from app.api.error_handlers import _validation_handler
+    from fastapi.exceptions import RequestValidationError
+
+    errors = [_cell_error("placements", n // 400, "skip", n % 400) for n in range(62_000)]
+    started = time.perf_counter()
+    response = await _validation_handler(
+        _validation_request("/api/v1/print/x/sheet/preview"), RequestValidationError(errors)
+    )
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 422
+    assert elapsed < 1.0
+    import json
+
+    named = json.loads(response.body)["detail"]["error_detail"]["errors"]
+    assert named == [f"placements.0.skip.{n}" for n in range(20)]
+
+
+@pytest.mark.asyncio
+async def test_sheet_validation_envelope_keeps_first_seen_order_without_repeats() -> None:
+    import json
+
+    from app.api.error_handlers import _validation_handler
+    from fastapi.exceptions import RequestValidationError
+
+    errors = [_cell_error("b"), _cell_error("a"), _cell_error("b"), _cell_error("c")]
+    response = await _validation_handler(
+        _validation_request("/api/v1/print/x/sheet"), RequestValidationError(errors)
+    )
+    assert json.loads(response.body)["detail"]["error_detail"]["errors"] == ["b", "a", "c"]

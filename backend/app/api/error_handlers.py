@@ -99,6 +99,9 @@ def answers_with_envelope(path: str) -> bool:
     return is_sheet_path(path) or path.startswith(WEBHOOK_PREFIX)
 
 
+MAX_ERROR_PATHS = 20
+"""Field paths a validation envelope names; later ones are dropped."""
+
 ADMIN_PRINTERS_PREFIX = "/api/v1/admin/printers"
 """Admin printer payloads carry IPP URIs: their 422 keeps FastAPI's shape without the input."""
 
@@ -144,21 +147,24 @@ async def _validation_handler(request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=422, content={"detail": errors})
     if not answers_with_envelope(request.url.path):
         return await request_validation_exception_handler(request, exc)
-    paths: list[str] = []
+    # An order-preserving set, and the loop stops at the cap: a body of tens of thousands of
+    # invalid cells must not cost more than the twenty paths the answer names (run-30 R30-1).
+    paths: dict[str, None] = {}
     for err in exc.errors():
         loc = [str(part) for part in err["loc"] if part != "body"]
         if err["type"] == "extra_forbidden" and loc:
             loc[-1] = "<unknown field>"  # a name the client chose is not echoed
         path = ".".join(loc) or "<request>"
-        if path not in paths:
-            paths.append(path)
+        paths[path] = None
+        if len(paths) >= MAX_ERROR_PATHS:
+            break
     return JSONResponse(
         status_code=422,
         content={
             "detail": {
                 "error_code": "invalid_request",
                 "error_message": "Request validation failed.",
-                "error_detail": {"errors": paths[:20]},
+                "error_detail": {"errors": list(paths)},
             }
         },
     )
