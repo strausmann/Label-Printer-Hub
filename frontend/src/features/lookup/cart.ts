@@ -31,7 +31,7 @@ export const MAX_COPIES = 10;
 export type SubmittedLine = CartKey & Pick<CartItem, "copies">;
 
 const sameItem = (a: CartKey, b: CartKey) => a.app === b.app && a.id === b.id;
-const clampCopies = (n: number) => Math.min(MAX_COPIES, Math.max(1, Math.round(Number.isFinite(n) ? n : 1)));
+export const clampCopies = (n: number) => Math.min(MAX_COPIES, Math.max(1, Math.round(Number.isFinite(n) ? n : 1)));
 
 function isItem(value: unknown): value is CartItem {
   if (typeof value !== "object" || value === null) return false;

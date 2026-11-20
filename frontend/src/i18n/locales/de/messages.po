@@ -32,6 +32,11 @@ msgstr "{0, plural, one {# Spalte} other {# Spalten}}"
 msgid "{0, plural, one {# item will not print.} other {# items will not print.}}"
 msgstr "{0, plural, one {# Eintrag wird nicht gedruckt.} other {# Einträge werden nicht gedruckt.}}"
 
+#. placeholder {0}: p.cells.length
+#: src/features/sheets/print/SheetSection.tsx
+msgid "{0, plural, one {# label → cells {cells} on {sheet}} other {# labels → cells {cells} on {sheet}}}"
+msgstr "{0, plural, one {# Etikett → Zellen {cells} auf {sheet}} other {# Etiketten → Zellen {cells} auf {sheet}}}"
+
 #. placeholder {0}: g.cols * g.rows
 #. placeholder {0}: page.cellCount
 #: src/features/archive/ArchivePage.tsx
@@ -3145,6 +3150,10 @@ msgstr "Jetzt an dieser Adresse"
 #: src/features/settings/SpoolmanLabelFields.tsx
 msgid "Nozzle temperature field"
 msgstr "Feld Düsentemperatur"
+
+#: src/features/sheets/print/SheetSection.tsx
+msgid "Number of labels"
+msgstr "Anzahl der Etiketten"
 
 #: src/features/printers/PrinterDetail.tsx
 msgid "off"

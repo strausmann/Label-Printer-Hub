@@ -8,9 +8,9 @@ import { useMemo, useState } from "react";
 import { Button, Radio, RadioGroup } from "react-aria-components";
 import { useSession } from "../../../app/session";
 import { cellsTaken, insufficientCells, planChanged, queuedJobs } from "../../../api/errorDetail";
-import { PRIMARY_BUTTON } from "../../../shell/SignIn";
+import { FIELD, PRIMARY_BUTTON } from "../../../shell/SignIn";
 import { useSheetTypes } from "../../archive/api";
-import { useCart, type CartItem } from "../../lookup/cart";
+import { clampCopies, MAX_COPIES, useCart, type CartItem } from "../../lookup/cart";
 import { ApiError } from "../../../api/client";
 import { usePrinterStatus, type Printer } from "../../printers/api";
 import { usePrinterWaiting } from "../../printers/flags";
@@ -24,6 +24,7 @@ import { SheetGrid } from "../SheetGrid";
 import { SheetTypeCombobox } from "../SheetTypeCombobox";
 import { typeLabelWithKey } from "../typeLabel";
 import { CapacityAlert } from "./CapacityAlert";
+import { plannedCellsText } from "./plannedCells";
 import { usePrintDialogErrorText } from "./errors";
 import { lastType } from "./lastType";
 import {
@@ -66,6 +67,13 @@ export interface SheetSectionProps {
    * the cart itself is what is left. Without it (the item view has no cart) the section keeps the rest by index.
    */
   onQueued?: (queued: CartItem[]) => void;
+  /**
+   * The item view: the number of labels of its one item, shown and edited in this section. The caller owns the number
+   * (its Copies field is the same state); only when both `count` and `onCountChange` are given does the field appear.
+   * The cart, whose lines carry their own copies, passes neither.
+   */
+  count?: number;
+  onCountChange?: (n: number) => void;
 }
 
 /** A worst-case preview takes seconds to render on the server, so it is asked for only once the choices have settled. */
@@ -84,7 +92,7 @@ type Changed = { kind: "plan"; sheets: string[] } | { kind: "cells"; sheet: stri
  * will look like, and the print. The preview is the server's: the print sends back what the preview
  * promised (`expected_cells`), and a changed plan is shown again and confirmed again.
  */
-export function SheetSection({ items, printer, preselectedSheet, preselectedTray, addToCart, onAccepted, onQueued }: SheetSectionProps) {
+export function SheetSection({ items, printer, preselectedSheet, preselectedTray, addToCart, onAccepted, onQueued, count, onCountChange }: SheetSectionProps) {
   const { t } = useLingui();
   const status = usePrinterStatus(printer.id);
   // Archived types are asked for too: their existing sheets keep printing, only new sheets are refused.
@@ -373,6 +381,15 @@ export function SheetSection({ items, printer, preselectedSheet, preselectedTray
         : plural(rest, { one: "# label did not fit on the sheet. The preview below plans it on the next one.", other: "# labels did not fit on the sheet. The preview below plans them on the next one." });
   const buttonText = changed ? t`Print with the new plan` : waits ? t`Add to print queue` : t`Print onto sheet`;
 
+  // Where the labels go, in words: "5 labels → cells 2–6 on L4736-0001" (one line per sheet).
+  const planned =
+    onCountChange && count !== undefined && shownData && !insufficient
+      ? shownData.pages
+          .map((p) => ({ sheet: p.sheet_code ?? t`a new sheet`, cells: p.cells.filter((c) => c.state === "new").map((c) => c.cell) }))
+          .filter((p) => p.cells.length > 0)
+      : [];
+  const plannedTexts = plannedCellsText(planned);
+
   const idleNote = needed === 0 && !result && !partial ? t`There is nothing to print yet.` : null;
 
   return (
@@ -389,6 +406,31 @@ export function SheetSection({ items, printer, preselectedSheet, preselectedTray
 
       {needed > 0 && (
         <>
+          {onCountChange && count !== undefined && (
+            <div className="flex flex-col gap-1.5">
+              <label className="flex flex-col gap-1.5">
+                <span className="font-bold">{t`Number of labels`}</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={MAX_COPIES}
+                  value={count}
+                  className={`${FIELD} code w-24 scroll-mb-24`}
+                  onChange={(e) => onCountChange(clampCopies(Number(e.target.value)))}
+                />
+              </label>
+              {planned.map((p, i) => {
+                const cells = plannedTexts[i]!.cells;
+                const sheet = p.sheet;
+                return (
+                  <p key={`${i}-${sheet}`} role="status" className="m-0 text-ink-2 tabular-nums [overflow-wrap:anywhere]">
+                    {plural(p.cells.length, { one: `# label → cells ${cells} on ${sheet}`, other: `# labels → cells ${cells} on ${sheet}` })}
+                  </p>
+                );
+              })}
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <SheetTypeCombobox label={t`Sheet type`} types={typeList} value={typeKey ?? ""} onChange={chooseType} />
             {tray && trays.length > 1 ? (
