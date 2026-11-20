@@ -243,6 +243,28 @@ class HostileNameTest(SnapshotCase):
     def test_control_characters_in_a_licence_are_rejected(self) -> None:
         self.check_rejected({"name": "ok", "version": "1", "license": "MIT\n::error::x"})
 
+    def test_a_hostile_name_without_a_licence_never_starts_an_output_line_with_a_command(
+        self,
+    ) -> None:
+        # The message for a missing licence used to repeat the name before it was vetted, so a
+        # line break in the name put "::error::..." at the start of a line (run-30, note 8a).
+        self.write_snapshot(SNAPSHOT)
+        for licence in ("", None):
+            with self.subTest(licence=licence):
+                entry = {"name": HOSTILE, "version": "1", "license": licence}
+                code, out, err = self.run_cli("check", *self.lists([entry], FRONTEND))
+                self.assertEqual(code, 2)
+                for line in (out + err).splitlines():
+                    self.assertFalse(line.strip().startswith("::"), line)
+
+    def test_a_missing_licence_names_the_package_as_a_quoted_string(self) -> None:
+        self.write_snapshot(SNAPSHOT)
+        code, _, err = self.run_cli(
+            "check", *self.lists([{"name": "plain", "version": "1", "license": ""}], FRONTEND)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("package 'plain' has no declared licence", err)
+
     def test_a_hostile_snapshot_is_rejected_by_notes(self) -> None:
         good = self.write("good.json", {"packages": SNAPSHOT})
         bad = self.write("bad.json", {"packages": {HOSTILE: "MIT"}})

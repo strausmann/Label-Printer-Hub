@@ -108,8 +108,11 @@ def read_lists(*paths: Path) -> dict[str, str]:
             licence = entry.get("license") if isinstance(entry, dict) else None
             if not isinstance(name, str) or not name:
                 raise InputError(f"{path}: an entry has no name")
+            # The name is vetted before any message that repeats it: an entry with a hostile
+            # name and no licence must not put a workflow-command line on the output.
+            _vet(name, "", path)
             if not isinstance(licence, str) or not licence:
-                raise InputError(f"{path}: package {name} has no declared licence")
+                raise InputError(f"{path}: package {name!r} has no declared licence")
             _vet(name, licence, path)
             seen.setdefault(name, set()).add(licence)
     return {name: " / ".join(sorted(found)) for name, found in seen.items()}
