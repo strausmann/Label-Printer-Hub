@@ -349,16 +349,41 @@ def _preview_qr(payload: str, usable_hmm: int, render_dpi: int) -> Image.Image |
     )
 
 
+def _glyph_x_px(text: str, size_pt: float) -> list[int]:
+    """The x offset in preview pixels of each glyph, from the PDF's own advances.
+
+    The PDF advances glyph by glyph by ``pdfmetrics.stringWidth`` (unhinted, no kerning). Under
+    the pinned BASIC engine Pillow rounds every advance to a whole pixel at 150 dpi, and the
+    error adds up over the string (about 2 mm over a 36-glyph margin ID). Placing each glyph at
+    the PDF's cumulative position keeps the error at one pixel however long the text is.
+    """
+    return [round(text_width_mm(text[:i], size_pt) * PREVIEW_DPI / 25.4) for i in range(len(text))]
+
+
+def _draw_text_on_pdf_metrics(
+    draw: ImageDraw.ImageDraw,
+    origin: tuple[int, int],
+    text: str,
+    font: Any,
+    size_pt: float,
+) -> None:
+    """Draw ``text`` with its baseline start at ``origin``, every glyph where the PDF puts it."""
+    x0, y0 = origin
+    for ch, dx in zip(text, _glyph_x_px(text, size_pt), strict=True):
+        if not ch.isspace():
+            draw.text((x0 + dx, y0), ch, font=font, fill=0, anchor="ls")
+
+
 def _paste_turned_text(
     page: Image.Image, lay: _MarginLayout, font: Any, origin: tuple[int, int]
 ) -> None:
     """Draw ``lay.text`` into its own image and paste it turned a quarter turn clockwise, so
     that the text origin (its baseline start) lands on ``origin``."""
-    width = round(font.getlength(lay.text)) + 2
+    width = round(text_width_mm(lay.text, lay.size_pt) * PREVIEW_DPI / 25.4) + 4
     height = round(font.size * 1.5)
     base = round(font.size * 1.1)  # the baseline row inside the strip
     strip = Image.new("1", (width, height), 1)
-    ImageDraw.Draw(strip).text((0, base), lay.text, font=font, fill=0, anchor="ls")
+    _draw_text_on_pdf_metrics(ImageDraw.Draw(strip), (0, base), lay.text, font, lay.size_pt)
     turned = strip.transpose(Image.Transpose.ROTATE_270)  # clockwise
     # After the turn, strip (x, y) lands at (height - 1 - y, x): the baseline row becomes the
     # column ``height - 1 - base`` and the text start the row 0.
@@ -411,19 +436,23 @@ def render_preview_png(
         elif lay.rotation == 90:
             _paste_turned_text(page, lay, font, (px(lay.text_x), px(lay.baseline_y)))
         else:
-            ImageDraw.Draw(page).text(
-                (px(lay.text_x), px(lay.baseline_y)), lay.text, font=font, fill=0, anchor="ls"
+            _draw_text_on_pdf_metrics(
+                ImageDraw.Draw(page),
+                (px(lay.text_x), px(lay.baseline_y)),
+                lay.text,
+                font,
+                lay.size_pt,
             )
     # Last: nothing the ID or a cell drew can cover it.
     if feed_mark is not None:
         # A fractional pixel size, so the preview mark is as wide as the PDF's (6 pt is 12.5 px).
         font = _preview_font(feed_mark.size_pt * PREVIEW_DPI / 72)
-        ImageDraw.Draw(page).text(
+        _draw_text_on_pdf_metrics(
+            ImageDraw.Draw(page),
             (px(feed_mark.x_hmm), px(feed_mark.baseline_y_hmm)),
             feed_mark.text,
-            font=font,
-            fill=0,
-            anchor="ls",
+            font,
+            feed_mark.size_pt,
         )
     out = io.BytesIO()
     page.save(out, format="PNG")

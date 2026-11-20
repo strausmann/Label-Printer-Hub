@@ -907,12 +907,11 @@ def test_preview_margin_text_width_matches_pdf() -> None:
     """266-05: the preview's margin ID is as long as the PDF's, because the preview uses the
     fractional font size the PDF uses, not a whole-pixel one.
 
-    The preview is drawn with the pinned BASIC engine (the release image has no libfribidi), which
-    rounds each glyph advance to whole pixels at 150 dpi. Measured against the 2400 dpi reference
-    the drift is +2.0, -1.5, +0.6 and +0.6 mm for the four widths below; under RAQM (what this
-    test measured until the engine was pinned, #211) it stayed within 0.2 mm. The bound is the
-    BASIC drift, not a fidelity target: the preview of a margin ID is up to ~2 mm off the PDF in
-    the shipped image.
+    The preview is drawn with the pinned BASIC engine, which rounds each glyph advance to whole
+    pixels at 150 dpi. Drawn as one string that adds up to +2.0, -1.5, +0.6 and +0.6 mm for the
+    four widths below, so the preview places each glyph at the PDF's own cumulative advance and
+    the error stays at about one pixel (0.17 mm); 0.3 mm is that plus ink rounding. A whole-pixel
+    font size (the 266-05 regression) is a few percent, well above it.
 
     The PDF draws the bundled font's outlines at ``size_pt``; their ink is measured from the
     same font rasterised at 2400 dpi, so side bearings do not count against either side."""
@@ -938,7 +937,7 @@ def test_preview_margin_text_width_matches_pdf() -> None:
         want_mm = pdf_ink_mm(lay.text, lay.size_pt)
         left, _, right, _ = _ink_box(render_preview_png(L4736, [], margin, render_dpi=600))
         got_mm = (right - left) * 25.4 / 150
-        assert abs(got_mm - want_mm) <= 2.1, (usable, lay.size_pt, got_mm, want_mm)
+        assert abs(got_mm - want_mm) <= 0.3, (usable, lay.size_pt, got_mm, want_mm)
 
 
 def test_render_preview_png_needs_the_render_dpi() -> None:
