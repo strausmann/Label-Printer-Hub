@@ -39,6 +39,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 #: Most cells (columns x rows) a calibration page draws; a bigger grid is refused (#358).
+#: A second line of defence: every API, import and seed path already caps a type at
+#: ``geometry.MAX_CELLS`` (400) in ``validate_geometry``; this bound covers rows stored past it.
 MAX_CALIBRATION_CELLS: Final = 2500
 
 #: Plan 2 decision: the page size the squares are measured on is the sheet's own.
