@@ -15,7 +15,7 @@ import pathlib
 import pytest
 import pytest_asyncio
 from app.repositories.write_lock import install_statement_counter
-from sqlalchemy import Engine
+from sqlalchemy import Engine, event
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
@@ -84,6 +84,9 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 async def async_session_factory(tmp_path: pathlib.Path):
     """Per-test SQLite + async_sessionmaker für isolierte JobStore-Tests.
 
+    Journal mode WAL and a busy timeout like the hub (#213): a worker cancelled in the middle of
+    a read must not leave the next writer waiting on a rollback-journal lock.
+
     FOREIGN KEYS sind absichtlich DEAKTIVIERT (SQLite-Default).
     Phase-2-Tests nutzen uuid4() als printer_id ohne echte Printer-Rows in
     der DB — FK ON würde Tests verlangen die Printer-Stamm-Daten anlegen,
@@ -96,6 +99,14 @@ async def async_session_factory(tmp_path: pathlib.Path):
     db_path = tmp_path / "job_store_test.db"
     url = f"sqlite+aiosqlite:///{db_path}"
     engine = create_async_engine(url, echo=False, connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _wal(dbapi_connection, _record) -> None:
+        cur = dbapi_connection.cursor()
+        cur.execute("PRAGMA journal_mode = WAL")
+        cur.execute("PRAGMA busy_timeout = 5000")
+        cur.close()
+
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)

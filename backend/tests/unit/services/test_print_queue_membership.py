@@ -11,7 +11,7 @@ the timeout, is interrupted). All waits are bounded.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock
@@ -19,7 +19,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_asyncio
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.printer_backends.ipp.client import IppClient
@@ -80,33 +79,6 @@ class _TapePrinter:
 def handler() -> Iterator[RecordingHandler]:
     with registered(RecordingHandler()) as h:
         yield h
-
-
-@pytest_asyncio.fixture
-async def async_session_factory(tmp_path: Any) -> AsyncIterator[Any]:
-    """A WAL database like the hub's (see ``test_print_queue_page_recovery.py``): a worker
-    cancelled mid-read must not lock the next writer."""
-    import app.models  # noqa: F401 — registers all models with SQLModel.metadata
-    from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from sqlmodel import SQLModel
-
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{tmp_path / 'membership.db'}",
-        connect_args={"check_same_thread": False},
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _wal(dbapi_connection: Any, _record: object) -> None:
-        cur = dbapi_connection.cursor()
-        cur.execute("PRAGMA journal_mode = WAL")
-        cur.execute("PRAGMA busy_timeout = 5000")
-        cur.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    yield async_sessionmaker(engine, expire_on_commit=False)
-    await engine.dispose()
 
 
 @pytest.fixture(params=["memory", "sqlite"])

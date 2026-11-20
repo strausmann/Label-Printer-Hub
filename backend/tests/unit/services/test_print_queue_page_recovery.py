@@ -17,7 +17,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_asyncio
 from app.models.job import Job as DbJob
 from app.models.job import JobState as DbJobState
 from app.printer_backends.ipp.client import IppClient
@@ -131,40 +130,6 @@ async def _tracked_in_db(store: JobStore, job_id: UUID) -> None:
 def handler() -> Any:
     with registered(RecordingHandler()) as h:
         yield h
-
-
-@pytest_asyncio.fixture
-async def async_session_factory(tmp_path: Any) -> AsyncIterator[Any]:
-    """The shared fixture's database, in the journal mode the hub runs with.
-
-    SQLite's default rollback journal lets a reader block every writer. These tests stop one
-    "hub run" by cancelling its worker, which can cut a read off half way and leave the
-    connection holding its lock; the next run's first write then failed with ``database is
-    locked`` after the busy timeout (seen on CI, as a timeout of the test). The hub uses WAL
-    and a busy timeout (``app/db/engine.py``): readers block nobody there. Foreign keys stay
-    off, like the shared fixture (the jobs here name printers that have no row).
-    """
-    import app.models  # noqa: F401 — registers all models with SQLModel.metadata
-    from sqlalchemy import event
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-    from sqlmodel import SQLModel
-
-    engine = create_async_engine(
-        f"sqlite+aiosqlite:///{tmp_path / 'recovery.db'}",
-        connect_args={"check_same_thread": False},
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _wal(dbapi_connection: Any, _record: object) -> None:
-        cur = dbapi_connection.cursor()
-        cur.execute("PRAGMA journal_mode = WAL")
-        cur.execute("PRAGMA busy_timeout = 5000")
-        cur.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-    yield async_sessionmaker(engine, expire_on_commit=False)
-    await engine.dispose()
 
 
 @pytest.fixture(params=["memory", "sqlite"])
