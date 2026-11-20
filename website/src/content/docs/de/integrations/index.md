@@ -25,6 +25,8 @@ Ein Geheimnis gehört zu der Adresse, mit der es gespeichert wurde: Änderst du 
 
 `GET /api/v1/lookup/{app}/{id}` liefert, was ein Plugin zu einer ID gefunden hat, ohne zu drucken; `POST /api/v1/print` mit einem Objekt `lookup` druckt in einem Schritt. Siehe die [API-Referenz](/de/developers/api/).
 
+Ein Nachschlagen antwortet mit `502` (`integration_lookup_failed`), wenn die Antwort der App komprimiert ist, obwohl der Hub keine Kompression verlangt hat (`Accept-Encoding: identity`); das Protokoll sagt dann `the upstream answer is compressed although identity was requested`. Meist steht ein Reverse Proxy vor der App, der gzip erzwingt. Der Hub weist eine solche Antwort ungelesen ab, weil er die Größe des entpackten Körpers nicht begrenzen kann. Schalte die Kompression für die Adresse der App in diesem Proxy ab.
+
 ## Labelyard aus einem anderen Container aufrufen
 
 Andere Container im selben Docker-Netz rufen den Hub direkt unter `http://<dienst>:8000` auf (zum Beispiel `http://labelyard:8000`) und melden sich mit einem API-Schlüssel im Header `X-Label-Hub-Key` an. Weder ein Reverse Proxy noch SSO sind beteiligt.

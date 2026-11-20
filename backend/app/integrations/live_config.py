@@ -36,6 +36,14 @@ class LookupResponseTooLargeError(LookupFailedError):
     """The upstream answer is larger than :data:`MAX_LOOKUP_RESPONSE_BYTES` (HTTP 502)."""
 
 
+class LookupResponseCompressedError(LookupFailedError):
+    """The upstream compressed its answer although ``identity`` was requested (HTTP 502).
+
+    Typically a reverse proxy in front of the app that forces gzip. Not a size problem: the
+    answer is refused unread because its decoded size cannot be bounded.
+    """
+
+
 async def _read_bounded(response: httpx.Response) -> bytes:
     """The body of ``response``, read in chunks and refused above the limit.
 
@@ -44,12 +52,16 @@ async def _read_bounded(response: httpx.Response) -> bytes:
     the body bytes because lookups ask for ``Accept-Encoding: identity`` and an answer that
     nevertheless carries a ``Content-Encoding`` is refused: httpx decodes a compressed chunk
     in one call without an output limit (a 64 KiB gzip chunk inflates to ~64 MiB), so the
-    decoded size cannot be bounded after the fact. An already read response is checked by
-    its size.
+    decoded size cannot be bounded after the fact (:class:`LookupResponseCompressedError`, its own
+    error so the operator is not pointed at the size limit). An already read response is checked
+    by its size.
     """
     encoding = response.headers.get("content-encoding", "").strip().lower()
     if encoding not in ("", "identity"):
-        raise LookupResponseTooLargeError("the upstream answer is compressed")
+        message = "the upstream answer is compressed although identity was requested"
+        # The REST answer is a fixed text, so this line is the operator's only pointer.
+        _log.warning("Lookup refused: %s", message)
+        raise LookupResponseCompressedError(message)
     if (declared := response.headers.get("content-length", "")).isdigit() and (
         int(declared) > MAX_LOOKUP_RESPONSE_BYTES
     ):

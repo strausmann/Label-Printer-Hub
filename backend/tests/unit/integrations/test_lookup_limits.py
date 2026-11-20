@@ -18,6 +18,7 @@ from app.api.routes.lookup import _answered
 from app.integrations.grocy.plugin import GrocyPlugin
 from app.integrations.live_config import (
     MAX_LOOKUP_RESPONSE_BYTES,
+    LookupResponseCompressedError,
     LookupResponseTooLargeError,
     StoreBoundPlugin,
     read_json_bounded,
@@ -93,6 +94,8 @@ async def test_lookup_answer_over_one_mib_maps_to_integration_lookup_failed(
     assert info.value.status_code == 502
     assert info.value.detail["error_code"] == "integration_lookup_failed"  # type: ignore[index]
     assert issubclass(LookupResponseTooLargeError, LookupFailedError)
+    assert issubclass(LookupResponseCompressedError, LookupFailedError)
+    assert not issubclass(LookupResponseCompressedError, LookupResponseTooLargeError)
 
 
 @pytest.mark.asyncio
@@ -164,13 +167,15 @@ async def test_compressed_answer_is_refused_without_inflating_it(
     _serve(plugin, handler)
     tracemalloc.start()
     try:
-        with pytest.raises(LookupFailedError):
+        with pytest.raises(LookupResponseCompressedError) as info:
             await plugin.lookup(identifier)  # type: ignore[attr-defined]
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
     assert seen
     assert set(seen) == {"identity"}
+    assert "compressed although identity was requested" in str(info.value)
+    assert "too large" not in str(info.value)
     assert peak < 4 << 20, f"peak allocation {peak} bytes: the answer was inflated"
 
 
@@ -275,3 +280,21 @@ async def test_lookup_deadline_covers_follow_up_calls(
 
 def test_lookup_deadline_default_is_fifteen_seconds() -> None:
     assert lookup_service.LOOKUP_DEADLINE_S == 15.0
+
+
+@pytest.mark.asyncio
+async def test_compressed_answer_maps_to_502_integration_lookup_failed(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-encoding": "gzip"}, content=b"\x1f\x8b")
+
+    plugin = bound(SpoolmanPlugin)
+    _serve(plugin, handler)
+    with caplog.at_level(logging.WARNING), pytest.raises(HTTPException) as info:
+        await _answered(plugin.lookup("7"))
+    assert info.value.status_code == 502
+    assert info.value.detail["error_code"] == "integration_lookup_failed"  # type: ignore[index]
+    ours = " ".join(r.getMessage() for r in caplog.records if r.name.startswith("app"))
+    assert "compressed although identity was requested" in ours
+    assert "spoolman.example" not in ours
