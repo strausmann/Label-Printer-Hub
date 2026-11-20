@@ -21,7 +21,7 @@ from app.auth.scope_deps import require_read
 from app.calibration import service as calibration_service
 from app.config import get_settings
 from app.db.session import get_session
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_status_cache import PrinterStatusCache
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import Margins, ProbeSummary
@@ -247,7 +247,7 @@ async def get_capabilities(
         parsed = {}
     caps = (
         await _page(session, printer, parsed, captured)
-        if printer.backend == "ipp"
+        if is_page_printer(printer)
         else _tape(printer, parsed, captured, runtime)
     )
     return caps.model_copy(update={"stale": True}) if unknown else caps

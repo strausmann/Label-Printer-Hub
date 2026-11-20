@@ -45,7 +45,7 @@ from app.calibration import service as calibration_service
 from app.config import get_settings
 from app.models.job import Job
 from app.models.print_batch import PrintBatch
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import SheetType, SheetTypeVersion
 from app.printer_backends.exceptions import ContentTypeDataMismatchError
@@ -1092,7 +1092,7 @@ async def preview(
     No database connection is held while the lookups run or the pictures are drawn (R10-1): the
     reads happen in one short session before them, the reprint hints in another one after.
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     request = one_sheet_request(request)  # R10-5, #277: before any planning
     total = len(request.items)
@@ -1769,7 +1769,7 @@ async def print_sheets(
     the page that failed and of every later one; pages already submitted stay, and their
     outcome handler settles them. ``language`` is the hub's ``general.language``.
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     request = one_sheet_request(request)  # #277: one sheet per run
     total = len(request.items)
@@ -1879,7 +1879,7 @@ async def create_sheet_with_id_label(
     frees the ID cell and says so: the error carries ``sheet_code``, and the ID goes onto the
     next job's first free cell (OC-40).
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     scan = scan_payload_builder(str(get_settings().public_url))
     async with session_factory() as session:
@@ -2046,7 +2046,7 @@ async def create_sheet_with_back_label(
     ``error_detail.sheet_code``, and "Print back side" on the sheet page tries again. The job
     never sets ``id_printed``; the person confirms (R-350-6).
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     scan = scan_payload_builder(str(get_settings().public_url))
     async with session_factory() as session:
@@ -2121,7 +2121,7 @@ async def print_sheet_back(
     queued, and put back if the job cannot be queued. The strip, the date and the turn are read
     again: a second job prints the same.
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     scan = scan_payload_builder(str(get_settings().public_url))
     async with session_factory() as session:
@@ -2183,7 +2183,7 @@ async def print_margin_id(
     a margin ID in flight (``id_placement_mismatch``); no band deep enough on this printer
     (``margin_id_does_not_fit``).
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     scan = scan_payload_builder(str(get_settings().public_url))
     async with session_factory() as session:
@@ -2301,7 +2301,7 @@ async def margin_check(
     current language (it shortens the top band) and, as the QR payload, the code the next sheet
     of the type will probably get (spec 10.1). Nothing is written and no lock is taken.
     """
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     sheet_type = await repo.get_type_by_key(session, type_key)
     if sheet_type is None:

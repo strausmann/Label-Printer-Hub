@@ -45,7 +45,7 @@ from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import IppStatusRecord
@@ -90,7 +90,7 @@ def _connection_view(printer: Any, auth: AuthContext | None) -> dict[str, object
     """
     connection = dict(printer.connection or {})
     is_admin = auth is not None and auth.scope == "admin"
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         return snmp_view(connection) if is_admin else {}
     if is_admin:
         return connection
@@ -412,7 +412,7 @@ async def get_printer_status(
     if _auth is not None:
         check_printer_access(_auth, printer_id)
     status_ = await _cached_status(session, printer_id, runtime)
-    if printer.backend == "ipp":
+    if is_page_printer(printer):
         # #344: the trays the newest sheet and calibration pages used, on every branch of the
         # status (also never probed, not polled, stale): they come from the hub's own jobs.
         trays = await jobs_repo.last_page_trays(session, printer_id)

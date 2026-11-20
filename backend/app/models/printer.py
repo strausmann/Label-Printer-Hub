@@ -6,11 +6,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, text
 from sqlmodel import Column, Field, SQLModel
+
+IPP_BACKEND: Final = "ipp"
+"""The ``backend`` value of a page printer (IPP). Every other value is a tape printer."""
+
+
+def is_page_backend(backend: str) -> bool:
+    """Whether a ``backend`` value (of a payload or a row) names a page printer."""
+    return backend == IPP_BACKEND
 
 
 class Printer(SQLModel, table=True):
@@ -101,3 +109,8 @@ class PrinterAudit(SQLModel, table=True):
         default_factory=lambda: datetime.now(UTC),
         sa_column=Column(DateTime(timezone=True), nullable=False),
     )
+
+
+def is_page_printer(printer: Printer) -> bool:
+    """Whether a printer row is a page printer; the one place a route asks this."""
+    return is_page_backend(printer.backend)

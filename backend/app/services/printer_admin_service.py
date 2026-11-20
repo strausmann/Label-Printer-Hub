@@ -35,7 +35,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
-from app.models.printer import Printer, PrinterAudit
+from app.models.printer import IPP_BACKEND as IPP_BACKEND  # re-export
+from app.models.printer import Printer, PrinterAudit, is_page_backend, is_page_printer
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
@@ -75,7 +76,6 @@ from app.sheets.text import log_value
 
 _log = logging.getLogger(__name__)
 
-IPP_BACKEND = "ipp"
 AUTO_TRAY = "auto"
 IPP_MODEL_FALLBACK = "IPP printer"
 MAX_MODEL_LENGTH = 120
@@ -381,10 +381,10 @@ def _payload_to_row(
         "queue_timeout_s": payload.queue.timeout_s,
         # Cut defaults do not apply to page printers (spec 11.1).
         "cut_defaults_half_cut": (
-            False if payload.backend == IPP_BACKEND else payload.cut_defaults.half_cut
+            False if is_page_backend(payload.backend) else payload.cut_defaults.half_cut
         ),
         "layout_defaults": (
-            {} if payload.backend == IPP_BACKEND else _layout_json(payload.layout_defaults)
+            {} if is_page_backend(payload.backend) else _layout_json(payload.layout_defaults)
         ),
         "enabled": payload.enabled,
         "created_at": created_at_utc,
@@ -638,7 +638,7 @@ class PrinterAdminService:
         if printer is None:
             raise PrinterNotFoundBySlugError(slug)
 
-        is_ipp = printer.backend == IPP_BACKEND
+        is_ipp = is_page_printer(printer)
         expected = IppConnection if is_ipp else PrinterConnection
         if patch.connection is not None and not isinstance(patch.connection, expected):
             raise ConnectionKindMismatchError()

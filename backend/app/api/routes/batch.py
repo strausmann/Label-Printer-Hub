@@ -22,6 +22,7 @@ from app.auth.dependencies import (
 from app.auth.scope_deps import require_print
 from app.db.session import get_session
 from app.models.print_batch import PrintBatch
+from app.models.printer import is_page_printer
 from app.printer_backends.exceptions import (
     ConflictingOrientationError,
     NoTapeLoadedError,
@@ -130,7 +131,7 @@ async def create_batch(
     check_printer_access(auth, printer.id)
 
     # 3b. Tape jobs only: a page printer (IPP) prints sheets, not tape labels.
-    if printer.backend == "ipp":
+    if is_page_printer(printer):
         raise MediaKindMismatchError().to_http()
 
     # 4. R3-Drift #10: backend_router direkt aus app.state — KEIN get_app_state.

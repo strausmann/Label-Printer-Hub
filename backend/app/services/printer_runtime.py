@@ -52,7 +52,7 @@ from pysnmp.error import PySnmpError
 from sqlalchemy import select
 from sqlmodel import col
 
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_state import PrinterState
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.exceptions import SnmpDiscoveryError
@@ -211,7 +211,7 @@ def wiring_key(printer: Printer, *, tray_keys: Sequence[str] = ()) -> tuple[obje
     The SNMP settings of a tape printer (discovery switch, community) are part of the
     connection JSON (element 3), so a change of either changes the key.
     """
-    is_ipp = printer.backend == "ipp"
+    is_ipp = is_page_printer(printer)
     conn = dict(printer.connection or {})
     return (
         bool(printer.enabled),
@@ -380,7 +380,7 @@ class PrinterRuntime:
             row = await session.get(Printer, printer_id)
         wiring = self._wired.get(printer_id)
         if row is not None and row.enabled and wiring is not None:
-            trays = await self._tray_keys(printer_id) if row.backend == "ipp" else []
+            trays = await self._tray_keys(printer_id) if is_page_printer(row) else []
             same_key = _key_digest(wiring_key(row, tray_keys=trays)) == wiring.key_digest
             # 263-23: an equal key is no reason to keep a printer that should be polled but
             # has no producer (its start failed); re-wiring gives it a fresh one.
@@ -401,7 +401,7 @@ class PrinterRuntime:
         """True iff *row* is polled by design but *wiring* has no producer."""
         if wiring.producer is not None:
             return False
-        if row.backend == "ipp":
+        if is_page_printer(row):
             return True
         cfg = tape_config(row)
         return bool(cfg.host and cfg.snmp.discover)
@@ -499,7 +499,7 @@ class PrinterRuntime:
             return
         paused_since = await self._paused_since(printer.id)
         await self._load_identity_hold(printer.id)  # #231: before any worker for it can run
-        if printer.backend == "ipp":
+        if is_page_printer(printer):
             wiring = await self._attach_page(printer, paused_since)
         else:
             wiring = await self._attach_tape(printer, paused_since)

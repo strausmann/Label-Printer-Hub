@@ -55,6 +55,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies.webhook_auth import enforce_webhook_rate_limit, require_webhook_key
 from app.api.print_errors import print_error_response, print_error_responses
 from app.db.session import get_session
+from app.models.printer import is_page_printer
 from app.repositories import printers as printers_repo
 from app.schemas.content_type import ContentType
 from app.schemas.label_data import LabelData
@@ -95,7 +96,7 @@ async def _resolve_default_printer_id(session: AsyncSession) -> str:
     tape jobs are never routed to an IPP page printer (spec 11.4).
     """
     printers = await printers_repo.list_all(session)
-    enabled = [p for p in printers if p.enabled and p.backend != "ipp"]
+    enabled = [p for p in printers if p.enabled and not is_page_printer(p)]
     if not enabled:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

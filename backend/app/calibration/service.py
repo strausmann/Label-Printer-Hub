@@ -23,7 +23,7 @@ from app.calibration.model import (
     deviation_to_values,
     to_deviation,
 )
-from app.models.printer import Printer
+from app.models.printer import Printer, is_page_printer
 from app.models.printer_calibration import PrinterCalibration
 from app.models.printer_tray import PrinterTray
 from app.models.sheet import SheetType, SheetTypeVersion
@@ -37,7 +37,7 @@ async def _page_printer(session: AsyncSession, printer_id: UUID) -> Printer:
     printer = await session.get(Printer, printer_id)
     if printer is None:
         raise PrinterNotFoundError()
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError()
     return printer
 

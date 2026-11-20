@@ -59,6 +59,7 @@ from app.auth.scope_deps import require_print, require_read
 from app.db import engine as db_engine
 from app.db.session import get_session
 from app.models.job import Job, JobState, is_page_payload
+from app.models.printer import is_page_printer
 from app.repositories import jobs as jobs_repo
 from app.repositories import printers as printers_repo
 from app.repositories import sheet_types as types_repo
@@ -623,7 +624,7 @@ async def _retry_deferred_sheet(
         raise _printer_unavailable(job.printer_id)
     if not printer.enabled:
         raise SheetPrinterDisabledError().to_http()
-    if printer.backend != "ipp":
+    if not is_page_printer(printer):
         raise MediaKindMismatchError().to_http()  # re-wired to a tape printer since
     ensure_not_held(queue, job.printer_id)  # #231
     sheet_type = str(payload.get("sheet_type") or "")
