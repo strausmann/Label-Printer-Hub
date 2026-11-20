@@ -136,7 +136,9 @@ def next_preview_tag(version_or_milestone: str, tags: list[str], released: list[
     else:
         raise ValueError(f"version must be x.y.z or x.y.x, got '{version_or_milestone}'")
     if version in released:
-        raise ValueError(f"{version} is already released; a preview must lead to an unreleased version")
+        raise ValueError(
+            f"{version} is already released; a preview must lead to an unreleased version"
+        )
     numbers = [int(m.group(5)) for t in tags if (m := _PREVIEW.match(t)) and m.group(1) == version]
     return f"{version}-rc.{max(numbers, default=0) + 1}"
 
@@ -199,7 +201,11 @@ def fetch_tags(
 
 
 def _hub_request(
-    method: str, url: str, opener: Opener, token: str | None = None, body: dict[str, str] | None = None
+    method: str,
+    url: str,
+    opener: Opener,
+    token: str | None = None,
+    body: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
     headers = {"Accept": "application/json"}
     if token is not None:
@@ -220,7 +226,10 @@ def dockerhub_token(username: str, secret: str, opener: Opener = urllib.request.
     The secret travels in the request body, never in a URL or a command line.
     """
     _, payload = _hub_request(
-        "POST", f"{DOCKERHUB_API}/auth/token", opener, body={"identifier": username, "secret": secret}
+        "POST",
+        f"{DOCKERHUB_API}/auth/token",
+        opener,
+        body={"identifier": username, "secret": secret},
     )
     return str(payload["access_token"])
 
@@ -237,7 +246,9 @@ def fetch_dockerhub_tags(
     cleanup would otherwise stay green without ever pruning. A 404 on a later
     page and every other error are raised.
     """
-    url: str | None = f"{DOCKERHUB_API}/namespaces/{namespace}/repositories/{repository}/tags?page_size=100"
+    url: str | None = (
+        f"{DOCKERHUB_API}/namespaces/{namespace}/repositories/{repository}/tags?page_size=100"
+    )
     tags: list[str] = []
     while url:
         if not url.startswith(f"{DOCKERHUB_API}/"):
@@ -290,7 +301,12 @@ def _read_tags(stream: Any) -> list[str]:
 def main(argv: list[str], stdin: Any = None, stdout: Any = None) -> int:
     stdin = stdin or sys.stdin
     stdout = stdout or sys.stdout
-    if argv[:1] == ["fetch-tags"] and argv[1:] in ([], ["--on-empty=allow"], ["--on-empty=warn"], ["--on-empty=fail"]):
+    if argv[:1] == ["fetch-tags"] and argv[1:] in (
+        [],
+        ["--on-empty=allow"],
+        ["--on-empty=warn"],
+        ["--on-empty=fail"],
+    ):
         mode = argv[1].split("=")[1] if argv[1:] else "allow"
         image = os.environ["IMAGE_PATH"].lower()
         tags = fetch_tags(image, os.environ["ACTOR"], os.environ["GHCR_TOKEN"])
@@ -298,7 +314,10 @@ def main(argv: list[str], stdin: Any = None, stdout: Any = None) -> int:
             # An existing package with a falsely empty list (403/404) would make
             # the cleanup treat every open preview as deletable.
             level = "error" if mode == "fail" else "warning"
-            print(f"::{level}::tag list of {image} is empty; open previews cannot be protected", file=sys.stderr)
+            print(
+                f"::{level}::tag list of {image} is empty; open previews cannot be protected",
+                file=sys.stderr,
+            )
             if mode == "fail":
                 return 1
         stdout.write("".join(f"{t}\n" for t in tags))

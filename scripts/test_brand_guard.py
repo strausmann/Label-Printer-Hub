@@ -129,7 +129,9 @@ class BrandGuardTest(unittest.TestCase):
 
     def test_legacy_ipp_user_name_allowed_only_in_its_constant(self) -> None:
         path = "backend/app/printer_backends/ipp/job_attrs.py"
-        self.add(path, f'LEGACY_IPP_USER_NAME = "{SLUG}"  # jobs sent by 1.5.x\nUSER_NAME = "{SLUG}"\n')
+        self.add(
+            path, f'LEGACY_IPP_USER_NAME = "{SLUG}"  # jobs sent by 1.5.x\nUSER_NAME = "{SLUG}"\n'
+        )
         self.add("backend/app/printer_backends/ipp/client.py", f'LEGACY_IPP_USER_NAME = "{SLUG}"\n')
         hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
         self.assertEqual(hits, [("backend/app/printer_backends/ipp/client.py", 1), (path, 2)])
@@ -142,18 +144,29 @@ class BrandGuardTest(unittest.TestCase):
         }
         for path, line in allowed.items():
             self.add(path, line)
-        for path in ("package.json", "backend/tests/unit/test_release_workflows_more.py", "x/.releaserc.json"):
+        for path in (
+            "package.json",
+            "backend/tests/unit/test_release_workflows_more.py",
+            "x/.releaserc.json",
+        ):
             self.add(path, allowed[".releaserc.json"])
         hits = sorted(h.path for h in brand_guard.find_hits(self.root))
         self.assertEqual(
             hits,
-            ["backend/tests/unit/test_release_workflows_more.py", "package.json", "x/.releaserc.json"],
+            [
+                "backend/tests/unit/test_release_workflows_more.py",
+                "package.json",
+                "x/.releaserc.json",
+            ],
         )
 
     def test_temporary_repo_url_allowance_is_the_line_not_the_file(self) -> None:
         url = f"git@github.com:strausmann/{SLUG}.git"
         # Another key with the old slug, the pin in a different statement, and the allowed line of the other file.
-        self.add(".releaserc.json", f'  "repositoryUrl": "{url}",\n  "homepage": "https://github.com/strausmann/{SLUG}"\n')
+        self.add(
+            ".releaserc.json",
+            f'  "repositoryUrl": "{url}",\n  "homepage": "https://github.com/strausmann/{SLUG}"\n',
+        )
         self.add(
             "backend/tests/unit/test_release_workflows.py",
             f'    assert releaserc["repositoryUrl"] == "{url}"\n    expected = "{url}"\n    "repositoryUrl": "{url}"\n',
@@ -161,7 +174,11 @@ class BrandGuardTest(unittest.TestCase):
         hits = sorted((h.path, h.line) for h in brand_guard.find_hits(self.root))
         self.assertEqual(
             hits,
-            [(".releaserc.json", 2), ("backend/tests/unit/test_release_workflows.py", 2), ("backend/tests/unit/test_release_workflows.py", 3)],
+            [
+                (".releaserc.json", 2),
+                ("backend/tests/unit/test_release_workflows.py", 2),
+                ("backend/tests/unit/test_release_workflows.py", 3),
+            ],
         )
         # the allowance is for the slug only: other old names on the allowed line stay hits
         self.add(".releaserc.json", f'  "repositoryUrl": "{url}", "x": "{DISPLAY}"\n')
@@ -383,7 +400,9 @@ class BrandGuardTest(unittest.TestCase):
 
     def test_metric_prefix_elsewhere_is_a_hit(self) -> None:
         self.add("backend/app/other.py", f'"{self.METRIC}"\n')
-        self.add("backend/app/observability/sse_metrics.py", f'"{"printer_" + "hub_queue_depth"}"\n')
+        self.add(
+            "backend/app/observability/sse_metrics.py", f'"{"printer_" + "hub_queue_depth"}"\n'
+        )
         self.assertEqual(self.rules(), ["metric", "metric"])
 
     # --- hit format and exit code -----------------------------------------

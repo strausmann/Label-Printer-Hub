@@ -1,0 +1,15 @@
+# Ruff configuration for the release tooling in scripts/ (stdlib-only Python).
+#
+# Rules: ruff's classic default set (E4, E7, E9, F) plus I (import order) and UP (pyupgrade),
+# listed explicitly so a ruff upgrade that widens the built-in default does not change them.
+# The backend rule set (backend/pyproject.toml) finds 124 issues here, most of them typing
+# and style rules that stdlib-only scripts do not need, so scripts/ keeps its own, smaller set.
+# Line length and target version match the backend.
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[lint.isort]
+known-first-party = ["brand_guard", "ghcr_rules", "glossary", "licence_snapshot", "release_impact", "vale_scope"]
