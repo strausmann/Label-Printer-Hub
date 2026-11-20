@@ -10,16 +10,21 @@ for both lists. A licence can move between two allowed licences (MIT to Apache-2
 tripping the licence policy; this tool makes such a move visible and fails until the snapshot
 is updated on purpose.
 
-    licence_snapshot.py check  --backend B.json --frontend F.json [--snapshot S.json]
+    licence_snapshot.py check  --backend B.json --frontend F.json [--snapshot S.json] [--strict]
     licence_snapshot.py update --backend B.json --frontend F.json [--snapshot S.json]
     licence_snapshot.py notes  --old OLD.json --new NEW.json
 
 ``check`` prints one line per difference (``name: OLD → NEW``; a new package is
 ``name: (new) → LICENCE``, a removed one ``name: LICENCE → (removed)``), appends the lines to
-``$GITHUB_STEP_SUMMARY`` and exits 1 on any difference. ``update`` rewrites the snapshot sorted
+``$GITHUB_STEP_SUMMARY``. It exits 1 when a package present in both lists changed its licence;
+a package that is only new or only removed is reported but does not fail, because the licence
+policy gate of the image build already judges every package the image carries (a new package with
+a disallowed licence stops that build) and a moved dependency set is not a defect of a pull
+request. ``--strict`` also fails on new and removed packages; the weekly run and the release use
+it. ``update`` rewrites the snapshot sorted
 by name. ``notes`` renders the difference between two snapshots as a release-notes section.
 
-Exit codes: 0 ok, 1 licences differ or snapshot missing, 2 unreadable input.
+Exit codes: 0 ok, 1 licences moved (or, with --strict, any difference) or snapshot missing, 2 unreadable input.
 """
 
 from __future__ import annotations
@@ -156,6 +161,12 @@ def write_snapshot(path: Path, packages: dict[str, str]) -> None:
     path.write_text(json.dumps(body, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def is_licence_move(change: tuple[str, str, str]) -> bool:
+    """True for a package present in both lists whose licence differs."""
+    _, before, after = change
+    return before not in (NEW, REMOVED) and after not in (NEW, REMOVED)
+
+
 def _append_summary(bullets: list[str]) -> None:
     target = os.environ.get("GITHUB_STEP_SUMMARY")
     if not target or not bullets:
@@ -175,11 +186,12 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"licence snapshot {args.snapshot} is missing; run 'update' first", file=sys.stderr)
         return 1
     old, new = read_snapshot(args.snapshot), _current(args)
-    lines = diff(old, new)
-    for line in lines:
-        print(f"{LINE_PREFIX}{line}")
+    found = changes(old, new)
+    for name, before, after in found:
+        print(f"{LINE_PREFIX}{name}: {before} → {after}")
     _append_summary(markdown_lines(old, new))
-    return 1 if lines else 0
+    failing = found if args.strict else [c for c in found if is_licence_move(c)]
+    return 1 if failing else 0
 
 
 def cmd_update(args: argparse.Namespace) -> int:
@@ -206,6 +218,12 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--frontend", type=Path, required=True)
         p.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT)
         p.set_defaults(func=func)
+        if name == "check":
+            p.add_argument(
+                "--strict",
+                action="store_true",
+                help="also fail on a package that is only new or only removed",
+            )
     p = sub.add_parser("notes")
     p.add_argument("--old", type=Path, required=True)
     p.add_argument("--new", type=Path, required=True)

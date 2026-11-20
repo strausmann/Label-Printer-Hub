@@ -6,8 +6,9 @@ name: Licences — weekly snapshot check
 # Python has no lockfile, so the backend packages that land in the image depend on what PyPI
 # serves on the day. This workflow builds the image without any cache every Monday, so the
 # newest resolvable versions are picked up, and compares the licences it carries with
-# licences/snapshot.json. A difference fails THIS run and is written to the run summary; it never
-# touches a pull request. To accept it: python3 scripts/licence_snapshot.py update.
+# licences/snapshot.json. Any difference, also a new or removed package (`check --strict`), fails
+# THIS run and is written to the run summary; it never touches a pull request. To accept it:
+# python3 scripts/licence_snapshot.py update.
 
 on:
   schedule:
@@ -51,4 +52,4 @@ jobs:
           docker cp "$cid:/opt/app/web/licenses/backend.json" "$out/backend.json"
           docker cp "$cid:/opt/app/web/licenses/frontend.json" "$out/frontend.json"
           docker rm "$cid" > /dev/null
-          python3 scripts/licence_snapshot.py check --backend "$out/backend.json" --frontend "$out/frontend.json"
+          python3 scripts/licence_snapshot.py check --strict --backend "$out/backend.json" --frontend "$out/frontend.json"

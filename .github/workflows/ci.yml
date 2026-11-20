@@ -369,7 +369,9 @@ jobs:
 
       # The licences the image carries, compared with licences/snapshot.json. A licence that moves
       # between two allowed licences passes the policy but fails here until the snapshot is updated
-      # on purpose: python3 scripts/licence_snapshot.py update --backend ... --frontend ...
+      # on purpose. A package that is only new or only removed is reported in the step summary and
+      # does not fail (the weekly run is strict; the image build's licence policy judges new
+      # packages): python3 scripts/licence_snapshot.py update --backend ... --frontend ...
       - name: Check the licence snapshot
         run: |
           set -euo pipefail

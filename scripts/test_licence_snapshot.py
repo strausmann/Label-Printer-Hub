@@ -91,18 +91,38 @@ class CheckTest(SnapshotCase):
         self.assertEqual(code, 1)
         self.assertEqual(out.splitlines(), ["  - packbits: MIT → Apache-2.0"])
 
-    def test_a_new_package_is_reported(self) -> None:
+    def test_a_new_package_is_reported_but_does_not_fail_by_default(self) -> None:
         self.write_snapshot(SNAPSHOT)
         extra = [*BACKEND, {"name": "newpkg", "version": "1.0", "license": "BSD-3-Clause"}]
         code, out, _ = self.run_cli("check", *self.lists(extra, FRONTEND))
+        self.assertEqual(code, 0)
+        self.assertEqual(out.splitlines(), ["  - newpkg: (new) → BSD-3-Clause"])
+
+    def test_a_new_package_fails_in_strict_mode(self) -> None:
+        self.write_snapshot(SNAPSHOT)
+        extra = [*BACKEND, {"name": "newpkg", "version": "1.0", "license": "BSD-3-Clause"}]
+        code, out, _ = self.run_cli("check", "--strict", *self.lists(extra, FRONTEND))
         self.assertEqual(code, 1)
         self.assertEqual(out.splitlines(), ["  - newpkg: (new) → BSD-3-Clause"])
 
-    def test_a_removed_package_is_reported(self) -> None:
+    def test_a_removed_package_is_reported_but_does_not_fail_by_default(self) -> None:
         self.write_snapshot(SNAPSHOT)
         code, out, _ = self.run_cli("check", *self.lists(BACKEND[:1], FRONTEND))
-        self.assertEqual(code, 1)
+        self.assertEqual(code, 0)
         self.assertEqual(out.splitlines(), ["  - brother-ql-next: GPL-3.0-only → (removed)"])
+
+    def test_a_removed_package_fails_in_strict_mode(self) -> None:
+        self.write_snapshot(SNAPSHOT)
+        code, _, _ = self.run_cli("check", "--strict", *self.lists(BACKEND[:1], FRONTEND))
+        self.assertEqual(code, 1)
+
+    def test_a_licence_move_next_to_a_new_package_still_fails_by_default(self) -> None:
+        self.write_snapshot(SNAPSHOT)
+        changed = [dict(BACKEND[0], license="Apache-2.0"), BACKEND[1]]
+        extra = [*changed, {"name": "newpkg", "version": "1.0", "license": "MIT"}]
+        code, out, _ = self.run_cli("check", *self.lists(extra, FRONTEND))
+        self.assertEqual(code, 1)
+        self.assertIn("  - newpkg: (new) → MIT", out.splitlines())
 
     def test_versions_of_one_package_with_different_licences_are_joined(self) -> None:
         frontend = [
@@ -236,7 +256,7 @@ class HostileNameTest(SnapshotCase):
         # runner's trimming cannot reduce to "::".
         self.write_snapshot({})
         entries = [{"name": n, "version": "1", "license": "MIT"} for n in ("a", "pkg::x", "@s/p")]
-        code, out, _ = self.run_cli("check", *self.lists(entries, []))
+        code, out, _ = self.run_cli("check", "--strict", *self.lists(entries, []))
         self.assertEqual(code, 1)
         for line in out.splitlines():
             self.assertTrue(line.startswith("  - "), line)
@@ -280,7 +300,7 @@ class MarkdownTest(SnapshotCase):
         summary = self.dir / "summary.md"
         entries = [{"name": n, "version": "1", "license": lic} for n, lic in self.SCOPED.items()]
         code, out, _ = self.run_cli(
-            "check", *self.lists(entries, []), env={"GITHUB_STEP_SUMMARY": str(summary)}
+            "check", "--strict", *self.lists(entries, []), env={"GITHUB_STEP_SUMMARY": str(summary)}
         )
         self.assertEqual(code, 1)
         text = summary.read_text(encoding="utf-8")
@@ -327,6 +347,8 @@ class WorkflowWiringTest(unittest.TestCase):
         self.assertIn("/opt/app/web/licenses/backend.json", script)
         self.assertIn("/opt/app/web/licenses/frontend.json", script)
         self.assertRegex(script, r"licence_snapshot\.py check --backend \S+ --frontend \S+")
+        # Pull requests fail on a licence move only; the weekly run is the strict one.
+        self.assertNotIn("--strict", script)
 
     def test_the_weekly_workflow_is_scheduled_read_only_and_pinned(self) -> None:
         wf = _workflow("licence-weekly.yml")
@@ -338,7 +360,7 @@ class WorkflowWiringTest(unittest.TestCase):
             for step in job["steps"]:
                 if "uses" in step:
                     self.assertRegex(step["uses"], SHA_PIN)
-        self.assertIn("licence_snapshot.py check", _runs(wf["jobs"]["snapshot"]))
+        self.assertIn("licence_snapshot.py check --strict", _runs(wf["jobs"]["snapshot"]))
 
     def test_the_release_appends_the_notes_section_to_the_draft(self) -> None:
         job = _workflow("release.yml")["jobs"]["release-sbom"]
