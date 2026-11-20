@@ -147,6 +147,19 @@ describe("a scanned code", () => {
     expect(screen.getByRole("dialog")).toBeVisible();
   });
 
+  it("the hint is gone when the dialog is closed and opened again", async () => {
+    // The item label is read once; the reopened camera then sees nothing.
+    await scan(ITEM_QR, {});
+    const dialog = await screen.findByRole("dialog");
+    const text = "That is an item label, not the sheet code. Aim at the code in the sheet margin.";
+    expect(await within(dialog).findByText(text)).toBeVisible();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Scan a sheet code" }));
+    const again = await screen.findByRole("dialog");
+    expect(within(again).queryByText(text)).toBeNull();
+  });
+
   it("unknown content keeps the old message", async () => {
     const { decode } = await scan("just some words", {}, true);
     const dialog = await screen.findByRole("dialog");

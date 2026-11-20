@@ -76,6 +76,16 @@ describe("CameraScanner", () => {
     expect(onReject.mock.calls.map(([hit]) => (hit as ScanHit).text)).toEqual([ITEM.text, OTHER.text]);
   });
 
+  it("a refused photo without a reject handler gets the no-code feedback", async () => {
+    const d = deps([ITEM]);
+    setScanDeps({ ...d.deps, grabFrame: async (source) => (source instanceof Blob ? ({ close() {} } as unknown as ImageBitmap) : null) });
+    const onHit = vi.fn();
+    render(ui({ onHit, accept: () => false }));
+    await userEvent.upload(screen.getByLabelText("Choose a photo of a code"), new File(["x"], "code.png", { type: "image/png" }));
+    expect(await screen.findByText(/No code found in this photo/)).toBeVisible();
+    expect(onHit).not.toHaveBeenCalled();
+  });
+
   it("without accept every hit goes through, as before", async () => {
     setScanDeps(deps([ITEM]).deps);
     const onHit = vi.fn();

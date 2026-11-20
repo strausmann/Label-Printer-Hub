@@ -242,7 +242,7 @@ export function CameraScanner({ onHit, accept, onReject, paused = false, onClose
     else if (wanted(found, true)) {
       navigator.vibrate?.(30);
       onHit(found);
-    }
+    } else if (!onReject) setPhotoMiss(true); // refused and nobody to tell: the photo's own "no code" feedback
   };
 
   const retry = () => {
