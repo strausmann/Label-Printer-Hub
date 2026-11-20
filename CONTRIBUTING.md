@@ -222,6 +222,11 @@ pnpm typecheck && pnpm lint && pnpm test:coverage && pnpm build
 pnpm e2e                      # Playwright end-to-end tests against the e2e hub
 ```
 
+The e2e hubs listen on 8765 (main), 8766 (bootstrap) and 8795 (README screenshots). When one of those ports is taken on
+your machine, move it with `LABELYARD_E2E_MAIN_PORT`, `LABELYARD_E2E_BOOTSTRAP_PORT` and `LABELYARD_E2E_SHOTS_PORT`
+(for example `LABELYARD_E2E_MAIN_PORT=8775 LABELYARD_E2E_BOOTSTRAP_PORT=8776 pnpm e2e shell.spec.ts`). A value that is not
+a port number fails the config with a message naming the variable.
+
 The CI workflow runs the same. **All of them are hard gates** — no warn-only:
 
 - `ruff check` and `ruff format --check` reject style/lint issues
