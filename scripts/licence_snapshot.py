@@ -20,9 +20,8 @@ is updated on purpose.
 a package that is only new or only removed is reported but does not fail, because the licence
 policy gate of the image build already judges every package the image carries (a new package with
 a disallowed licence stops that build) and a moved dependency set is not a defect of a pull
-request. ``--strict`` also fails on new and removed packages; the weekly run and the release use
-it. ``update`` rewrites the snapshot sorted
-by name. ``notes`` renders the difference between two snapshots as a release-notes section.
+request. ``--strict`` also fails on new and removed packages; the weekly run uses it (the
+release only renders ``notes``). ``update`` rewrites the snapshot sorted by name. ``notes`` renders the difference between two snapshots as a release-notes section.
 
 Exit codes: 0 ok, 1 licences moved (or, with --strict, any difference) or snapshot missing, 2 unreadable input.
 """
