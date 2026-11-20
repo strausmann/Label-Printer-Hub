@@ -4,6 +4,62 @@ All notable changes to this project will be documented in this file.
 
 This project adheres to [Semantic Versioning](https://semver.org/) and uses [Conventional Commits](https://www.conventionalcommits.org/) via [semantic-release](https://github.com/semantic-release/semantic-release).
 
+## [1.7.1](https://github.com/strausmann/labelyard/compare/v1.7.0...v1.7.1) (2026-11-20)
+
+### Bug Fixes
+
+* **api:** bound the calibration page render and refuse oversized grids ([8682536](https://github.com/strausmann/labelyard/commit/86825366576d673a60a2a38002902639a497b53c)), closes [#358](https://github.com/strausmann/labelyard/issues/358)
+* **api:** refuse request bodies above 2 MiB before parsing and bound webhook and lookup ids ([560e446](https://github.com/strausmann/labelyard/commit/560e44657f74da039544fb6a455b3a0735439a97)), closes [#164](https://github.com/strausmann/labelyard/issues/164) [#211](https://github.com/strausmann/labelyard/issues/211)
+* bound the work a sheet validation answer does ([9c1e677](https://github.com/strausmann/labelyard/commit/9c1e677b549216377e5c634a6d5007087434c731))
+* cap the text of every lookup answer ([b98033f](https://github.com/strausmann/labelyard/commit/b98033f62a3d59902986e5b805bf67f781332b0e))
+* **ci:** check out only the licence files in the release SBOM job ([52ed1e6](https://github.com/strausmann/labelyard/commit/52ed1e601419e1855671ba8b32d3523a0b63744f))
+* **ci:** install PyYAML for the script unit tests ([3b3fe47](https://github.com/strausmann/labelyard/commit/3b3fe47d97b8c9bbaf84e91a859d3384380aff55))
+* **ci:** keep package names from steering workflow commands or markdown ([19f0325](https://github.com/strausmann/labelyard/commit/19f0325921618ab087d864ff656f5b39e26cc9fa)), closes [#315](https://github.com/strausmann/labelyard/issues/315)
+* **ci:** keep the write token away from the licence notes script ([210c780](https://github.com/strausmann/labelyard/commit/210c7803c60eed367e01b325ed0ce91892dbf7bd))
+* **ci:** record the licence moves of brother-ql-next in the snapshot ([e780e75](https://github.com/strausmann/labelyard/commit/e780e75e81c374c208756d0bc80efbe474434b5e))
+* **ci:** refuse package names with leading whitespace and keep names off the start of output lines ([0767011](https://github.com/strausmann/labelyard/commit/0767011fd5e541439845ece858d82ab6682c078c)), closes [#315](https://github.com/strausmann/labelyard/issues/315)
+* clear free-text status errors left by hub 1.7.0 at startup ([29f1922](https://github.com/strausmann/labelyard/commit/29f1922a75e7de3f4ddb03c085c1fc7af2b37249))
+* give a new printer a random id ([635bcff](https://github.com/strausmann/labelyard/commit/635bcff8545b77e70c71d4e7de9ed28c03fc518d))
+* **integrations:** bound lookup answers and time, pin the text layout engine ([f34ca67](https://github.com/strausmann/labelyard/commit/f34ca67881292a3abf0df126c18ae7457c27ed5e)), closes [#211](https://github.com/strausmann/labelyard/issues/211)
+* **integrations:** refuse compressed lookup answers instead of inflating them ([cf926ef](https://github.com/strausmann/labelyard/commit/cf926efe9e8be78329f3a5fdc440ceb95d4665be)), closes [#211](https://github.com/strausmann/labelyard/issues/211)
+* let the printer row decide the staleness bound in capabilities, tape and test print ([750c004](https://github.com/strausmann/labelyard/commit/750c004e54c6f10242c8202f6e928dc9bdcfbf79))
+* match the whole value when scrubbing a stored error ([ee082ab](https://github.com/strausmann/labelyard/commit/ee082abb7e4e27e7e0fb96f71103bde99d3fd15b))
+* name a compressed integration answer for what it is ([092198a](https://github.com/strausmann/labelyard/commit/092198ab51cbfecd712af422ec0ca8a6ac1fa1c7))
+* **printer-backends:** harden the print confirmation writes and measurements ([9c74c3e](https://github.com/strausmann/labelyard/commit/9c74c3eddf95682827304f5b6632a4599a38faf0)), closes [#398](https://github.com/strausmann/labelyard/issues/398)
+* **printer-backends:** keep the detach and stop cleanup when the record wait is cancelled ([e0c4331](https://github.com/strausmann/labelyard/commit/e0c4331f6ed8dd6d07a24c5097b25f65e949ce45)), closes [#398](https://github.com/strausmann/labelyard/issues/398)
+* **printer-backends:** settle a pending record write when a printer is detached or the hub stops ([1ec7c78](https://github.com/strausmann/labelyard/commit/1ec7c78b53a9bea3f27983e35689ff275aeaa8ce)), closes [#398](https://github.com/strausmann/labelyard/issues/398)
+* **printer-backends:** show the live counter state and keep record writes off the print path ([b150abe](https://github.com/strausmann/labelyard/commit/b150abe2c189f567a50a992e87ede8ef6fb64571)), closes [#398](https://github.com/strausmann/labelyard/issues/398)
+* **printers:** log unexpected wiring errors with a traceback and guard malformed stored rows ([131679d](https://github.com/strausmann/labelyard/commit/131679d93138d7df5cae289756edb18b909d59af)), closes [#166](https://github.com/strausmann/labelyard/issues/166) [#207](https://github.com/strausmann/labelyard/issues/207)
+* **printers:** refuse over-long QL labels and pad after scaling ([cf550dc](https://github.com/strausmann/labelyard/commit/cf550dc68142cf2e8fad86113f7810b81d6c2c6c)), closes [#256](https://github.com/strausmann/labelyard/issues/256)
+* **printers:** start the hub when one printer cannot be wired and validate the model ([af6f032](https://github.com/strausmann/labelyard/commit/af6f03284f7084ad81e4f82b22ea19e8c66cceac)), closes [#166](https://github.com/strausmann/labelyard/issues/166) [#207](https://github.com/strausmann/labelyard/issues/207)
+* **queue:** cancel in the queue clear only with a conditional state write ([dd5deff](https://github.com/strausmann/labelyard/commit/dd5deffb178ae317f225596c62e5530c299b0362)), closes [#189](https://github.com/strausmann/labelyard/issues/189)
+* **queue:** honour a pause or removal during a recovered run's renders ([7b71bc4](https://github.com/strausmann/labelyard/commit/7b71bc44787a3ebf7504a720ed6b09ac2615e8a0)), closes [#168](https://github.com/strausmann/labelyard/issues/168)
+* refuse a lookup whose QR payload is too long ([04b0eae](https://github.com/strausmann/labelyard/commit/04b0eae2b09cb9c8707715675bdc169c77ca2fe3))
+* **security:** hide the tape printer address from non-admin keys ([3a379c5](https://github.com/strausmann/labelyard/commit/3a379c5723e7a2e181eaa9697dc1088aa990b7ef)), closes [#234](https://github.com/strausmann/labelyard/issues/234)
+* **security:** scope the image test check to the app tree and harden the proxy tests ([5b1be40](https://github.com/strausmann/labelyard/commit/5b1be40146931866be0c3f7a826fc3e350283457)), closes [#160](https://github.com/strausmann/labelyard/issues/160) [#221](https://github.com/strausmann/labelyard/issues/221)
+* **security:** send no-store on API responses and test the sign-in limiter behind a proxy ([017c666](https://github.com/strausmann/labelyard/commit/017c66645c63c03fcd20ba2e5b90dea44163ecc3)), closes [#160](https://github.com/strausmann/labelyard/issues/160) [#221](https://github.com/strausmann/labelyard/issues/221)
+* **sheets:** place the preview margin text on the PDF metrics ([eca5443](https://github.com/strausmann/labelyard/commit/eca54435e902fd5c157b3ffa63e0a6b55cb2bcf0)), closes [#211](https://github.com/strausmann/labelyard/issues/211)
+* **sheets:** re-check the id cell after reserving and release jobs of discarded sheets ([97dbd88](https://github.com/strausmann/labelyard/commit/97dbd88d4fd8ec4f4d9c80f9bf249b9123d3ac5f)), closes [#215](https://github.com/strausmann/labelyard/issues/215) [#212](https://github.com/strausmann/labelyard/issues/212)
+* **sheets:** release the run when the id cell re-check fails and keep the sheet code ([90a43a6](https://github.com/strausmann/labelyard/commit/90a43a665df0f153f4c549d064f9744232f710b1)), closes [#215](https://github.com/strausmann/labelyard/issues/215) [#212](https://github.com/strausmann/labelyard/issues/212)
+* **status:** report an unreachable printer as offline before its first answer ([0ca3a83](https://github.com/strausmann/labelyard/commit/0ca3a83f5e3b5a277df1134c8b22f0766a253e69)), closes [#206](https://github.com/strausmann/labelyard/issues/206)
+* treat a missing job row as a veto before printing ([019d4af](https://github.com/strausmann/labelyard/commit/019d4afe04b93d3901f8203d091c1badc366e259))
+* **ui:** encode route ids, check link schemes, keep the cart and stop the camera on failure ([579226f](https://github.com/strausmann/labelyard/commit/579226f3fffa094399811222090289ee9bfc22e9)), closes [#221](https://github.com/strausmann/labelyard/issues/221) [#223](https://github.com/strausmann/labelyard/issues/223)
+* **ui:** give each sheet grid its own hatch pattern, halo reserved cell numbers ([6bc662d](https://github.com/strausmann/labelyard/commit/6bc662dcefcc527cc008236d8164af020e220bf5)), closes [#249](https://github.com/strausmann/labelyard/issues/249)
+* **ui:** keep memory-only cart lines on storage events, safe source links, camera stays shut after reader failure ([bfd9935](https://github.com/strausmann/labelyard/commit/bfd993535c6779b43b5dd69d346fada580760cda)), closes [#221](https://github.com/strausmann/labelyard/issues/221) [#223](https://github.com/strausmann/labelyard/issues/223)
+* **ui:** keep scanning for the sheet code when an item label is in view ([3ebb36a](https://github.com/strausmann/labelyard/commit/3ebb36a3811eb24e6b8d64fac9b91425bbc67fa6)), closes [#250](https://github.com/strausmann/labelyard/issues/250)
+* **ui:** leave stale printers out of the material headlines, show reported-empty on the detail page ([ea1d3bd](https://github.com/strausmann/labelyard/commit/ea1d3bdbc2161f340f480ec16c553e9a79d8c509)), closes [#274](https://github.com/strausmann/labelyard/issues/274)
+* **ui:** mention the vendor in the sheet type search hint ([65ca8db](https://github.com/strausmann/labelyard/commit/65ca8dbd8486da090d44a407062d2c2c63f6e996)), closes [#275](https://github.com/strausmann/labelyard/issues/275)
+* **ui:** name sheet types by vendor, product and description ([9a9d94d](https://github.com/strausmann/labelyard/commit/9a9d94db7423796f002b955d4cf28726b02e6a45)), closes [#275](https://github.com/strausmann/labelyard/issues/275)
+* **ui:** name sheet types the same way in the list, detail and dialogs, find them by vendor ([3db3cba](https://github.com/strausmann/labelyard/commit/3db3cba283099092a40de1e880e575d352058456)), closes [#275](https://github.com/strausmann/labelyard/issues/275)
+* **ui:** set cell numbers apart from printed content and hatch reserved cells ([0fabd40](https://github.com/strausmann/labelyard/commit/0fabd40fae92bcc32e891b97a522b0676bcdd614)), closes [#249](https://github.com/strausmann/labelyard/issues/249) [#222](https://github.com/strausmann/labelyard/issues/222)
+* **ui:** show the number of labels in the sheet section ([a2a8d9b](https://github.com/strausmann/labelyard/commit/a2a8d9b856a36cc7e086aa2ef1074fd09926567e)), closes [#253](https://github.com/strausmann/labelyard/issues/253)
+* **ui:** tell reported-empty material from low material ([84b3e1d](https://github.com/strausmann/labelyard/commit/84b3e1da697b94108eb42f98d3b7d7794845cb74)), closes [#274](https://github.com/strausmann/labelyard/issues/274)
+* vet a package name before the missing-licence message repeats it ([632a013](https://github.com/strausmann/labelyard/commit/632a0133021d2f96dc98212be49ccf470d6d20aa))
+
+### Performance
+
+* **queue:** render recovered jobs when they print, not during startup ([80e40f4](https://github.com/strausmann/labelyard/commit/80e40f488689af062f898b21481106ca3ac3862b)), closes [#168](https://github.com/strausmann/labelyard/issues/168)
+
 ## [1.7.0](https://github.com/strausmann/labelyard/compare/v1.6.2...v1.7.0) (2026-11-19)
 
 ### Features
