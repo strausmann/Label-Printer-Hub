@@ -210,20 +210,18 @@ def _ql_length_mm(fitted: Image.Image, ql_label: str, high_resolution: bool) -> 
     """The tape length a fitted QL image takes, in mm (#398, finding 5).
 
     ``convert`` scales an image still wider than the printable width down to it, keeping the
-    aspect ratio, so the length is the scaled height, not the long side (which overestimates a
-    wide label across the roll and can refuse a valid one). ``_fit_to_printable_width`` doubles
-    both axes for 600 dpi, so the printable width is doubled too. The confirmation wait uses
-    this length of the image as sent, so the white padding of ``_pad_to_min_length`` counts:
-    the printer feeds it.
+    aspect ratio, so the length is the height ``_raster_height`` gives (the same dots the
+    library limit is checked on), not the long side, which overestimates a wide label across
+    the roll and can refuse a valid one. The confirmation wait uses this length of the image as
+    sent, so the white padding of ``_pad_to_min_length`` counts: the printer feeds it.
     """
     label = next((x for x in ALL_LABELS if x.identifier == ql_label), None)
-    printable = int(label.dots_printable[0]) if label is not None else fitted.width
-    across = printable * (2 if high_resolution else 1)
-    if fitted.width > across:
-        length_dots = fitted.height * across / fitted.width
+    if label is None:
+        printable = fitted.width // 2 if high_resolution else fitted.width
     else:
-        length_dots = float(fitted.height)
-    return length_dots * 25.4 / _ql_dpi(high_resolution)
+        printable = int(label.dots_printable[0])
+    dots = _raster_height(fitted, printable, high_resolution)
+    return dots * 25.4 / _ql_dpi(high_resolution)
 
 
 def _ql_dpi(high_resolution: bool) -> int:

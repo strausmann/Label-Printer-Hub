@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import pytest
 from app.models.sheet import Sheet, SheetCell, SheetType, SheetTypeVersion
-from app.sheets.locking import acquire_sheet_write_lock
+from app.repositories.write_lock import acquire_sheet_write_lock
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 

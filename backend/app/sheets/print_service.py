@@ -53,6 +53,7 @@ from app.printer_backends.ipp.attributes import Margins
 from app.repositories import print_batches as batches_repo
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
+from app.repositories.write_lock import write_transaction
 from app.schemas.content_type import ContentType, has_qr
 from app.schemas.label_data import LabelData
 from app.schemas.print_request import PrintLookupRequest
@@ -174,7 +175,7 @@ from app.sheets.sheet_page import (
 )
 from app.sheets.sheet_service import ID_CELL_PURPOSE
 from app.sheets.text import log_value, sanitise_text
-from app.sheets.type_service import version_geometry, write_transaction
+from app.sheets.type_service import version_geometry
 
 __all__ = [
     "LOOKUP_CONCURRENCY",

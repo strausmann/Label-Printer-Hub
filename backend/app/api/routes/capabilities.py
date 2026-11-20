@@ -113,7 +113,12 @@ def _driver_dpi(model: str) -> tuple[int, int]:
     return ModelRegistry.find_by_model_id(model).dpi
 
 
-def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -> Capabilities:
+def _tape(
+    printer: Printer,
+    parsed: dict[str, Any],
+    captured: datetime | None,
+    runtime: PrinterRuntime | None = None,
+) -> Capabilities:
     try:
         dpi_x, dpi_y = _driver_dpi(printer.model)
     except ModelNotFoundError:
@@ -139,7 +144,10 @@ def _tape(printer: Printer, parsed: dict[str, Any], captured: datetime | None) -
         kind="tape",
         resolution_dpi=TapeResolution(x=dpi_x, y=dpi_y),
         media=media,
-        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
+        print_confirmation=PrintConfirmationRead.from_stored(
+            printer.print_confirmation,
+            live=runtime.send_state_for(printer.id) if runtime is not None else None,
+        ),
         trays=None,
         document_formats=None,
         captured_at=captured,
@@ -240,6 +248,6 @@ async def get_capabilities(
     caps = (
         await _page(session, printer, parsed, captured)
         if printer.backend == "ipp"
-        else _tape(printer, parsed, captured)
+        else _tape(printer, parsed, captured, runtime)
     )
     return caps.model_copy(update={"stale": True}) if unknown else caps

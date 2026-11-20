@@ -51,6 +51,7 @@ from app.printer_backends.ipp.errors import (
 from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.repositories import printer_identity as identity_repo
 from app.repositories import printers as printers_repo
+from app.repositories.write_lock import write_transaction
 from app.schemas.label_layout import LayoutDefault
 from app.schemas.printer_admin import (
     IppConnection,
@@ -71,7 +72,6 @@ from app.sheets.errors import (
     TrayUnknownError,
 )
 from app.sheets.text import log_value
-from app.sheets.type_service import write_transaction
 
 _log = logging.getLogger(__name__)
 

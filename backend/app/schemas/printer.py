@@ -10,13 +10,14 @@ References:
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from app.printer_backends.tape_confirmation import ConfirmationRecord
+from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
 from app.schemas._datetime import serialize_datetime_utc
 from app.schemas.label_layout import LayoutDefault
 from app.schemas.tape import TapeColourName
@@ -46,7 +47,8 @@ class PrintConfirmationRead(BaseModel):
         description=(
             "``false`` while the hub does not read the label counter, because the printer "
             "refused it several times in a row; ``channel`` is then ``none``. It is asked again "
-            "after an hour and with every test print"
+            "after an hour, with every test print and after a restart; for an attached printer "
+            "this follows what the hub does now, not only the last stored record"
         )
     )
     ipp_incomplete: bool = Field(
@@ -63,11 +65,21 @@ class PrintConfirmationRead(BaseModel):
         return serialize_datetime_utc(dt, _info)
 
     @classmethod
-    def from_stored(cls, stored: object) -> PrintConfirmationRead | None:
-        """The read view of a stored record; ``None`` for none (never test-printed)."""
+    def from_stored(
+        cls, stored: object, live: TapeSendState | None = None
+    ) -> PrintConfirmationRead | None:
+        """The read view of a stored record; ``None`` for none (never test-printed).
+
+        *live*: the attached backend's confirmation state. Whether the hub reads the label
+        counter is then taken from it, not from the stored ``counter_off`` (#398): after a
+        restart, and once the retry hour has passed, the hub asks for the counter again at
+        once, and the view says so without waiting for a print to store it.
+        """
         record = ConfirmationRecord.from_json(stored)
         if record is None:
             return None
+        if live is not None:
+            record = dataclasses.replace(record, counter_off=not live.ask_counter())
         return cls(
             channel=record.channel,
             confirm_transport=record.confirm_transport,

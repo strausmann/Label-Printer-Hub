@@ -31,6 +31,6 @@ Die QL-Bibliothek ist jetzt `brother-ql-next`. Ein QL-Etikett, das kürzer als e
 
 ## Druckbestätigung von Banddruckern
 
-- Nach einem Neustart und bei jedem Testdruck behält `print_confirmation` ein früheres `counter_read` `false` nicht mehr: Der Hub fragt den Etikettenzähler wieder ab, und der gespeicherte Eintrag sagt das nach der ersten Zustandsabfrage des Druckers. Erst wenn der Drucker den Zähler wieder dreimal hintereinander verweigert, wird er wieder `false`.
-- Einen Eintrag, den der Hub nicht speichern konnte (eine belegte Datenbank), speichert die nächste Zustandsabfrage des Druckers erneut, nicht erst die nächste Änderung.
+- `counter_read` in `print_confirmation` (Drucker und Fähigkeiten) sagt jetzt, ob der Hub den Etikettenzähler gerade liest. Nach einem Neustart, eine Stunde nach dem Abschalten und bei jedem Testdruck ist es sofort `true`, ohne auf einen Druck zu warten; `false` wird es erst, wenn der Drucker den Zähler dreimal hintereinander verweigert. Der gespeicherte Eintrag folgt beim nächsten Druck oder Testdruck.
+- Einen Eintrag, den der Hub nicht speichern konnte (eine belegte Datenbank), speichert der nächste Druck oder Testdruck erneut, nicht erst die nächste Änderung. Dieses Speichern läuft neben dem Druck und verzögert ihn nicht.
 - Die Bandlänge eines QL-Etiketts, das breiter als die bedruckbare Breite ist, ist jetzt die Länge, die der Drucker nach dem Verkleinern auf die Rolle vorschiebt, nicht die lange Seite des Etiketts. Ein solches Etikett wird nicht mehr wegen einer Länge, die es nicht hat, mit `tape_label_too_long` abgewiesen, und die Wartezeit auf die Bestätigung richtet sich nach der echten Länge. Das leere Band am Ende eines kurzen Etiketts zählt mit.

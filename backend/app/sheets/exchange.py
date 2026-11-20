@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sheet import SheetType
 from app.repositories import sheet_types as repo
+from app.repositories.write_lock import write_transaction
 from app.sheets import type_service as ts
 from app.sheets.errors import (
     BackingDesignNotFoundError,
@@ -381,7 +382,7 @@ async def import_type(
     wanted = geometry_hash(geometry)
     # The write lock comes first: reading before it and upgrading later can fail with
     # "database is locked", and a concurrent identical import would see a stale answer.
-    async with ts.write_transaction(session):
+    async with write_transaction(session):
         existing: SheetType | None = await repo.get_by_key(session, doc.type.key)
         if existing is None:
             if new_key is not None:  # as_new_key only means something for an existing key

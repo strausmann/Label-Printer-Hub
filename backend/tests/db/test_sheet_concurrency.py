@@ -25,15 +25,15 @@ import pytest
 import pytest_asyncio
 from app.db.engine import _apply_pragmas
 from app.models.sheet import SheetCell
-from app.sheets import sheet_service as ss
-from app.sheets import type_service as ts
-from app.sheets.errors import CellsTakenError
-from app.sheets.geometry import Geometry
-from app.sheets.locking import (
+from app.repositories.write_lock import (
     acquire_sheet_write_lock,
     install_statement_counter,
     uninstall_statement_counter,
 )
+from app.sheets import sheet_service as ss
+from app.sheets import type_service as ts
+from app.sheets.errors import CellsTakenError
+from app.sheets.geometry import Geometry
 from app.sheets.sheet_service import MarkedCell
 from sqlalchemy import Engine, event, func, select, text
 from sqlalchemy.ext.asyncio import (

@@ -482,6 +482,8 @@ class TapeSendState:
     # #398: ``record`` is newer than what the sink last stored (a write failed, or the record
     # was changed in memory only); the next status read stores it (``flush``).
     _unstored: bool = False
+    # #398 (review I-2): the store ``flush`` started; it runs beside the status read.
+    _flush_task: asyncio.Task[None] | None = None
 
     def load(self, record: ConfirmationRecord | None) -> None:
         """Take the record stored with the printer, when the backend is wired (#398, finding 4).
@@ -499,13 +501,27 @@ class TapeSendState:
             self._unstored = True
 
     async def flush(self) -> None:
-        """Store ``record`` again if the last write of it did not reach the sink (#398).
+        """Start storing ``record`` again if the last write of it did not reach the sink (#398).
 
         Both backends call it at the start of every status read, so a write that failed (a busy
-        database), was given up or was only made in memory is stored within one poll.
+        database), was given up or was only made in memory is stored at the next read, which
+        is the next print or test print. It never waits on the database (review I-2): the
+        write runs as a task beside the read, and nothing is started while a write of this
+        printer is still running, so a busy database cannot make the preflight or the polls of
+        a confirmation wait slower, nor stack up writes.
         """
-        if self._unstored and self.record is not None:
-            await self.store(self.record)
+        if not self._unstored or self.record is None or self.sink is None:
+            return
+        if self._store_lock.locked() or (
+            self._flush_task is not None and not self._flush_task.done()
+        ):
+            return
+        self._flush_task = asyncio.create_task(self._write(None))
+
+    async def flushed(self) -> None:
+        """Wait for the write ``flush`` started, if one runs (tests, shutdown)."""
+        if self._flush_task is not None:
+            await asyncio.shield(self._flush_task)
 
     def begin(self, *, detect: bool = False) -> None:
         """A new send starts (right after the read before sending)."""
@@ -680,12 +696,27 @@ class TapeSendState:
         self.record = record
         if self.sink is None:
             return
+        # Unstored until the write below succeeds, also when it is cancelled while it waits for
+        # the lock (review M-1).
+        self._unstored = True
+        await self._write(record)
+
+    async def _write(self, record: ConfirmationRecord | None) -> None:
+        """Hand *record* to the sink under the store lock; ``None``: the record current when the
+        lock is taken (``flush``, which must not write back an older one)."""
+        sink = self.sink
+        if sink is None:
+            return
         async with self._store_lock:
+            if record is None:
+                record = self.record
+                if record is None or not self._unstored:
+                    return
             stored = False
             scope = asyncio.timeout(STORE_TIMEOUT_S)
             try:
                 async with scope:
-                    await self.sink(record)
+                    await sink(record)
                 stored = True
             except TimeoutError:
                 if scope.expired():
@@ -705,7 +736,5 @@ class TapeSendState:
                     "The print confirmation of a printer could not be stored", exc_info=True
                 )
             finally:
-                if not stored:
-                    self._unstored = True
-                elif self.record is record:  # a newer record in memory stays unstored
+                if stored and self.record is record:  # a newer record in memory stays unstored
                     self._unstored = False

@@ -31,6 +31,6 @@ The QL library is now `brother-ql-next`. A QL label shorter than about 12.7 mm (
 
 ## Print confirmation of tape printers
 
-- After a restart, and with every test print, `print_confirmation` no longer keeps `counter_read` `false` from before: the hub asks for the label counter again, and the stored record says so after the printer's first status read. It turns `false` again only when the printer refuses the counter three times in a row.
-- A record the hub could not store (a busy database) is stored again by the printer's next status read, instead of at the next change.
+- `counter_read` in `print_confirmation` (printer and capabilities) now says whether the hub reads the label counter right now. After a restart, an hour after it was switched off and with every test print it is `true` at once, without waiting for a print; it turns `false` only when the printer refuses the counter three times in a row. The stored record follows at the next print or test print.
+- A record the hub could not store (a busy database) is stored again at the next print or test print, instead of at the next change. That write runs beside the print and does not delay it.
 - The tape length of a QL label that is wider than the printable width is now the length the printer feeds after scaling it to the roll, not the label's long side. Such a label is no longer refused with `tape_label_too_long` for a length it does not have, and the confirmation wait follows the real length. The blank tape added to a short label counts towards it.

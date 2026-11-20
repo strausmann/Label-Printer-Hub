@@ -3,10 +3,11 @@
 
 """Physical sheets: create, next code, mark, unmark, resolve, discard, list, lookups (spec 8, 10).
 
-Every write runs in ``type_service.write_transaction``: the sheet write lock is its first
-statement, and every read the write decides on (free cells, sheet state, the counter) happens
-after it. Two writers on the same sheet are therefore serialised and the second one decides on
-what the first committed (Review Focus 3, 4). Events are published after the commit.
+Every write runs in ``write_transaction`` (``app.repositories.write_lock``): the write lock is
+its first statement, and every read the write decides on (free cells, sheet state, the
+counter) happens after it. Two writers on the same sheet are therefore serialised and the
+second one decides on what the first committed (Review Focus 3, 4). Events are published
+after the commit.
 
 A free cell has no row. Cell numbers run from 1 to the cell count of the sheet's **pinned**
 version (D14), never of the type's current one.
@@ -26,6 +27,7 @@ from app.models.job import Job
 from app.models.sheet import Sheet, SheetCell, SheetIdCounter, SheetType, SheetTypeVersion
 from app.repositories import sheet_types as types_repo
 from app.repositories import sheets as repo
+from app.repositories.write_lock import write_transaction
 from app.services.event_bus import EventBus
 from app.sheets.errors import (
     CellOutOfRangeError,
@@ -46,7 +48,6 @@ from app.sheets.errors import (
 )
 from app.sheets.events import publish_sheet_updated
 from app.sheets.text import log_value, sanitise_text
-from app.sheets.type_service import write_transaction
 
 logger = logging.getLogger(__name__)
 

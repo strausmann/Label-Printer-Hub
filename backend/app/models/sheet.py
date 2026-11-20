@@ -187,7 +187,7 @@ class SheetCell(SQLModel, table=True):
 
 
 class SheetWriteLock(SQLModel, table=True):
-    """Single-row table; writing it first takes SQLite's write lock (see sheets.locking)."""
+    """Single-row table; writing it first takes SQLite's write lock (``write_lock``)."""
 
     __tablename__ = "sheet_write_lock"
     __table_args__ = (CheckConstraint("id = 1", name="ck_sheet_write_lock_single_row"),)

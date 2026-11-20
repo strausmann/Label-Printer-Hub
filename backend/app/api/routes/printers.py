@@ -45,6 +45,7 @@ from app.auth.scope_deps import require_print, require_read
 from app.config import get_settings
 from app.db.session import get_session
 from app.models.job import JobState
+from app.models.printer import Printer
 from app.models.printer_identity import PrinterIdentity
 from app.models.printer_tray import PrinterTray
 from app.printer_backends.ipp.attributes import IppStatusRecord
@@ -139,6 +140,16 @@ async def _identity_view(
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 ReadAuthDep = Annotated[AuthContext, Depends(require_read)]
 RuntimeDep = Annotated[PrinterRuntime | None, Depends(get_printer_runtime)]
+
+
+def _confirmation_view(request: Request, printer: Printer) -> PrintConfirmationRead | None:
+    """The stored print confirmation, with the live counter state of the attached backend
+    (#398): after a restart or the retry hour the view shows the counter as read at once."""
+    runtime = get_printer_runtime(request)
+    live = runtime.send_state_for(printer.id) if runtime is not None else None
+    return PrintConfirmationRead.from_stored(printer.print_confirmation, live=live)
+
+
 PrintAuthDep = Annotated[AuthContext, Depends(require_print)]
 
 
@@ -236,7 +247,7 @@ async def list_printers(
                 created_at=p.created_at,
                 updated_at=p.updated_at,
                 layout_defaults=_layout_defaults_view(p),
-                print_confirmation=PrintConfirmationRead.from_stored(p.print_confirmation),
+                print_confirmation=_confirmation_view(request, p),
                 **_identity_fields(identities.get(p.id)),
             )
         )
@@ -282,7 +293,7 @@ async def get_printer(
         created_at=printer.created_at,
         updated_at=printer.updated_at,
         layout_defaults=_layout_defaults_view(printer),
-        print_confirmation=PrintConfirmationRead.from_stored(printer.print_confirmation),
+        print_confirmation=_confirmation_view(request, printer),
         **await _identity_view(session, printer_id, _auth),
     )
 

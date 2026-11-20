@@ -245,9 +245,9 @@ async def _seed(database_url: str, *, with_admin_key: bool) -> str | None:
     from app.models.api_key import ApiKey
     from app.models.job import Job, JobState
     from app.repositories import api_keys as api_keys_repo
+    from app.repositories.write_lock import install_statement_counter
     from app.schemas.printer_admin import PrinterCreatePayload
     from app.services.printer_admin_service import PrinterAdminService
-    from app.sheets.locking import install_statement_counter
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     engine = create_async_engine(database_url, connect_args={"check_same_thread": False})

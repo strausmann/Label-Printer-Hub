@@ -675,3 +675,60 @@ async def test_a_test_print_of_the_old_address_cannot_write_over_the_cleared_rec
         await live.runtime._store_confirmation(pid, record, address=("192.0.2.15", 9100))
         detail = await live.client.get(f"/api/v1/printers/{pid}")
         assert detail.json()["print_confirmation"]["channel"] == "ipp"
+
+
+async def test_the_printer_view_shows_the_live_counter_state(live: Live) -> None:
+    """#398, item 4: after a restart (a new backend asks for the counter) and once the retry
+    hour has passed, the printer page and the capabilities say the counter is read, without a
+    print to store it first; while the counter is off they say it is not."""
+    from datetime import UTC, datetime
+
+    from app.printer_backends import tape_confirmation
+    from app.printer_backends.brother_ql_backend import BrotherQLBackend
+    from app.printer_backends.tape_confirmation import COUNTER_RETRY_S, ConfirmationRecord
+
+    body = {
+        "name": "Bench QL",
+        "slug": "bench-ql",
+        "model": "QL-820NWB",
+        "backend": "brother_ql",
+        "connection": {"host": "192.0.2.16", "port": 9100},
+    }
+    resolve = patch(
+        "app.services.printer_runtime._resolve_model_id_from_config",
+        AsyncMock(return_value="QL-820NWB"),
+    )
+    with resolve:
+        resp = await live.client.post(ADMIN, json=body)
+        assert resp.status_code == 201, resp.text
+    pid = UUID(resp.json()["id"])
+    off = ConfirmationRecord(
+        "raw", True, datetime(2026, 11, 19, 9, 0, tzinfo=UTC), counter_off=True
+    )
+    await live.runtime._store_confirmation(pid, off)
+
+    # The state a restart builds: a fresh QL backend wired from the stored row. (The hub's test
+    # backend is the mock, which has no confirmation state.)
+    backend = BrotherQLBackend(host="192.0.2.16")
+    live.runtime._router._backends["bench-ql"] = backend
+    async with _factory()() as session:
+        row = await session.get(Printer, pid)
+    assert row is not None
+    live.runtime._wire_confirmation(backend, row)
+
+    async def shown() -> tuple[dict[str, Any], dict[str, Any]]:
+        detail = await live.client.get(f"/api/v1/printers/{pid}")
+        caps = await live.client.get(f"/api/v1/printers/{pid}/capabilities")
+        return detail.json()["print_confirmation"], caps.json()["print_confirmation"]
+
+    for view in await shown():  # restarted: the counter is asked for again
+        assert view["counter_read"] is True and view["channel"] == "label_counter"
+
+    state = backend.send_state
+    state.counter_off_at = tape_confirmation._monotonic()  # refused again three times
+    for view in await shown():
+        assert view["counter_read"] is False and view["channel"] == "none"
+
+    state.counter_off_at = tape_confirmation._monotonic() - COUNTER_RETRY_S  # the hour passed
+    for view in await shown():
+        assert view["counter_read"] is True and view["channel"] == "label_counter"

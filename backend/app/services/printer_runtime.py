@@ -61,6 +61,7 @@ from app.printer_backends.snmp_helper import ObservedIdentity, query_model_pjl
 from app.printer_backends.tape_confirmation import ConfirmationRecord, TapeSendState
 from app.printer_models.registry import ModelNotFoundError, ModelRegistry
 from app.repositories import printer_identity as identity_repo
+from app.repositories.write_lock import write_transaction
 from app.schemas.label_layout import parse_layout_defaults
 from app.services.backend_router import (
     BackendRouter,
@@ -85,7 +86,6 @@ from app.services.producers.tape_change_producer import TapeChangeProducer
 from app.services.producers.tape_description import TapeDescription
 from app.services.roll_tracker import RollTracker
 from app.services.tape_registry import TapeRegistry
-from app.sheets.type_service import write_transaction
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -461,6 +461,16 @@ class PrinterRuntime:
             and wiring is not None
             and (wiring.producer is not None)
         )
+
+    def send_state_for(self, printer_id: UUID) -> TapeSendState | None:
+        """The live print-confirmation state of an attached tape printer, else ``None``
+        (#398: the printer view derives ``counter_read`` from it)."""
+        wiring = self._wired.get(printer_id)
+        if wiring is None or wiring.kind != "tape":
+            return None
+        backend = self._router.get(wiring.slug)
+        state = getattr(backend, "send_state", None)
+        return state if isinstance(state, TapeSendState) else None
 
     def print_service_for(self, printer_id: UUID) -> PrintService | None:
         """The ``PrintService`` of an attached tape printer, else ``None``."""

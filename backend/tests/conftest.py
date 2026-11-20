@@ -14,7 +14,7 @@ import pathlib
 
 import pytest
 import pytest_asyncio
-from app.sheets.locking import install_statement_counter
+from app.repositories.write_lock import install_statement_counter
 from sqlalchemy import Engine
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel

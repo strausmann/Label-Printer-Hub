@@ -13,8 +13,10 @@ an address change between the read and the write of a record is not overwritten 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import pathlib
+import threading
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -25,7 +27,7 @@ import pytest
 import pytest_asyncio
 from app.db.engine import _apply_pragmas
 from app.models.printer import Printer
-from app.printer_backends import brother_ql_backend
+from app.printer_backends import brother_ql_backend, post_send
 from app.printer_backends.brother_ql_backend import BrotherQLBackend
 from app.printer_backends.exceptions import PrinterOfflineError
 from app.printer_backends.ptouch_backend import PTouchBackend
@@ -103,9 +105,11 @@ async def test_failed_store_is_retried_on_the_next_read(
     await backend.send_state.store(new)  # the database is busy: not stored
     assert sink.stored == []
     await backend.read_status()
+    await backend.send_state.flushed()  # the write runs beside the read
 
     assert sink.stored == [new]
     await backend.read_status()  # stored now: no further write
+    await backend.send_state.flushed()
     assert sink.calls == [new, new]
 
 
@@ -131,6 +135,7 @@ async def test_failed_test_print_does_not_leave_counter_off_stored(
 
     with pytest.raises(PrinterOfflineError):
         await backend.print_image(image, spec, detect_confirmation=True)
+    await backend.send_state.flushed()
 
     assert sink.stored == [_ON]
     assert backend.send_state.record == _ON
@@ -169,6 +174,7 @@ async def test_restart_clears_a_stored_counter_off(
     assert sink.stored == []  # wiring itself writes nothing (it is synchronous)
     with pytest.raises(PrinterOfflineError):
         await backend.read_status()
+    await backend.send_state.flushed()
 
     assert sink.stored == [_ON]
 
@@ -200,14 +206,14 @@ async def _sent_length(
 @pytest.mark.parametrize(
     ("high_resolution", "size", "expected_mm"),
     [
-        # 1400 x 600 is scaled to 696 wide by convert: 600 * 696 / 1400 = 298.3 dots = 25.25 mm.
-        (False, (1400, 600), 25.25),
-        (True, (1400, 600), 25.25),
+        # 1400 x 600 is scaled to 696 wide by convert: int(600 * 696 / 1400) = 298 dots = 25.2 mm.
+        (False, (1400, 600), 25.23),
+        (True, (1400, 600), 25.23),
         # 1400 x 300 at 300 dpi scales to 149 dots, under the QL-820NWB minimum of 150: padded
-        # to 303 rows, which scale to 150.6 dots = 12.75 mm. The padding is fed, so it counts.
-        (False, (1400, 300), 12.75),
-        # At 600 dpi it is 298.3 dots of 600 dpi, over the minimum: 12.63 mm, no padding.
-        (True, (1400, 300), 12.63),
+        # to 303 rows, which scale to 150 dots = 12.70 mm. The padding is fed, so it counts.
+        (False, (1400, 300), 12.70),
+        # At 600 dpi it is 298 dots of 600 dpi, over the minimum: 12.61 mm, no padding.
+        (True, (1400, 300), 12.61),
     ],
     ids=["300dpi", "600dpi", "300dpi-padded", "600dpi-short"],
 )
@@ -236,7 +242,7 @@ async def test_normal_ql_label_length_at_600_dpi(monkeypatch: pytest.MonkeyPatch
 
 def test_ql_length_formula_doubles_the_printable_width_at_600_dpi() -> None:
     fitted = Image.new("1", (2800, 600), 1)  # 1400 x 300 fitted for 600 dpi
-    assert brother_ql_backend._ql_length_mm(fitted, "62", True) == pytest.approx(12.63, abs=0.05)
+    assert brother_ql_backend._ql_length_mm(fitted, "62", True) == pytest.approx(12.61, abs=0.02)
     fitted = Image.new("1", (1392, 2362), 1)  # 696 x 1181 fitted for 600 dpi
     assert brother_ql_backend._ql_length_mm(fitted, "62", True) == pytest.approx(100.0, abs=0.05)
 
@@ -287,6 +293,17 @@ async def test_address_change_between_read_and_write_is_not_overwritten(
         text("UPDATE printers SET connection = :conn, print_confirmation = NULL WHERE id = :id"),
         {"conn": '{"host": "192.0.2.51"}', "id": pid.hex},
     )
+    admin_conn = (await admin.connection()).sync_connection
+    # The writer is blocked once it issued a write statement on its own connection: with the
+    # fix the lock upsert before its read, without it the UPDATE after its read (review M-2).
+    blocked = threading.Event()
+
+    def watch(conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        if conn is not admin_conn and statement.lstrip().upper().startswith(("INSERT", "UPDATE")):
+            blocked.set()
+
+    engine = factory.kw["bind"].sync_engine
+    event.listen(engine, "before_cursor_execute", watch)
     writer = asyncio.create_task(
         PrinterRuntime._store_confirmation(
             _DbRuntime(factory),  # type: ignore[arg-type]
@@ -295,7 +312,10 @@ async def test_address_change_between_read_and_write_is_not_overwritten(
             address=("192.0.2.50", 9100),
         )
     )
-    await asyncio.sleep(0.3)  # the writer has read (or waits on the lock)
+    try:
+        assert await asyncio.to_thread(blocked.wait, 5.0), "the writer never reached the lock"
+    finally:
+        event.remove(engine, "before_cursor_execute", watch)
     await admin.commit()
     await admin.close()
     await writer
@@ -320,3 +340,75 @@ async def test_timeout_inside_the_sink_is_logged_as_a_failure(
     messages = [r.getMessage() for r in caplog.records]
     assert any("could not be stored" in m for m in messages)
     assert not any("in time" in m for m in messages)
+
+
+# ---------------------------------------------------------------------------- review I-2, M-1
+
+
+class _BlockingSink:
+    """A sink stuck on a busy database until *release* is set."""
+
+    def __init__(self) -> None:
+        self.release = asyncio.Event()
+        self.stored: list[ConfirmationRecord] = []
+
+    async def __call__(self, record: ConfirmationRecord) -> None:
+        await self.release.wait()
+        self.stored.append(record)
+
+
+async def test_a_slow_store_does_not_stretch_the_confirmation_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every read of the wait would flush an unstored record; a store stuck on the database
+    must not hold the reads (they run once a poll), so the labels are still confirmed."""
+    counts = iter([11])
+
+    async def preflight(host: str, **_: Any) -> PreflightStatus:
+        return PreflightStatus(
+            hr_printer_status="idle",
+            loaded_tape_mm=62,
+            media_raw="62mm",
+            marker_count=next(counts, 11),
+        )
+
+    monkeypatch.setattr(f"{_MODULES['ql']}.query_preflight", preflight)
+    backend = BrotherQLBackend(host="192.0.2.45")
+    sink = _BlockingSink()
+    backend.send_state.sink = sink
+    backend.send_state.record = _OFF
+    backend.send_state.reset_counter_gate()  # the record is now unstored: every read flushes
+    backend.last_send_status = PreflightStatus(
+        hr_printer_status="idle", loaded_tape_mm=62, media_raw="62mm", marker_count=10
+    )
+    backend.send_state.labels_sent = 1
+    try:
+        async with asyncio.timeout(2.0):  # far below STORE_TIMEOUT_S, which a stall would take
+            await post_send.check_after_send(backend, settle_s=0.0, poll_s=0.01, timeout_s=1.0)
+    finally:
+        sink.release.set()
+        await backend.send_state.flushed()
+    assert sink.stored == [_ON]  # stored once the database is free again
+
+
+async def test_a_store_cancelled_while_waiting_for_the_lock_is_stored_by_the_next_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _neutral(monkeypatch, _MODULES["ql"])
+    backend = BrotherQLBackend(host="192.0.2.46")
+    sink = _Sink()
+    backend.send_state.sink = sink
+    new = ConfirmationRecord("ipp", True, _AT)
+
+    lock = backend.send_state._store_lock
+    await lock.acquire()  # another write is running
+    store = asyncio.create_task(backend.send_state.store(new))
+    await asyncio.sleep(0)
+    store.cancel()  # e.g. the job is cancelled while its final store waits
+    with contextlib.suppress(asyncio.CancelledError):
+        await store
+    lock.release()
+    await backend.read_status()
+    await backend.send_state.flushed()
+
+    assert sink.stored == [new]
