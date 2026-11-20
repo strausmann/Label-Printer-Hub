@@ -236,8 +236,8 @@ jobs:
 
   # Attaches the CycloneDX SBOM that docker-publish.yml's sbom job produced to
   # the DRAFT release (`gh release` finds a draft by its pending tag). A draft is
-  # not immutable yet, so `--clobber` makes a rerun safe. The job checks the
-  # repository out (full history, for the licence-notes step) with
+  # not immutable yet, so `--clobber` makes a rerun safe. The job checks out two
+  # files only (sparse, at the tag, full history for the licence-notes step) with
   # `persist-credentials: false`, so the token is not left in the clone; the tag is
   # already pushed when it runs. Only GITHUB_TOKEN, no other secret. The version
   # reaches the shell through env and is validated first.
@@ -249,10 +249,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Only the two files the licence-notes step runs and reads, at the release tag. Full
+      # history is fetched (for the previous tag), but the working tree holds nothing else, so
+      # no other repository file is on disk next to the job's write token.
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: v${{ needs.release.outputs.new-release-version }}
           fetch-depth: 0
           persist-credentials: false
+          sparse-checkout: |
+            licences/snapshot.json
+            scripts/licence_snapshot.py
+          sparse-checkout-cone-mode: false
 
       - name: Download the SBOM
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8

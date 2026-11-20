@@ -705,7 +705,19 @@ def test_release_sbom_job() -> None:
     assert job["if"] == images["if"]
     assert job["permissions"] == {"contents": "write"}
     steps = job["steps"]
-    assert not _checkout_steps(job), "the job needs no repository contents"
+    # The licence-notes step runs scripts/licence_snapshot.py on licences/snapshot.json, so the
+    # job may check out exactly those two files at the release tag, without credentials. A full
+    # checkout would put the whole repository next to a contents:write token.
+    checkouts = _checkout_steps(job)
+    assert len(checkouts) == 1, "the job checks out the two licence files, once"
+    with_ = checkouts[0]["with"]
+    assert with_.get("persist-credentials") is False
+    assert with_["ref"] == "v${{ needs.release.outputs.new-release-version }}"
+    assert with_.get("sparse-checkout-cone-mode") is False
+    assert set(str(with_.get("sparse-checkout", "")).split()) == {
+        "licences/snapshot.json",
+        "scripts/licence_snapshot.py",
+    }, "the job needs no repository contents beyond the licence snapshot and its script"
     for step in steps:
         assert "${{ inputs." not in str(step.get("run", ""))
         assert "${{ needs." not in str(step.get("run", ""))
