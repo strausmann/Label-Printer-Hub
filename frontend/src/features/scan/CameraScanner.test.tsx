@@ -90,4 +90,29 @@ describe("CameraScanner", () => {
     expect(await screen.findByText(/blocked the camera/)).toBeVisible();
     expect(screen.getByLabelText("Choose a photo of a code")).toBeInTheDocument();
   });
+
+  it("reader failure stops the camera tracks (frame loop)", async () => {
+    const decoder: Decoder = { engine: "native", decode: vi.fn(async () => { throw new Error("boom"); }), close: vi.fn() };
+    setScanDeps({ createDecoder: async () => decoder, grabFrame: async () => ({ close() {} }) as unknown as ImageBitmap, intervalMs: 5 });
+    const view = render(ui({ onHit: vi.fn() }));
+    await waitFor(() => expect(track.stop).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    view.unmount();
+    expect(track.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("reader failure stops the camera tracks (photo path)", async () => {
+    const decoder: Decoder = { engine: "native", decode: vi.fn(async () => { throw new Error("boom"); }), close: vi.fn() };
+    setScanDeps({ createDecoder: async () => decoder, grabFrame: async (source) => (source instanceof Blob ? ({ close() {} } as unknown as ImageBitmap) : null), intervalMs: 5 });
+    render(ui({ onHit: vi.fn() }));
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    expect(track.stop).not.toHaveBeenCalled();
+    await userEvent.upload(screen.getByLabelText("Choose a photo of a code"), new File(["x"], "a.png", { type: "image/png" }));
+    await waitFor(() => expect(track.stop).toHaveBeenCalledTimes(1));
+  });
 });

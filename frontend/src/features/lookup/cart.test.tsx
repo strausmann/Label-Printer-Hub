@@ -235,3 +235,22 @@ describe("cart", () => {
     expect((error as { batchId?: string }).batchId).toBe(BATCH_ID);
   });
 });
+
+describe("cart after a failed write", () => {
+  it("a failed setItem keeps memory-only lines on the next change", () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    act(() => result.current.add(asset));
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("full");
+    });
+    act(() => result.current.add(spool));
+    // storage still holds only the first line; the next change must not start from it
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(1);
+    act(() => result.current.add({ ...asset, id: "43" }));
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43"]);
+    spy.mockRestore();
+    act(() => result.current.add({ ...asset, id: "44" }));
+    expect(result.current.items.map((i) => i.id)).toEqual(["42", "7", "43", "44"]);
+    expect(JSON.parse(localStorage.getItem(CART_KEY)!)).toHaveLength(4);
+  });
+});

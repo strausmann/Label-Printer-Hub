@@ -79,6 +79,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   const video = useRef<HTMLVideoElement>(null);
   const decoder = useRef<Decoder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
   const live = phase.kind === "scanning" && !hidden && !paused;
 
   useEffect(() => {
@@ -91,21 +92,22 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
   useEffect(() => {
     if (!secure || hidden) return;
     let cancelled = false;
-    let stream: MediaStream | null = null;
+    let opened: MediaStream | null = null;
     const element = video.current;
     void (async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("no mediaDevices"), { name: "NotFoundError" });
-        stream = await navigator.mediaDevices.getUserMedia({
+        opened = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false,
         });
         if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
+          opened.getTracks().forEach((track) => track.stop());
           return;
         }
+        stream.current = opened;
         if (element) {
-          element.srcObject = stream;
+          element.srcObject = opened;
           await element.play?.();
         }
         setPhase({ kind: "scanning" });
@@ -119,7 +121,11 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
     })();
     return () => {
       cancelled = true;
-      stream?.getTracks().forEach((track) => track.stop());
+      // Already released when the reader failed (`stopStream`); stopping twice is harmless but pointless.
+      if (opened && stream.current === opened) {
+        opened.getTracks().forEach((track) => track.stop());
+        stream.current = null;
+      }
       if (element) element.srcObject = null;
     };
   }, [secure, hidden, attempt]);
@@ -132,6 +138,13 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
   }
 
   useEffect(() => () => decoder.current?.close(), []);
+
+  /** Releases the camera: the light goes off even though the screen stays open on its error message. */
+  const stopStream = useCallback(() => {
+    stream.current?.getTracks().forEach((track) => track.stop());
+    stream.current = null;
+    if (video.current) video.current.srcObject = null;
+  }, []);
 
   const getDecoder = useCallback(async () => (decoder.current ??= await deps.createDecoder()), []);
 
@@ -165,7 +178,10 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
           return;
         }
       } catch {
-        if (!stopped) setPhase({ kind: "reader-failed" });
+        if (!stopped) {
+          stopStream();
+          setPhase({ kind: "reader-failed" });
+        }
         return;
       }
       timer = setTimeout(() => void tick(), deps.intervalMs);
@@ -175,7 +191,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
       stopped = true;
       clearTimeout(timer);
     };
-  }, [live, getDecoder]);
+  }, [live, getDecoder, stopStream]);
 
   const onPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -193,6 +209,7 @@ export function CameraScanner({ onHit, paused = false, onClose, children }: Came
         }
       }
     } catch {
+      stopStream();
       setPhase({ kind: "reader-failed" });
       return;
     }
