@@ -338,7 +338,7 @@ The ID shown before creation ("becomes L4736-0004") comes from `GET /api/sheets/
 
     The bottom band wins over the top only through the hardware margins: L4736REV with 6.0 mm reported at the top and 4.23 mm at the bottom (5.0 mm left and right) gives top 13.50, bottom 15.27 → bottom-left.
 - `id_printed` makes "only on the first job" hold across retries: a job that **fails cleanly** (nothing printed) leaves it false, so the next job draws the ID again. The same holds for a job that was printed without the ID because no band was wide enough.
-- **"Once" holds across unconfirmed outcomes (ruling F3-1).** A job that carried the margin ID and ended `unconfirmed` (the page may be on the sheet: interrupted, lost across a restart, or swept) keeps the ID **in flight**: no further job of the sheet draws it, whatever its other cells, until a human resolves the cells. Resolving them as `printed` sets `id_printed` from that job; resolving them as `not_printed` removes the reason, and the next job draws the ID. Retention never deletes such a job (10.2a, section 15). The price: a sheet with unresolved cells carries no new margin ID until someone resolves them. The `cell` placement already behaved so for the ID: an unconfirmed hub cell blocks a second ID cell.
+- **"Once" holds across unconfirmed outcomes (ruling F3-1).** A job that carried the margin ID and ended `unconfirmed` (the page may be on the sheet: interrupted, lost across a restart, or swept) keeps the ID **in flight**: no further job of the sheet draws it, whatever its other cells, until a human resolves the cells. Resolving them as `printed` sets `id_printed` from that job; resolving them as `not_printed` removes the reason, and the next job draws the ID. Retention never deletes such a job while its sheet is active (10.2a, section 15); a discarded sheet is never resolved, so its unconfirmed cells pin nothing. The price: a sheet with unresolved cells carries no new margin ID until someone resolves them. The `cell` placement already behaved so for the ID: an unconfirmed hub cell blocks a second ID cell.
 
 ### 10.2a The feed-direction mark
 
@@ -891,7 +891,7 @@ Only one question would change what gets built; a default is chosen so the plan 
 | OC-36 | The print dialog preselects the sheet type last used on that printer in that browser. |
 | OC-37 | Sheets and sheet types are readable by any `read` key, regardless of printer restriction. |
 | OC-38 | `first_free` is ascending row-major; a placement may skip cells for this print without storing it. |
-| OC-39 | `sheet_cells.job_id` does not block job retention; cells keep state and purpose when the job row is gone. |
+| OC-39 | `sheet_cells.job_id` does not block job retention; cells keep state and purpose when the job row is gone. Retention keeps a job row only while its cells are `reserved`, or `unconfirmed` on an active sheet. |
 | OC-40 | A sheet whose ID label has not printed yet gets it on the next job's first free cell. Applies to `cell` sheets only (*clarified 2026-11-07*): a `margin` sheet never falls back to a cell; it gets the margin ID again on its next job. |
 | OC-41 | `queue_timeout_s` bounds each IPP request, not the wait at the printer. |
 | OC-42 | Retry of a page job re-reserves the same cells or fails with `cells_taken`; no retry while cells are unconfirmed. |

@@ -11,12 +11,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import delete, exists, func, literal_column, select, update
+from sqlalchemy import and_, delete, exists, func, literal_column, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col
 
 from app.models.job import PAGE_KIND_EXPR, Job, JobState, is_page_payload, json_at
-from app.models.sheet import SheetCell
+from app.models.sheet import Sheet, SheetCell
 
 
 async def get(session: AsyncSession, job_id: UUID) -> Job | None:
@@ -469,12 +469,19 @@ async def evict_terminal_older_than(
         .where(col(Job.finished_at) < cutoff)
         # A job whose sheet cells are still reserved is not yet settled: without its row the
         # startup sweep could not tell a printed page from one that was never saved (T5-1).
-        # Nor one whose cells are still unconfirmed: the margin ID and feed mark it carried
-        # count as maybe printed, and resolving the cells as printed reads its row (F3-1).
+        # Nor one whose cells are still unconfirmed on an active sheet: the margin ID and feed
+        # mark it carried count as maybe printed, and resolving the cells as printed reads its
+        # row (F3-1). A discarded sheet is never resolved, so its unconfirmed cells pin nothing
+        # (#215); ``reserved`` pins whatever the sheet's state.
         .where(
-            ~exists().where(
-                col(SheetCell.job_id) == col(Job.id),
-                col(SheetCell.state).in_(("reserved", "unconfirmed")),
+            ~exists()
+            .where(col(SheetCell.job_id) == col(Job.id))
+            .where(col(Sheet.id) == col(SheetCell.sheet_id))
+            .where(
+                or_(
+                    col(SheetCell.state) == "reserved",
+                    and_(col(SheetCell.state) == "unconfirmed", col(Sheet.state) == "active"),
+                )
             )
         )
         .execution_options(synchronize_session="fetch")

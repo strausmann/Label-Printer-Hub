@@ -1321,6 +1321,39 @@ def check_id_cell_fits(
         raise IdCellContentMismatchError(("qr_payload",))
 
 
+async def _recheck_id_cells(
+    session_factory: async_sessionmaker[AsyncSession],
+    reserved: Sequence[ReservedPage],
+    sheets: Sequence[SheetView],
+    *,
+    scan: Callable[[str], str],
+    render_dpi: int,
+    bus: Any,
+) -> None:
+    """Check the ID cell of every reserved page once the reservation has decided it (#215).
+
+    The dry plan that ``_check_plan_items`` ran on can differ from the reservation: another job
+    holding the sheet's ID cell may be released during the item lookups, and the reservation
+    then puts the hub's own label into a cell the plan never checked. When that label does not
+    fit, every reservation of the run is released and the 422 is raised.
+    """
+    for page, sheet in zip(reserved, sheets, strict=False):
+        if page.id_cell is None:
+            continue
+        try:
+            await asyncio.to_thread(
+                check_id_cell_fits,
+                sheet.geometry,
+                allow_qr=sheet.allow_qr,
+                code=page.sheet_code,
+                scan=scan,
+                render_dpi=render_dpi,
+            )
+        except IdCellContentMismatchError:
+            await _release_all(session_factory, [p.job_id for p in reserved], bus)
+            raise
+
+
 def _check_plan_items(
     plan_pages: Sequence[PagePlan],
     items: Sequence[ResolvedItem],
@@ -1786,6 +1819,14 @@ async def print_sheets(
             bus=bus,
             job_ids=None if job_id is None else [job_id],
         )
+        await _recheck_id_cells(
+            session_factory,
+            reserved,
+            [v.sheet for v in views],
+            scan=scan,
+            render_dpi=facts.render_dpi,
+            bus=bus,
+        )
 
         batch_id, printed = await _queue_pages(
             session_factory,
@@ -1874,6 +1915,14 @@ async def create_sheet_with_id_label(
             margin=margin,
             required_type_key=None,
             actor=actor,
+            bus=bus,
+        )
+        await _recheck_id_cells(
+            session_factory,
+            reserved,
+            [view],
+            scan=scan,
+            render_dpi=facts.render_dpi,
             bus=bus,
         )
         (page,) = reserved
