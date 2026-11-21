@@ -6,6 +6,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # 0008 — Conventional Commits + semantic-release for automated releases
 
 - **Status:** Accepted
+- **Amended by:** [0025](0025-milestone-branches-for-minor-and-major-releases.md) — minor and major releases come from milestone branches merged with a merge commit; a release guard runs before anything is published
+- **Amended:** 2026-11-21 — scopes, release tooling and the single image as built, see "Amendment — 2026-11-21" at the end
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -86,3 +88,13 @@ Maintainers do not manually tag releases. To trigger an unscheduled release (e.g
 - Workflow: [`.github/workflows/commitlint.yml`](../../.github/workflows/commitlint.yml)
 - Config: [`.releaserc.json`](../../.releaserc.json), [`commitlint.config.cjs`](../../commitlint.config.cjs)
 - Related: ADR 0007 (Docker tag scheme — consumes the version semantic-release decides)
+
+## Amendment — 2026-11-21 (ADR audit): scopes, tooling and image as built
+
+The decision (Conventional Commits, semantic-release, nightly release from `main`) stands. Details of the text above that changed:
+
+- **Scopes.** The scope list in the decision is outdated. The list in force is the `scope-enum` rule of `commitlint.config.cjs:26-62` (it adds, for example, `sheets`, `printers`, `decisions` and `spoolman`). The rule has level 1, so commitlint warns about a scope outside the list and does not fail.
+- **Tooling.** semantic-release and its plugins are pinned with a lockfile in `.github/release-tools/`, and `release.yml` runs them from there (`.github/workflows/release.yml:96,129`); the root `package.json` holds only commitlint.
+- **Pipeline step 5.** The release builds and pushes one image, `labelyard` (`.github/workflows/docker-publish.yml:88`; ADR 0015 and ADR 0026), not a backend and a frontend image.
+- **Milestones and the release guard.** [ADR 0025](0025-milestone-branches-for-minor-and-major-releases.md) amends this ADR: minor and major versions come from `milestone/x.y.0` branches merged with a merge commit, and its guard runs as `verifyReleaseCmd` before anything is tagged (`.releaserc.json:71`).
+

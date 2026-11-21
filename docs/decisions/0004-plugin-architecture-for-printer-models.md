@@ -7,6 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 - **Status:** Accepted
 - **Amended by:** [0020](0020-backend-kinds-ipp-page-printers.md) — page printers are a separate backend kind (`ipp`), not a model plugin; this ADR still governs the Brother raster families
+- **Amended:** 2026-11-21 (#413) — plugins are discovered through entry points as the hub uses them today; the rule that model code lives only in the plugins stays, see "Amendment — 2026-11-21" at the end
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -64,3 +65,14 @@ No model-specific logic exists outside the plugin module. `PrinterService`, `Pri
 - Issue [#11](https://github.com/strausmann/label-printer-hub/issues/11) — QL-Series plugin
 - Brother PJL identification spec: `docs/research/` (when migrated from maintainer's mono-repo)
 - Related: ADR 0002 (Python backend), ADR 0006 (status sources)
+
+## Amendment — 2026-11-21 (ADR audit, #413): entry points as used today; the rule stays
+
+**Discovery runs through entry points.** Option C above rejected "external plugin packages (entry points)". The mechanism is in use today for the plugins the hub ships: model families, backends and integrations are entry-point groups declared in the hub's own `backend/pyproject.toml` (`label_hub.integrations` at lines 68-71, `label_hub.printer_backends` at 73-75, `label_hub.printer_models` at 77-79). They are walked once at start (lifespan step 2, `backend/app/main.py:279`; `ModelRegistry.ensure_discovered`, `backend/app/printer_models/registry.py:135`; `BackendRegistry.ensure_discovered`, `backend/app/printer_backends/__init__.py:53`; `backend/app/integrations/__init__.py:41`). A plugin that fails to load is logged and skipped. A package installed into the image that declares the same groups is loaded as well, and the plugin authoring guide says so (`website/src/content/docs/developers/plugin-authoring.md:55`); the project publishes, versions and tests no such package, so the release and distribution work Option C warned about is still not taken on. The two raster backends are chosen by the printer's `backend` value through `BackendRouter` (`backend/app/services/backend_router.py:21-22`); the backend group itself lists `mock` and `ptouch`.
+
+**The rule "no model-specific logic exists outside the plugin module" stays and is enforced** (maintainer, 2026-11-21). It is not met yet:
+
+- `backend/app/services/printer_model_registry.py:38-41` keeps a second model list with display texts for the admin UI. This is the open violation; #413 (milestone 1.8.0) removes it, lets the plugins report their metadata through the entry points and adds a guard test that fails on model metadata outside the plugins.
+- The raster backends map model ids to their library's printer classes and carry a default model id (`backend/app/printer_backends/ptouch_backend.py:51-57,276`, `backend/app/printer_backends/brother_ql_backend.py:262`), and the test label reads that map (`backend/app/services/test_label.py:54`). These bind a backend to its library; #413 decides which of them is model metadata that belongs in the plugin.
+
+Detection by the SNMP PJL string still works as described (`backend/app/services/printer_runtime.py:185-186`).
