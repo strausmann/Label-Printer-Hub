@@ -41,7 +41,6 @@ export function cornerMarks(g, n, scaled, lw = 0.13) {
     const colX = r.col + cx, rowY = r.row + cy; // crossing index 0..cols / 0..rows
     const interior = colX > 0 && colX < g.cols && rowY > 0 && rowY < g.rows;
     if (interior && scaled.has(`${colX},${rowY}`)) continue;
-    if ((x < 20 || x > 190) && (y < 20 || y > 277)) continue; // inside a page-code square: left out as a whole
     const leg = interior ? 0.9 : 1.8;
     d += `M${f(x + sx * leg)} ${f(y)}H${f(x)}V${f(y + sy * leg)}`;
   }
@@ -66,8 +65,8 @@ export function runBlock(g, pass) {
   // everything lies inside the printable area (5 mm edge assumed): nothing above y 5 or below y 292
   const t = (x, y, s, size, w = 400, anchor = "start") => `<text x="${x}" y="${y}" font-size="${size}" font-weight="${w}" text-anchor="${anchor}" fill="${INK}">${s}</text>`;
   const top = [
-    t(22, 7.7, `Check page · run #${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · Office laser · Tray 1 (manual feed)`, 2.4, 700),
-    t(22, 10.1, `A6121 v1, shipped values · correction applied: dx +0.41 mm, dy −0.66 mm · scale x +0.012 %, y −0.008 % · rotation +0.021°`, 2),
+    t(14, 7.7, `Check page · run #${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · Office laser · Tray 1 (manual feed)`, 2.4, 700),
+    t(14, 10.1, `A6121 v1, shipped values · correction applied: dx +0.41 mm, dy −0.66 mm · scale x +0.012 %, y −0.008 % · rotation +0.021°`, 2),
   ];
   // bottom: pass 1 block centred and narrow, a free slot left and right for the run lines of passes 2 and 3
   const bottom = [
@@ -81,12 +80,25 @@ export function runBlock(g, pass) {
 export function runLine(g, pass) {
   const s = `#${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · corrected: ${pass === 2 ? "yes" : "no"}`;
   const left = pass === 2;
-  return `<text x="${left ? 22 : 188}" y="289.6" font-size="1.8" text-anchor="${left ? "start" : "end"}" fill="${INK}">${s}</text>`;
+  return `<text x="${left ? 14 : 196}" y="289.6" font-size="1.8" text-anchor="${left ? "start" : "end"}" fill="${INK}">${s}</text>`;
+}
+
+/** Page-code spots (spec 7.2, spot 2): inside the corner cell at its outer corner, inset 2.5 mm; the cell number moves to the cell's inner corner on the same edge. */
+export function pageCodeSpots(g) {
+  const idx = [1, g.cols, (g.rows - 1) * g.cols + 1, g.rows * g.cols];
+  return idx.map((n) => {
+    const r = cellRect(g, n);
+    const left = r.col === 0, top = r.row === 0;
+    const cx = left ? r.x + 2.5 + 5 : r.x + r.w - 2.5 - 5;
+    const cy = top ? r.y + 2.5 + 5 : r.y + r.h - 2.5 - 5;
+    return { n, cx, cy, num: { x: left ? r.x + r.w - 3 : r.x + 3, y: top ? r.y + 4.2 : r.y + r.h - 2.2, anchor: left ? "end" : "start" } };
+  });
 }
 
 /** The page of pass `pass`. The white sheet sits outside the group so the passes can be laid over each other. */
 export function checkPage(g, pass, { qrCells = true } = {}) {
   const set = new Set(PASSES[pass].map(([c, r]) => `${c},${r}`));
+  const spots = pageCodeSpots(g);
   let s = `<svg viewBox="0 0 210 297" role="img" aria-label="Check page, pass ${pass} of 3, Avery Zweckform 6121"><rect width="210" height="297" fill="#fff"/><g id="pass-${pass}">`;
   if (pass === 1) {
     let marks = "";
@@ -94,7 +106,8 @@ export function checkPage(g, pass, { qrCells = true } = {}) {
       marks += cornerMarks(g, n, set);
       const r = cellRect(g, n);
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-      s += `<text x="${f(cx)}" y="${f(cy - 3.2)}" font-size="2.9" font-weight="700" text-anchor="middle" fill="${INK}">${n}</text>`;
+      const sp = spots.find((q) => q.n === n);
+      s += sp ? `<text x="${f(sp.num.x)}" y="${f(sp.num.y)}" font-size="2.9" font-weight="700" text-anchor="${sp.num.anchor}" fill="${INK}">${n}</text>` : `<text x="${f(cx)}" y="${f(cy - 3.2)}" font-size="2.9" font-weight="700" text-anchor="middle" fill="${INK}">${n}</text>`;
       if (qrCells) s += qr(`LYC1:${RUN[pass]}:${n}:K${pass}`, cx, cy + 1.4, 8);
     }
     s += marks;
@@ -103,7 +116,7 @@ export function checkPage(g, pass, { qrCells = true } = {}) {
   if (pass === 1) {
     s += runBlock(g, 1);
     const page = `LYC1:${RUN[pass]}:0:A6121:1:41:-66:120:-80:21000:K${pass}`;
-    for (const [x, y] of [[12.5, 12.5], [197.5, 12.5], [12.5, 284.5], [197.5, 284.5]]) s += qr(page, x, y, 15);
+    for (const sp of spots) s += qr(page, sp.cx, sp.cy, 10);
   } else s += runLine(g, pass);
   return s + "</g></svg>";
 }

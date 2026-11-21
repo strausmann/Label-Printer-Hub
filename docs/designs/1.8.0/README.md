@@ -24,7 +24,7 @@ Links: [page](./m02-sheet-code-section.html), [1280 dark](png/m02-sheet-code-sec
 
 ## M3 Check pages
 
-Spec section 7.3, 11. Pass 1 is the full check page (cell numbers and codes, four page codes, margin blocks, K1 crosses); passes 2 and 3 print only their K2/K3 crosses with mini scales and one run line each (slots left and right in pass 1's bottom margin). Everything lies inside the printable area (5 mm edge, shown in the overlay). Also the overlay of all three on one sheet, zooms and the margin strips. Paper, light only.
+Spec section 7.3, 11. Pass 1 is the full check page (cell numbers and codes, page codes in spots, margin blocks, K1 crosses; on a 6121 with a 5 mm edge the four 10 mm page codes sit in cells 1, 5, 61 and 65, with a zoom on cell 1); passes 2 and 3 print only their K2/K3 crosses with mini scales and one run line each (slots left and right in pass 1's bottom margin). Everything lies inside the printable area (5 mm edge, shown in the overlay). Also the overlay of all three on one sheet, zooms and the margin strips. Paper, light only.
 [![M3 Check pages](png/m03-check-pages-1280-light.png)](png/m03-check-pages-1280-light.png)
 Links: [page](./m03-check-pages.html), [A4 at full size](png/m03-check-pages-a4-light.png)
 
