@@ -130,7 +130,7 @@ scales in ppm, rotation in micro-degrees, as in `backend/app/models/printer_cali
 | A1 | #246, #326 | `sheet_types`: `id_margin_band`, `id_margin_align`, `id_margin_offset_hmm`, `preprint_zones`, `preprint_preset_id`; new table `preprint_presets` |
 | A2 | #335 | `sheet_types`: `catalog_key`, `catalog_revision`, `catalog_fields_hash` |
 | A3 | #335 | data: pending `adopt`/`corrections` of seed revision 3, then catalog provenance for every `origin="seed"` type |
-| C1 | #336, #240 | new tables `calibration_runs`, `calibration_run_counters`, `calibration_history` (filled with one `imported` entry per existing `printer_calibrations` row), `calibration_check_sheets` |
+| C1 | #336, #240 | new tables `calibration_runs`, `calibration_run_counters`, `calibration_history` (filled with one `imported` entry per existing `printer_calibrations` row), `calibration_check_sheets`, `calibration_check_sheet_passes` |
 | C2 | #351 | new table `sheet_type_log` |
 | D1 | #248 | `sheet_cells`: `label` (JSON), `printed_at` |
 | E1 | #405 | data: rewrite free-text `jobs.error` rows to the fixed text of their code |
@@ -525,18 +525,34 @@ Layout as agreed (mockups C/C2, comment of 2026-11-14 23:08Z):
 - **Page QR codes** in the four 15 mm corner squares (today reserved and empty, `page.py:14-18`), carrying the page
   payload. **Design call:** use the corner squares, because mockup C2 put the page codes in the page corners, the
   operator test-printed it, and the photo calibration (#333) can use the QR finder patterns as its registration marks.
-- **Check pages reuse one sheet** (comment of 2026-11-15 10:51Z): a check page prints only the crosses with their mini
-  scales at the crossings of one pass, without gap lines and edge rulers. Passes are disjoint crossing sets that never
-  touch (no two crossings of different passes adjacent, diagonals included): pass 1 = four outer corners + centre, the
-  next passes shifted by one column and two rows, as far as the grid allows. Each cross carries `K<pass>`; the page
-  header and QR carry the pass number.
-  - **New table `calibration_check_sheets`:** id, printer, tray, sheet type version, `passes_total` (computed from the
-    grid), `passes_used`, created, closed. Before a check print the UI offers "Print on the same sheet? (pass 2 of 3)"
-    and picks the next free pass; "New sheet" starts pass 1 of a new check sheet. A grid that allows fewer than three
-    passes says so ("This sheet takes 2 check passes"); a grid that allows none (fewer than five crossings) prints the
-    single full check page as today.
+- **Check pages reuse one sheet** (comment of 2026-11-15 10:51Z; pass content ruled by the operator on 2026-11-21).
+  Passes are disjoint crossing sets that never touch (no two crossings of different passes adjacent, diagonals
+  included): pass 1 = four outer corners + centre, the next passes shifted by one column and two rows, as far as the grid
+  allows. Every pass prints its crosses with mini scales and `K<pass>` labels, never gap lines or edge rulers.
+  - **Pass 1 prints the full check page:** cell numbers, cell QR codes, the four page QR codes, the two-line margin
+    blocks (top and bottom), and its `K1` crosses.
+  - **Passes 2 and 3 print only their `K2`/`K3` crosses with mini scales and one short run line of their own**: run
+    number, date and time, pass, correction applied yes/no (e.g. `#14 · 2026-11-21 14:05 · K2 · with correction`). The
+    line sits at a free margin spot that pass 1 does not use and that the other passes do not use either — bottom left
+    for pass 2, bottom right for pass 3; the exact spot is the builder's call within that rule. **No** cell numbers, no
+    cell or page QR codes and no margin block on passes 2 and 3 (operator, 2026-11-21): printed again after a correction
+    they would land offset over pass 1's and both would become unreadable.
+  - **New tables `calibration_check_sheets`** (id, printer, tray, sheet type version, `passes_total` computed from the
+    grid, created, closed) **and `calibration_check_sheet_passes`** (check sheet id, `pass_no`, run id; unique on
+    check sheet + pass and on run). Each pass is linked to its run here; `passes_used` is the count of these rows.
+    Before a check print the UI offers "Print on the same sheet? (pass 2 of 3)" and picks the next free pass; "New
+    sheet" starts pass 1 of a new check sheet. A grid that allows fewer than three passes says so ("This sheet takes 2
+    check passes"); a grid that allows none (fewer than five crossings) prints the single full check page as today.
+  - **Readings of pass 2 and 3 are attributed through the stored check sheet, not through codes on the paper:** the run
+    picker of section 7.4 lists the passes of the open check sheet ("Check sheet of run #12 — pass 2, run #14") and
+    the readings are stored against that pass's run.
+  - **Effect on #333 (photo calibration):** a photo identifies the **sheet** by the pass-1 codes (cell and page QR) and
+    the **pass** by the `K` labels next to the crosses; the hub resolves sheet + pass to the run through
+    `calibration_check_sheet_passes`. A photo that shows no pass-1 code cannot be assigned automatically.
   - **Design call:** passes are computed by a pure function `check_passes(cols, rows) -> list[list[Crossing]]`,
-    deterministic, tested for disjointness and non-adjacency on every catalog grid.
+    deterministic, tested for disjointness and non-adjacency on every catalog grid; the run-line spot of each pass is
+    chosen by a pure function that is tested to avoid pass 1's margin blocks, the page QR squares and every other
+    pass's spot.
 
 **QR payloads `LYC1`** (comment of 2026-11-14 23:08Z, corrected by 2026-11-15 10:05Z): QR alphanumeric mode, only
 `0-9 A-Z : -`.
@@ -547,9 +563,14 @@ scannable module size once the prefix is 10 characters and every optional field 
 code that sometimes drops fields would be a silent truncation.
 
 ```
-page:  LYC1:<run>:0:<PREFIX>:<version>:<dx_hmm>:<dy_hmm>:<sx_ppm_dev>:<sy_ppm_dev>:<rot_udeg>[:K<pass>][:PX<pitch_x_hmm>][:PY<pitch_y_hmm>][:MT<margin_top_hmm>][:ML<margin_left_hmm>]
-cell:  LYC1:<run>:<cell>[:K<pass>]
+page:  LYC1:<run>:0:<PREFIX>:<version>:<dx_hmm>:<dy_hmm>:<sx_ppm_dev>:<sy_ppm_dev>:<rot_udeg>[:K1][:PX<pitch_x_hmm>][:PY<pitch_y_hmm>][:MT<margin_top_hmm>][:ML<margin_left_hmm>]
+cell:  LYC1:<run>:<cell>
 ```
+
+- **Design call:** cell codes carry **no** pass suffix, page codes carry `:K1` on a check page and nothing on a
+  calibration page. Reason: codes are printed only on a calibration page and on pass 1 of a check sheet (above), so a
+  pass number in a cell code would always be 1 or absent and adds nothing the run record does not hold; the page code's
+  `:K1` tells a photo reader that the sheet is a check sheet whose later passes are found through the hub.
 
 - `<cell>` is `0` in a page code. `<PREFIX>` is the type's sheet prefix (`PREFIX_PATTERN` `^[A-Z][A-Z0-9]{1,9}$`,
   `sheets/naming.py:13`), not the product code. **Design call:** the prefix plus a separate version field instead of
@@ -557,18 +578,18 @@ cell:  LYC1:<run>:<cell>[:K<pass>]
   2026-11-15 rule "the sheet type version as a separate field".
 - All correction fields are `0` on a page printed without correction. Optional geometry fields appear only when the
   type differs from its catalog revision (section 6.1.3).
-- A photo of a single cell identifies run, cell and pass; the run record (section 7.1) and the page codes supply the
+- A photo of a single cell identifies the run (calibration page or pass 1 of a check sheet) and the cell; the run record (section 7.1) and the page codes supply the
   type and the correction. This deliberately supersedes the cell content of mockup C2; **the operator approved the
   change on 2026-11-21** (section 14).
 
 **Capacity, worst case** (bounds from the code: offsets ±10 mm = ±1000 hmm, scales 0.95–1.05 = ±50000 ppm, rotation
 ±2° = ±2000000 µdeg, `calibration/model.py:24-28`; version ≤ 1000000, `model.py:96`; lengths ≤ 1000 mm = 100000 hmm,
-`exchange.py:57`; run number up to 999999; pass up to 99):
+`exchange.py:57`; run number up to 999999):
 
 | Code | Longest payload | Length | Version / ECC | Symbol | Module at the printed size |
 |---|---|---|---|---|---|
-| page | `LYC1:999999:0:AAAAAAAAAA:1000000:-1000:-1000:-50000:-50000:-2000000:K99:PX100000:PY100000:MT100000:ML100000` | 107 | **5-M** (alphanumeric capacity 122; 5-Q holds 87, too few) | 37 modules + 4-module quiet zone each side = 45 | 15 mm / 45 = **0.333 mm** |
-| cell | `LYC1:999999:400:K99` | 19 | **1-M** (capacity 20) | 21 + 8 = 29 | 8 mm / 29 = **0.276 mm** |
+| page | `LYC1:999999:0:AAAAAAAAAA:1000000:-1000:-1000:-50000:-50000:-2000000:K1:PX100000:PY100000:MT100000:ML100000` | 106 | **5-M** (alphanumeric capacity 122; 5-Q holds 87, too few) | 37 modules + 4-module quiet zone each side = 45 | 15 mm / 45 = **0.333 mm** |
+| cell | `LYC1:999999:400` | 15 | **1-M** (capacity 20) | 21 + 8 = 29 | 8 mm / 29 = **0.276 mm** |
 
 - **Design call (controller):** page codes are drawn at version 5-M minimum, cell codes at 1-M, both pinned by a test
   that builds the longest payload above and asserts it encodes at that version and ECC and that the module is
@@ -618,7 +639,7 @@ cell:  LYC1:<run>:<cell>[:K<pass>]
   (debounced 400 ms) and shows offset, scale, rotation and the residual per crossing; residuals over 0.3 mm
   (`fit.py:24`) are marked as probable misreads.
 - **Readings belong to a print:** a run picker "Readings from print #7" (default: the newest calibration run of this
-  printer, tray and type) is part of the form; the fit request and the save carry `run_id`, the history entry stores
+  printer, tray and type; for check prints it lists the passes of the open check sheet, section 7.2) is part of the form; the fit request and the save carry `run_id`, the history entry stores
   it (section 7.5).
 
 **Geometry suggestion** (comment of 2026-11-14 21:08Z): a constant or evenly growing residual across the gaps of one
@@ -920,7 +941,7 @@ and 390 px) in `docs/designs/1.8.0/`, approved in its issue before the task star
 |---|---|---|
 | M1 | "Edit details" → Preprinted areas | the zone list (x, y, w, h, note), the preset picker, the diagram with hatched zones and the ID rectangle, a zone refused over a cell |
 | M2 | Type detail → Sheet code section | the per-printer table (fits / reason / band and offset / content level), the position controls (band, start from, offset), the diagram |
-| M3 | Calibration and check page (paper) | **three check passes on an Avery Zweckform 6121 sheet** (maintainer, 2026-11-15), `K1–K3` labels, the margin run block, cell QR and number, inner and outer corner marks |
+| M3 | Calibration and check page (paper) | **three check passes on an Avery Zweckform 6121 sheet** (maintainer, 2026-11-15): pass 1 full page (cell numbers and QR, page QR codes, margin blocks, `K1` crosses); passes 2 and 3 their `K2`/`K3` crosses plus their own run line at bottom left / bottom right; inner and outer corner marks |
 | M4 | Archive → Catalog tab | search, "verified only", state badges, grid preview, Add / Installed / Update, empty state of a fresh installation |
 | M5 | Archive → Installed list and type detail | usage columns and badges, sort and filters, "Remove unused types" dialog, the type's sheet list with the discarded toggle, the catalog-update diff |
 | M7 | Calibration page → History | entries per tray with diffs, jobs count link, restore confirmation naming the values, actual-tray warning |
@@ -956,7 +977,8 @@ None open. The operator answered all questions on 2026-11-21; the answers are wo
 | #335 fresh installation | starts empty; existing installations keep their types; types come from the catalog | 6.1.4 |
 | #342 test prints | fine, text complete, 1 mm stays; closed with evidence, no code | 6.2 |
 | #247 printed QR codes | use `web_url` once set; unchanged without it | 9.4 |
-| #240 cell QR content | cells carry `LYC1:<run>:<cell>[:K<pass>]`, page codes the full payload | 7.2 |
+| #240 cell QR content | cells carry `LYC1:<run>:<cell>`, page codes the full payload | 7.2 |
+| #240 check passes | pass 1 full page; passes 2 and 3 only crosses and their own run line (2026-11-21) | 7.2 |
 | #246 ID before feed mark | approved, reverses OC-57 | 5.7 |
 | #326 | closed as superseded by #350, criteria moved to #246 | 5 |
 
@@ -968,7 +990,8 @@ None open. The operator answered all questions on 2026-11-21; the answers are wo
 | #240 A | step-by-step guide | already shipped (#337) | `ReadingGuide.tsx`; 1.8.0 adds only the geometry rule and the run number to it. |
 | #240 comment | `L4736REV1` style type field | `<PREFIX>:<version>` | Prefixes end in digits, concatenation is ambiguous; the 2026-11-15 comment asks for a separate field. |
 | #240 comment | geometry suggestion after fitting offset, scale, rotation on the calibration page | from check-print readings with a correction measured on another type | A linear pitch or margin error is absorbed by the affine fit; it is only visible against a correction from another type (section 7.4). |
-| #240 comment (C2, 2026-11-14) | every cell QR carries run, cell, type, version and the correction | cells carry `LYC1:<run>:<cell>[:K<pass>]`; type, version, correction and geometry only in the page codes | Controller ruling, approved by the operator on 2026-11-21: the full payload needs a module below 0.25 mm in an 8 mm cell with a 10-character prefix and all fields (section 7.2). |
+| #240 comment (C2, 2026-11-14) | every cell QR carries run, cell, type, version and the correction | cells carry `LYC1:<run>:<cell>`; type, version, correction and geometry only in the page codes | Controller ruling, approved by the operator on 2026-11-21: the full payload needs a module below 0.25 mm in an 8 mm cell with a 10-character prefix and all fields (section 7.2). |
+| #240 comment (2026-11-15) | "The page header and QR carry the pass number" for every pass | passes 2 and 3 carry it only in their run line, no QR | Operator ruling 2026-11-21: reprinted codes and margin blocks would overprint pass 1 offset. |
 | #240 comment | corner marks per cell | already drawn; only the leg lengths change | `page.py:293-357`. |
 | #326 | a feature of its own | closed as superseded by #350 (operator, 2026-11-21); its four remaining acceptance criteria move to #246 | The per-type placement shipped with #350; the remaining side/offset and per-printer view is the zone-placement problem of #246 (section 5). |
 | #335 | 36 types | 39 | `sheet_types.json` today. |
@@ -1026,6 +1049,8 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #240 comment | Run info in the margins only; QR `LYC1`; correction values printed | 7.2 |
 | #240 comment | No QR payload a scanner auto-detects; test over every payload | 7.2 |
 | #240 comment | Check sheet reuse: crosses only, disjoint non-touching passes, `K1..K3`, hub remembers passes, offer next pass; mockup with three passes on 6121 | 7.2, M3 |
+| #240 comment | "The page header and QR carry the pass number" | 7.2: pass 1 carries it in its margin block and page codes (`:K1`); passes 2 and 3 in their run line (no QR, operator 2026-11-21) |
+| operator 2026-11-21 | Passes 2/3 print no cell numbers, no QR, no margin block; own run line at a free spot; each pass linked to its run | 7.2 |
 | #241 | Probe page: outlines, row/col and number, key and version, number and time; current calibration; no sheet; queued page job; scope as calibration page | 7.3 |
 | #241 | Tests: PDF cell rectangles with and without calibration; DB unchanged; refusals | 16 |
 | #336 | History per printer and tray with old/new values, method, measured-on, readings and residuals, who, when, note | 7.5 |
@@ -1061,7 +1086,7 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 |---|---|---|---|---|
 | A | Placement: zone over the logo moves the ID to the free corner or another band; all bands blocked degrade to code only, then fall back; a forced band without room gives `id_not_printed`; the mark moves when the ID needs its corner; property test: the chosen rectangle never overlaps a zone, a cell or the unprintable area | Preview and job store the same decision; the per-printer validation endpoint for fits / does not fit / overlaps a cell; export and import round-trip of the new keys, a 1.7.x document still imports; `id_pending`/`feed_mark_pending` with a margin ID in flight | Zone editor and position controls (Vitest) | Zone added → preview hatched; short viewport |
 | B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
-| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered |
+| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number, run line inside its spot and clear of pass 1's blocks, QR squares and the other pass's spot); footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
 | E | `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
