@@ -41,7 +41,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0009](0009-server-sent-events-over-websockets.md) | Server-Sent Events instead of WebSockets | Accepted (JSON stream, see 0015/0016) |
 | [0010](0010-pwa-progressive-enhancement.md) | PWA with progressive enhancement | Accepted |
 | [0011](0011-openapi-as-api-contract.md) | OpenAPI as the canonical API contract (generated client types + interactive docs) | Accepted (amended 2026-11: Scalar; 2026-11-21: `openapi-typescript`) |
-| [0012](0012-label-layout-management.md) | Label layouts are first-class, integration-scoped, multi-instance | Superseded by `LayoutEngine` + `ContentType` (PR #109) |
+| [0012](0012-label-layout-management.md) | Label layouts are first-class, integration-scoped, multi-instance | Superseded by 0032 |
 | [0013](0013-browse-cart-bulk-print-ui-pattern.md) | Browse + cart + bulk-print UI pattern | Accepted (amended 2026-11-10: no browse grid, search instead) |
 | [0014](0014-pangolin-sso-and-bypass-trusted-for-all-scopes.md) | Pangolin-SSO and Bypass are trusted for all scopes | Superseded by 0019 |
 | [0015](0015-single-process-deployment.md) | Single-process deployment: the backend serves the UI | Accepted (amended by 0026: image name, environment prefix) |
@@ -58,6 +58,8 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0026](0026-rename-to-labelyard.md) | The project is called Labelyard | Accepted |
 | [0027](0027-url-token-for-the-grocy-label-webhook.md) | A print-scope key in the URL authenticates the Grocy label webhook | Accepted (amended 2026-11-21: own access log, D26) |
 | [0030](0030-confirmed-tape-prints.md) | A tape print counts only when the printer confirms it | Accepted |
+| [0031](0031-licence-and-supply-chain.md) | The hub is AGPL-3.0-or-later and every image says what it contains and who built it | Accepted |
+| [0032](0032-integration-plugins-and-layout-engine.md) | Integrations are entry-point plugins; a label is a content type drawn by the layout engine | Accepted |
 
 Numbers 0028, 0029, 0033 and 0034 are reserved for ADRs planned in the approved design of milestone 1.8.0; do not use them for other ADRs.
 

@@ -25,7 +25,7 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D10 | Proxy headers are trusted only with the trust token; legacy header and Basic bypass are opt-in | 2026-11-04 | Accepted | [0019](0019-proxy-headers-need-trust-token.md) |
 | D11 | No global part-size or half-cut setting in the foundation | 2026-11-04 | Accepted | — |
 | D12 | `ink-500` is `#6B655A` to meet WCAG AA contrast | 2026-11-04 | Accepted | — |
-| D20 | The hub is AGPL-3.0-or-later and links to the source of the running build | 2026-11-05 | Accepted | — |
+| D20 | The hub is AGPL-3.0-or-later and links to the source of the running build | 2026-11-05 | Accepted | [0031](0031-licence-and-supply-chain.md) |
 | D13 | Sheet archive, physical sheets and calibration live in the hub (#150) | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
 | D14 | Sheet type geometry is versioned; sheets pin their version | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
 | D15 | Cells are reserved at job creation, used on completion, unconfirmed when the outcome is unknown | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
@@ -35,7 +35,7 @@ A guard test (`backend/tests/unit/test_decision_register.py`) fails if a `D<n>` 
 | D19 | Imported sheet types are never marked verified | 2026-11-05 | Accepted | [0023](0023-sheet-archive.md) |
 | D21 | Minor and major releases come from `milestone/x.y.0` branches; main takes patch and non-releasing changes only | 2026-11-09 | Accepted | [0025](0025-milestone-branches-for-minor-and-major-releases.md) |
 | D22 | The project is called Labelyard; names that users' data or clients depend on stay | 2026-11-11 | Accepted | [0026](0026-rename-to-labelyard.md) |
-| D23 | The licence lists cover the Python environment and the web bundle the image ships, generated at build time; operating-system packages are covered by the image SBOM and their own copyright files | 2026-11-11 | Accepted | — |
+| D23 | The licence lists cover the Python environment and the web bundle the image ships, generated at build time; operating-system packages are covered by the image SBOM and their own copyright files | 2026-11-11 | Accepted | [0031](0031-licence-and-supply-chain.md) |
 | D24 | A print-scope API key may authenticate the Grocy label webhook as a literal `token=` URL parameter; admin keys are refused and the token is redacted from the hub's logs | 2026-11-14 | Accepted | [0027](0027-url-token-for-the-grocy-label-webhook.md) |
 | D25 | A printer's SNMP community is write-only and bound to its SNMP target; it falls under D5 and is stored encrypted from 1.8.0 (#412) | 2026-11-21 | Accepted | [0017](0017-settings-in-database-env-locks-encrypted-secrets.md) |
 | D26 | The access log is one line per request in nginx combined format with its own redaction; its format is an external interface for log tools | 2026-11-15 | Accepted | [0027](0027-url-token-for-the-grocy-label-webhook.md) |
