@@ -13,8 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 **Branch:** `milestone/1.8.0`, created from `main` after v1.7.1 (it does not exist yet)
 **Code base read:** `main` at `40bb6566`. Every statement about existing behaviour below names the file and line it was
 read from; line numbers refer to that commit.
-**Issues (20):** sheet ID #326, #246, #403 · sheet types #335, #342, #219 · calibration #240, #241, #336, #351, #220 ·
-cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247, #256, #395. Read with
+**Issues (21):** sheet ID #326, #246, #403 · sheet types #335, #342, #219 · calibration #240, #241, #336, #351, #220 ·
+cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247, #256, #395 · printer model #259 (added by the operator on 2026-11-21). Read with
 `gh issue view <n> --repo strausmann/labelyard --json body,comments` (plain `gh issue view` fails on the Projects
 (classic) sunset).
 **Plan:** to be written after this design is accepted (`docs/superpowers/plans/2026-11-21-milestone-1-8-0.md`).
@@ -39,6 +39,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
 - Smaller fixes: one way to the cart (#407), the open hardening notes of the 1.7.x audit (#405), a visible state for a
   printer that could not be wired (#401), public links for integrations (#247), the QL hardware check (#256) and the
   split of the tape backend (#395).
+- The Brother QL-1110NWB prints on 102 mm continuous DK rolls (#259).
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -522,9 +523,35 @@ Layout as agreed (mockups C/C2, comment of 2026-11-14 23:08Z):
   A type with `allow_qr` off, or a cell too small for the QR at 0.25 mm modules, prints the number only.
 - **Corner marks:** inner legs (next to a crossing) 0.9 mm, outer legs 1.8 mm (today 1.5 mm for all,
   `page.py:65`); the existing rule that drops a mark next to a tick stays (`page.py:304-307`).
-- **Page QR codes** in the four 15 mm corner squares (today reserved and empty, `page.py:14-18`), carrying the page
-  payload. **Design call:** use the corner squares, because mockup C2 put the page codes in the page corners, the
-  operator test-printed it, and the photo calibration (#333) can use the QR finder patterns as its registration marks.
+- **Every element of every pass lies inside the requested printer's printable area** (controller, 2026-11-21): the
+  same data the margin check uses — the printer's hardware margins (`PrinterFacts.margins_hmm`,
+  `sheets/printer_facts.py:53-75`; 5 mm per side when the printer does not report them, `planner.py:73`), plus the
+  tray's `|offset|` per axis and `SAFETY_HMM` (1 mm), exactly as `margin_bands_hmm` (`planner.py:187-210`). Text, codes,
+  run lines and margin blocks are laid out inside it; a drawn mark (corner mark, ruler tick, S/Z label) that would
+  fall outside it is left out as a whole, as the page already does for the corner squares. A QR code's quiet zone is
+  blank paper and may lie outside the printable area, never over ink.
+- **Page QR codes ("page-code spots" instead of fixed corner squares).** Today the page reserves four 15 × 15 mm
+  squares at the **page** corners (0–15 mm) for Part B's registration markers and draws nothing in them
+  (`page.py:14-18,47,131-198`); that ignores the unprintable edge, which takes 5 mm or more of each square on a
+  laser. **Design call (controller, after the mockup moved the squares to 5–20 mm):** each of the four page codes
+  (10 mm symbol, section below) is placed at the first spot of this list that is inside the printable area **and**
+  clear of every cell number, cell QR, corner mark, crossing scale, ruler, S/Z label and margin block, with its quiet
+  zone free of ink:
+  1. the printable corner of the page (its inner edge at hardware margin + `|offset|` + 1 mm from both page edges);
+  2. inside the corner **cell** (cell 1, the last cell of the first row, the first and the last cell of the last row),
+     at the cell's outer corner, inset 2.5 mm from the label edges so the corner marks stay; the cell's own number
+     moves to the free inner corner of the cell, and the cell's QR is **dropped only if** it would overlap the page
+     code (the page code identifies the run, the cell number stays readable as text);
+  3. none: that corner has no page code.
+  Pages are drawn with however many page codes fit (0–4); when fewer than four fit, the print dialog says so before
+  printing ("This sheet type leaves room for 2 of the 4 page codes on this printer"), and with **no** page code the run
+  is still identified by the margin text and the cell codes. **Reason:** a smaller page code is impossible without
+  dropping fields (no truncation), fewer codes are only a loss of redundancy, and a corner cell on a calibration page is
+  plain paper apart from its number and code. On a 6121 (top margin 10.8 mm, left 9.9 mm) spot 1 leaves 3.9 mm of
+  margin on a 5 mm printer, so the codes land in cells 1, 5, 61 and 65 (spot 2); the cell QR of those cells stays,
+  because a centred 8 mm cell code in a 38.1 × 21.2 mm label is clear of a 10 mm corner code.
+  The photo calibration (#333) uses the page codes' finder patterns as registration marks wherever they land; the
+  run record stores their positions.
 - **Check pages reuse one sheet** (comment of 2026-11-15 10:51Z; pass content ruled by the operator on 2026-11-21).
   Passes are disjoint crossing sets that never touch (no two crossings of different passes adjacent, diagonals
   included): pass 1 = four outer corners + centre, the next passes shifted by one column and two rows, as far as the grid
@@ -533,8 +560,13 @@ Layout as agreed (mockups C/C2, comment of 2026-11-14 23:08Z):
     blocks (top and bottom), and its `K1` crosses.
   - **Passes 2 and 3 print only their `K2`/`K3` crosses with mini scales and one short run line of their own**: run
     number, date and time, pass, correction applied yes/no (e.g. `#14 · 2026-11-21 14:05 · K2 · with correction`). The
-    line sits at a free margin spot that pass 1 does not use and that the other passes do not use either — bottom left
-    for pass 2, bottom right for pass 3; the exact spot is the builder's call within that rule. **No** cell numbers, no
+    line sits in its own **run-line slot**, reserved when pass 1 is laid out: inside the printable area, in the margin,
+    clear of pass 1's margin blocks, every page-code spot and the other pass's slot. **Design call (controller):** pass
+    1's bottom block is centred and narrowed so that two slots remain between the bottom page-code spots, pass 2 left
+    and pass 3 right; the builder may use the top margin instead when that is the larger room, within the same rule.
+    If the printable margin of a sheet type on a printer cannot hold both slots, the hub says so before pass 1 prints
+    ("Later check passes on this sheet will print without their run line"), and passes 2 and 3 print their crosses
+    without the run line; the hub still records each pass and its run (`calibration_check_sheet_passes`). **No** cell numbers, no
     cell or page QR codes and no margin block on passes 2 and 3 (operator, 2026-11-21): printed again after a correction
     they would land offset over pass 1's and both would become unreadable.
   - **New tables `calibration_check_sheets`** (id, printer, tray, sheet type version, `passes_total` computed from the
@@ -550,9 +582,9 @@ Layout as agreed (mockups C/C2, comment of 2026-11-14 23:08Z):
     the **pass** by the `K` labels next to the crosses; the hub resolves sheet + pass to the run through
     `calibration_check_sheet_passes`. A photo that shows no pass-1 code cannot be assigned automatically.
   - **Design call:** passes are computed by a pure function `check_passes(cols, rows) -> list[list[Crossing]]`,
-    deterministic, tested for disjointness and non-adjacency on every catalog grid; the run-line spot of each pass is
-    chosen by a pure function that is tested to avoid pass 1's margin blocks, the page QR squares and every other
-    pass's spot.
+    deterministic, tested for disjointness and non-adjacency on every catalog grid; the page layout (margin blocks,
+    run-line slots, page-code spots) is computed by one pure function `check_page_layout(geometry, printable_area)`
+    that the renderer, the print dialog's warnings and the tests share.
 
 **QR payloads `LYC1`** (comment of 2026-11-14 23:08Z, corrected by 2026-11-15 10:05Z): QR alphanumeric mode, only
 `0-9 A-Z : -`.
@@ -588,12 +620,13 @@ cell:  LYC1:<run>:<cell>
 
 | Code | Longest payload | Length | Version / ECC | Symbol | Module at the printed size |
 |---|---|---|---|---|---|
-| page | `LYC1:999999:0:AAAAAAAAAA:1000000:-1000:-1000:-50000:-50000:-2000000:K1:PX100000:PY100000:MT100000:ML100000` | 106 | **5-M** (alphanumeric capacity 122; 5-Q holds 87, too few) | 37 modules + 4-module quiet zone each side = 45 | 15 mm / 45 = **0.333 mm** |
+| page | `LYC1:999999:0:AAAAAAAAAA:1000000:-1000:-1000:-50000:-50000:-2000000:K1:PX100000:PY100000:MT100000:ML100000` | 106 | **5-M** (alphanumeric capacity 122; 5-Q holds 87, too few) | 37 modules, drawn as a **10 mm** symbol; 4-module quiet zone (1.08 mm) of blank paper around it | 10 mm / 37 = **0.270 mm** |
 | cell | `LYC1:999999:400` | 15 | **1-M** (capacity 20) | 21 + 8 = 29 | 8 mm / 29 = **0.276 mm** |
 
-- **Design call (controller):** page codes are drawn at version 5-M minimum, cell codes at 1-M, both pinned by a test
-  that builds the longest payload above and asserts it encodes at that version and ECC and that the module is
-  ≥ 0.25 mm at the drawn size. A real payload that needs a higher version (a run number past 999999) makes the page code
+- **Design call (controller):** page codes are drawn at version 5-M minimum as a 10 mm symbol, cell codes at 1-M as
+  8 mm, both pinned by a test that builds the longest payload above and asserts it encodes at that version and ECC and
+  that the module is ≥ 0.25 mm at the drawn size. The 10 mm symbol replaces the 15 mm square of the first draft: the
+  symbol must fit the printable part of a page-code spot. A real payload that needs a higher version (a run number past 999999) makes the page code
   grow to the next version as long as the module stays ≥ 0.25 mm; beyond that the page job is refused with
   `calibration_qr_too_large` — **never truncated**.
 - **Guard test:** every generated payload (cell and page, every catalog type, with and without correction) is checked
@@ -807,7 +840,7 @@ hand, saved for <type name> v<n>".
   6. "Re-read on event" for `sheet.updated` is documented in the events reference (en + de).
   7. The concurrency tests run with the production engine configuration (the `engine.py` settings).
 
-## 9. Group E — fixes and hardening (#407, #405, #401, #247, #256, #395)
+## 9. Group E — fixes, hardening and one printer model (#407, #405, #401, #247, #256, #395, #259)
 
 ### 9.1 One way to the cart (#407)
 
@@ -879,6 +912,50 @@ The dependency switch shipped in 1.7.x (`pyproject.toml:38`). Remaining: the mai
 `ptouch_backend.py:71-257`); `PTouchBackend` stays the entry point and re-exports nothing new. Every existing backend
 test passes unchanged; `refactor(printer-backends)`.
 
+### 9.7 Brother QL-1110NWB with 102 mm continuous DK (#259)
+
+Moved into 1.8.0 by the operator on 2026-11-21; a community tester has the printer and a 102 mm continuous roll. Scope:
+model registration, the 102 mm continuous geometry, the across-width preset for 102 mm, and the status/SNMP check by
+the tester. **Other DK widths and die-cut labels stay in #155 (1.10.0).**
+
+**What exists:**
+
+| Fact | Evidence |
+|---|---|
+| The QL series loads through the entry point `label_hub.printer_models` → `ql-series = "app.printer_models.ql"` (#207, done) | `backend/pyproject.toml:77-79`; `printer_models/ql.py:332-334` |
+| One QL driver, `QL820NWBDriver`, `model_id "QL-820NWB"`, 696 pins, SNMP/PJL signature `QL-820NWB` | `printer_models/ql.py:110-127` |
+| One endless DK table for the whole series (12–62 mm) used by `TapeRegistry.lookup_ql` and the test label | `printer_models/ql.py:43-104`; `services/tape_registry.py:54-75`; `services/test_label.py:84` |
+| The across layout knows only 62 mm | `services/ql_layout.py:4-6,57-59,146` |
+| The backend takes the model id from the printer config and pads every raster to the model's minimum length | `printer_backends/brother_ql_backend.py:144-190,262`; `services/backend_router.py:150-154` |
+| brother-ql-next 0.12.0 knows `QL-1110NWB` (301–35434 dots, 162 bytes per row, right offset 44) and label `"102"`: 102 mm endless, 1200 dots total, **1164 printable** at 300 dpi, feed margin 35 | installed package `brother_ql/models.py:66`, `brother_ql/labels.py:96` |
+| Label `"102"` lists `restricted_to_models=['QL-1050','QL-1060N','QL-1100','QL-1100NWB','QL-1115NWB']` — **not** the QL-1110NWB. It still converts, only because `works_with_model` checks whether the model is known at all instead of whether it is in the list | `brother_ql/labels.py:61-66`; checked: `convert(BrotherQLRaster('QL-1110NWB'), [1164 × 400 px], '102')` succeeds |
+| A raster below 301 dots (about 25.5 mm) is refused by the library for this model | the same check with 300 rows raises `BrotherQLRasterError` |
+
+**Design:**
+
+- **A second driver in `printer_models/ql.py`** (ADR 0004: model code stays in the series module): `QL1110NWBDriver`
+  with `model_id "QL-1110NWB"`, 1164 printable pins on 102 mm, SNMP/PJL signature `QL-1110NWB`, registered next to the
+  QL-820NWB at module level. Shared behaviour (queue printer, status, confirmation) is factored into a base class; the
+  QL-820NWB keeps its behaviour byte for byte (its golden tests unchanged).
+- **Tape tables per model, not per series.** **Design call:** each driver declares its endless DK widths
+  (`supported_tapes`); `TapeRegistry.lookup_ql` takes the model id. Reason: one series-wide table would offer 102 mm on
+  the QL-820NWB and its 62 mm head cannot print it. The QL-1110NWB gets 102 mm continuous only in 1.8.0 (the narrower
+  rolls work on it too, but are #155's to verify); a printer reporting another width shows "unsupported tape" as today.
+- **102 mm across preset** (layout rule of #258, done): `ACROSS_TAPES_MM` gains 102; the presets get a 102 mm row with
+  a fixed QR size per preset chosen so `QR_MIN_MODULE_PX` (4 px, `ql_layout.py:65`) and the minimum font
+  (`ql_layout.py:71`) hold at 1164 px; along (the band) is the full 1164 px width. The 102 mm across default is the
+  `compact` preset, as for 62 mm.
+- **Library robustness:** a unit test pins that `convert()` accepts label `"102"` for `QL-1110NWB` with the exact
+  1164-px width (no resize) — it fails loudly if a future brother-ql-next fixes `works_with_model` without adding the
+  model to the list. An upstream PR adds `QL-1110NWB` to the restricted list of `"102"` (fixes go upstream, #256).
+- **Minimum length:** `_pad_to_min_length` already pads to the model's minimum (301 dots ≈ 25.5 mm); a test covers the
+  QL-1110NWB value.
+- **No new UI surface**, so no mockup: the model appears in the existing printer form's model list and the 102 mm
+  tape in the existing tape and preset selectors. The README model list and the website hardware page (en + de) gain
+  the model; the 102 mm preview gets a generated screenshot.
+- **Tester step (release checklist):** a print on 102 mm continuous, a status query (tape width reported as 102 mm),
+  and the SNMP serial, from the community tester's hardware, recorded in #259. The release waits for the report.
+
 ## 10. Dependencies and build order
 
 ```mermaid
@@ -920,13 +997,15 @@ graph TD
 | 18 | Sheet-type log | #351 | 13, 15 | M12 |
 | 19 | Cell labels | #248 | 5 | M13 |
 | 20 | Release cells | #298 | 19 (same panel) | — |
-| 21 | Device check, release | #256, all | 1–20 | — |
+| 21 | QL-1110NWB: driver, per-model tape tables, 102 mm geometry and preset | #259 | — | none (no new UI surface) |
+| 22 | Device checks, release | #256, #259, all | 1–21 | — |
 
 **Operator steps in the release checklist** (the release waits for them):
 
 - Print the measurement sheet (task 17, `grid: true`) on a real L4736REV and a real L4731REV and send the photos;
   task 10c turns them into the Avery Zweckform preset.
 - The QL-820NWB device check of #256 (62 mm endless print, status query), recorded in the issue.
+- The community tester's QL-1110NWB report for #259: a 102 mm continuous print, a status query and the SNMP serial.
 - Close #342 with the 2026-11-21 test-print evidence; close #326 as superseded by #350 (controller).
 
 Tasks 1–6, 9 and 13 have no dependency between them; with one implementer at a time (4 cores) the order above front-
@@ -1072,6 +1151,13 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #247 | `web_url` override for user-facing links; validation; env-lockable; no link without it; no internal URL to non-admins; de/en | 9.4 |
 | #256 | Device check on a QL-820NWB | 9.5 |
 | #395 | Split along status, IPP transport, raw send; tests unchanged | 9.6 |
+| #259 | Register the QL-1110NWB via the QL entry point (#207) | 9.7 |
+| #259 | Label geometry for 102 mm continuous (other DK widths and die-cut stay in #155) | 9.7 |
+| #259 | Across-width layout preset for 102 mm (#258 rule) | 9.7 |
+| #259 | Unit tests for registration and geometry through the real `convert()` without a resize | 9.7, 16 |
+| #259 | Hardware report from the tester: print, status query, SNMP serial | 9.7, section 10 release checklist |
+| controller 2026-11-21 | Every element of every pass inside the printer's printable area; run-line slots kept free by pass 1; warning and line-less passes when no room | 7.2 |
+| controller 2026-11-21 | Page codes in spots inside the printable area clear of every cell element; fewer codes announced when no spot | 7.2 |
 
 ## 16. Test strategy
 
@@ -1086,9 +1172,9 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 |---|---|---|---|---|
 | A | Placement: zone over the logo moves the ID to the free corner or another band; all bands blocked degrade to code only, then fall back; a forced band without room gives `id_not_printed`; the mark moves when the ID needs its corner; property test: the chosen rectangle never overlaps a zone, a cell or the unprintable area | Preview and job store the same decision; the per-printer validation endpoint for fits / does not fit / overlaps a cell; export and import round-trip of the new keys, a 1.7.x document still imports; `id_pending`/`feed_mark_pending` with a margin ID in flight | Zone editor and position controls (Vitest) | Zone added → preview hatched; short viewport |
 | B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
-| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number, run line inside its spot and clear of pass 1's blocks, QR squares and the other pass's spot); footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
+| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number); **for every catalog type on a printer with a 5 mm unprintable edge** (and on one reporting 3 mm and 8 mm): every drawn element and both run-line slots lie inside the printable area, the slots overlap neither pass 1's blocks, nor a page-code spot, nor each other, every page code lies in a spot clear of cell numbers, cell QRs, corner marks, scales, rulers and S/Z labels (6121: codes in cells 1, 5, 61, 65 with their cell QRs kept), the number of page codes drawn equals the number the print dialog announces; a sheet type whose margin holds no two slots prints passes 2 and 3 without a run line, warns before pass 1, and still records both passes; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
-| E | `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
+| E | QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
 Every UI task takes light and dark screenshots at 1280 and 390 px (`pnpm screenshots`).
 
