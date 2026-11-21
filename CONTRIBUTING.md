@@ -473,6 +473,8 @@ Releases are **scheduled, not on every merge.** Merging to `main` does NOT publi
 | `cron: '0 4 * * *'` | Nightly at 04:00 UTC. semantic-release analyses commits since the last tag and publishes if there's anything releasable, otherwise skips silently |
 | `workflow_dispatch` | Manual button in the Actions tab. Optional `dry-run` input lets a maintainer preview what would be released without publishing |
 
+Every minor and major release must have a maintainer-written `release-notes/<version>.md`, committed on the milestone branch. The file must follow [`release-notes/TEMPLATE.md`](release-notes/TEMPLATE.md). The summary paragraph and `### Highlights` (4 to 7 items, each with an issue link) are required. Optional sections must be the template's, in its order and with its heading texts, and no other headings are allowed. The release prints the file above the generated lists in the GitHub release and in `CHANGELOG.md`. The release guard ([#408](https://github.com/strausmann/labelyard/issues/408)) refuses a release whose file is missing or does not match. The style rules are in [`release-notes/README.md`](release-notes/README.md).
+
 The release tooling (semantic-release and its plugins, pinned to exact versions with a lockfile) lives only in `.github/release-tools/`; `release.yml` installs it from there. The root `package.json` holds only commitlint.
 
 Behind the scenes, semantic-release reads the Conventional Commit messages on `main` since the previous tag, decides the next semver version and checks it against the release guard (next patch or an open milestone). It then generates the `CHANGELOG.md` entry, pushes the Git tag and creates the GitHub Release as a **draft**.
