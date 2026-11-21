@@ -75,3 +75,4 @@ The [decision register](register.md) lists the short `D<n>` labels cited in code
 - An ADR is `Proposed` until the change ships, then `Accepted` **in the same PR** that ships it.
 - A replaced ADR gets `Superseded by` in its header; a partly changed one gets an `Amended` header line or a short dated "Amendment" section. The decision text itself is never rewritten.
 - The status in the register row, the ADR header and the index above must agree; `backend/tests/unit/test_decision_register.py` fails otherwise. It also fails when a label that code already uses is still `Proposed`.
+- A supersede or amend link is written on both ADRs: `Supersedes` on the new one and `Superseded by` on the old one, `Amends` and `Amended by` likewise. `backend/tests/unit/test_adr_index.py` fails when only one side names the other.
