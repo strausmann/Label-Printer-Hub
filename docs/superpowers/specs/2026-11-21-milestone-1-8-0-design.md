@@ -30,7 +30,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
 - The sheet ID lands in a free spot, never on the vendor's logo, and the type page says on which printers it fits
   (#246, which takes over the remainder of #326); a client learns when the ID or the feed mark is still waiting (#403).
 - Sheet types come from a catalog one click away instead of being installed wholesale; unused types can go (#335);
-  labels that touch a printer's unprintable edge keep their content readable (#342); the vendor filter keeps working on
+  labels near a printer's unprintable edge were confirmed fine on paper (#342, closed with evidence); the vendor filter keeps working on
   a long list (#219).
 - Every calibration, check and probe page carries a run number, identifies itself in every cell, and every save of a
   correction is kept as history that can be restored (#240, #241, #336, #351, #220).
@@ -211,11 +211,11 @@ designed again; the sections build on it.
 
 | Issue | State | Evidence | What remains for 1.8.0 |
 |---|---|---|---|
-| #326 | partly done, **folded into #246** | #350 (1.7.0): placement `auto/margin/back_side/cell`, `id_cell`, `id_placement_resolved`/`_auto` (`schemas/sheets.py:111-150`, `sheets/id_placement.py`); margin check per printer (`api/routes/sheets.py:204-245`) | side/offset inside the margin and the per-printer view on the type page → #246 (section 5) |
+| #326 | **closed as superseded by #350** (operator, 2026-11-21), remaining criteria moved to #246 | #350 (1.7.0): placement `auto/margin/back_side/cell`, `id_cell`, `id_placement_resolved`/`_auto` (`schemas/sheets.py:111-150`, `sheets/id_placement.py`); margin check per printer (`api/routes/sheets.py:204-245`) | side/offset inside the margin and the per-printer view on the type page → #246 (section 5) |
 | #246 | open | no `preprint` anywhere in `backend/app` or `frontend/src`; the band is chosen automatically (`planner.py:284-343`) | the core of group A |
 | #403 | open | #212 (1.7.x) handed over this finding only; responses carry `id_not_printed` and `feed_mark` (`schemas/sheet_print.py:202,272`) | two additive flags (5.6) |
 | #335 | partly done | type filter on the sheets page in the URL (`SheetsPage.tsx:244-266`); export/import exist (`exchange.py`) | catalog, delete rule, usage, links both ways |
-| #342 | open (flagging done) | hardware-margin cells are flagged since Plan 3 (OC-44, `planner.py:421-435`) | content inset, unprintable cells, explanation |
+| #342 | **done, close with evidence** | hardware-margin cells are flagged since Plan 3 (OC-44, `planner.py:421-435`); the content box keeps a 1.0 mm + radius inset (`cell_render.py:135-155`); the operator's test prints on 6121 and 3490 were fine, text complete (operator, 2026-11-21) | nothing; the 1 mm safety distance stays |
 | #219 | open | `ArchivePage.tsx:123-126` | facet (6.3) |
 | #240 | partly done | A (guide) shipped in #337 (1.7.0, `guide/ReadingGuide.tsx`); scale changed to 0.5 mm in #348 (1.6.0, `a8d18d49`); check print as next step in #349 (1.6.0); corner marks per label already drawn (`calibration/page.py:293-357`) | B guided input, C run number, the comment requirements (cell QR, margins, passes, geometry suggestion) |
 | #241 | open | no probe kind in `PageKind` (`page_jobs.py:41-50`) | all |
@@ -249,7 +249,8 @@ side and offset inside the margin. Both are the placement problem #246 solves wi
 where a free rectangle is, the position rule picks among the free rectangles, and the per-printer view shows the
 result. #326 is therefore **not a separate feature**: its open acceptance criteria (per-printer fit view; side/offset
 validated against grid and unprintable area; exchange JSON carries it; tests fits / does not fit / overlaps a cell)
-are criteria of the #246 task (sections 5.1–5.4) and #326 is closed with the #246 PR (`Closes #326`).
+are criteria of the #246 task (sections 5.1–5.4). **Operator, 2026-11-21:** #326 is closed as superseded by #350; the
+controller copies the four criteria into #246.
 
 ### 5.1 Model: a placement rule per type, keep-out zones, presets
 
@@ -334,7 +335,15 @@ compatible, as OC-50 did for `band`).
 - For the Avery Zweckform preset the free rectangle for the ID is in the top band, **right of the product description
   and left of the size text** (maintainer, #246 comment of 2026-11-09): the preset zones cover the logo, the product
   description and the size text, and the type sets `id_margin_band = top`, `align = end` with the offset that puts the
-  ID before the size text. The measured values are maintainer input ([Q1](#13-questions-for-the-maintainer)).
+  ID before the size text.
+- **The measurements come from a measurement sheet (operator, 2026-11-21).** A probe-print option `grid: true` (section
+  7.3) adds a millimetre grid over the whole page (thin lines every 1 mm, labelled every 10 mm, origin at the page's
+  top-left corner, black only), drawn without calibration so the grid is the page's own coordinates. The operator prints
+  it on a real L4736REV and a real L4731REV sheet and photographs it; the zones (the Avery logo, the format text, the
+  product description, the bottom line) and the free gap top right before the format text are read from the photo and
+  committed as the Avery Zweckform preset, with the photo's date as evidence.
+- **Blocked on the photo:** the preset task (task 10c in section 10) waits for the operator's photos; the preset ships
+  only for the sheets measured. This is an operator step in the release checklist (section 10).
 
 ### 5.6 The waiting signal (#403)
 
@@ -357,7 +366,7 @@ Both are computed from `SheetView` (`planner.py:94-125`) in `decide_margin_and_m
   even if another band would fit. **Design call:** the setting is a rule, not a preference, because the maintainer sets
   it to avoid a known preprint; `auto` keeps the fallback to other bands.
 - **Design call (controller):** the feed mark is subject to the keep-out zones too, and the **ID is placed first, the
-  mark second** (this reverses OC-57's "mark first" order for the top band). Reason: the ID identifies the sheet; the
+  mark second** (this reverses OC-57's "mark first" order for the top band; **operator approval 2026-11-21**). Reason: the ID identifies the sheet; the
   mark is a convenience. The mark takes the top band's top-right end if that is free of zones and of the ID's rectangle,
   else the top-left end, else nothing: the mark is **not printed** on this page, `feed_mark_pending` (section 5.6) is
   true with `feed_mark_reason: "no_free_place"`, and the preview shows "Feed mark: no free place on this sheet". The
@@ -414,7 +423,8 @@ or the legacy `system:seed`) **or** its type fields' hash differs from `catalog_
 - From then on, shipped geometry changes reach installed types only through the offered update.
   **Design call:** run the pending 1.7.x corrections once before switching, because they are fixes the maintainer
   already decided to apply, and stopping them half-way would leave some installations on known-wrong geometry.
-- A fresh installation starts with no types (#335 acceptance). The Grocy label sheet-type settings and the calibration
+- A fresh installation starts with no types: the seed is empty, existing installations keep theirs, and new types come
+  from the Catalog tab (#335 acceptance; confirmed by the operator, 2026-11-21). The Grocy label sheet-type settings and the calibration
   page handle "no types" with an empty-state link to the catalog.
 
 #### 6.1.5 Deleting and usage
@@ -447,30 +457,14 @@ In the sheet archive, a second tab **Catalog** next to **Installed**: search (ve
 "verified only", per entry the state badge (`verified` with date, or "not yet validated"), the grid preview (the
 existing `GeometryDiagram`), and "Add". An installed entry shows "Installed" and, when available, "Update". Mockup M4.
 
-### 6.2 Labels in the unprintable margin (#342)
+### 6.2 Labels in the unprintable margin (#342) — no code change
 
-**Decided behaviour:** a cell keeps its full use; only its **content** moves away from the unprintable edge.
-
-- The planner computes the printable area of the page on the printer and tray (hardware margins, `|offset|` per axis,
-  `SAFETY_HMM`, exactly as `margin_bands_hmm`). For each cell it intersects the content box (`cell_render.content_box`,
-  `cell_render.py:135-155`) with that area.
-- The **content inset**: when the intersection is smaller than the content box, the content is laid out in the
-  intersection. The cell is still used. When the intersection cannot hold one line (`box_fits_a_line`,
-  `cell_render.py:158`), the cell is **unprintable on this printer**: `first_free` skips it, an explicit cell is refused
-  with 422 `cell_unprintable` naming the cells.
-- **Edge-to-edge sheets** (3490): the same rule is the "use the printable part of each label" mode; the type is never
-  refused for labels. Its sheet ID goes to the back side (`auto` already resolves there, `id_placement.py:36-41`).
-  **Design call:** no per-type switch; the inset applies whenever a cell touches the band, because content printed into
-  the unprintable band is always lost and there is no case where the old behaviour is better.
-- The decision per cell is stored in the job payload (`SheetCellPayload` gains `content_box_hmm`), so the job and a
-  retry on the same printer render the same; a retry on another printer re-decides, like the margin ID does today.
-- **Shown:** the preview's `PreviewCell.hw_margin` (`sheet_print.py:186`) stays and a new `PreviewCell.inset: bool` and
-  `unprintable: bool` are added; the margin check (`MarginCheckRead`) gains `inset_cells` and `unprintable_cells`; the
-  print dialog lists them ("Cells 1, 5, 9: the text keeps 1 mm from the printer's edge"; "Cell 13 cannot be printed on
-  this printer and is skipped"). The type page's per-printer table (section 5.3) shows the counts.
-- The 2026-11-15 test print results (6121 outer columns about 0.9 mm inside the band; 3490 edge to edge) are not in the
-  issue yet ([Q3](#13-questions-for-the-maintainer)); the design does not depend on them, the tests use synthetic
-  margins.
+**Operator, 2026-11-21:** the test prints on Avery Zweckform 6121 and 3490 were fine, the text was complete, and the
+1 mm safety distance stays. Today's behaviour is therefore kept: cells reaching into the hardware margin are flagged
+(`hw_margin`, `planner.py:421-435`, `schemas/sheet_print.py:186-188`), not refused (OC-44), and their content keeps the
+content-box inset (`cell_render.py:135-155`); the edge-to-edge 3490 gets its sheet code on the back side (`auto`,
+`id_placement.py:36-41`). #342 is closed with this evidence and needs no task. The content inset designed in the first
+draft of this spec is dropped.
 
 ### 6.3 Vendor facet and long lists (#219)
 
@@ -564,7 +558,8 @@ cell:  LYC1:<run>:<cell>[:K<pass>]
 - All correction fields are `0` on a page printed without correction. Optional geometry fields appear only when the
   type differs from its catalog revision (section 6.1.3).
 - A photo of a single cell identifies run, cell and pass; the run record (section 7.1) and the page codes supply the
-  type and the correction. This deviates from the agreed C2 design (section 14).
+  type and the correction. This deliberately supersedes the cell content of mockup C2; **the operator approved the
+  change on 2026-11-21** (section 14).
 
 **Capacity, worst case** (bounds from the code: offsets ±10 mm = ±1000 hmm, scales 0.95–1.05 = ±50000 ppm, rotation
 ±2° = ±2000000 µdeg, `calibration/model.py:24-28`; version ≤ 1000000, `model.py:96`; lengths ≤ 1000 mm = 100000 hmm,
@@ -592,7 +587,7 @@ cell:  LYC1:<run>:<cell>[:K<pass>]
   the render slots, session committed first — section 9.2).
 - The page: the outline of every label from the geometry (rectangles or circles with the corner radius), each cell's
   number and `R<row> C<col>`, the type key and version, run number and time (section 7.1), the preprint zones hatched
-  and the planned sheet-ID rectangle outlined (section 5.4), the inset content boxes of section 6.2 dashed. The **current
+  and the planned sheet-ID rectangle outlined (section 5.4). The **current
   calibration** of the tray is applied.
 - No sheet, no reservation, no cell change; it goes through the queue (visible in Jobs, retryable).
 - **Held** while the device behind the printer is flagged as swapped (`IDENTITY_HELD_KINDS`, `page_jobs.py:57-62`):
@@ -600,7 +595,12 @@ cell:  LYC1:<run>:<cell>[:K<pass>]
 - Refusals (#241 acceptance): disabled printer (409), unknown printer (404), a printer whose fresh status says offline
   (409 `printer-offline`), `read` keys (403), a printer-restricted key on another printer (403). **Design call:** refuse
   offline only on a fresh status reading (not stale), because a stale cache must not block a printer that is back.
-- Actions: on the type detail ("Probe print on plain paper") and next to the calibration page action.
+- **Measurement sheet** (`grid: true` in the request; #246, operator 2026-11-21): the same page plus a millimetre grid
+  over the whole page (lines every 1 mm, heavier every 5 mm, labelled every 10 mm, origin at the page's top-left
+  corner), drawn **without** calibration so its coordinates are the page's own; meant to be printed on a real sheet and
+  photographed to read the vendor's preprint. The footer says "Measurement sheet — no correction".
+- Actions: on the type detail ("Probe print on plain paper", "Measurement sheet") and next to the calibration page
+  action.
 
 ### 7.4 Guided readings (#240 B and the comment of 2026-11-14 21:08Z)
 
@@ -827,7 +827,7 @@ already covers it). Drop the `Cart ({inCart})` message from both locales; refres
   is `null` and the UI shows no link.
 - **Printed QR codes:** `LabelData.qr_payload` uses `web_url` when it is set and the internal base URL otherwise, as
   today. **Design call:** printed codes follow the public address once the operator sets it, because a code scanned with
-  a phone needs it; without the setting nothing printed changes ([Q4](#13-questions-for-the-maintainer) confirms).
+  a phone needs it; without the setting nothing printed changes (confirmed by the operator, 2026-11-21).
   This separates the lookup `url` from `qr_payload`, which are one value today.
 - **Design call (controller): the server computes the QR payload of an integration item, for the preview and for the
   print, from app and item id with one shared function** (`integrations.qr_payload_for(app, item_id, label)`, used by
@@ -866,7 +866,6 @@ graph TD
   B3[#219 facets] --> B1
   B1[#335 catalog] --> A1[#246 zones, position, per-printer view, closes #326]
   A1 --> A3[#403 pending flags]
-  B2[#342 inset] --> A1
   C1[#336 runs + history] --> C2[#240 pages + guided input]
   C2 --> C3[#241 probe]
   A1 --> C3
@@ -888,19 +887,26 @@ graph TD
 | 6 | Archive bounds: cap, purge, pagination, text hardening | #204 | — | — |
 | 7 | Facets and opt-in pagination of sheet types | #219 | 6 (pagination pattern) | — |
 | 8 | Catalog, delete, usage, navigation (ADR 0028) | #335 | 6, 7 | M4, M5 |
-| 9 | Content inset for unprintable cells | #342 | — | M6 |
-| 10 | Preprint zones, presets, ID position, per-printer view (10a model and placement, 10b UI) | #246, closes #326 | 8 (presets ship in the catalog), 9 (inset shares the printable area) | M1, M2 |
+| 9 | — (#342 closed with evidence, no code) | #342 | — | — |
+| 10 | Preprint zones, ID position, per-printer view (10a model and placement, 10b UI); 10c the Avery Zweckform preset from the operator's measurement photos | #246 (takes #326's criteria) | 8 (presets ship in the catalog); 10c also 17 (measurement sheet) and the **operator's photos** | M1, M2 |
 | 11 | — (merged into 10) | — | — | — |
 | 12 | Pending flags | #403 | 10 (same decision function) | — |
 | 13 | Runs, history, restore (ADR 0029) | #336 | — | M7 |
 | 14 | Calibration pages: margins, cell QR, corner marks, check passes | #240 C + comments | 13 | M3 (three passes on 6121) |
 | 15 | Guided readings, live fit, geometry suggestion | #240 B + comment | 13, 14 | M8 |
 | 16 | Kept-fit line | #220 | 15 | — |
-| 17 | Probe print | #241 | 9, 10, 13 | M9 |
+| 17 | Probe print, with the `grid` measurement-sheet option | #241, #246 | 10a, 13 | M9 |
 | 18 | Sheet-type log | #351 | 13, 15 | M12 |
 | 19 | Cell labels | #248 | 5 | M13 |
 | 20 | Release cells | #298 | 19 (same panel) | — |
 | 21 | Device check, release | #256, all | 1–20 | — |
+
+**Operator steps in the release checklist** (the release waits for them):
+
+- Print the measurement sheet (task 17, `grid: true`) on a real L4736REV and a real L4731REV and send the photos;
+  task 10c turns them into the Avery Zweckform preset.
+- The QL-820NWB device check of #256 (62 mm endless print, status query), recorded in the issue.
+- Close #342 with the 2026-11-21 test-print evidence; close #326 as superseded by #350 (controller).
 
 Tasks 1–6, 9 and 13 have no dependency between them; with one implementer at a time (4 cores) the order above front-
 loads the small fixes and the migrations that later tasks build on.
@@ -917,10 +923,9 @@ and 390 px) in `docs/designs/1.8.0/`, approved in its issue before the task star
 | M3 | Calibration and check page (paper) | **three check passes on an Avery Zweckform 6121 sheet** (maintainer, 2026-11-15), `K1–K3` labels, the margin run block, cell QR and number, inner and outer corner marks |
 | M4 | Archive → Catalog tab | search, "verified only", state badges, grid preview, Add / Installed / Update, empty state of a fresh installation |
 | M5 | Archive → Installed list and type detail | usage columns and badges, sort and filters, "Remove unused types" dialog, the type's sheet list with the discarded toggle, the catalog-update diff |
-| M6 | Print dialog → cells near the edge | inset and unprintable cells marked in the preview, the explanatory list |
 | M7 | Calibration page → History | entries per tray with diffs, jobs count link, restore confirmation naming the values, actual-tray warning |
 | M8 | Calibration page → Readings | stepper with direction picker, snap hint, out-of-range warning, run picker, live fit with residuals, the geometry suggestion card |
-| M9 | Type detail → Probe print | the action, the printer and tray choice, and the printed probe page with zones, ID rectangle, inset boxes |
+| M9 | Type detail → Probe print | the action, the printer and tray choice, and the printed probe page with zones and ID rectangle, and the measurement-sheet variant with the mm grid |
 | M10 | Printers list / detail | the "Not wired" state and its hint |
 | M11 | Settings → Integrations | the public web URL field and its explanation |
 | M12 | Type detail → Log | log entries with verdicts, the hand-entry dialog, the filter by printer |
@@ -943,20 +948,17 @@ covered by `frontend/e2e/short-viewport.spec.ts` (short viewport simulating the 
 
 ## 13. Questions for the maintainer
 
-Only questions that change what is built; each with a recommended answer.
+None open. The operator answered all questions on 2026-11-21; the answers are worked into the sections:
 
-1. **Preprint measurements (#246).** Which Avery Zweckform sheets do you measure for the preset, and what are the
-   zones (logo, description, size text, bottom line) and the free gap for the ID on L4736REV and on a second sheet?
-   *Recommended:* L4736REV and L4731REV (both in the catalog); without the measurements the preset ships with no
-   default type and the ID position stays `auto`.
-2. **Fresh installations start empty (#335).** Should a new installation still get one sheet type installed, so the
-   first-run guide and the screenshots have something to show? *Recommended:* no type installed, a first-run hint
-   "Add your sheet type from the catalog" — as the issue says.
-3. **Test print of 6121 and 3490 (#342, due 2026-11-15).** Were the outer cells cut, and does the 1 mm safety distance
-   from the printer edge look right? *Recommended:* keep 1 mm (the value the bands use); change only if the photos show
-   cut text.
-4. **Printed QR codes and `web_url` (#247).** Should printed QR codes use the public web URL once it is set?
-   *Recommended:* yes; without the setting nothing printed changes.
+| Topic | Answer | Section |
+|---|---|---|
+| #246 preprint measurements | from a measurement sheet (mm grid) printed on L4736REV and L4731REV and photographed; presets blocked on the photo | 5.5, 10 |
+| #335 fresh installation | starts empty; existing installations keep their types; types come from the catalog | 6.1.4 |
+| #342 test prints | fine, text complete, 1 mm stays; closed with evidence, no code | 6.2 |
+| #247 printed QR codes | use `web_url` once set; unchanged without it | 9.4 |
+| #240 cell QR content | cells carry `LYC1:<run>:<cell>[:K<pass>]`, page codes the full payload | 7.2 |
+| #246 ID before feed mark | approved, reverses OC-57 | 5.7 |
+| #326 | closed as superseded by #350, criteria moved to #246 | 5 |
 
 ## 14. Deviations from the issue text
 
@@ -966,9 +968,9 @@ Only questions that change what is built; each with a recommended answer.
 | #240 A | step-by-step guide | already shipped (#337) | `ReadingGuide.tsx`; 1.8.0 adds only the geometry rule and the run number to it. |
 | #240 comment | `L4736REV1` style type field | `<PREFIX>:<version>` | Prefixes end in digits, concatenation is ambiguous; the 2026-11-15 comment asks for a separate field. |
 | #240 comment | geometry suggestion after fitting offset, scale, rotation on the calibration page | from check-print readings with a correction measured on another type | A linear pitch or margin error is absorbed by the affine fit; it is only visible against a correction from another type (section 7.4). |
-| #240 comment (C2, 2026-11-14) | every cell QR carries run, cell, type, version and the correction | cells carry `LYC1:<run>:<cell>[:K<pass>]`; type, version, correction and geometry only in the page codes | Controller ruling: the full payload needs a module below 0.25 mm in an 8 mm cell with a 10-character prefix and all fields (section 7.2). |
+| #240 comment (C2, 2026-11-14) | every cell QR carries run, cell, type, version and the correction | cells carry `LYC1:<run>:<cell>[:K<pass>]`; type, version, correction and geometry only in the page codes | Controller ruling, approved by the operator on 2026-11-21: the full payload needs a module below 0.25 mm in an 8 mm cell with a 10-character prefix and all fields (section 7.2). |
 | #240 comment | corner marks per cell | already drawn; only the leg lengths change | `page.py:293-357`. |
-| #326 | a feature of its own | folded into #246, closed with it | The per-type placement shipped with #350; the remaining side/offset and per-printer view is the zone-placement problem of #246 (section 5). |
+| #326 | a feature of its own | closed as superseded by #350 (operator, 2026-11-21); its four remaining acceptance criteria move to #246 | The per-type placement shipped with #350; the remaining side/offset and per-printer view is the zone-placement problem of #246 (section 5). |
 | #335 | 36 types | 39 | `sheet_types.json` today. |
 | #335 | `DELETE /api/v1/sheet-types/{key}` "custom types" | also seeded and imported | The issue's own proposal (point 4). |
 | #219 | fix with the pagination of #204 | #204 paginates `GET /api/v1/sheets`, not sheet types | The sheet-type list gets its own opt-in pagination and facets (section 6.3). |
@@ -991,7 +993,7 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #246 | Placement subtracts zones and picks the largest free rectangle | 5.2 |
 | #246 | Content degrades QR+code+type → QR+code → code; 4/9 mm thresholds; fallback to cell or left out with a note | 5.2 |
 | #246 | Vendor presets referenced by types, overridable | 5.1, 5.5 |
-| #246 | Preset confirmed on two real Avery Zweckform sheets before default | 5.5, Q1 |
+| #246 | Preset confirmed on two real Avery Zweckform sheets before default | 5.5 (measurement sheet on L4736REV and L4731REV) |
 | #246 | Zones editable in Edit details, hatched in diagram and preview | 5.4 |
 | #246 | Probe print shows the zones | 7.3 |
 | #246 | Pre-filled #230 issue includes zones | 5.4 |
@@ -999,7 +1001,7 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #246 controller | Feed mark obeys zones, ID first, mark second, `feed_mark_pending` when no place | 5.6, 5.7 |
 | #246 | AZ preset applied to verified seeded AZ types only | 5.5 |
 | #246 | de/en strings, light/dark screenshots | 3.5 |
-| #246 comment | Default position top right before the size text; gap measured on real sheets | 5.5, Q1 |
+| #246 comment | Default position top right before the size text; gap measured on real sheets | 5.5 |
 | #403 | Response flag next to `id_not_printed` for a waiting ID or feed mark; additive | 5.6 |
 | #335 | Catalog in the image, one exchange document per type, index | 6.1.1 |
 | #335 | Catalog view: search, verified filter, one-click add, grid preview | 6.1.7 |
@@ -1013,9 +1015,8 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #335 comment | Sheets in use, all sheets, last used, state badge; sortable and filterable; numbers match the sheets table | 6.1.5 |
 | #335 comment | "Remove unused types" lists exactly state unused | 6.1.5 |
 | #335 comment | Sheet → type link with version; type → its sheets; sheets page filtered by type in the URL; tests both ways | 6.1.6 |
-| #342 | Content inset for cells touching the band; edge-to-edge mode instead of refusal | 6.2 |
-| #342 | Margin check and print dialog explain affected cells | 6.2 |
-| #342 | Test prints recorded | Q3 |
+| #342 | Test prints recorded and a decision per case | 6.2 (operator, 2026-11-21: fine, no change) |
+| #342 | Content inset / edge-to-edge mode; explanation of affected cells | 6.2 (not needed per the test prints; existing `hw_margin` flag stays) |
 | #219 | Vendor facet independent of pagination | 6.3 |
 | #240 B | Stepper, range, explicit sign, direct entry with `,`/`.` and snap hint, out-of-range warning, crossing chosen, live fit with residuals | 7.4 |
 | #240 C | Running print number per printer and tray, time; correction in the footer; readings tied to a print; footer fits | 7.1, 7.2, 7.4 |
@@ -1059,8 +1060,8 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 | Group | Unit / property | Integration (API, DB) | Frontend | e2e (Playwright) |
 |---|---|---|---|---|
 | A | Placement: zone over the logo moves the ID to the free corner or another band; all bands blocked degrade to code only, then fall back; a forced band without room gives `id_not_printed`; the mark moves when the ID needs its corner; property test: the chosen rectangle never overlaps a zone, a cell or the unprintable area | Preview and job store the same decision; the per-printer validation endpoint for fits / does not fit / overlaps a cell; export and import round-trip of the new keys, a 1.7.x document still imports; `id_pending`/`feed_mark_pending` with a margin ID in flight | Zone editor and position controls (Vitest) | Zone added → preview hatched; short viewport |
-| B | Catalog index consistency (CI); edited detection; usage state rules; `check_passes`-style pure functions for inset boxes | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound; inset and unprintable cells on synthetic hardware margins, explicit unprintable cell → 422 | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
-| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered |
+| B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
+| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
 | E | `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
