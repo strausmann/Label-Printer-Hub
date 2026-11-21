@@ -62,6 +62,32 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 
 ## [1.7.0](https://github.com/strausmann/labelyard/compare/v1.6.2...v1.7.0) (2026-11-19)
 
+Labelyard 1.7.0 takes labels straight from Grocy's own label printer feature and adds a swatch-style Spoolman spool label and a notification centre. A tape print now counts as done only when the printer confirms it. On a phone, every area of the app is now in reach, and sheets without a margin can carry their sheet code on the back or in a reserved cell.
+
+### Highlights
+
+- **Grocy's label printer webhook.** Grocy can send its product, chore and battery labels straight to Labelyard, onto tape or onto a started sheet. The Grocy settings page shows the configuration to copy into Grocy. ([#281](https://github.com/strausmann/labelyard/issues/281))
+- **Swatch-style Spoolman spool label.** The spool label shows vendor, filament and colour, the print settings, the spool facts and a QR code to the spool, on DK tape and on label sheets. ([#346](https://github.com/strausmann/labelyard/issues/346))
+- **Notification centre.** A button in the top bar collects job results and printer problems and tells you when a new version is out. A coloured dot shows the most severe unread entry. ([#255](https://github.com/strausmann/labelyard/issues/255), [#354](https://github.com/strausmann/labelyard/issues/354))
+- **Tape prints that are really printed.** Labelyard checks the loaded roll before each print and reads the printer status after sending. Where the printer offers it, Labelyard waits for the printer to confirm the labels, so a roll that runs out halfway shows as failed instead of printed. ([#389](https://github.com/strausmann/labelyard/issues/389), [#393](https://github.com/strausmann/labelyard/issues/393))
+- **Sheet code for sheets without a margin.** Each sheet type chooses where its sheet code goes: in the margin, on the back of the liner or in a reserved cell. Edge-to-edge sheets can then be found again by scanning. ([#350](https://github.com/strausmann/labelyard/issues/350))
+- **The whole app on a phone.** A menu reaches every area, the search folds into a magnifier, and a cart icon with the item count stays in the top bar. ([#319](https://github.com/strausmann/labelyard/issues/319), [#320](https://github.com/strausmann/labelyard/issues/320), [#316](https://github.com/strausmann/labelyard/issues/316))
+- **Calibration reading guide.** Step 2 of the calibration explains with a drawing how to read the calibration page, and labelyard.app has the guide with a table of causes. ([#337](https://github.com/strausmann/labelyard/issues/337))
+
+![Swatch-style Spoolman spool labels](https://raw.githubusercontent.com/strausmann/labelyard/main/docs/screenshots/spoolman-swatch-samples.png)
+
+### Upgrade notes
+
+- **API answers changed.** Printer responses no longer contain the SNMP community, and admin keys always act on every printer and refuse a printer list. Tape labels longer than the tape allows are refused, and several printing routes answer known printer errors with their `4xx` instead of `500`. Check scripts and integrations against [upgrading to 1.7.0](https://labelyard.app/admin/upgrades/to-1-7-0/).
+- **New access log format.** The container output carries one access line per request in nginx's combined format instead of uvicorn's access lines; `LABELYARD_ACCESS_LOG=false` turns it off. ([#366](https://github.com/strausmann/labelyard/issues/366))
+- **Sheet type files version 2.** A sheet type with a sheet code placement or backing design exports as `format_version: 2`, which older releases do not import.
+
+### Hardware and compatibility
+
+- **Verified sheet types.** Avery Zweckform 6121, 3490 and L4737REV ship verified on real sheets, and the L4731REV geometry is corrected. ([#334](https://github.com/strausmann/labelyard/issues/334))
+- **Test print on every tape width.** The test print works on every tape width, including 29, 38, 50 and 54 mm DK rolls. ([#377](https://github.com/strausmann/labelyard/issues/377))
+- **SNMP status discovery in the printer form.** The SNMP settings for printer status are set up in the printer form, and the stored community is used for the check before each print. ([#296](https://github.com/strausmann/labelyard/issues/296))
+
 ### Features
 
 * **api:** check cart items against the layout before printing ([96c2205](https://github.com/strausmann/labelyard/commit/96c22057d283e918266f123dd3a906d9507cb12e)), closes [#285](https://github.com/strausmann/labelyard/issues/285)
@@ -254,6 +280,30 @@ This project adheres to [Semantic Versioning](https://semver.org/) and uses [Con
 * **api:** a non-ASCII API key gets 401, not 500, on webhooks ([#357](https://github.com/strausmann/labelyard/issues/357)) ([fd42a9d](https://github.com/strausmann/labelyard/commit/fd42a9d2f24cab1dd30f7ad7ca8a6b5aaef2aa25)), closes [#301](https://github.com/strausmann/labelyard/issues/301)
 
 ## [1.6.0](https://github.com/strausmann/Label-Printer-Hub/compare/v1.5.2...v1.6.0) (2026-11-15)
+
+Labelyard 1.6.0 gives the project its new name, new image names and a documentation website in English and German on labelyard.app. It also moves the licence to AGPL-3.0, lists every third-party licence the image ships, signs the images, and makes calibration and dialogs on phones easier to use.
+
+### Highlights
+
+- **New name and website.** The project is now Labelyard, with the images `ghcr.io/strausmann/labelyard` and `docker.io/bstrausmann/labelyard` and the documentation on [labelyard.app](https://labelyard.app). ([#280](https://github.com/strausmann/labelyard/issues/280))
+- **Licence list in the app.** Labelyard is now licensed AGPL-3.0-or-later, the about page lists every third-party licence the image ships, and the images carry a CycloneDX SBOM. ([#154](https://github.com/strausmann/labelyard/issues/154))
+- **Signed images.** Every published image is signed keylessly with cosign, so you can check that it was built by this repository's workflow. ([#311](https://github.com/strausmann/labelyard/issues/311))
+- **A calibration page you can read.** The ticks of the mini scale sit 0.5 mm apart and stay apart on a colour laser, and the schematic in the app is drawn to the same scale. Once a correction is stored, the check print is offered as the next step. ([#348](https://github.com/strausmann/labelyard/issues/348), [#349](https://github.com/strausmann/labelyard/issues/349))
+- **Dialogs on phones and tablets.** Dialogs have a close button and close with a tap outside, and the on-screen keyboard no longer covers the focused field, its list or the dialog's buttons. ([#318](https://github.com/strausmann/labelyard/issues/318), [#279](https://github.com/strausmann/labelyard/issues/279))
+- **Warnings in the container log.** Application warnings now appear in the container output, so `docker logs` shows them. ([#324](https://github.com/strausmann/labelyard/issues/324))
+
+![Calibration page in Labelyard](https://raw.githubusercontent.com/strausmann/labelyard/main/docs/screenshots/calibration-light.png)
+
+### Upgrade notes
+
+- **New image names.** Change `image:` in your compose file to `ghcr.io/strausmann/labelyard` or `docker.io/bstrausmann/labelyard`. Settings are read as `LABELYARD_*`; the former prefix keeps working as a fallback and logs one warning that names the variables. The [upgrade guide](https://labelyard.app/admin/upgrades/) covers the move from the former name.
+- **Verify signatures from 1.6.1.** The 1.6.0 images were signed before the repository was renamed, so their signing identity names the former repository. The documented `cosign verify` command works from 1.6.1 on.
+- **SBOM as an attestation.** The CycloneDX SBOM of 1.6.0 is attached to the images as an attestation only; the release asset follows from 1.6.1 on.
+
+### Hardware and compatibility
+
+- **Page printers and label sheets tested on hardware.** IPP page printers and numbered label sheets with cell usage were checked on a real page printer: status over IPP, printing onto a started sheet and the calibration check print. ([#150](https://github.com/strausmann/labelyard/issues/150))
+- **QR codes on 10 mm labels.** Sheet types with 10 mm high labels, such as Avery Zweckform L4731REV, allow QR codes by default. ([#330](https://github.com/strausmann/labelyard/issues/330))
 
 ### Features
 
