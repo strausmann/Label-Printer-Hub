@@ -99,3 +99,37 @@ export function checkPage(g, pass, { qrCells = true } = {}) {
 
 /** A crop of an already drawn pass page, via <use> (the page must be in the same document). */
 export const zoom = (pass, view, label) => `<svg viewBox="${view.join(" ")}" role="img" aria-label="${label}"><rect x="${view[0]}" y="${view[1]}" width="${view[2]}" height="${view[3]}" fill="#fff"/><use href="#pass-${pass}"/></svg>`;
+
+// ---------- probe page (M9) ----------
+import { GEOM, DEMO_ZONES, DEMO_ID } from "./lib.mjs";
+
+/** The probe page of an Avery Zweckform L4736REV; `grid` turns it into the measurement sheet. */
+export function probePage({ grid = false } = {}) {
+  const g = GEOM.l4736;
+  const t = (x, y, s, size, w = 400, anchor = "start", fill = INK) => `<text x="${x}" y="${y}" font-size="${size}" font-weight="${w}" text-anchor="${anchor}" fill="${fill}">${s}</text>`;
+  let s = `<svg viewBox="0 0 210 297" role="img" aria-label="${grid ? "Measurement sheet" : "Probe page"}, Avery Zweckform L4736REV"><defs><pattern id="ph${grid ? "g" : "p"}" patternUnits="userSpaceOnUse" width="1.6" height="1.6" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="1.6" stroke="#444" stroke-width="0.35"/></pattern></defs><rect width="210" height="297" fill="#fff"/>`;
+  if (grid) {
+    let d1 = "", d5 = "", d10 = "";
+    for (let i = 0; i <= 210; i++) { const d = `M${i} 0V297`; (i % 10 === 0 ? (d10 += d) : i % 5 === 0 ? (d5 += d) : (d1 += d)); }
+    for (let j = 0; j <= 297; j++) { const d = `M0 ${j}H210`; (j % 10 === 0 ? (d10 += d) : j % 5 === 0 ? (d5 += d) : (d1 += d)); }
+    s += `<path d="${d1}" stroke="#000" stroke-width="0.05" fill="none"/><path d="${d5}" stroke="#000" stroke-width="0.13" fill="none"/><path d="${d10}" stroke="#000" stroke-width="0.22" fill="none"/>`;
+    for (let i = 10; i <= 200; i += 10) s += `<rect x="${i - 3.4}" y="0.6" width="6.8" height="3" fill="#fff"/>` + t(i, 3, i, 2.4, 700, "middle");
+    for (let j = 10; j <= 290; j += 10) s += `<rect x="0.6" y="${j - 1.6}" width="6.4" height="3.2" fill="#fff"/>` + t(3.8, j + 0.8, j, 2.4, 700, "middle");
+  } else {
+    for (const z of DEMO_ZONES) s += `<rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" fill="url(#php)" stroke="#444" stroke-width="0.25"/>` + t(z.x + z.w / 2, z.y + z.h / 2 + 0.8, `<tspan style="paint-order:stroke" stroke="#fff" stroke-width="0.9">${z.note}</tspan>`, 2.4, 700, "middle");
+    s += `<rect x="${DEMO_ID.x}" y="${DEMO_ID.y}" width="${DEMO_ID.w}" height="${DEMO_ID.h}" fill="#fff" stroke="#000" stroke-width="0.5" stroke-dasharray="2 1"/>` + t(DEMO_ID.x + DEMO_ID.w / 2, DEMO_ID.y + DEMO_ID.h / 2 + 0.6, "planned sheet code", 2.4, 700, "middle");
+  }
+  for (let n = 1; n <= g.cols * g.rows; n++) {
+    const r = cellRect(g, n);
+    s += `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="${g.r}" fill="none" stroke="#000" stroke-width="0.2"/>`;
+    s += `<rect x="${f(r.x + r.w / 2 - 8)}" y="${f(r.y + r.h / 2 - 4.2)}" width="16" height="8.4" fill="#fff"/>`;
+    s += t(f(r.x + r.w / 2), f(r.y + r.h / 2 + 0.4), n, 4, 700, "middle") + t(f(r.x + r.w / 2), f(r.y + r.h / 2 + 3.5), `R${r.row + 1} C${r.col + 1}`, 2.4, 400, "middle");
+  }
+  const bg = (y) => `<rect x="16" y="${y - 2.4}" width="178" height="3.1" fill="#fff"/>`;
+  const head = grid ? "Measurement sheet · no correction · L4736 v1 · run #16 · 2026-11-21 14:58 · Office laser · Tray 1" : "Probe page · L4736 v1 · run #15 · 2026-11-21 14:50 · Office laser · Tray 1 (manual feed)";
+  const sub = grid ? "Millimetre grid from the page's top-left corner: lines every 1 mm, heavier every 5 mm, numbers every 10 mm. Print on the real sheet and photograph it." : "Current correction applied: dx +0.41 mm, dy −0.66 mm · scale +0.012 % / −0.008 % · rotation +0.021° · plain paper, no sheet";
+  s += bg(17.8) + t(17, 17.8, head, 2.4, 700) + bg(20.3) + t(17, 20.3, sub, 2.1);
+  const yb = g.mt + g.rows * g.py;
+  s += bg(yb + 4.2) + t(17, yb + 4.2, grid ? "Zones are not drawn here: this sheet is for finding them." : "Hatched: preprinted areas (example values). Dashed: the planned place of the sheet code.", 2.1);
+  return s + "</svg>";
+}
