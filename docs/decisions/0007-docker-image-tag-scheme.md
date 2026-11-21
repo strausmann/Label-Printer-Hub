@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Date:** 2026-05-10
 - **Amended:** 2026-11-11 by [ADR 0026](0026-rename-to-labelyard.md): the single image is now published as `labelyard`; the tag scheme below is unchanged
 - **Deciders:** maintainer
+- **Related:** [0031](0031-licence-and-supply-chain.md) — every tagged image also carries an SBOM, a provenance attestation and a keyless cosign signature
 
 ## Context
 

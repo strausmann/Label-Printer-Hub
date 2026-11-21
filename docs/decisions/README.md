@@ -58,6 +58,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0026](0026-rename-to-labelyard.md) | The project is called Labelyard | Accepted |
 | [0027](0027-url-token-for-the-grocy-label-webhook.md) | A print-scope key in the URL authenticates the Grocy label webhook | Accepted (amended 2026-11-21: own access log, D26) |
 | [0030](0030-confirmed-tape-prints.md) | A tape print counts only when the printer confirms it | Accepted |
+| [0031](0031-licence-and-supply-chain.md) | The hub is AGPL-3.0-or-later and every image says what it contains and who built it | Accepted |
 
 Numbers 0028, 0029, 0033 and 0034 are reserved for ADRs planned in the approved design of milestone 1.8.0; do not use them for other ADRs.
 
