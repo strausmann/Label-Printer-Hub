@@ -13,8 +13,9 @@ and the code did not settle are marked **Design call** with a one-line reason; t
 **Branch:** `milestone/1.8.0`, created from `main` after v1.7.1 (it does not exist yet)
 **Code base read:** `main` at `40bb6566`. Every statement about existing behaviour below names the file and line it was
 read from; line numbers refer to that commit.
-**Issues (22):** sheet ID #326, #246, #403 · sheet types #335, #342, #219 · calibration #240, #241, #336, #351, #220 ·
-cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247, #256, #395 · printer model #259 · release notes #408 (both added by the operator on 2026-11-21). Read with
+**Issues (24):** sheet ID #326, #246, #403 · sheet types #335, #342, #219 · calibration #240, #241, #336, #351, #220 ·
+cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247, #256, #395 · printer model #259 · release notes #408 · SNMP community at rest #412 · model metadata in the plugins #413 (all
+four added by the operator on 2026-11-21; #412 and #413 from the ADR audit of 2026-11-21). Read with
 `gh issue view <n> --repo strausmann/labelyard --json body,comments` (plain `gh issue view` fails on the Projects
 (classic) sunset).
 **Plan:** to be written after this design is accepted (`docs/superpowers/plans/2026-11-21-milestone-1-8-0.md`).
@@ -24,7 +25,7 @@ cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247
 1.7.x made sheets and page printers dependable. 1.8.0 makes them *checkable*: the operator can see, before wasting a
 sheet, where the sheet ID and every label will land on a given printer, can tell every calibration print apart and
 trace any correction back to the print and the readings it came from, and can keep the sheet-type list down to the
-types actually in use. The thread through all 22 issues is the same: what the hub decided and why must be visible on
+types actually in use. The thread through all 24 issues is the same: what the hub decided and why must be visible on
 paper, in the UI and through the API, and a wrong decision must be undoable.
 
 - The sheet ID lands in a free spot, never on the vendor's logo, and the type page says on which printers it fits
@@ -46,7 +47,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
 
 ### Goals
 
-1. Every acceptance criterion of the 22 issues and their maintainer comments is met, or a deviation is named and
+1. Every acceptance criterion of the 24 issues and their maintainer comments is met, or a deviation is named and
    reasoned in [section 14](#14-deviations-from-the-issue-text). The checklist in [section 15](#15-requirement-checklist)
    is the review list.
 2. A running 1.7.x installation upgrades without losing a type, a sheet, a cell, a calibration or a job, and without a
@@ -141,6 +142,7 @@ scales in ppm, rotation in micro-degrees, as in `backend/app/models/printer_cali
 | C2 | #351 | new table `sheet_type_log` |
 | D1 | #248 | `sheet_cells`: `label` (JSON), `printed_at` |
 | E1 | #405 | data: rewrite free-text `jobs.error` rows to the fixed text of their code |
+| E2 | #412 | data: seal every stored SNMP community (`connection.snmp.community` → `community_sealed`); downgrade opens the tokens again; stops before any change without a valid `LABELYARD_SECRET_KEY` |
 
 Settings without a migration: `sheets.max_active`, `sheets.max_active_per_type` (#204), `integrations.<name>.web_url`
 (#247), `integrations.lookup_batch_deadline_s` (#405).
@@ -176,12 +178,29 @@ acceptance).
 
 ### 3.6 Architecture decisions
 
-Two ADRs, `Proposed` until they ship:
+ADR work is an explicit step of the task that makes the decision (operator, 2026-11-21, after the ADR audit of
+2026-11-21). Rule from #252 (`docs/decisions/README.md`, "Keeping ADRs current"): a new ADR is written `Proposed` at the
+start of its task and becomes `Accepted` in the milestone PR; a replaced ADR gets `Superseded by`, a partly changed one
+an `Amended` header line and a dated "Amendment" section; the decision text is never rewritten; header, index and
+register (`docs/decisions/register.md`) agree, and `backend/tests/unit/test_decision_register.py` stays green. Numbers
+**0030–0032 are taken** by a docs PR on `main`; 1.8.0 keeps **0028, 0029, 0033, 0034**.
 
-- **ADR 0028 — Sheet-type catalog instead of seeding.** Replaces the seeding part of OC-14 (spec 9.5,
-  `backend/app/seed/sheet_seed.py:4-41`) and the delete rule OC-10 (`type_service.py:455-457`) (#335).
-- **ADR 0029 — Calibration history and run records.** A save never overwrites; runs are numbered per printer and tray
-  (#336, #240, #351).
+| ADR action | Content | Task |
+|---|---|---|
+| **New 0034** — Database migrations and the way back | every migration has a downgrade; the way back is the 1.8.0 downgrade or the backup; new payload fields only in containers that ignore unknown keys; `extra="forbid"` payloads stay unchanged (section 3.4, S11, S15) | 1 (written before the first migration lands) |
+| **Amend 0024** — not-wired state | `wiring` / `wiring_reason` on the printer read, in memory, fixed reason codes (section 9.3) | 3 |
+| **New 0033** — Printed QR payloads are computed by the server; internal addresses stay with admins | `web_url`, `qr_payload_for`, no internal base URL in any non-admin response incl. jobs and nested payloads (section 9.4, S9, S16); related to 0021 | 5 |
+| **Amend 0021** — compatibility rules within `/api/v1` | additive fields only, opt-in pagination with `Link`, `GET /api/v1/sheets` capped at 500, tolerated and tightened request changes with upgrade notes (section 3.2) | 6 |
+| **New 0028** — Sheet-type catalog instead of seeding | supersedes 0023's "Seed" bullet incl. the #334 `adopt`/`corrections` rule and OC-10; amends D14's "archived instead of deleted" for unused types; 0023's header updated; mentions the notices store used by the startup step (section 6.1) | 8 |
+| **Amend 0023** — keep-out zones | zones, presets, ID band/align/offset, one placement function, ID before the feed mark (reverses OC-57); D16 units unchanged (section 5) | 10a |
+| **New 0029** — Calibration runs and history | runs per printer and tray, history with revert (a save never overwrites; amends 0023/D17), check sheets and passes; new register labels for the run counter and LYC1 (section 7) | 13 (written), 14 (extended by the **LYC1** page/cell payload grammar, a durable printed format) |
+| **Amend 0017** — SNMP community at rest | the community is a D5 secret: sealed with `LABELYARD_SECRET_KEY`, no plaintext fallback (section 9.9) | 20a |
+| **Amend 0004** — model metadata only in the plugins | discovery through the in-package entry points as used today; drivers declare their metadata and supported tapes; tape lookup by model id; no model list outside the plugins (sections 9.10, 9.7) | 20b (metadata), 21 (per-model tape tables) |
+| **Amend 0025** (+ `Amended by: 0025` line on 0008) — mandatory release highlights | guard refuses a minor/major without a valid `release-notes/<v>.md`, notes insertion under the version heading (section 9.8) | 22 |
+| All `Proposed` → `Accepted` | header, index and register | 23 (release task) |
+
+Below ADR level (no ADR work): the `probe_page` kind, the pending flags (#403), the archive caps, the `calibration`
+commit scope (0008: scopes come from `commitlint.config.cjs`).
 
 ## 4. What the code does today (findings that shape the design)
 
@@ -980,7 +999,8 @@ the tester. **Other DK widths and die-cut labels stay in #155 (1.10.0).**
 
 **Design:**
 
-- **A second driver in `printer_models/ql.py`** (ADR 0004: model code stays in the series module): `QL1110NWBDriver`
+- **A second driver in `printer_models/ql.py`**, added after #413 (task 20b) so it is the **only** place the model
+  appears (ADR 0004: model code stays in the series module): `QL1110NWBDriver`
   with `model_id "QL-1110NWB"`, 1164 printable pins on 102 mm, SNMP/PJL signature `QL-1110NWB`, registered next to the
   QL-820NWB at module level. Shared behaviour (queue printer, status, confirmation) is factored into a base class; the
   QL-820NWB keeps its behaviour byte for byte (its golden tests unchanged).
@@ -997,7 +1017,8 @@ the tester. **Other DK widths and die-cut labels stay in #155 (1.10.0).**
   model to the list. An upstream PR adds `QL-1110NWB` to the restricted list of `"102"` (fixes go upstream, #256).
 - **Minimum length:** `_pad_to_min_length` already pads to the model's minimum (301 dots ≈ 25.5 mm); a test covers the
   QL-1110NWB value.
-- **No new UI surface**, so no mockup: the model appears in the existing printer form's model list and the 102 mm
+- **No new UI surface**, so no mockup: the model appears in the existing printer form's model list (from
+  `GET /api/v1/printer-models`, section 9.10) and the 102 mm
   tape in the existing tape and preset selectors. The README model list and the website hardware page (en + de) gain
   the model; the 102 mm preview gets a generated screenshot.
 - **Tester step (release checklist):** a print on 102 mm continuous, a status query (tape width reported as 102 mm),
@@ -1086,6 +1107,72 @@ tags exist; and the notes of every plugin implementing `generateNotes` are conca
 - **Docs:** CONTRIBUTING.md, section "Releases", describes the file and the rule.
 - `release-notes/1.8.0.md` is written in the release task (task 23).
 
+### 9.9 SNMP community stored encrypted (#412)
+
+**Today:** the community is write-only in the API (`connection.snmp.community_set`, `printer_admin_service.py:232-240`)
+and bound to the SNMP target (R-296-5a, `printer_admin_service.py:204-226`), but it is stored **in plain text** in
+`printers.connection` (JSON, `models/printer.py:38`). Every reader takes it from there: the backend router
+(`services/backend_router.py:147`), the runtime (`services/printer_runtime.py:130,172,592`). Settings secrets are
+sealed under D5 with `SecretBox` (AES-256-GCM, token `v1.<nonce>.<ciphertext>`, associated data = the record key,
+`security/secret_box.py:1-67`; used by `settings_store/store.py:31,173,387`).
+
+**Design:**
+
+- The stored `connection.snmp` holds `community_sealed` (a `SecretBox` token) instead of `community`. Associated data:
+  `printers.<printer id>.snmp.community`, so a token copied to another printer row does not open. **Design call:** bind
+  to the printer id, because the community is per printer and the D5 rule binds every token to its record.
+- One helper `snmp_community(printer) -> str` opens it; the three readers above use only that helper. A token that does
+  not open (wrong or missing key, damaged value) raises `UndecryptableSecret`: the printer is not wired with
+  `wiring_reason = "secret_undecryptable"` (section 9.3), the log names the printer slug and the class only. **No
+  plaintext fallback**, also not for a row that still holds `community` after a failed migration.
+- Writes seal on create and update; an update that keeps the stored community (R-296-5) keeps the **stored token**
+  unchanged. **Design call:** re-seal only when the value changes, because the wiring key hashes the connection JSON
+  (`printer_runtime.py:200-229`) and a fresh nonce on every save would re-wire the printer for nothing.
+- The audit trail redaction (`services/audit_redaction.py:20`) also drops `community_sealed`.
+- **Migration E2, an Alembic revision** (chained after the other 1.8.0 migrations): upgrade seals every stored
+  `community` in place and removes the plaintext; downgrade opens every token and writes `community` back (the S11 way
+  back holds). The revision reads `LABELYARD_SECRET_KEY` from the same settings the app uses; without a valid key it
+  stops with a clear error before changing any row, in both directions.
+- Responses do not change (`community_set` stays).
+- ADR 0017 amendment and a register label (section 3.6).
+
+### 9.10 Printer-model metadata only in the model plugins (#413)
+
+**Today** (ADR 0004 says model code lives only in the plugins):
+
+| Place | What it holds | Evidence |
+|---|---|---|
+| `services/printer_model_registry.py` | a second model list with German display strings (`HARDCODED_FALLBACK_MODELS`) and library introspection; **no caller in `app/`** — only `tests/services/test_printer_model_registry.py` imports it | `printer_model_registry.py:1-140`; `grep -rn printer_model_registry backend/app` |
+| frontend printer form | a third, hard-coded list `MODELS = { ptouch: ["PT-P750W"], brother_ql: ["QL-820NWB"] }` | `frontend/src/features/settings/PrinterForm.tsx:19` |
+| tape backend | the ptouch class map by model id | `printer_backends/ptouch_backend.py:52-57` |
+| QL backend | default `model_id="QL-820NWB"` | `printer_backends/brother_ql_backend.py:262` |
+| test label | a P-touch class picked by model id | `services/test_label.py:54` |
+| the plugins | `QL820NWBDriver` and the PT drivers, registered in `ModelRegistry` through the entry points | `printer_models/ql.py:110-127,332-334`; `printer_models/pt.py`; `pyproject.toml:77-79` |
+
+**Design:**
+
+- **Delete** `services/printer_model_registry.py` and its test.
+- Each driver declares its metadata as class attributes: `model_id`, `backend` (`ptouch` / `brother_ql`), `family`,
+  `supported_tapes` (section 9.7), capabilities (cutter, two-colour), and for P-touch the `ptouch` library class it
+  needs. The ptouch class map and the test label read the class from the driver (`ModelRegistry.find_by_model_id`);
+  `BrotherQLBackend` takes `model_id` as a required argument (no default).
+- **New `GET /api/v1/printer-models`** (admin) lists the registered drivers with that metadata, read from
+  `ModelRegistry`. The printer form takes its model choice from it and drops its hard-coded `MODELS`.
+- **Display names from the frontend translations, without a per-model entry:** the backend returns facts only; the
+  frontend builds the name from translated templates per family, e.g. en "Brother {model} (tape up to {width} mm)",
+  de „Brother {model} (Band bis {width} mm)“. **Design call:** templates per family instead of one message per model,
+  so a new model is added in exactly one place, the plugin (#413 acceptance); a translation per model would be a
+  fourth list.
+- **Guard test** (a source scan, with the three disclosures of the repository's test rules): it searches `backend/app`
+  outside `app/printer_models/` and `frontend/src` outside tests and generated files for model-id literals
+  (`\b(PT|QL)-[A-Z0-9]{3,}\b`) and fails with file and line. It states in a comment that it cannot tell code from
+  comments and docstrings, so prose mentions (`QL-820NWB` in API descriptions) are allowed through a short, reasoned
+  allow-list of file:pattern pairs; it says why no behaviour test can prove "no second list".
+- **Contract test:** the printer read and admin responses are byte-identical before and after (the new endpoint is the
+  only addition).
+- **Order:** this task (20b) lands **before** task 21, so the QL-1110NWB is added in exactly one place: its driver.
+- ADR 0004 amendment (section 3.6).
+
 ## 10. Dependencies and build order
 
 ```mermaid
@@ -1107,29 +1194,31 @@ graph TD
 
 | # | Task | Issues | Depends on | Mockup |
 |---|---|---|---|---|
-| 1 | Hardening, CI, `retry_job` removal | #405 | — | — |
+| 1 | Hardening, CI, `retry_job` removal; ADR 0034 (migrations and the way back) | #405 | — | — |
 | 2 | Split the tape backend | #395 | — | — |
-| 3 | Not-wired state | #401 | — | M10 |
+| 3 | Not-wired state; ADR 0024 amendment | #401 | — | M10 |
 | 4 | Drop the cart text link | #407 | — | — |
-| 5 | `web_url` and separated lookup link | #247 | — | M11 |
-| 6 | Archive bounds: cap, purge, pagination, text hardening | #204 | — | — |
+| 5 | `web_url` and server-computed QR payloads; ADR 0033 | #247 | — | M11 |
+| 6 | Archive bounds: cap, purge, pagination, text hardening; ADR 0021 amendment | #204 | — | — |
 | 7 | Facets and opt-in pagination of sheet types | #219 | 6 (pagination pattern) | — |
-| 8 | Catalog, delete, usage, navigation (ADR 0028) | #335 | 6, 7 | M4, M5 |
+| 8 | Catalog, delete, usage, navigation; ADR 0028 (supersedes 0023's Seed bullet and OC-10) | #335 | 6, 7 | M4, M5 |
 | 9 | — (#342 closed with evidence, no code) | #342 | — | — |
-| 10 | Preprint zones, ID position, per-printer view (10a model and placement, 10b UI); 10c the Avery Zweckform preset from the operator's measurement photos | #246 (takes #326's criteria) | 8 (presets ship in the catalog); 10c also 17 (measurement sheet) and the **operator's photos** | M1, M2 |
+| 10 | Preprint zones, ID position, per-printer view (10a model and placement, with the ADR 0023 amendment, 10b UI); 10c the Avery Zweckform preset from the operator's measurement photos | #246 (takes #326's criteria) | 8 (presets ship in the catalog); 10c also 17 (measurement sheet) and the **operator's photos** | M1, M2 |
 | 11 | — (merged into 10) | — | — | — |
 | 12 | Pending flags | #403 | 10 (same decision function) | — |
-| 13 | Runs, history, restore (ADR 0029) | #336 | — | M7 |
-| 14 | Calibration pages: margins, cell QR, corner marks, check passes | #240 C + comments | 13 | M3 (three passes on 6121) |
+| 13 | Runs, history, restore; ADR 0029 written | #336 | — | M7 |
+| 14 | Calibration pages: margins, cell QR, corner marks, check passes; ADR 0029 extended by the LYC1 grammar | #240 C + comments | 13 | M3 (three passes on 6121) |
 | 15 | Guided readings, live fit, geometry suggestion | #240 B + comment | 13, 14 | M8 |
 | 16 | Kept-fit line | #220 | 15 | — |
 | 17 | Probe print, with the `grid` measurement-sheet option | #241, #246 | 10a, 13 | M9 |
 | 18 | Sheet-type log | #351 | 13, 15 | M12 |
 | 19 | Cell labels | #248 | 5 | M13 |
 | 20 | Release cells | #298 | 19 (same panel) | — |
-| 21 | QL-1110NWB: driver, per-model tape tables, 102 mm geometry and preset | #259 | — | none (no new UI surface) |
-| 22 | Release highlights: generator-wrapper plugin `highlights-notes.mjs` (S13), `highlights` subcommand, template validator (8 rules), guard and PR-check rules (milestone PR and any PR touching `release-notes/`), dry-run assertion, CONTRIBUTING | #408 | the docs PR with `release-notes/TEMPLATE.md` merged into the milestone branch | none (no UI) |
-| 23 | Device checks, `release-notes/1.8.0.md`, release | #256, #259, #408, all | 1–22 | — |
+| 20a | SNMP community sealed under D5, migration E2 up/down, ADR 0017 amendment | #412 | 3 (`wiring_reason`), 1 (ADR 0034) | — |
+| 20b | Model metadata only in the plugins, `GET /api/v1/printer-models`, form from it, guard and contract tests, ADR 0004 amendment | #413 | — | none (the form's existing select) |
+| 21 | QL-1110NWB: driver, per-model tape tables, 102 mm geometry and preset; ADR 0004 amendment (tapes) | #259 | **20b** | none (no new UI surface) |
+| 22 | Release highlights (ADR 0025 amendment, `Amended by` on 0008): generator-wrapper plugin `highlights-notes.mjs` (S13), `highlights` subcommand, template validator (8 rules), guard and PR-check rules (milestone PR and any PR touching `release-notes/`), dry-run assertion, CONTRIBUTING | #408 | the docs PR with `release-notes/TEMPLATE.md` merged into the milestone branch | none (no UI) |
+| 23 | Device checks, `release-notes/1.8.0.md`, all `Proposed` ADRs → `Accepted`, release | #256, #259, #408, all | 1–22 | — |
 
 **Operator steps in the release checklist** (the release waits for them):
 
@@ -1298,6 +1387,17 @@ Extracted from the issue bodies and comments before the design was written; the 
 | controller S18 | Comments stripped (except for the marker check), template mode, the real template and the released 1.6.0/1.7.0 files pass | 9.8, 16 |
 | #408 | CONTRIBUTING.md "Releases" describes the file and the rule | 9.8 |
 | #408 | `release-notes/1.8.0.md` exists before the 1.8.0 release | 9.8, section 10 release checklist |
+| #412 | No plaintext community in the printer table after the migration (raw-row test) | 9.9, 16 |
+| #412 | Status and pre-print SNMP checks work with the encrypted value | 9.9, 16 |
+| #412 | Migration up and down tested on a populated database | 9.9, 16 |
+| #412 | Missing or wrong key: clear error, no plaintext fallback | 9.9, 16 |
+| #412 | ADR 0017 amendment and register entry | 3.6, 9.9 |
+| #413 | No model list outside the plugins (guard test) | 9.10, 16 |
+| #413 | Printer-model API output unchanged apart from documented additions (contract test) | 9.10, 16 |
+| #413 | Display names from translations in both locales | 9.10 |
+| #413 | QL-1110NWB added in exactly one place | 9.10, 9.7 (task 21 after 20b) |
+| #413 | ADR 0004 amendment (entry points as used today) | 3.6, 9.10 |
+| operator 2026-11-21 | ADR work part of the tasks: 0028, 0029, 0033, 0034 new; 0024, 0021, 0023, 0004, 0025, 0017 amended; all Accepted in the release task | 3.6, 10 |
 | #259 | Register the QL-1110NWB via the QL entry point (#207) | 9.7 |
 | #259 | Label geometry for 102 mm continuous (other DK widths and die-cut stay in #155) | 9.7 |
 | #259 | Across-width layout preset for 102 mm (#258 rule) | 9.7 |
@@ -1321,7 +1421,7 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 | B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
 | C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number); **for every catalog type on a printer with a 5 mm unprintable edge** (and on one reporting 3 mm and 8 mm): every drawn element and both run-line slots lie inside the printable area, the slots overlap neither pass 1's blocks, nor a page-code spot, nor each other, every page code lies in a spot clear of cell numbers, cell QRs, corner marks, scales, rulers and S/Z labels (6121: codes in cells 1, 5, 61, 65 with their cell QRs kept), the number of page codes drawn equals the number the print dialog announces; a sheet type whose margin holds no two slots prints passes 2 and 3 without a run line, warns before pass 1, and still records both passes; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
-| E | Release highlights (`scripts/test_release_impact.py`): `highlights` prints a valid file and nothing when it is missing, exits non-zero on an invalid one; a malformed version is refused; the validator passes `TEMPLATE.md` (template mode), the released `1.6.0.md` and `1.7.0.md` and a sample valid file, ignores a heading or item inside an HTML comment, still finds the licence marker inside a comment, and `highlights` prints without comments; the wrapper plugin places the highlights under `## [x.y.z]` above `### Features` in the release body and in `CHANGELOG.md` and leaves the notes unchanged without a file; and refuses each reason on its own (no summary, Highlights missing, Highlights not first, 3 and 8 items, an item without issue link, sections out of order, a repeated section, an unknown heading, a `#` line inside a code fence accepted, the licence marker in both forms, an empty file) and reports several reasons at once; the guard refuses a minor and a major without the file and with an invalid one, and passes with a valid file and for a patch without it; `check` reports on a milestone PR and on a PR touching `release-notes/` only; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
+| E | SNMP community (#412): after migration E2 the raw `printers.connection` row holds no plaintext community (test reads the row with SQL); status and preflight work with the sealed value; upgrade then downgrade on a populated database restores the plaintext rows byte for byte; a token copied to another printer does not open; a missing or wrong key stops the migration before any change and leaves the printer `not_wired` / `secret_undecryptable` at runtime with no plaintext fallback; keeping the community keeps the token (no re-wire). Model metadata (#413): guard scan red with a planted `"QL-9999"` literal outside the plugins (counter-test) and naming file and line; printer read/admin responses byte-identical before and after; `GET /api/v1/printer-models` lists exactly the registered drivers; the form shows translated names in en and de; deleting `printer_model_registry.py` leaves no import. Release highlights (`scripts/test_release_impact.py`): `highlights` prints a valid file and nothing when it is missing, exits non-zero on an invalid one; a malformed version is refused; the validator passes `TEMPLATE.md` (template mode), the released `1.6.0.md` and `1.7.0.md` and a sample valid file, ignores a heading or item inside an HTML comment, still finds the licence marker inside a comment, and `highlights` prints without comments; the wrapper plugin places the highlights under `## [x.y.z]` above `### Features` in the release body and in `CHANGELOG.md` and leaves the notes unchanged without a file; and refuses each reason on its own (no summary, Highlights missing, Highlights not first, 3 and 8 items, an item without issue link, sections out of order, a repeated section, an unknown heading, a `#` line inside a code fence accepted, the licence marker in both forms, an empty file) and reports several reasons at once; the guard refuses a minor and a major without the file and with an invalid one, and passes with a valid file and for a patch without it; `check` reports on a milestone PR and on a PR touching `release-notes/` only; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
 Every UI task takes light and dark screenshots at 1280 and 390 px (`pnpm screenshots`).
 
