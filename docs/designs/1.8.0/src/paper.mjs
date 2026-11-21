@@ -71,34 +71,45 @@ export function runBlock(g, pass, { y0 = 0 } = {}) {
   const yb = g.mt + g.rows * g.py;
   const bottom = [
     t(17, yb + 4.4, `Avery Zweckform 6121 · 5 × 13 labels of 38.1 × 21.18 mm · top 10.80, left 9.90 mm · pitch 38.10 × 21.18 mm`, 2.15),
-    t(17, yb + 7.9, `Page codes in the four corners, cell codes LYC1:${RUN[pass]}:&lt;cell&gt;:K${pass} · print at 100 % on plain A4 or the real sheet`, 2.15),
+    t(17, yb + 7.6, `Page codes in the four corners, cell codes LYC1:${RUN[pass]}:&lt;cell&gt;:K${pass} · print at 100 % on plain A4 or the real sheet`, 2.15),
   ];
   return top.join("") + bottom.join("");
 }
 
-/** A full check page for pass `pass`. withQr false skips the 65 cell codes (used by the composite). */
+/** Pass 1 prints the full check page; passes 2 and 3 print only their crosses and one short run line. */
+export function runLine(g, pass) {
+  const yb = g.mt + g.rows * g.py;
+  const s = `run #${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · correction applied: ${pass === 2 ? "yes" : "no"}`;
+  const left = pass === 2;
+  return `<text x="${left ? 17 : 193}" y="${f(yb + 10.2)}" font-size="1.9" text-anchor="${left ? "start" : "end"}" fill="${INK}">${s}</text>`;
+}
+
+/** The page of pass `pass`. The white sheet sits outside the group so the passes can be laid over each other. */
 export function checkPage(g, pass, { qrCells = true } = {}) {
   const set = new Set(PASSES[pass].map(([c, r]) => `${c},${r}`));
-  let s = `<svg viewBox="0 0 210 297" role="img" aria-label="Check page, pass ${pass} of 3, Avery Zweckform 6121"><g id="pass-${pass}">`;
-  s += `<rect width="210" height="297" fill="#fff"/>`;
-  let marks = "";
-  for (let n = 1; n <= g.cols * g.rows; n++) {
-    marks += cornerMarks(g, n, set);
-    const r = cellRect(g, n);
-    const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-    s += `<text x="${f(cx)}" y="${f(cy - 3.2)}" font-size="2.9" font-weight="700" text-anchor="middle" fill="${INK}">${n}</text>`;
-    if (qrCells) s += qr(`LYC1:${RUN[pass]}:${n}:K${pass}`, cx, cy + 1.4, 8);
+  let s = `<svg viewBox="0 0 210 297" role="img" aria-label="Check page, pass ${pass} of 3, Avery Zweckform 6121"><rect width="210" height="297" fill="#fff"/><g id="pass-${pass}">`;
+  if (pass === 1) {
+    let marks = "";
+    for (let n = 1; n <= g.cols * g.rows; n++) {
+      marks += cornerMarks(g, n, set);
+      const r = cellRect(g, n);
+      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      s += `<text x="${f(cx)}" y="${f(cy - 3.2)}" font-size="2.9" font-weight="700" text-anchor="middle" fill="${INK}">${n}</text>`;
+      if (qrCells) s += qr(`LYC1:${RUN[pass]}:${n}:K${pass}`, cx, cy + 1.4, 8);
+    }
+    s += marks;
   }
-  s += marks;
   for (const [c, r] of PASSES[pass]) { const p = crossingXY(g, c, r); s += miniScale(p.x, p.y, { label: `K${pass}` }); }
-  s += runBlock(g, pass);
-  const page = `LYC1:${RUN[pass]}:0:A6121:1:41:-66:120:-80:21000:K${pass}`;
-  for (const [x, y] of [[7.5, 7.5], [202.5, 7.5], [7.5, 289.5], [202.5, 289.5]]) s += qr(page, x, y, 15);
+  if (pass === 1) {
+    s += runBlock(g, 1);
+    const page = `LYC1:${RUN[pass]}:0:A6121:1:41:-66:120:-80:21000:K${pass}`;
+    for (const [x, y] of [[7.5, 7.5], [202.5, 7.5], [7.5, 289.5], [202.5, 289.5]]) s += qr(page, x, y, 15);
+  } else s += runLine(g, pass);
   return s + "</g></svg>";
 }
 
 /** A crop of an already drawn pass page, via <use> (the page must be in the same document). */
-export const zoom = (pass, view, label) => `<svg viewBox="${view.join(" ")}" role="img" aria-label="${label}"><rect x="${view[0]}" y="${view[1]}" width="${view[2]}" height="${view[3]}" fill="#fff"/><use href="#pass-${pass}"/></svg>`;
+export const zoom = (pass, view, label) => `<svg viewBox="${view.join(" ")}" role="img" aria-label="${label}"><rect x="${view[0]}" y="${view[1]}" width="${view[2]}" height="${view[3]}" fill="#fff"/>${[].concat(pass).map((n) => `<use href="#pass-${n}"/>`).join("")}</svg>`;
 
 // ---------- probe page (M9) ----------
 import { GEOM, DEMO_ZONES, DEMO_ID } from "./lib.mjs";
