@@ -24,7 +24,7 @@ cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247
 1.7.x made sheets and page printers dependable. 1.8.0 makes them *checkable*: the operator can see, before wasting a
 sheet, where the sheet ID and every label will land on a given printer, can tell every calibration print apart and
 trace any correction back to the print and the readings it came from, and can keep the sheet-type list down to the
-types actually in use. The thread through all 20 issues is the same: what the hub decided and why must be visible on
+types actually in use. The thread through all 22 issues is the same: what the hub decided and why must be visible on
 paper, in the UI and through the API, and a wrong decision must be undoable.
 
 - The sheet ID lands in a free spot, never on the vendor's logo, and the type page says on which printers it fits
@@ -46,7 +46,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
 
 ### Goals
 
-1. Every acceptance criterion of the 20 issues and their maintainer comments is met, or a deviation is named and
+1. Every acceptance criterion of the 22 issues and their maintainer comments is met, or a deviation is named and
    reasoned in [section 14](#14-deviations-from-the-issue-text). The checklist in [section 15](#15-requirement-checklist)
    is the review list.
 2. A running 1.7.x installation upgrades without losing a type, a sheet, a cell, a calibration or a job, and without a
@@ -75,7 +75,8 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
 - An installed type changed by an upgrade without the operator pressing a button (#335: catalog updates are offered,
   never applied silently).
 - A sheet code issued twice, also after purging and deleting (#204, #335).
-- An internal integration address in any response a non-admin key receives (#247).
+- An internal integration address in any response a non-admin key receives, job detail and the cell-label read
+  included (#247, S9).
 - A cell freed by the admin action while the page may have printed onto it (#298).
 - A release with an open issue in the milestone.
 
@@ -107,6 +108,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
   2. A fresh installation starts with no sheet types (#335).
   3. `GET /api/v1/sheets` returns at most 500 rows per request and a `Link: <…>; rel="next"` header when more exist
      (#204).
+- "No internal URL to non-admin keys" (#247) covers job detail and the cell-label read as well (S9, section 9.4).
 - One tolerated request change: `POST /api/v1/render/preview` ignores `data.qr_payload` when the new `item` field names
   an integration item; the server's payload is used (#247, section 9.4). Clients that send no `item` keep today's
   behaviour.
@@ -132,8 +134,9 @@ scales in ppm, rotation in micro-degrees, as in `backend/app/models/printer_cali
 |---|---|---|
 | A1 | #246, #326 | `sheet_types`: `id_margin_band`, `id_margin_align`, `id_margin_offset_hmm`, `preprint_zones`, `preprint_preset_id`; new table `preprint_presets` |
 | A2 | #335 | `sheet_types`: `catalog_key`, `catalog_revision`, `catalog_fields_hash` |
-| A3 | #335 | data: pending `adopt`/`corrections` of seed revision 3, then catalog provenance for every `origin="seed"` type |
+| A3 | #335 | **not an Alembic revision (S1):** an idempotent startup step (`run_catalog_migration`, where `run_sheet_seed` runs today, `main.py:311-317`), recorded by `internal.catalog.migrated`: pending `adopt`/`corrections` of seed revision 3, then catalog provenance for every `origin="seed"` type; on failure it leaves a notice and retries on the next start. A2's downgrade deletes the marker. |
 | C1 | #336, #240 | new tables `calibration_runs`, `calibration_run_counters`, `calibration_history` (filled with one `imported` entry per existing `printer_calibrations` row), `calibration_check_sheets`, `calibration_check_sheet_passes` |
+| P1 | #241 | `probe_page` job kind (S10): the kind is added to the job checks; the downgrade removes `probe_page` job rows |
 | C2 | #351 | new table `sheet_type_log` |
 | D1 | #248 | `sheet_cells`: `label` (JSON), `printed_at` |
 | E1 | #405 | data: rewrite free-text `jobs.error` rows to the fixed text of their code |
@@ -151,6 +154,13 @@ Settings without a migration: `sheets.max_active`, `sheets.max_active_per_type` 
 | Calibration pages printed before 1.8.0 | Have no run number; the run counter of every tray starts at 1. |
 | Job rows with free-text errors from before 1.7.x | Scrubbed once by a data migration (#405). |
 | Integration settings | `web_url` is empty; the "Open in …" link disappears until it is set (#247, see section 9.4). |
+
+**The way back (S11, operator rollback ruling 2026-11-21):** only with the downgrade migrations from the **1.8.0**
+image (`alembic downgrade 20261118a2`) or by restoring the backup taken before the upgrade; a 1.7.x image does not
+start on a database migrated to 1.8.0 (its Alembic head is unknown there). To keep job payloads readable after such a
+downgrade, every new field goes into containers that already ignore unknown keys (`PagePayload.detail`,
+`SheetPageDetail`, `SheetCellPayload`, `sheet_page.py:93-110,191-210`); `CalibrationSnapshot` and `MarginIdPayload`
+(both `extra="forbid"`, `page_jobs.py:63-77`, `sheet_page.py:112-118`) stay **unchanged**. The upgrade note says so.
 
 ### 3.5 Repository rules that apply to every task
 
@@ -296,10 +306,13 @@ it wants. **Design call:** union, no per-zone override, because a partial overri
 6. Nothing fits: as today, `id_not_printed` on the page and the existing fallbacks (cell ID or back side, by the type's
    `id_placement`) with a visible note in the print dialog.
 
-`MarginPlacement` (`planner.py:176-184`) gains `x_hmm`, `y_hmm`, `w_hmm`, `content` (`qr_code_type/qr_code/code`). The
-stored job payload (`MarginIdPayload`, `sheet_page.py:112`) keeps the full decision so the preview, the job and a retry
-read the **same** stored decision (#246 acceptance); a payload without `x_hmm` renders exactly as today (backward
-compatible, as OC-50 did for `band`).
+`MarginPlacement` (`planner.py:176-184`) gains `x_hmm`, `y_hmm`, `w_hmm`, `content` (`qr_code_type/qr_code/code`).
+**S2 (operator, 2026-11-21):** the preview and the job's first render read the **same** stored decision (#246
+acceptance); a **retry re-decides** the position for the printer it is sent to (as it already re-decides the margin ID
+and the mark, `decide_margin_and_mark`, `planner.py:359-418`) and stores its own decision in its own payload. The
+rectangle is stored in **`SheetPageDetail.margin_id_rect`** (`{x_hmm, y_hmm, w_hmm, h_hmm, content}`);
+`MarginIdPayload` (`sheet_page.py:112`) stays unchanged (S11). A payload without `margin_id_rect` renders exactly as
+today (backward compatible, as OC-50 did for `band`).
 
 ### 5.3 Validation per sheet type and the per-printer view (remainder of #326)
 
@@ -385,13 +398,15 @@ Both are computed from `SheetView` (`planner.py:94-125`) in `decide_margin_and_m
 
 - `backend/app/catalog/sheet_types/<key>.json`: one exchange document per type (the existing `ExportDoc`,
   `exchange.py:134`), plus `catalog/presets/<key>.json` for preprint presets and backing designs.
-- `backend/app/catalog/index.json`: generated by a script (`scripts/catalog_index.py`), one entry per type: key,
-  vendor, product codes, page size, grid, label size, `verified` with date and evidence, provenance (`source_name`,
-  `source_url`), catalog revision of the entry, geometry hash. A CI test fails when the index and the documents
-  disagree.
+- `backend/app/catalog/meta.json` (S3): per key the fields an `ExportDoc` cannot carry — `revision`, `verified_on`,
+  `evidence`. Catalog revisions start at **1**.
+- `backend/app/catalog/index.json`: generated by a script (`scripts/catalog_index.py`) from the documents and
+  `meta.json`, one entry per type: key, vendor, product codes, page size, grid, label size, `verified` with date and
+  evidence, provenance (`source_name`, `source_url`), catalog revision of the entry, geometry hash. A CI test fails when
+  the index, `meta.json` and the documents disagree.
 - The 39 entries of `sheet_types.json` move into the folder; the file and its `adopt`/`corrections` maps stay only to
   migrate installations that never ran them (section 6.1.4).
-- Every entry has a `revision` (integer). A new geometry version of an entry raises it.
+- Every entry has a `revision` (integer, from 1, in `meta.json`). A new geometry version of an entry raises it.
 
 #### 6.1.2 API
 
@@ -399,7 +414,7 @@ Both are computed from `SheetView` (`planner.py:94-125`) in `decide_margin_and_m
 |---|---|---|
 | `GET /api/v1/sheet-catalog` | read | The index, filterable (`q` on vendor, product code, key; `page`, `w`, `h`, `verified`), with `installed: bool` and `update_available: bool` per entry; paginated with `limit`/`offset` and the facets in the response (section 6.3). |
 | `GET /api/v1/sheet-catalog/{key}` | read | One entry with its geometry (for the grid preview). |
-| `POST /api/v1/sheet-catalog/{key}/install` | admin | Installs the type like an import, `origin="seed"` kept for shipped types, catalog provenance stored. 409 `type_exists` if the key or prefix is taken. |
+| `POST /api/v1/sheet-catalog/{key}/install` | admin | Installs the type like an import. **S12:** under its own key it keeps `origin="seed"` with catalog provenance; installed under a new key (`new_key`/`new_prefix`, the import's `as_new_key` path) it is `origin="imported"` **without** provenance. 409 `type_exists` if the key or prefix is taken. |
 | `POST /api/v1/sheet-types/{key}/catalog-update` | admin | Applies the newer catalog revision as the next version (refused with 409 `locally_edited` when the type was edited; section 6.1.3). |
 | `DELETE /api/v1/sheet-types/{key}` | admin | Now any type without sheets (section 6.1.5). |
 | `POST /api/v1/sheet-types/delete-unused` | admin | Body: the list of keys to delete; each must be in state `unused`; all or nothing. |
@@ -418,8 +433,9 @@ or the legacy `system:seed`) **or** its type fields' hash differs from `catalog_
 
 #### 6.1.4 Upgrade of existing installations
 
-- The seeder no longer inserts types on start. A one-time migration step (data migration A3, idempotent, recorded in
-  `app_settings` as `internal.catalog.migrated`) runs the remaining `adopt`/`corrections` of `seed_revision` 3 that an
+- The seeder no longer inserts types on start. A one-time step (A3, an idempotent **startup step**, not an Alembic revision
+  (S1), recorded in `app_settings` as `internal.catalog.migrated`; on failure it appends a notice and retries on the
+  next start) runs the remaining `adopt`/`corrections` of `seed_revision` 3 that an
   installation has not applied yet, then gives every `origin="seed"` type `catalog_key = key`, the revision of its
   entry, and the fields hash **of the entry** — so an installation that edited a seeded type's description is
   "edited" afterwards.
@@ -503,7 +519,9 @@ printer reports it), actor, created at. **Counter table `calibration_run_counter
 under the sheet write lock in the same transaction as the job's submit. **Design call:** a counter row instead of
 `MAX()+1`, so run numbers stay monotonic after retention deletes old runs.
 
-- The number and the local time (`HH:MM`) go into the payload at submit time (`calibration/page.py:410-458` builds it),
+- The number and the local time (`HH:MM`) go into the payload at submit time (`calibration/page.py:410-458` builds it)
+  as `PagePayload.detail.run_no`, `.time` and `.run_id` (S7; `detail` ignores unknown keys, so a downgraded hub still
+  renders the job),
   so a retry prints the same number. **Design call:** a retry keeps the run number, because it is the same run on
   paper; it is shown as `#7 (retry)` in the run list.
 - **Actual tray:** after the job ends the runner asks the printer for the job's `media-col-actual`/`media-source` (IPP
@@ -611,7 +629,8 @@ cell:  LYC1:<run>:<cell>
   `L4736REV1`, because prefixes end in digits (`A7160`, `L4736`) and `A71601` would be ambiguous; it also follows the
   2026-11-15 rule "the sheet type version as a separate field".
 - All correction fields are `0` on a page printed without correction. Optional geometry fields appear only when the
-  type differs from its catalog revision (section 6.1.3).
+  type differs from its catalog revision (section 6.1.3); a type **without catalog provenance** (custom, imported,
+  installed under a new key) gets **no** optional geometry fields (S6).
 - A photo of a single cell identifies the run (calibration page or pass 1 of a check sheet) and the cell; the run record (section 7.1) and the page codes supply the
   type and the correction. This deliberately supersedes the cell content of mockup C2; **the operator approved the
   change on 2026-11-21** (section 14).
@@ -717,11 +736,12 @@ version, `run_id` (nullable), the readings and residuals of the fit (JSON, ≤ 2
   the previous one and the count of jobs printed with it.
 - `POST …/calibration/{tray}/history/{id}/restore` (admin) — writes a new `revert` entry with that entry's values; never
   deletes. The UI confirms with the values named ("Use dx −0.41 dy +0.66 mm, scale … again?").
-- **Jobs link:** the `CalibrationSnapshot` stored in every sheet and calibration job (`page_jobs.py:63-77`,
-  `extra="forbid"`) gains an optional `history_id`; the jobs list filters by it (`GET /api/v1/jobs?calibration=<id>`).
-  Jobs from before 1.8.0 have no id and are matched by the snapshot values within the time window of the entry.
-  **Design call:** store the id in the snapshot instead of a join table, because the snapshot already travels with
-  every job and survives retries.
+- **Jobs link (S7, operator rollback ruling 2026-11-21):** the history id lives in **`PagePayload`**
+  (`calibration_history_id`), not in `CalibrationSnapshot` (`page_jobs.py:63-77`, `extra="forbid"`, unchanged so a
+  downgraded hub still reads every job); the jobs list filters by it (`GET /api/v1/jobs?calibration=<id>`). Jobs from
+  before 1.8.0 have no id and are matched by the snapshot values within the time window of the entry. **Design call:**
+  store the id on the payload instead of a join table, because the payload already travels with every job and
+  survives retries.
 - **Sheet-type versions:** the type detail shows its versions with the changed geometry fields (old → new), who and
   when, and the change note (data exists, `models/sheet.py:83-108`). "Restore as new version" is offered for an older
   version when **no sheet** is pinned to a newer one; otherwise only shown (#336 point 4).
@@ -761,8 +781,8 @@ hand, saved for <type name> v<n>".
 - A printer deleted: its runs, history and check sheets go with it (FK cascade); type log entries keep the type and
   lose the printer reference (`SET NULL`).
 - Run counter per tray: a tray renamed by the printer (a new key) starts at 1; old runs stay under the old key.
-- The calibration page on a type with `allow_qr` off: numbers only, page QRs still printed (the corner squares are
-  15 mm).
+- The calibration page on a type with `allow_qr` off: numbers only, page codes still printed (10 mm page codes in
+  their spots, section 7.2; S8).
 
 ## 8. Group D — cells and the sheet archive (#248, #298, #204)
 
@@ -806,6 +826,11 @@ hand, saved for <type name> v<n>".
 
   The possibly-printed test is the existing `_possibly_printed` (`outcome.py:228-230`). The admin resolves
   `unconfirmed` cells with the existing resolve flow (#282).
+- **The sweeps follow the same rule (S4):** the startup sweep and the periodic sweep (`sweep_reservations`,
+  `outcome.py:266-324`, via `_decide`, `outcome.py:233-243`) leave the cells of a `cancelled` job whose
+  `result.started` is set, or whose `error` starts with `interrupted:`, `unconfirmed`; today `_decide` frees every
+  `cancelled` job's cells. One function decides for the release, the outcome handler and both sweeps; a test per sweep
+  with a started-then-cancelled job.
 - One write transaction under the sheet write lock, touching only `reserved` rows of that job, so a race with the startup
   recovery or the periodic sweep changes nothing twice; publishes `sheet.updated` after commit.
 - Recorded on the job: `jobs.result.cells_released = {by, at, freed: [...], unconfirmed: [...]}` and shown in the job
@@ -819,8 +844,10 @@ hand, saved for <type name> v<n>".
 - **Cap:** settings `sheets.max_active` (default 1000, active sheets per hub) and `sheets.max_active_per_type` (default
   200). Creating a sheet over a cap answers 409 `sheet_limit_reached` with the cap. **Design call:** caps on active
   sheets only, so discarding frees room, and defaults far above household use.
-- **Purge:** `POST /api/v1/sheets/purge` (admin), body `{older_than_days ≥ 1, dry_run}`, deletes discarded sheets
-  discarded before that date, their cells and stored labels; returns the codes. Codes are never reissued (the counter
+- **Purge:** `POST /api/v1/sheets/purge` (admin), body `{older_than_days ≥ 1, dry_run, limit}` — `dry_run` defaults
+  to **true**, `limit` defaults to and is at most **1000** (S5) — deletes the **oldest** discarded sheets first that
+  were discarded before that date, with their cells and stored labels; returns the codes and `more: bool` when further
+  sheets match. Codes are never reissued (the counter
   stays, section 6.1.5). Jobs referencing a purged sheet keep their payload; a job view shows "sheet purged".
 - **Pagination of `GET /api/v1/sheets`:** `limit` (default 500, max 500) and `offset`, ordering moved into SQL (today in
   Python, `sheet_service.py:637-645`) with the same keys; `Link: <…>; rel="next"` when more exist. The `full`, `q` and
@@ -898,8 +925,10 @@ already covers it). Drop the `Cart ({inCart})` message from both locales; refres
     `frontend/src/features/lookup/api.ts`).
   - Test: per integration, with and without `web_url`, the decoded QR of the preview PNG equals the payload stored in
     the print job; a read key's lookup, preview and settings responses contain no internal base URL.
-- Non-admin responses never contain the internal base URL: a test checks the JSON of lookup, settings and integration
-  responses for a read key.
+- Non-admin responses never contain the internal base URL (S9): lookup, preview, settings, integration responses,
+  **job detail** (`GET /api/v1/jobs/{id}`, whose payload carries `label_data`) and the **cell-label read**
+  (`GET /api/v1/sheets/{code}/cells/{n}`). For a non-admin key `label_data.qr_payload` is redacted to its `web_url`
+  form when `web_url` is set, else `null`. A test checks the JSON of each of these for a read key.
 
 ### 9.5 brother-ql-next hardware check (#256)
 
