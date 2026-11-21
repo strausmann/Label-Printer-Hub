@@ -34,8 +34,8 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0002](0002-python-fastapi-backend.md) | Python + FastAPI for the backend | Accepted |
 | [0003](0003-go-tailwind-htmx-pwa-frontend.md) | Go + Tailwind + HTMX + PWA for the frontend | Superseded by 0016 |
 | [0004](0004-plugin-architecture-for-printer-models.md) | Plugin architecture for printer models | Accepted (amended by 0020) |
-| [0005](0005-print-queue-is-mandatory.md) | Print queue is mandatory (printer has none) | Accepted (amended by 0020) |
-| [0006](0006-status-sources-by-phase.md) | Status sources by phase (ESC i S / passive / SNMP) | Accepted (amended 2026-11-10: SNMP is the network source; 2026-11-17: status before and after sending) |
+| [0005](0005-print-queue-is-mandatory.md) | Print queue is mandatory (printer has none) | Accepted (amended by 0020 and 0030; 2026-11-21: job states as built) |
+| [0006](0006-status-sources-by-phase.md) | Status sources by phase (ESC i S / passive / SNMP) | Accepted (amended 2026-11-10: SNMP is the network source; 2026-11-17: status before and after sending; amended by 0030) |
 | [0007](0007-docker-image-tag-scheme.md) | Docker image tag scheme | Accepted (single image, see 0015; image name amended by 0026) |
 | [0008](0008-conventional-commits-and-semantic-release.md) | Conventional Commits + semantic-release | Accepted (amended by 0025) |
 | [0009](0009-server-sent-events-over-websockets.md) | Server-Sent Events instead of WebSockets | Accepted (JSON stream, see 0015/0016) |
@@ -49,7 +49,7 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0017](0017-settings-in-database-env-locks-encrypted-secrets.md) | Settings in the database; environment locks fields; secrets encrypted | Accepted |
 | [0018](0018-decision-register.md) | Public decision register with D/V/L labels | Accepted |
 | [0019](0019-proxy-headers-need-trust-token.md) | Proxy identity headers are trusted only with the trust token | Accepted |
-| [0020](0020-backend-kinds-ipp-page-printers.md) | Page printers are a backend kind (IPP) with the hub's own client | Accepted |
+| [0020](0020-backend-kinds-ipp-page-printers.md) | Page printers are a backend kind (IPP) with the hub's own client | Accepted (amended by 0030) |
 | [0021](0021-api-versioning.md) | Every API route lives under `/api/v1` | Accepted |
 | [0022](0022-design-system-and-app-layout.md) | Design system and app layout | Accepted |
 | [0023](0023-sheet-archive.md) | Sheet archive, physical sheets and calibration (D13–D19) | Accepted |
@@ -57,6 +57,9 @@ Each ADR follows the [Nygard format](https://cognitect.com/blog/2011/11/15/docum
 | [0025](0025-milestone-branches-for-minor-and-major-releases.md) | Minor and major releases come from milestone branches | Accepted |
 | [0026](0026-rename-to-labelyard.md) | The project is called Labelyard | Accepted |
 | [0027](0027-url-token-for-the-grocy-label-webhook.md) | A print-scope key in the URL authenticates the Grocy label webhook | Accepted |
+| [0030](0030-confirmed-tape-prints.md) | A tape print counts only when the printer confirms it | Accepted |
+
+Numbers 0028, 0029, 0033 and 0034 are reserved for ADRs planned in the approved design of milestone 1.8.0; do not use them for other ADRs.
 
 The [decision register](register.md) lists the short `D<n>` labels cited in code.
 

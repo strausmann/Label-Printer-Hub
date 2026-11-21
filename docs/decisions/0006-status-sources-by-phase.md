@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # 0006 — Status sources by phase (ESC i S / passive notifications / SNMP)
 
 - **Status:** Accepted (amended 2026-11-10 and 2026-11-17, see the amendments at the end)
+- **Amended by:** [0030](0030-confirmed-tape-prints.md) — after sending, the hub waits for the printer's confirmation (IPP job state or the SNMP label counter) instead of one SNMP read; the row "After sending" and the paragraph on an unread status in the 2026-11-17 amendment are history
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 

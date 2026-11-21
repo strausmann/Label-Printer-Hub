@@ -10,6 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-11-06
 - **Deciders:** maintainer
+- **Amended by:** [0030](0030-confirmed-tape-prints.md) — the hub's IPP client also sends Brother raster bytes as `application/octet-stream` Print-Jobs to tape printers and may cancel them; `ipp` printer rows still never enter the tape wiring, and page printers are still sent PDF only
 - **Amends:** ADR-0004 (does not supersede it), and narrows ADR-0005's cancel rule to raw streams
 - **Decision label:** D18
 
