@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Status:** Accepted
 - **Date:** 2026-11-11
 - **Deciders:** maintainer
-- **Amends:** [ADR 0007](0007-docker-image-tag-scheme.md) (image name)
+- **Amends:** [ADR 0007](0007-docker-image-tag-scheme.md) (image name), [ADR 0015](0015-single-process-deployment.md) (image name, environment prefix), [ADR 0017](0017-settings-in-database-env-locks-encrypted-secrets.md) (environment prefix)
 
 ## Context
 

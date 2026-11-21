@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # 0011 — OpenAPI as the canonical API contract
 
 - **Status:** Accepted (amended 2026-11: the interactive UI at `/docs` is Scalar, see "Amendment")
+- **Amended:** 2026-11-21 — the client types are generated with `openapi-typescript` for the React UI, not with `oapi-codegen` for a Go frontend, see "Amendment — 2026-11-21"
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
@@ -107,6 +108,10 @@ hub itself: the frontend build copies the pinned standalone bundle into `dist/sc
 serves it at `/docs/scalar.js`, and the page runs under its own strict Content Security Policy
 (`'self'` for scripts and connections; inline styles only, because Scalar injects style elements at runtime). `/openapi.json` and the pinned OpenAPI version (`3.1.0`) are unchanged.
 `info.version` is the running release (`HUB_VERSION`), not the package placeholder.
+
+## Amendment — 2026-11-21 (ADR audit): `openapi-typescript` for the React UI
+
+The Go frontend no longer exists (ADR 0015, ADR 0016); the consumer of the contract inside the project is the React UI. Its client types are generated from the backend's OpenAPI document with [`openapi-typescript`](https://github.com/openapi-ts/openapi-typescript), not with `oapi-codegen`: `pnpm gen:api` exports the document with `backend/scripts/export_openapi.py` and writes `frontend/src/api/schema.gen.ts` (`frontend/package.json:22`, pinned at line 60). CI runs the same command and fails when the committed file differs (`.github/workflows/ci.yml:295-296`). The request wrapper `frontend/src/api/client.ts` is a thin hand-written `fetch` transport that takes its types from the generated file and defines no endpoint shapes of its own, so the rule above (no hand-written client whose shapes can drift from the backend) still holds. The document is not committed as `backend/openapi.json`; a copy for the website's API reference is committed as `website/openapi/labelyard.json` (written by `website/scripts/export-openapi.mjs`), and the generated types show contract changes in a pull request's diff.
 
 ## Future enhancements (separate ADRs if pursued)
 

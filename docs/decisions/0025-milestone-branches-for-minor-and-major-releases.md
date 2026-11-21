@@ -8,6 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Status:** Accepted
 - **Date:** 2026-11-09
 - **Deciders:** maintainer
+- **Amends:** [0008](0008-conventional-commits-and-semantic-release.md) (squash-merge default; release guard before publishing)
 
 ## Context
 

@@ -9,6 +9,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Date:** 2026-11-04
 - **Deciders:** maintainer
 - **Supersedes:** ADR-0001
+- **Amends:** ADR-0007 (a single image), ADR-0009 (the stream is JSON for the React UI; the Go proxy is gone)
+- **Amended by:** [0026](0026-rename-to-labelyard.md) — the single image is published as `labelyard`, and the environment prefix is `LABELYARD_` (the `PRINTER_HUB_` names below are read as a fallback)
 - **Decision label:** D1
 
 ## Context

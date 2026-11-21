@@ -6,6 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # 0002 — Python + FastAPI for the backend
 
 - **Status:** Accepted
+- **Amended:** 2026-11-21 (#256) — the QL raster library is the maintained fork `brother-ql-next` (`backend/pyproject.toml:38`, switched in `b6508f5c`; the import name stays `brother_ql`), next to `ptouch` (line 39); the OpenAPI contract is consumed by the React UI (ADR 0011, ADR 0016), the Go frontend of ADR 0003 no longer exists. #256 stays open for the hardware check. The decision is unchanged
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
 
