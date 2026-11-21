@@ -289,3 +289,7 @@ html.shot .tabbar { position: static; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs .t { white-space: nowrap; }
 html[data-modal] .mock-notes { display: none; }
+/* Screenshots: the backdrop spans the whole document, not just the first viewport. */
+html.shot, html.shot body { position: relative; }
+html.shot[data-modal] body { height: auto; overflow: visible; min-height: 100vh; }
+@media (min-height: 641px) { html.shot .scrim:not(.inline) { position: absolute; inset: 0; align-items: flex-start; padding-top: 72px; } }

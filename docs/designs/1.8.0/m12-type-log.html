@@ -298,6 +298,10 @@ html.shot .tabbar { position: static; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs .t { white-space: nowrap; }
 html[data-modal] .mock-notes { display: none; }
+/* Screenshots: the backdrop spans the whole document, not just the first viewport. */
+html.shot, html.shot body { position: relative; }
+html.shot[data-modal] body { height: auto; overflow: visible; min-height: 100vh; }
+@media (min-height: 641px) { html.shot .scrim:not(.inline) { position: absolute; inset: 0; align-items: flex-start; padding-top: 72px; } }
 </style>
 <style>.entry2{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-bottom:1px solid var(--line)}.entry2:last-child{border-bottom:0}details summary{cursor:default;margin:4px 0}</style>
 <script>window.__views=["default","note"];window.__modal=["note"];(function(){var q=new URLSearchParams(location.search),r=document.documentElement;var t=q.get("theme");if(t)r.setAttribute("data-theme",t);

@@ -297,6 +297,11 @@ html.shot .tabbar { position: static; }
 .stepper, .seg { align-self: flex-start; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs .t { white-space: nowrap; }
+html[data-modal] .mock-notes { display: none; }
+/* Screenshots: the backdrop spans the whole document, not just the first viewport. */
+html.shot, html.shot body { position: relative; }
+html.shot[data-modal] body { height: auto; overflow: visible; min-height: 100vh; }
+@media (min-height: 641px) { html.shot .scrim:not(.inline) { position: absolute; inset: 0; align-items: flex-start; padding-top: 72px; } }
 </style>
 <style>.pg{max-width:1216px;margin:0 auto;display:flex;flex-direction:column;gap:32px}.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;align-items:start}.span2{grid-column:span 2}
   figure{margin:0}.paper.pad{padding:24px}.pg .mock-notes{margin:0;background:var(--surface);color:var(--ink-2)}.paper-cap{max-width:60ch;margin-inline:auto}

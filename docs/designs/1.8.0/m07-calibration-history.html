@@ -298,6 +298,10 @@ html.shot .tabbar { position: static; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs .t { white-space: nowrap; }
 html[data-modal] .mock-notes { display: none; }
+/* Screenshots: the backdrop spans the whole document, not just the first viewport. */
+html.shot, html.shot body { position: relative; }
+html.shot[data-modal] body { height: auto; overflow: visible; min-height: 100vh; }
+@media (min-height: 641px) { html.shot .scrim:not(.inline) { position: absolute; inset: 0; align-items: flex-start; padding-top: 72px; } }
 </style>
 <style>.vgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px 16px;margin:0}.vgrid dd{margin:0}.entry{display:flex;flex-direction:column;gap:8px;padding:16px;border-bottom:1px solid var(--line)}.entry:last-child{border-bottom:0}.entry.now{background:var(--sunken)}.seq{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;border-radius:50%;background:var(--ink);color:var(--surface);font-size:13px}
   @media (max-width:639px){.vgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}</style>

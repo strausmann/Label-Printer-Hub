@@ -298,6 +298,10 @@ html.shot .tabbar { position: static; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs .t { white-space: nowrap; }
 html[data-modal] .mock-notes { display: none; }
+/* Screenshots: the backdrop spans the whole document, not just the first viewport. */
+html.shot, html.shot body { position: relative; }
+html.shot[data-modal] body { height: auto; overflow: visible; min-height: 100vh; }
+@media (min-height: 641px) { html.shot .scrim:not(.inline) { position: absolute; inset: 0; align-items: flex-start; padding-top: 72px; } }
 </style>
 <style>.cgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:0;padding:0;list-style:none}.cell{position:relative;display:flex;flex-direction:column;justify-content:center;gap:2px;aspect-ratio:38.1/21.18;padding:4px 6px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);overflow:hidden;font-size:13px;min-width:0}
   .cn{position:absolute;top:2px;left:4px;font-size:11px;color:var(--cell-number)}.cell .ctext1{display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;overflow:hidden;margin-top:8px}.cell .ctext{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
