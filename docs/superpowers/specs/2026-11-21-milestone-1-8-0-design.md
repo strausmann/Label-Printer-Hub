@@ -6,15 +6,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Milestone 1.8.0 — Design: sheets and calibration
 
 **Date:** 2026-11-21
-**Status:** Draft for the maintainer's review. Decisions the issues and the code did not settle are marked
-**Design call** with a one-line reason; questions only the maintainer can answer are in
+**Status:** Approved design (operator, 2026-11-21; mockups approved at `d50b3c72`, section 11). Decisions the issues
+and the code did not settle are marked **Design call** with a one-line reason; the operator's answers are in
 [section 13](#13-questions-for-the-maintainer).
 **Milestone:** 1.8.0 (minor: `feat` and `fix` commits, no `!`, no `BREAKING CHANGE:` footer)
 **Branch:** `milestone/1.8.0`, created from `main` after v1.7.1 (it does not exist yet)
 **Code base read:** `main` at `40bb6566`. Every statement about existing behaviour below names the file and line it was
 read from; line numbers refer to that commit.
-**Issues (21):** sheet ID #326, #246, #403 · sheet types #335, #342, #219 · calibration #240, #241, #336, #351, #220 ·
-cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247, #256, #395 · printer model #259 (added by the operator on 2026-11-21). Read with
+**Issues (22):** sheet ID #326, #246, #403 · sheet types #335, #342, #219 · calibration #240, #241, #336, #351, #220 ·
+cells and archive #248, #298, #204 · fixes and hardening #407, #405, #401, #247, #256, #395 · printer model #259 · release notes #408 (both added by the operator on 2026-11-21). Read with
 `gh issue view <n> --repo strausmann/labelyard --json body,comments` (plain `gh issue view` fails on the Projects
 (classic) sunset).
 **Plan:** to be written after this design is accepted (`docs/superpowers/plans/2026-11-21-milestone-1-8-0.md`).
@@ -40,6 +40,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
   printer that could not be wired (#401), public links for integrations (#247), the QL hardware check (#256) and the
   split of the tape backend (#395).
 - The Brother QL-1110NWB prints on 102 mm continuous DK rolls (#259).
+- Every minor and major release carries maintainer-written highlights above the generated lists (#408).
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -61,6 +62,7 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
 - Per-row or per-column printer corrections (the reserved `printer_calibrations.corrections` column,
   `backend/app/models/printer_calibration.py:39-40`). The fit stays affine.
 - A queue cap per printer or key (#402, 1.10.0).
+- Grocy label dates (#409) and the Fridge Assistant print target (#410), both 1.9.0.
 - Photo attachments for the sheet-type log (#351 "attach photos"): left to #333, which owns photo storage.
 
 ### Anti-goals (a failure even if it technically works)
@@ -954,7 +956,53 @@ the tester. **Other DK widths and die-cut labels stay in #155 (1.10.0).**
   tape in the existing tape and preset selectors. The README model list and the website hardware page (en + de) gain
   the model; the 102 mm preview gets a generated screenshot.
 - **Tester step (release checklist):** a print on 102 mm continuous, a status query (tape width reported as 102 mm),
-  and the SNMP serial, from the community tester's hardware, recorded in #259. The release waits for the report.
+  and the SNMP serial, from the community tester's hardware, recorded in #259. The release waits for the report. The
+  tester's Grocy and Spoolman use (#11) prints through the existing integrations; the Grocy label dates (#409) and the
+  Fridge Assistant print target (#410) are 1.9.0 and not part of this test.
+- **Upstream PR (operator, 2026-11-21):** approved, adding `QL-1110NWB` to the `restricted_to_models` of label `"102"`
+  in brother-ql-next — but submitted only **after** the tester has confirmed the 102 mm print, and the PR text is shown
+  to the operator before it is submitted. Not a release blocker: the hub works with 0.12.0 as it is (the pinning test
+  above).
+
+### 9.8 Maintainer-written release highlights (#408)
+
+**How notes and versions are computed today:**
+
+| Fact | Evidence |
+|---|---|
+| Plugins run in this order: commit-analyzer, release-notes-generator (conventionalcommits, Features / Bug Fixes / Performance / Reverts shown), changelog (`CHANGELOG.md`), github (draft release), git (commits `CHANGELOG.md` with `${nextRelease.notes}` in the message), exec | `.releaserc.json` |
+| The exec entry's `verifyReleaseCmd` runs `python3 scripts/release_impact.py guard --repo … --next … --last …`; its `publishCmd` writes `version=` to `$GITHUB_OUTPUT` | `.releaserc.json` (last plugin) |
+| The guard allows the next patch always, a minor/major only when a merged milestone matches the computed version and has no open (unwaived) issue | `scripts/release_impact.py:555-559,590-630` |
+| `release-tools.yml` proves a tooling update computes versions and notes as `release_impact.py` expects: `scripts/release_dry_run.sh --all` (versions) and `--notes 'feat(ui): add a thing'` must contain `### Features` | `.github/workflows/release-tools.yml:59-75`; `scripts/release_dry_run.sh:11-60` |
+| After publishing, `release.yml` appends a "Licence changes" section to the draft notes unless the body already has a line `^## Licence changes` (the marker #405 replaces with a unique one) | `.github/workflows/release.yml:295-345` |
+| `release.yml` has a `dry_run` input for the semantic-release run | `.github/workflows/release.yml:50,124` |
+
+semantic-release's `verifyRelease` step runs before `generateNotes`, so a guard refusal happens before any notes or
+tags exist; and the notes of every plugin implementing `generateNotes` are concatenated in plugin order into
+`nextRelease.notes`, which the changelog, github and git plugins all use.
+
+**Design:**
+
+- `release-notes/<version>.md` per minor and major release, committed on the milestone branch; plain Markdown, a few
+  highlights, images allowed as links to files in the repository (`docs/designs/…`). It must not contain the licence
+  marker of `release.yml` (checked by the guard).
+- A **second `@semantic-release/exec` entry, placed before `@semantic-release/release-notes-generator`**, with only
+  `generateNotesCmd`: `python3 scripts/release_impact.py highlights --next "${nextRelease.version}"`. The subcommand
+  prints the file followed by a blank line if it exists and nothing otherwise. **Design call:** a subcommand instead of
+  `cat`, so the path is built from a version validated by `parse_version` (`release_impact.py:243-247`) and the logic is
+  unit-tested with the rest of the script. The existing exec entry (guard, publish) stays last.
+- **Guard:** `guard_decision` (`release_impact.py:590`) gains the rule: a computed version that is not the next patch
+  (that is, a minor or major, the case `guard_allows` already distinguishes, `:555-559`) is refused when
+  `release-notes/<version>.md` is missing, empty, or carries the licence marker — `release blocked: release-notes/1.8.0.md
+  is missing`. Patch releases pass without a file.
+- **PR check:** the `check` mode for a milestone PR into `main` (`run_check`, `:505`) reports the missing file as an
+  error too, so the gap shows on the PR and not only at release time. **Design call:** fail early, because the guard
+  runs only in the nightly or manual release.
+- **Release tooling:** `release_dry_run.sh --notes` gains an option to place a sample `release-notes/<next>.md` in the
+  throw-away repository; `release-tools.yml` asserts that its text appears **above** `### Features` in the computed
+  notes.
+- **Docs:** CONTRIBUTING.md, section "Releases", describes the file and the rule.
+- `release-notes/1.8.0.md` is written in the release task (task 23).
 
 ## 10. Dependencies and build order
 
@@ -998,7 +1046,8 @@ graph TD
 | 19 | Cell labels | #248 | 5 | M13 |
 | 20 | Release cells | #298 | 19 (same panel) | — |
 | 21 | QL-1110NWB: driver, per-model tape tables, 102 mm geometry and preset | #259 | — | none (no new UI surface) |
-| 22 | Device checks, release | #256, #259, all | 1–21 | — |
+| 22 | Release highlights: exec entry, `highlights` subcommand, guard and PR-check rule, dry-run assertion, CONTRIBUTING | #408 | — | none (no UI) |
+| 23 | Device checks, `release-notes/1.8.0.md`, release | #256, #259, #408, all | 1–22 | — |
 
 **Operator steps in the release checklist** (the release waits for them):
 
@@ -1006,6 +1055,10 @@ graph TD
   task 10c turns them into the Avery Zweckform preset.
 - The QL-820NWB device check of #256 (62 mm endless print, status query), recorded in the issue.
 - The community tester's QL-1110NWB report for #259: a 102 mm continuous print, a status query and the SNMP serial.
+- `release-notes/1.8.0.md` written by the maintainer (or drafted in task 23 and approved by the maintainer) and
+  committed on `milestone/1.8.0` before the milestone PR; the guard refuses 1.8.0 without it (#408).
+- **Not a release blocker:** after the tester's 102 mm confirmation, the brother-ql-next upstream PR for #259 is shown
+  to the operator and then submitted (section 9.7).
 - Close #342 with the 2026-11-21 test-print evidence; close #326 as superseded by #350 (controller).
 
 Tasks 1–6, 9 and 13 have no dependency between them; with one implementer at a time (4 cores) the order above front-
@@ -1014,7 +1067,11 @@ loads the small fixes and the migrations that later tasks build on.
 ## 11. Mockups before code
 
 Operator rule: a design question is agreed on a mockup before code. Each mockup is a static page (light and dark, 1280
-and 390 px) in `docs/designs/1.8.0/`, approved in its issue before the task starts.
+and 390 px) in `docs/designs/1.8.0/`.
+
+**Approved:** M1–M5 and M7–M13 were approved by the operator on 2026-11-21 in the state of commit `d50b3c72`
+(M6 was dropped with #342's inset). The builder builds against that state; a change to an approved mockup needs a new
+approval.
 
 | ID | Screen / dialog | The mockup must show |
 |---|---|---|
@@ -1151,6 +1208,11 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #247 | `web_url` override for user-facing links; validation; env-lockable; no link without it; no internal URL to non-admins; de/en | 9.4 |
 | #256 | Device check on a QL-820NWB | 9.5 |
 | #395 | Split along status, IPP transport, raw send; tests unchanged | 9.6 |
+| #408 | Highlights file per minor/major release, injected by a second exec `generateNotesCmd` before the notes generator | 9.8 |
+| #408 | Guard refuses a minor/major without the file, patch passes; tests for both | 9.8, 16 |
+| #408 | `release-tools.yml` consistent; dry run shows the text above Features/Bug Fixes | 9.8, 16 |
+| #408 | CONTRIBUTING.md "Releases" describes the file and the rule | 9.8 |
+| #408 | `release-notes/1.8.0.md` exists before the 1.8.0 release | 9.8, section 10 release checklist |
 | #259 | Register the QL-1110NWB via the QL entry point (#207) | 9.7 |
 | #259 | Label geometry for 102 mm continuous (other DK widths and die-cut stay in #155) | 9.7 |
 | #259 | Across-width layout preset for 102 mm (#258 rule) | 9.7 |
@@ -1174,7 +1236,7 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 | B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
 | C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number); **for every catalog type on a printer with a 5 mm unprintable edge** (and on one reporting 3 mm and 8 mm): every drawn element and both run-line slots lie inside the printable area, the slots overlap neither pass 1's blocks, nor a page-code spot, nor each other, every page code lies in a spot clear of cell numbers, cell QRs, corner marks, scales, rulers and S/Z labels (6121: codes in cells 1, 5, 61, 65 with their cell QRs kept), the number of page codes drawn equals the number the print dialog announces; a sheet type whose margin holds no two slots prints passes 2 and 3 without a run line, warns before pass 1, and still records both passes; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
-| E | QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
+| E | Release highlights (`scripts/test_release_impact.py`): `highlights` prints the file and nothing when it is missing; a malformed version is refused; the guard refuses a minor and a major without the file, with an empty file and with the licence marker, and passes with the file and for a patch without it; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
 Every UI task takes light and dark screenshots at 1280 and 390 px (`pnpm screenshots`).
 
