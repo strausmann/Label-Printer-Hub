@@ -1125,14 +1125,24 @@ sealed under D5 with `SecretBox` (AES-256-GCM, token `v1.<nonce>.<ciphertext>`, 
   not open (wrong or missing key, damaged value) raises `UndecryptableSecret`: the printer is not wired with
   `wiring_reason = "secret_undecryptable"` (section 9.3), the log names the printer slug and the class only. **No
   plaintext fallback**, also not for a row that still holds `community` after a failed migration.
-- Writes seal on create and update; an update that keeps the stored community (R-296-5) keeps the **stored token**
-  unchanged. **Design call:** re-seal only when the value changes, because the wiring key hashes the connection JSON
-  (`printer_runtime.py:200-229`) and a fresh nonce on every save would re-wire the printer for nothing.
+- **Writes never need the old token** (re-review V4), so a key change can always be repaired through the API:
+  - a non-empty community: if the stored token opens and holds the same value, the stored token is kept unchanged;
+    otherwise (different value, no token, **or a token that does not open**) the new value is sealed fresh — the
+    recovery path after a key change;
+  - `null` / omitted (keep, R-296-5): a stored token that opens is kept unchanged (the R-296-5a target rule stays,
+    `printer_admin_service.py:199-226`); a stored token that **does not open** → 422 `snmp_community_required` (the
+    existing error), so the admin sends the value; no stored community → `"public"` sealed, as today.
+  **Design call:** keep the stored token byte for byte when nothing changed, because the wiring key hashes the
+  connection JSON (`printer_runtime.py:200-229`) and a fresh nonce on every save would re-wire the printer for nothing.
 - The audit trail redaction (`services/audit_redaction.py:20`) also drops `community_sealed`.
-- **Migration E2, an Alembic revision** (chained after the other 1.8.0 migrations): upgrade seals every stored
-  `community` in place and removes the plaintext; downgrade opens every token and writes `community` back (the S11 way
-  back holds). The revision reads `LABELYARD_SECRET_KEY` from the same settings the app uses; without a valid key it
-  stops with a clear error before changing any row, in both directions.
+- **Migration E2, an Alembic revision** (chained after the other 1.8.0 migrations) reads **only the secret key**:
+  `load_secret_key()` in `app/config.py` builds a settings model holding just `secret_key`, with the same env prefix,
+  legacy-prefix and `.env` sources as `Settings`, and `check_secret_key()` (extracted from
+  `Settings.validate_secret_key`, `config.py:259-270`, which then calls it) checks it — so a migration never fails on an
+  unrelated missing setting. Both directions are check-then-write: **upgrade** loads the key (missing or malformed →
+  stop), opens **every** row that already has `community_sealed` (any failure = wrong key → stop), and only then
+  replaces each plaintext `community` by `community_sealed`; **downgrade** loads the key, opens every token, and only
+  then writes the plaintext back (the S11 way back). A stop changes no row.
 - Responses do not change (`community_set` stays).
 - ADR 0017 amendment and a register label (section 3.6).
 
@@ -1151,6 +1161,12 @@ sealed under D5 with `SecretBox` (AES-256-GCM, token `v1.<nonce>.<ciphertext>`, 
 
 **Design:**
 
+- **Controller ruling (2026-11-21): nothing wired today may become unwired.** Today's ptouch class map
+  (`ptouch_backend.py:51-57`) wires six models, but only the PT-P750W has a plugin driver; a stored row for one of the
+  other five is wired today through that map. They become plugin drivers in `printer_models/pt.py` — `PT-E550W`,
+  `PT-P900`, `PT-P900W`, `PT-P910BT`, `PT-P950NW` — each with today's `ptouch` class, its id as PJL/SNMP signature, dpi
+  and pins from the class, and **`untested = True`**. The form shows a translated suffix for them (en " — not tested",
+  de „ — nicht getestet“). A test stores a row for each of them and asserts it is still wired after the change.
 - **Delete** `services/printer_model_registry.py` and its test.
 - Each driver declares its metadata as class attributes: `model_id`, `backend` (`ptouch` / `brother_ql`), `family`,
   `supported_tapes` (section 9.7), capabilities (cutter, two-colour), and for P-touch the `ptouch` library class it
@@ -1163,11 +1179,22 @@ sealed under D5 with `SecretBox` (AES-256-GCM, token `v1.<nonce>.<ciphertext>`, 
   de „Brother {model} (Band bis {width} mm)“. **Design call:** templates per family instead of one message per model,
   so a new model is added in exactly one place, the plugin (#413 acceptance); a translation per model would be a
   fourth list.
-- **Guard test** (a source scan, with the three disclosures of the repository's test rules): it searches `backend/app`
-  outside `app/printer_models/` and `frontend/src` outside tests and generated files for model-id literals
-  (`\b(PT|QL)-[A-Z0-9]{3,}\b`) and fails with file and line. It states in a comment that it cannot tell code from
-  comments and docstrings, so prose mentions (`QL-820NWB` in API descriptions) are allowed through a short, reasoned
-  allow-list of file:pattern pairs; it says why no behaviour test can prove "no second list".
+- **Guard test** (a source scan, with the three disclosures of the repository's test rules — what it cannot see, a
+  failure message with file and line, why no behaviour test can prove "no second list"). It matches model ids
+  (`\b(PT|QL)-[A-Z0-9]{3,}\b`) **only inside string literals**:
+  - **Python** (`backend/app/**/*.py` outside `app/printer_models/`): `STRING` (and `FSTRING_MIDDLE`) tokens from
+    `tokenize`, so comments never count; docstrings (module, class, function and attribute docstrings, found with
+    `ast`) are skipped.
+  - **TypeScript** (`frontend/src/**/*.{ts,tsx}`): a documented simple rule — strip `//` and `/* … */` comments, then
+    match only inside `"…"`, `'…'` and `` `…` `` literals. Excluded with reasons: `*.test.*`, `e2e/`, the generated
+    `api/schema.gen.ts` and `locales/`, and the test fixtures `features/test-api.ts`, `**/testkit.ts`, `**/*.kit.tsx`;
+    a second test, `test_excluded_fixtures_are_not_imported_by_app_code`, checks that no non-test module imports
+    those fixtures.
+  - **Allow-list: exactly two reasoned entries**, both API prose stating a hardware fact: `app/api/routes/batch.py:88`
+    (the batch description: whether a QL-820NWB reports the end of a DK roll is not verified) and
+    `app/schemas/batch_read.py:57` (the same fact in the `stop_kind` description). The defaults
+    (`brother_ql_backend.py:262`, `ptouch_backend.py:276,324`), the class map and `test_label.py:54` are removed, not
+    allowed.
 - **Contract test:** the printer read and admin responses are byte-identical before and after (the new endpoint is the
   only addition).
 - **Order:** this task (20b) lands **before** task 21, so the QL-1110NWB is added in exactly one place: its driver.
@@ -1397,6 +1424,10 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #413 | Display names from translations in both locales | 9.10 |
 | #413 | QL-1110NWB added in exactly one place | 9.10, 9.7 (task 21 after 20b) |
 | #413 | ADR 0004 amendment (entry points as used today) | 3.6, 9.10 |
+| controller 2026-11-21 (#413) | Nothing wired today becomes unwired: PT-E550W, PT-P900, PT-P900W, PT-P910BT, PT-P950NW become plugin drivers marked `untested` with today's `ptouch` class; translated "not tested" suffix in the form; stored rows stay wired (test) | 9.10 |
+| controller 2026-11-21 (#413) | Guard scans string literals only (Python `tokenize` without docstrings, documented TS rule); exactly two reasoned allow-list entries (`batch.py:88`, `batch_read.py:57`); fixtures `test-api.ts`, `testkit.ts`, `*.kit.tsx` excluded with an import check | 9.10, 16 |
+| re-review V4 (#412) | A write never needs the old token: a new value is sealed fresh when the stored token does not open; keep with an unopenable token → 422 `snmp_community_required` | 9.9, 16 |
+| re-review s2 (#412) | E2 reads only the secret key (`load_secret_key()`, `check_secret_key()`) and opens every sealed row (and on downgrade every token) before changing anything | 9.9, 16 |
 | operator 2026-11-21 | ADR work part of the tasks: 0028, 0029, 0033, 0034 new; 0024, 0021, 0023, 0004, 0025, 0017 amended; all Accepted in the release task | 3.6, 10 |
 | #259 | Register the QL-1110NWB via the QL entry point (#207) | 9.7 |
 | #259 | Label geometry for 102 mm continuous (other DK widths and die-cut stay in #155) | 9.7 |
@@ -1421,7 +1452,7 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 | B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
 | C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number); **for every catalog type on a printer with a 5 mm unprintable edge** (and on one reporting 3 mm and 8 mm): every drawn element and both run-line slots lie inside the printable area, the slots overlap neither pass 1's blocks, nor a page-code spot, nor each other, every page code lies in a spot clear of cell numbers, cell QRs, corner marks, scales, rulers and S/Z labels (6121: codes in cells 1, 5, 61, 65 with their cell QRs kept), the number of page codes drawn equals the number the print dialog announces; a sheet type whose margin holds no two slots prints passes 2 and 3 without a run line, warns before pass 1, and still records both passes; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
-| E | SNMP community (#412): after migration E2 the raw `printers.connection` row holds no plaintext community (test reads the row with SQL); status and preflight work with the sealed value; upgrade then downgrade on a populated database restores the plaintext rows byte for byte; a token copied to another printer does not open; a missing or wrong key stops the migration before any change and leaves the printer `not_wired` / `secret_undecryptable` at runtime with no plaintext fallback; keeping the community keeps the token (no re-wire). Model metadata (#413): guard scan red with a planted `"QL-9999"` literal outside the plugins (counter-test) and naming file and line; printer read/admin responses byte-identical before and after; `GET /api/v1/printer-models` lists exactly the registered drivers; the form shows translated names in en and de; deleting `printer_model_registry.py` leaves no import. Release highlights (`scripts/test_release_impact.py`): `highlights` prints a valid file and nothing when it is missing, exits non-zero on an invalid one; a malformed version is refused; the validator passes `TEMPLATE.md` (template mode), the released `1.6.0.md` and `1.7.0.md` and a sample valid file, ignores a heading or item inside an HTML comment, still finds the licence marker inside a comment, and `highlights` prints without comments; the wrapper plugin places the highlights under `## [x.y.z]` above `### Features` in the release body and in `CHANGELOG.md` and leaves the notes unchanged without a file; and refuses each reason on its own (no summary, Highlights missing, Highlights not first, 3 and 8 items, an item without issue link, sections out of order, a repeated section, an unknown heading, a `#` line inside a code fence accepted, the licence marker in both forms, an empty file) and reports several reasons at once; the guard refuses a minor and a major without the file and with an invalid one, and passes with a valid file and for a patch without it; `check` reports on a milestone PR and on a PR touching `release-notes/` only; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
+| E | SNMP community (#412): after migration E2 the raw `printers.connection` row holds no plaintext community (test reads the row with SQL); status and preflight work with the sealed value; upgrade then downgrade on a populated database restores the plaintext rows byte for byte; a token copied to another printer does not open; a missing or wrong key stops the migration before any change and leaves the printer `not_wired` / `secret_undecryptable` at runtime with no plaintext fallback; keeping the community keeps the token (no re-wire); a new value after a key change is sealed fresh, a keep after a key change answers 422 `snmp_community_required`; `load_secret_key()` works with every other setting missing; upgrade with a wrong key and one already-sealed row changes nothing. Model metadata (#413): guard scan red with a planted `"QL-9999"` string literal outside the plugins (counter-test) and naming file and line, and green for the same id in a comment or docstring; exactly the two allow-list entries remain; a non-test module importing a fixture is red; each of the five former map models stays wired from a stored row and is marked untested; printer read/admin responses byte-identical before and after; `GET /api/v1/printer-models` lists exactly the registered drivers; the form shows translated names in en and de; deleting `printer_model_registry.py` leaves no import. Release highlights (`scripts/test_release_impact.py`): `highlights` prints a valid file and nothing when it is missing, exits non-zero on an invalid one; a malformed version is refused; the validator passes `TEMPLATE.md` (template mode), the released `1.6.0.md` and `1.7.0.md` and a sample valid file, ignores a heading or item inside an HTML comment, still finds the licence marker inside a comment, and `highlights` prints without comments; the wrapper plugin places the highlights under `## [x.y.z]` above `### Features` in the release body and in `CHANGELOG.md` and leaves the notes unchanged without a file; and refuses each reason on its own (no summary, Highlights missing, Highlights not first, 3 and 8 items, an item without issue link, sections out of order, a repeated section, an unknown heading, a `#` line inside a code fence accepted, the licence marker in both forms, an empty file) and reports several reasons at once; the guard refuses a minor and a major without the file and with an invalid one, and passes with a valid file and for a patch without it; `check` reports on a milestone PR and on a PR touching `release-notes/` only; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
 Every UI task takes light and dark screenshots at 1280 and 390 px (`pnpm screenshots`).
 
