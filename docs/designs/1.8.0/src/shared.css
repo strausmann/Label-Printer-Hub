@@ -288,3 +288,4 @@ html.shot .tabbar { position: static; }
 .stepper, .seg { align-self: flex-start; }
 .tabs { overflow-x: auto; scrollbar-width: none; }
 .tabs .t { white-space: nowrap; }
+html[data-modal] .mock-notes { display: none; }

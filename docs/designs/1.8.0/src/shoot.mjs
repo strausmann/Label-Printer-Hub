@@ -36,8 +36,13 @@ for (const f of files) {
         await p.evaluate(() => document.fonts.ready);
         await p.screenshot({ path: join(root, "png", `${page.file}${suffix}-${w}-${theme}.png`), fullPage: true });
         if (page.paper && v.id === "default") {
-          const el = p.locator(".paper").first();
+          const hi = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: "light", deviceScaleFactor: 3 });
+          const hp = await hi.newPage();
+          await hp.goto(url(theme));
+          await hp.evaluate(() => document.fonts.ready);
+          const el = hp.locator(".paper").first();
           if (await el.count()) await el.screenshot({ path: join(root, "png", `${page.file}${suffix}-a4-light.png`) });
+          await hi.close();
         }
         await ctx.close();
       }

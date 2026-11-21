@@ -41,6 +41,8 @@ for k, run in RUN_BY_PASS.items():
 # the longest page payload of section 7.2, drawn in the zoom of M3
 longest = "LYC1:999999:0:AAAAAAAAAA:1000000:-1000:-1000:-50000:-50000:-2000000:K99:PX100000:PY100000:MT100000:ML100000"
 out[longest] = path(longest, 5)
+longest_cell = "LYC1:999999:400:K99"
+out[longest_cell] = path(longest_cell, 1)
 for forbidden in ("@", "://", "mailto:", "tel:", "sms:", "WIFI:", "geo:", "BEGIN:"):
     assert not any(forbidden in key for key in out), forbidden
 json.dump(out, open("qr-data.json", "w"), separators=(",", ":"))

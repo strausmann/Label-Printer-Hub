@@ -21,3 +21,15 @@ export const LEGEND = `<ul class="row wrap-row g16 small muted" aria-label="Lege
   <li class="row g8"><svg width="22" height="14" aria-hidden="true"><rect x="1" y="1" width="20" height="12" fill="var(--info-soft)" stroke="var(--link)" stroke-width="2"/></svg>Sheet code</li>
   <li class="row g8"><svg width="22" height="14" aria-hidden="true"><rect x="1" y="1" width="20" height="12" fill="none" stroke="var(--bad)" stroke-dasharray="3 2"/></svg>Refused or does not fit</li>
   <li class="row g8"><svg width="22" height="14" aria-hidden="true"><rect x="1" y="1" width="20" height="12" fill="var(--accent-soft)" stroke="var(--accent)"/></svg>Label</li></ul>`;
+
+import { GEOM, sheetSvg, btn as _btn } from "./lib.mjs";
+
+/** A small drawing of a sheet type (labels only). */
+export const thumb = (g, w = 52) => `<span style="display:block;width:${w}px;flex:none">${sheetSvg({ g, cellClass: "sv-cell", label: `${g.name}` })}</span>`;
+
+/** Page header of the sheet archive with its two tabs. */
+export function archiveHead(tab, { admin = true, counts = [6, 39], compact = false } = {}) {
+  return `<div class="col g16">${compact ? "" : `<div class="row between wrap-row"><h1 class="title">Sheet archive</h1>
+    ${admin ? `<div class="row g8 wrap-row">${_btn("New type", "primary")}${_btn("Import type")}</div>` : ""}</div>`}
+    <div class="tabs" role="tablist"><span class="t${tab === "installed" ? " on" : ""}" role="tab">Installed <span class="count">${counts[0]}</span></span><span class="t${tab === "catalog" ? " on" : ""}" role="tab">Catalog <span class="count">${counts[1]}</span></span></div></div>`;
+}
