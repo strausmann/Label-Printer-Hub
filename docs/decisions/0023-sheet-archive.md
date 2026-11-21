@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Date:** 2026-11-10
 - **Deciders:** maintainer
 - **Decision labels:** D13, D14, D15, D16, D17, D19 (D18 is [0020](0020-backend-kinds-ipp-page-printers.md))
+- **Amended:** 2026-11-21 (#334, #350) — seed corrections and adoption, sheet code placement and backing designs as shipped in 1.7.0, and the open D19 violation, see "Amendment — 2026-11-21" at the end
 - **Related:** [0020](0020-backend-kinds-ipp-page-printers.md) (page printers over IPP), [0005](0005-print-queue-is-mandatory.md)
 
 ## Context
@@ -55,3 +56,27 @@ Label sheets (A4 or Letter die-cut sheets) are printed on ordinary office printe
 - Spec: `docs/superpowers/specs/2026-11-05-sheet-archive-design.md` (sections 6 to 13, 20)
 - Register: [register.md](register.md)
 - Related ADRs: [0005](0005-print-queue-is-mandatory.md), [0020](0020-backend-kinds-ipp-page-printers.md)
+
+## Amendment — 2026-11-21 (ADR audit): as shipped in 1.7.0
+
+### Seed: corrections and adoption (#334)
+
+The bullet "Seed" above still holds for an ordinary seeded type: the seeder adds a new version only when every version of the type came from the seeder, no sheet uses it and the shipped geometry differs (`backend/app/seed/sheet_seed.py:8-12`). Since 1.7.0 the seed file carries two exceptions (`sheet_seed.py:19-29`), each applied once per revision and recorded in `app_settings` (`internal.seed.adopted`, `internal.seed.corrected`):
+
+- **`corrections`**: a shipped type whose shipped geometry was wrong gets the corrected geometry as its next version **even when sheets use it**, but only while it is still on the old shipped geometry; a locally edited geometry is left alone. Sheets keep the version they pinned (D14), so a correction never moves cells of a sheet in use; new sheets get the corrected version.
+- **`adopt`**: a key that already exists as a user's own type is taken over as shipped (`origin="seed"`, verified); a different current geometry becomes the next version. Prefix, vendor, product codes, description and the QR switch stay the user's.
+
+Each takeover leaves one notice for the notification centre (`internal.notices`). This replaces the sentence "a seeded type is never changed automatically once a sheet uses it" for the types the seed lists under `corrections`.
+
+### Where the sheet code goes, and backing designs (#350)
+
+A sheet type stores where the code of a new sheet goes (`id_placement`: `auto`, `margin`, `back_side` or `cell`), the preferred ID cell of a `cell` sheet (`id_cell`) and the vendor print on the back of its liner (`backing_design_id`) (`backend/app/models/sheet.py:45-46,66-76`). `auto` resolves to `margin` or `back_side`, never to `cell`: with a printer the margin check decides, without one the geometry does, assuming a 5 mm hardware margin (`backend/app/sheets/id_placement.py:4-8`). A sheet records the placement it got (`cell`, `margin`, `manual` or `back_side`; `sheet.py:125-126`).
+
+- **Back of the liner.** A `back_side` sheet gets a 22 × 62 mm code strip with QR, sheet code, type and date on the back, placed in the first free strip of its backing design, or at (10, 10) mm without one; no calibration applies (`backend/app/sheets/back_side.py:4-14`). A tray loading test page lets the person find out which way a sheet goes into a tray (`back_side.py:16-18`).
+- **Extra code and reprints.** `POST /api/v1/sheets/{code}/back-side` prints the strip again, or adds an extra code on the back of a sheet whose code is already printed; `…/back-side/confirm` confirms it (`backend/app/api/routes/sheets.py:394-405,450`). `POST /api/v1/sheets/{code}/margin-id` prints only the margin code of a printed `margin` sheet again, without reserving a cell (`sheets.py:477-483`).
+- **Backing designs** are rows of their own with the free strips of the back side in hundredths of a millimetre (D16; `backend/app/models/backing_design.py`). The seed ships designs and links shipped types to them once; a design an admin deleted is not inserted again, and a user's later choice is never overwritten (`sheet_seed.py:33-41`).
+
+### D19 is violated by one import path
+
+D19 stands: an imported type is never marked verified. A type created by an import is stored with `verified=False` (`backend/app/sheets/exchange.py:354`), but an import in mode `new_version` into an existing, verified type adds the version and leaves the type's `verified` flag as it was (`exchange.py:412-417`, `backend/app/sheets/type_service.py:402-419`). That is a code defect against D19, not a change of the decision; milestone 1.8.0 fixes it (#204, item 5).
+

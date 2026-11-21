@@ -7,6 +7,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 - **Status:** Accepted
 - **Amended by:** [0020](0020-backend-kinds-ipp-page-printers.md) — for IPP page printers a job that is printing can be cancelled (Cancel-Job) and may end `cancelled`; the rule below stays for TCP/9100 streams
+- **Amended by:** [0030](0030-confirmed-tape-prints.md) — a tape job may be sent as an IPP Print-Job and counts as `done` only when the printer confirms it; an outcome the hub cannot learn pauses the printer, a single job included
+- **Amended:** 2026-11-21 — job states, retry link and job pause as built, see "Amendment — 2026-11-21" at the end; the decision is unchanged
 - **Amended:** 2026-11-09 (#226) — every API route now lives under `/api/v1/`; the paths quoted below are the original ones, the decision is unchanged
 - **Date:** 2026-05-10
 - **Deciders:** maintainer
@@ -96,3 +98,13 @@ queued ──► printing ──► completed
 - Brother Raster Command Reference v1.02, sections 1 ("Printing using raster commands") and 5 ("Flow charts")
 - Issue [#13](https://github.com/strausmann/label-printer-hub/issues/13) — print queue with full lifecycle
 - Related: ADR 0001 (two-container), ADR 0002 (Python backend), ADR 0006 (status sources during print)
+
+## Amendment — 2026-11-21 (ADR audit): job states, retry link and job pause as built
+
+The decision (persist first, one worker per printer, nothing cancelled mid-print on TCP/9100) stands. Three details of the text above do not describe the code:
+
+- **Job states.** A stored job, and the job the API returns, is in one of `queued`, `printing`, `done`, `failed`, `cancelled` and `failed_restart` (`backend/app/models/job.py:30-36`). A printed job is `done`, not `completed`. The queue's in-memory state machine still declares `paused` and `completed` (`backend/app/services/job_lifecycle.py:39-46`), but no code moves a job into `paused`.
+- **No pause for a single job.** `POST /api/v1/jobs/{id}/pause` and `/resume` answer `501` (`backend/app/api/routes/jobs.py:359-411`). What pauses is the printer: the worker stops picking jobs, manually (`POST /api/v1/printers/{id}/pause` and `/resume`, `backend/app/api/routes/printers.py:670,705`) or after a recoverable printer error, which `POST /api/v1/printer/resume` also releases (`backend/app/api/routes/print.py:106`; `PrintQueue.pause_printer` and `resume_printer`, `backend/app/services/print_queue.py:2359,2421`). The rows "Pause job" and "Resume job" and the `paused` job state therefore do not exist, and "Priority" is not built. "Clear queue" is built for `queued` jobs (`POST /api/v1/printers/{id}/queue/clear`, `printers.py:771`).
+- **Retry link.** A retry writes a new job whose payload carries `retry_of`, the id of the failed job (`jobs.py:509,593,663,699`), not a `parent_job_id` column.
+
+The tape transport and the pause on an unknown outcome are amended by [ADR 0030](0030-confirmed-tape-prints.md).

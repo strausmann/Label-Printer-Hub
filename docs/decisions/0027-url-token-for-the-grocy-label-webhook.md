@@ -8,6 +8,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Status:** Accepted
 - **Date:** 2026-11-14
 - **Deciders:** maintainer
+- **Decision labels:** D24, D26
+- **Amended:** 2026-11-21 (#366) — the hub writes its own access line with its own token redaction (D26), see "Amendment — 2026-11-21" at the end
 
 ## Context
 
@@ -66,3 +68,14 @@ The dependency is `require_print_token` (`backend/app/api/dependencies/token_aut
 - Issue: #281
 - Spec: `docs/superpowers/specs/2026-11-14-milestone-1-7-0-design.md`, section 6 (R-281-1, R-281-2, R-281-11)
 - Related ADRs: [0019](0019-proxy-headers-need-trust-token.md) (header trust), [0017](0017-settings-in-database-env-locks-encrypted-secrets.md)
+
+## Amendment — 2026-11-21 (ADR audit, #366): the hub's own access log (D26)
+
+The decision stands: a print-scope key in a literal `token=` parameter, admin keys refused, the token hidden from the hub's logs. Since 1.7.0 the hub's logs include an access log of its own:
+
+- **One line per request in nginx combined format**, on stdout, on the logger `labelyard.access`, which does not propagate, so the line never reaches the application log, the log buffer or stderr (`backend/app/observability/access_log.py:4-14,63`). It is installed at start (`backend/app/main.py:758`) and replaces uvicorn's access line, which is switched off (`access_log.py:296`). `LABELYARD_ACCESS_LOG` turns it off; health and readiness probes are left out unless `LABELYARD_ACCESS_LOG_PROBES` is set (`backend/app/config.py:146-152`).
+- **Its own redaction.** A URL `token` that holds a hub key is written as the key's public prefix followed by `***`; any other `token` value, and the value of every parameter whose name looks like a key, token, secret or password, becomes `***`; a value in the shape of a hub key anywhere in the request line, the referer or the user agent becomes `lh_pat_***` (`access_log.py:20-25`). No other header value is written.
+- **The filter of the decision stays.** `install_query_token_redaction` is still installed at start (`main.py:633`) and covers what uvicorn still writes on `uvicorn.error`.
+
+**D26 — the access line format is an external interface.** Log tools read it without a parser of their own (CrowdSec's `crowdsecurity/nginx-logs`, for example), so a change of the format or of what it redacts breaks those tools and needs the care of a breaking change. The consequence above about a reverse proxy's access log is unchanged: the proxy logs outside the hub.
+

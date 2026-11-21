@@ -10,6 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Deciders:** maintainer
 - **Supersedes:** ADR-0003
 - **Restates:** ADR-0010 (PWA progressive enhancement)
+- **Amends:** ADR-0009 (the React UI consumes the event stream as JSON)
 - **Decision label:** D2
 
 ## Context

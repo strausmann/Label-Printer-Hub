@@ -8,7 +8,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Status:** Accepted
 - **Date:** 2026-11-04
 - **Deciders:** maintainer
-- **Decision labels:** D4, D5, D6, D7
+- **Decision labels:** D4, D5, D6, D7, D25
+- **Amended by:** [0026](0026-rename-to-labelyard.md) — the environment prefix is `LABELYARD_`; the `PRINTER_HUB_` names below are read as a fallback
+- **Amended:** 2026-11-21 (#296, #412) — the SNMP community of a printer falls under D5 (D25), see "Amendment — 2026-11-21" at the end
 
 ## Context
 
@@ -50,3 +52,18 @@ Runtime settings live in the database and are editable through the settings API 
 
 - Spec: `docs/superpowers/specs/2026-11-03-web-ui-redesign-design.md` (sections 8 and 10)
 - Related ADR-0015, ADR-0019
+
+## Amendment — 2026-11-21 (ADR audit, #296, #412): the SNMP community of a printer (D25)
+
+Since 1.7.0 (#296) the SNMP community of a tape printer is set in the printer form. The API already treats it like a D5 secret:
+
+- **Write-only.** Responses never contain it; they show `connection.snmp.community_set` instead (`backend/app/services/printer_admin_service.py:231-241`; field description in `backend/app/schemas/printer_admin.py:37-53`).
+- **Bound to its SNMP target.** A request without a community keeps the stored one only for the same host and port; when either changes, the request is refused with `422 snmp_community_required`, so a stored community never follows the printer to another address (`printer_admin_service.py:204-226`).
+- **Kept out of the runtime's state.** The runtime keeps only a SHA-256 digest of the wiring key that holds the community (`backend/app/services/printer_runtime.py:226-229`).
+
+It is not encrypted at rest: it sits in plain text in the printer's `connection` JSON column (`backend/app/models/printer.py:38`), while D5 secrets are sealed with `LABELYARD_SECRET_KEY` (`backend/app/settings_store/store.py:7`). A copy or backup of the database therefore holds every community string.
+
+**Decision (maintainer, 2026-11-21): printer connection secrets fall under D5.** The SNMP community is stored encrypted with the D5 mechanism from milestone 1.8.0; existing values are migrated in place, and the downgrade decrypts them. This is #412, still open. Until it ships, the plain-text storage is the known gap, not an accepted exception. Register label D25.
+
+The environment names in the text above use the old `PRINTER_HUB_` prefix; since ADR 0026 they are `LABELYARD_`, with the old prefix read as a fallback.
+

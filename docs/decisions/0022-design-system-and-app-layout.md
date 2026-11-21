@@ -9,6 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 - **Date:** 2026-11-10
 - **Deciders:** maintainer
 - **Decision label:** D3 (and D12 for the `ink-500` value)
+- **Amended:** 2026-11-21 (#255, #316, #319, #320) — the app shell has a top bar with search, notification centre and cart, and a phone menu, see "Amendment — 2026-11-21" at the end
 - **Related:** [0016](0016-react-typescript-web-ui.md) (the web UI stack), [0010](0010-pwa-progressive-enhancement.md)
 
 ## Context
@@ -87,3 +88,16 @@ One shell wraps every page. From 1024 px wide it shows a fixed **sidebar** (grou
 - Tokens: `frontend/src/design/tokens.css`, `frontend/src/design/tokens.ts`, `frontend/src/index.css`
 - Shell: `frontend/src/shell/Sidebar.tsx`, `frontend/src/shell/TabBar.tsx`, `frontend/src/shell/AppShell.tsx`
 - Related ADRs: [0010](0010-pwa-progressive-enhancement.md), [0016](0016-react-typescript-web-ui.md)
+
+## Amendment — 2026-11-21 (ADR audit): the top bar and the phone menu
+
+Since 1.7.0 the app shell has a third part next to the sidebar and the tab bar: a **top bar** above the content (`frontend/src/shell/TopBar.tsx`, placed by `frontend/src/shell/AppShell.tsx:37`). It holds:
+
+- the **global search**: from 1024 px a field with suggestions, below it a magnifier that opens a search dialog (`frontend/src/features/search/GlobalSearch.tsx:33,57`, `SearchDialog.tsx`; #320);
+- **Scan** as a button from 1024 px; on a phone Scan stays in the centre slot of the tab bar;
+- the **notification centre** (`frontend/src/features/notifications/NotificationCentre.tsx`; #255), which also shows the hub's one-time notices from `GET /api/v1/notices` (`backend/app/api/routes/notices.py:43-44`);
+- a permanent **cart icon** with the item count (`frontend/src/shell/CartButton.tsx`; #316);
+- from 1024 px the about link, the theme switch and sign-out.
+
+Below 1024 px the top bar starts with a **menu** that reaches every area, including those the five tab-bar slots leave out, such as calibration, settings, integrations and printer administration (`frontend/src/shell/PhoneMenu.tsx`, button at line 137; #319). The sidebar and the tab bar stay as described above, and the mobile rules apply to the top bar and the menu as well.
+
