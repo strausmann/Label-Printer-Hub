@@ -1020,7 +1020,11 @@ tags exist; and the notes of every plugin implementing `generateNotes` are conca
   - on a milestone PR into `main`: the missing `release-notes/<computed version>.md` and every rule it violates;
   - on **any** PR that adds or changes a file under `release-notes/`: every rule each changed version file violates,
     and for `TEMPLATE.md` that the template still passes its own validator.
-  **Design call:** fail early, because the guard runs only in the nightly or manual release.
+  `release-impact.yml` today runs only for PRs into `main` (`.github/workflows/release-impact.yml:31-34`), but the
+  highlights file is committed through PRs into `milestone/x.y.0`; the workflow gains a job `release-notes` for PRs
+  into `main` **and** `milestone/**`, filtered to changes under `release-notes/` (and always on a milestone PR into
+  `main`), that runs only the validator. **Design call:** fail early, because the guard runs only in the nightly or
+  manual release; a separate job keeps the version check of PRs into `main` unchanged.
 - **Release tooling:** `release_dry_run.sh --notes` gains an option to place a sample `release-notes/<next>.md` in the
   throw-away repository; `release-tools.yml` asserts that its text appears **above** `### Features` in the computed
   notes.
