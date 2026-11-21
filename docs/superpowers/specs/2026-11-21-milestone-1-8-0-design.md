@@ -983,9 +983,26 @@ tags exist; and the notes of every plugin implementing `generateNotes` are conca
 
 **Design:**
 
-- `release-notes/<version>.md` per minor and major release, committed on the milestone branch; plain Markdown, a few
-  highlights, images allowed as links to files in the repository (`docs/designs/…`). It must not contain the licence
-  marker of `release.yml` (checked by the guard).
+- `release-notes/<version>.md` per minor and major release, committed on the milestone branch, following
+  **`release-notes/TEMPLATE.md`** (operator, 2026-11-21; the template arrives with the separate docs PR
+  `docs/release-highlights-1.6-1.7`). Images are allowed as links to files in the repository (`docs/designs/…`).
+- **The template rules, checked by one validator** `validate_highlights(text) -> list[str]` in `release_impact.py`
+  (every violated rule is reported, not only the first):
+
+  | # | Rule | Error reason |
+  |---|---|---|
+  | 1 | Starts with a summary paragraph: non-empty text before the first heading | `no_summary` |
+  | 2 | `### Highlights` is present and is the first heading | `highlights_missing` / `highlights_not_first` |
+  | 3 | `### Highlights` holds 4 to 7 top-level list items (`- ` or `* `) | `highlights_count` (with the count) |
+  | 4 | Every highlight item names an issue: `#<n>` or `https://github.com/strausmann/labelyard/issues/<n>` | `highlight_without_issue` (with the item's position) |
+  | 5 | After it only the optional `### Upgrade notes`, `### Hardware and compatibility`, `### Thanks`, each at most once, in that order | `section_order` / `section_repeated` |
+  | 6 | No other heading of any level (lines in fenced code blocks are not headings) | `heading_not_allowed` (with the heading text) |
+  | 7 | No licence marker: neither `<!-- labelyard:licence-changes -->` nor a line `## Licence changes` (#405 makes the marker unique, `release.yml:340`) | `licence_marker` |
+  | 8 | Not empty (whitespace only counts as empty) | `empty` |
+
+  **Design call:** the rules live as constants next to the validator, and a test runs the validator over
+  `release-notes/TEMPLATE.md` itself, so the template and the check cannot drift apart; `TEMPLATE.md` is not a version
+  file and is never printed into notes.
 - A **second `@semantic-release/exec` entry, placed before `@semantic-release/release-notes-generator`**, with only
   `generateNotesCmd`: `python3 scripts/release_impact.py highlights --next "${nextRelease.version}"`. The subcommand
   prints the file followed by a blank line if it exists and nothing otherwise. **Design call:** a subcommand instead of
@@ -993,11 +1010,17 @@ tags exist; and the notes of every plugin implementing `generateNotes` are conca
   unit-tested with the rest of the script. The existing exec entry (guard, publish) stays last.
 - **Guard:** `guard_decision` (`release_impact.py:590`) gains the rule: a computed version that is not the next patch
   (that is, a minor or major, the case `guard_allows` already distinguishes, `:555-559`) is refused when
-  `release-notes/<version>.md` is missing, empty, or carries the licence marker — `release blocked: release-notes/1.8.0.md
-  is missing`. Patch releases pass without a file.
-- **PR check:** the `check` mode for a milestone PR into `main` (`run_check`, `:505`) reports the missing file as an
-  error too, so the gap shows on the PR and not only at release time. **Design call:** fail early, because the guard
-  runs only in the nightly or manual release.
+  `release-notes/<version>.md` is missing (`release blocked: release-notes/1.8.0.md is missing`) or fails
+  `validate_highlights` (`release blocked: release-notes/1.8.0.md: highlights_count (3, expected 4–7)`, one line per
+  reason). Patch releases pass without a file; a patch release that has a file anyway gets it validated too.
+  The `highlights` subcommand validates before printing and exits non-zero on a violation, so a file that slipped past
+  the guard can never reach the notes.
+- **PR check:** the `check` mode (`run_check`, `:505`, run by `.github/workflows/release-impact.yml` on every pull
+  request) reports, with the same validator and messages:
+  - on a milestone PR into `main`: the missing `release-notes/<computed version>.md` and every rule it violates;
+  - on **any** PR that adds or changes a file under `release-notes/`: every rule each changed version file violates,
+    and for `TEMPLATE.md` that the template still passes its own validator.
+  **Design call:** fail early, because the guard runs only in the nightly or manual release.
 - **Release tooling:** `release_dry_run.sh --notes` gains an option to place a sample `release-notes/<next>.md` in the
   throw-away repository; `release-tools.yml` asserts that its text appears **above** `### Features` in the computed
   notes.
@@ -1046,7 +1069,7 @@ graph TD
 | 19 | Cell labels | #248 | 5 | M13 |
 | 20 | Release cells | #298 | 19 (same panel) | — |
 | 21 | QL-1110NWB: driver, per-model tape tables, 102 mm geometry and preset | #259 | — | none (no new UI surface) |
-| 22 | Release highlights: exec entry, `highlights` subcommand, guard and PR-check rule, dry-run assertion, CONTRIBUTING | #408 | — | none (no UI) |
+| 22 | Release highlights: exec entry, `highlights` subcommand, template validator (8 rules), guard and PR-check rules (milestone PR and any PR touching `release-notes/`), dry-run assertion, CONTRIBUTING | #408 | the docs PR with `release-notes/TEMPLATE.md` merged into the milestone branch | none (no UI) |
 | 23 | Device checks, `release-notes/1.8.0.md`, release | #256, #259, #408, all | 1–22 | — |
 
 **Operator steps in the release checklist** (the release waits for them):
@@ -1210,6 +1233,8 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #395 | Split along status, IPP transport, raw send; tests unchanged | 9.6 |
 | #408 | Highlights file per minor/major release, injected by a second exec `generateNotesCmd` before the notes generator | 9.8 |
 | #408 | Guard refuses a minor/major without the file, patch passes; tests for both | 9.8, 16 |
+| #408 (operator 2026-11-21) | File follows `release-notes/TEMPLATE.md`: summary, `### Highlights` with 4–7 items each with an issue link, then only Upgrade notes / Hardware and compatibility / Thanks in that order, no other headings, no licence marker; guard and `highlights` refuse otherwise | 9.8, 16 |
+| #408 (operator 2026-11-21) | PR check validates on the milestone PR and on any PR touching `release-notes/` | 9.8, 16 |
 | #408 | `release-tools.yml` consistent; dry run shows the text above Features/Bug Fixes | 9.8, 16 |
 | #408 | CONTRIBUTING.md "Releases" describes the file and the rule | 9.8 |
 | #408 | `release-notes/1.8.0.md` exists before the 1.8.0 release | 9.8, section 10 release checklist |
@@ -1236,7 +1261,7 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 | B | Catalog index consistency (CI); edited detection; usage state rules | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
 | C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; pass 1 draws cell numbers, cell and page codes and margin blocks, passes 2 and 3 draw only their crosses and one run line (asserted on the rendered PDF: no QR, no cell number); **for every catalog type on a printer with a 5 mm unprintable edge** (and on one reporting 3 mm and 8 mm): every drawn element and both run-line slots lie inside the printable area, the slots overlap neither pass 1's blocks, nor a page-code spot, nor each other, every page code lies in a spot clear of cell numbers, cell QRs, corner marks, scales, rulers and S/Z labels (6121: codes in cells 1, 5, 61, 65 with their cell QRs kept), the number of page codes drawn equals the number the print dialog announces; a sheet type whose margin holds no two slots prints passes 2 and 3 without a run line, warns before pass 1, and still records both passes; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); the measurement sheet's grid lines at whole millimetres from the page corner and unaffected by a stored correction; DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered, printed without codes, its readings stored against the pass-2 run via `calibration_check_sheet_passes` |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
-| E | Release highlights (`scripts/test_release_impact.py`): `highlights` prints the file and nothing when it is missing; a malformed version is refused; the guard refuses a minor and a major without the file, with an empty file and with the licence marker, and passes with the file and for a patch without it; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
+| E | Release highlights (`scripts/test_release_impact.py`): `highlights` prints a valid file and nothing when it is missing, exits non-zero on an invalid one; a malformed version is refused; the validator passes `TEMPLATE.md` and a sample valid file and refuses each reason on its own (no summary, Highlights missing, Highlights not first, 3 and 8 items, an item without issue link, sections out of order, a repeated section, an unknown heading, a `#` line inside a code fence accepted, the licence marker in both forms, an empty file) and reports several reasons at once; the guard refuses a minor and a major without the file and with an invalid one, and passes with a valid file and for a patch without it; `check` reports on a milestone PR and on a PR touching `release-notes/` only; `check` reports the missing file on a milestone PR; `release-tools.yml` dry run with a sample file shows it above `### Features`, and a `dry_run` of `release.yml` on the milestone branch shows the 1.8.0 highlights at the top. QL-1110NWB: registration, per-model tape lookup (102 mm refused on the QL-820NWB), `convert()` of a 1164-px image on label `"102"` without resize, minimum length 301 dots, 102 mm across preset QR and font minimums; `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
 Every UI task takes light and dark screenshots at 1280 and 390 px (`pnpm screenshots`).
 
