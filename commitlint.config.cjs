@@ -58,6 +58,7 @@ module.exports = {
         'plans',
         'license',
         'spoolman',
+        'calibration',
       ],
     ],
     'subject-case': [2, 'never', ['upper-case', 'pascal-case', 'start-case']],
