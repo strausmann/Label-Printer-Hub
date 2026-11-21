@@ -88,6 +88,7 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 [[annotations]]
 path = [
   "docs/screenshots/*.png",
+  "docs/designs/1.8.0/png/*.png",
   "docs/superpowers/specs/assets/*.png",
   "website/src/assets/screens/*.webp",
   "website/src/assets/spoolman/*.png",

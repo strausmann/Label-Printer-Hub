@@ -1,3 +1,7 @@
+<!--
+SPDX-FileCopyrightText: 2026 Björn Strausmann and Labelyard contributors
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
 # Design mockups for release 1.8.0
 
 Review page. Each mockup is a static, self-contained HTML page (open it in a browser, or add `?theme=dark` / `?view=<name>`)
