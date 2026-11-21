@@ -33,3 +33,13 @@ export function archiveHead(tab, { admin = true, counts = [6, 39], compact = fal
     ${admin ? `<div class="row g8 wrap-row">${_btn("New type", "primary")}${_btn("Import type")}</div>` : ""}</div>`}
     <div class="tabs" role="tablist"><span class="t${tab === "installed" ? " on" : ""}" role="tab">Installed <span class="count">${counts[0]}</span></span><span class="t${tab === "catalog" ? " on" : ""}" role="tab">Catalog <span class="count">${counts[1]}</span></span></div></div>`;
 }
+
+import { field as _field, select as _select, icon as _icon } from "./lib.mjs";
+
+/** Calibration page head: printer, tray and sheet type, then the section tabs. */
+export function calHead(active, { compact = false } = {}) {
+  const tabs = ["Print page", "Readings", "Result", "History"].map((t) => `<span class="t${t === active ? " on" : ""}" role="tab">${t}</span>`).join("");
+  return `<div class="col g16">${compact ? "" : `<div class="col g4"><h1 class="title">Calibration</h1><p class="muted">Print a test page, read how far the ink landed from each crossing, and save the correction for this printer and tray.</p></div>
+    <div class="grid3">${_field("Printer", _select("Office laser"))}${_field("Tray", _select("Tray 1 (manual feed)"))}${_field("Sheet type", _select("Avery Zweckform 6121 (v1)"))}</div>`}
+    <div class="tabs" role="tablist">${tabs}</div></div>`;
+}
