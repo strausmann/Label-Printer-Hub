@@ -11,7 +11,7 @@ const COL = { 1: "#2F4E8F", 2: "#B5651B", 3: "#2E7A4E" };
 
 // the same sheet after three passes: pass 1 as printed, passes 2 and 3 laid over it in their own colours
 function composite() {
-  let s = `<svg viewBox="0 0 210 297" role="img" aria-label="One sheet after three check passes"><rect width="210" height="297" fill="#fff"/><use href="#pass-1" opacity=".55"/>`;
+  let s = `<svg viewBox="0 0 210 297" role="img" aria-label="One sheet after three check passes"><rect width="210" height="297" fill="#fff"/><use href="#pass-1" opacity=".55"/><rect x="5" y="5" width="200" height="287" fill="none" stroke="#C2410C" stroke-width="0.2" stroke-dasharray="2 1.5"/><text x="105" y="3.6" font-size="2.2" text-anchor="middle" fill="#C2410C">printable area, 5 mm unprintable edge</text>`;
   for (const k of [2, 3]) {
     for (const [c, r] of PASSES[k]) { const p = crossingXY(g, c, r); s += miniScale(p.x, p.y, { label: `K${k}`, color: COL[k], lw: 0.22, ls: 4 }); }
     s += `<g style="color:${COL[k]}">${runLine(g, k).replace(`fill="${INK}"`, `fill="${COL[k]}" font-weight="700"`)}</g>`;
@@ -21,8 +21,8 @@ function composite() {
 
 const fig = (svg, cap, cls = "") => `<figure class="${cls}"><div class="paper">${svg}</div><figcaption class="paper-cap">${cap}</figcaption></figure>`;
 
-const stripTop = `<svg viewBox="0 0 210 12" role="img" aria-label="The two-line run block in the top margin of pass 1"><rect width="210" height="12" fill="#fff"/><use href="#pass-1"/></svg>`;
-const stripBottom = `<svg viewBox="0 284 210 13" role="img" aria-label="The bottom margin with the blocks of all three passes"><rect y="284" width="210" height="13" fill="#fff"/><use href="#pass-1"/><use href="#pass-2"/><use href="#pass-3"/></svg>`;
+const stripTop = `<svg viewBox="0 0 210 16" role="img" aria-label="The two-line run block in the top margin of pass 1"><rect width="210" height="16" fill="#fff"/><use href="#pass-1"/><line x1="0" x2="210" y1="5" y2="5" stroke="#C2410C" stroke-width="0.2" stroke-dasharray="2 1.5"/></svg>`;
+const stripBottom = `<svg viewBox="0 276 210 21" role="img" aria-label="The bottom margin with the blocks of all three passes"><rect y="276" width="210" height="21" fill="#fff"/><use href="#pass-1"/><use href="#pass-2"/><use href="#pass-3"/><line x1="0" x2="210" y1="292" y2="292" stroke="#C2410C" stroke-width="0.2" stroke-dasharray="2 1.5"/></svg>`;
 
 const body = () => `<div class="desk"><div class="pg">
   <header class="pg-head"><h1 class="title" >Check pages: three passes on one Avery Zweckform 6121 sheet</h1>
@@ -34,7 +34,7 @@ const body = () => `<div class="desk"><div class="pg">
   </section>
   <section class="row3 r2">
     <figure class="span2"><div class="paper">${zoom(1, [0, 0, 72, 46], "Top-left corner of pass 1, enlarged")}</div>
-      <figcaption class="paper-cap">Top-left corner of pass 1, enlarged: page code in the 15 mm corner square, two-line run block, outer corner marks (1.8 mm legs), the K1 cross with its mini scale (±2 mm, a tick every 0.5 mm), a cell number and an 8 mm cell code.</figcaption></figure>
+      <figcaption class="paper-cap">Top-left corner of pass 1, enlarged: page code in the 15 mm corner square (5 mm in from the sheet edge), two-line run block, outer corner marks (1.8 mm legs), the K1 cross with its mini scale (±2 mm, a tick every 0.5 mm), a cell number and an 8 mm cell code.</figcaption></figure>
     ${fig(composite(), "The three passes on one physical sheet: pass 1 as printed (grey), K2 and its run line in orange, K3 and its run line in green. Colours only tell the passes apart here; the paper is black.")}
   </section>
   <section class="row3 r3">
@@ -46,12 +46,13 @@ const body = () => `<div class="desk"><div class="pg">
   </section>
   <section class="col g16">
     <figure><div class="paper">${stripTop}</div><figcaption class="paper-cap">Top margin run block of pass 1: date, time, run number, pass, printer, tray, sheet type and version, the correction values and any geometry that differs from the shipped one. Nothing runs across the grid.</figcaption></figure>
-    <figure><div class="paper">${stripBottom}</div><figcaption class="paper-cap">Bottom margin: pass 1's geometry block, plus the one-line run notes of pass 2 (below it, left) and pass 3 (right) in the free space that pass 1 does not use. Printer name, type key and tray shorten first when a line is too long; run number, date, time, version and correction values never shorten.</figcaption></figure>
+    <figure><div class="paper">${stripBottom}</div><figcaption class="paper-cap">Bottom margin: pass 1's geometry block, centred and narrow, with the one-line run notes of pass 2 (left slot) and pass 3 (right slot) between the page-code squares. The dashed line is the printable edge (nothing is printed below 292 mm or above 5 mm). Printer name, type key and tray shorten first when a line is too long; run number, date, time, version and correction values never shorten.</figcaption></figure>
   </section>
   ${mockNotes([
     "Spec 7.2 and the comments of #240: margins only, an 8 mm QR and the number in every cell, inner 0.9 mm and outer 1.8 mm corner marks, page codes in the four 15 mm corner squares, check passes K1 to K3 on one 6121 sheet (maintainer, 2026-11-15).",
     "All codes are real: <code>gen_qr.py</code> encodes the <code>LYC1</code> payloads of section 7.2 in alphanumeric mode (page 5-M, cell 1-M). No payload contains <code>@</code>, <code>://</code>, <code>mailto:</code>, <code>tel:</code>, <code>sms:</code>, <code>WIFI:</code>, <code>geo:</code> or <code>BEGIN:</code> (checked when the codes are generated).",
-    "Operator decision, 2026-11-21: pass 1 is the full check page; passes 2 and 3 print only their K2/K3 crosses with mini scales and one run line each (run number, date and time, pass, correction applied yes/no), pass 2 at the bottom left, pass 3 at the bottom right. No cell numbers, no codes and no margin block on passes 2 and 3.",
+    "Operator decision, 2026-11-21: pass 1 is the full check page; passes 2 and 3 print only their K2/K3 crosses with mini scales and one run line each (run number, date and time, pass, correction applied yes/no), pass 2 in the bottom-left slot, pass 3 in the bottom-right slot of pass 1's margin. No cell numbers, no codes and no margin block on passes 2 and 3.",
+    "Printable area (spec 7.2): every element of every pass lies inside it, assuming a 5 mm unprintable edge on the office laser. The page-code squares sit at 5 to 20 mm, nothing is printed above 5 mm or below 292 mm, and the dashed orange line marks the edge in the overlay and the strips.",
     "Strokes are drawn 0.13 mm instead of 0.1 mm so they survive the screenshot; the pass pattern beyond pass 1 is my call (section 17 leaves it to the builder): passes never share or touch a crossing, diagonals included, and the build fails if they do.",
     "Demo values: run numbers 12 to 14, printer &quot;Office laser&quot;, correction dx +0.41 mm, dy −0.66 mm.",
   ])}

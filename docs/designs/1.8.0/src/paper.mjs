@@ -41,7 +41,7 @@ export function cornerMarks(g, n, scaled, lw = 0.13) {
     const colX = r.col + cx, rowY = r.row + cy; // crossing index 0..cols / 0..rows
     const interior = colX > 0 && colX < g.cols && rowY > 0 && rowY < g.rows;
     if (interior && scaled.has(`${colX},${rowY}`)) continue;
-    if ((x < 15 || x > 195) && (y < 15 || y > 282)) continue; // inside a page-code square: left out as a whole
+    if ((x < 20 || x > 190) && (y < 20 || y > 277)) continue; // inside a page-code square: left out as a whole
     const leg = interior ? 0.9 : 1.8;
     d += `M${f(x + sx * leg)} ${f(y)}H${f(x)}V${f(y + sy * leg)}`;
   }
@@ -62,26 +62,26 @@ for (const a of [1, 2, 3]) for (const b of [1, 2, 3]) if (a < b) for (const p of
 export const RUN = { 1: 12, 2: 13, 3: 14 };
 export const TIME = { 1: "14:20", 2: "14:32", 3: "14:44" };
 
-export function runBlock(g, pass, { y0 = 0 } = {}) {
+export function runBlock(g, pass) {
+  // everything lies inside the printable area (5 mm edge assumed): nothing above y 5 or below y 292
   const t = (x, y, s, size, w = 400, anchor = "start") => `<text x="${x}" y="${y}" font-size="${size}" font-weight="${w}" text-anchor="${anchor}" fill="${INK}">${s}</text>`;
   const top = [
-    t(17, 4.6, `Check page · run #${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · Office laser · Tray 1 (manual feed)`, 2.5, 700),
-    t(17, 8.1, `A6121 v1, shipped values · correction applied: dx +0.41 mm, dy −0.66 mm · scale x +0.012 %, y −0.008 % · rotation +0.021°`, 2.15),
+    t(22, 7.7, `Check page · run #${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · Office laser · Tray 1 (manual feed)`, 2.4, 700),
+    t(22, 10.1, `A6121 v1, shipped values · correction applied: dx +0.41 mm, dy −0.66 mm · scale x +0.012 %, y −0.008 % · rotation +0.021°`, 2),
   ];
-  const yb = g.mt + g.rows * g.py;
+  // bottom: pass 1 block centred and narrow, a free slot left and right for the run lines of passes 2 and 3
   const bottom = [
-    t(17, yb + 4.4, `Avery Zweckform 6121 · 5 × 13 labels of 38.1 × 21.18 mm · top 10.80, left 9.90 mm · pitch 38.10 × 21.18 mm`, 2.15),
-    t(17, yb + 7.6, `Page codes in the four corners, cell codes LYC1:${RUN[pass]}:&lt;cell&gt;:K${pass} · print at 100 % on plain A4 or the real sheet`, 2.15),
+    t(105, 288.4, `Avery Zweckform 6121 · 5 × 13 · 38.1 × 21.18 mm`, 2, 400, "middle"),
+    t(105, 290.9, `Page codes in the corners · print at 100 %`, 2, 400, "middle"),
   ];
   return top.join("") + bottom.join("");
 }
 
 /** Pass 1 prints the full check page; passes 2 and 3 print only their crosses and one short run line. */
 export function runLine(g, pass) {
-  const yb = g.mt + g.rows * g.py;
-  const s = `run #${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · correction applied: ${pass === 2 ? "yes" : "no"}`;
+  const s = `#${RUN[pass]} · 2026-11-21 ${TIME[pass]} · pass ${pass} of 3 · corrected: ${pass === 2 ? "yes" : "no"}`;
   const left = pass === 2;
-  return `<text x="${left ? 17 : 193}" y="${f(yb + 10.2)}" font-size="1.9" text-anchor="${left ? "start" : "end"}" fill="${INK}">${s}</text>`;
+  return `<text x="${left ? 22 : 188}" y="289.6" font-size="1.8" text-anchor="${left ? "start" : "end"}" fill="${INK}">${s}</text>`;
 }
 
 /** The page of pass `pass`. The white sheet sits outside the group so the passes can be laid over each other. */
@@ -103,7 +103,7 @@ export function checkPage(g, pass, { qrCells = true } = {}) {
   if (pass === 1) {
     s += runBlock(g, 1);
     const page = `LYC1:${RUN[pass]}:0:A6121:1:41:-66:120:-80:21000:K${pass}`;
-    for (const [x, y] of [[7.5, 7.5], [202.5, 7.5], [7.5, 289.5], [202.5, 289.5]]) s += qr(page, x, y, 15);
+    for (const [x, y] of [[12.5, 12.5], [197.5, 12.5], [12.5, 284.5], [197.5, 284.5]]) s += qr(page, x, y, 15);
   } else s += runLine(g, pass);
   return s + "</g></svg>";
 }
