@@ -388,10 +388,12 @@ Both are computed from `SheetView` (`planner.py:94-125`) in `decide_margin_and_m
   else the top-left end, else nothing: the mark is **not printed** on this page, `feed_mark_pending` (section 5.6) is
   true with `feed_mark_reason: "no_free_place"`, and the preview shows "Feed mark: no free place on this sheet". The
   mark stays due (its flag is not set), so a later page on a printer with more room still prints it.
-  **S15 (rollback-safe with 1.7.1):** `FeedMarkPayload` (`sheet_page.py:167-179`, `extra="forbid"`) stays unchanged;
-  its `x_hmm` (the left end of the text) simply carries the position at whichever end the mark went, and
-  `SheetPageDetail.feed_mark_end` (`"top_right"` / `"top_left"`, absent = `"top_right"`) reports which end it is, for
-  the preview and the tests. A 1.7.1 renderer draws such a payload correctly because it only reads `x_hmm`.
+  **S15 (rollback-safe with 1.7.1):** `FeedMarkPayload` (`sheet_page.py:167-182`, `extra="forbid"`) stays unchanged,
+  including `band: Literal["top"]` and `anchor: Literal["top_right"] = "top_right"` (`sheet_page.py:181-182`); `anchor`
+  stays `"top_right"` even when the mark went to the top-left end, because no renderer reads it (none of `app/` refers
+  to `.anchor`). `x_hmm` (the left end of the text) carries the real position, and `SheetPageDetail.feed_mark_end`
+  (`"top_right"` / `"top_left"`, absent = `"top_right"`) reports which end it is, for the preview and the tests. A 1.7.1
+  renderer draws such a payload correctly because it only reads `x_hmm`.
 - A calibration offset that pushes the ID into a zone: zones are grown by `|offset|` per axis like the bands.
 - Round labels and cells: unchanged; the validation uses the cell rectangles.
 
