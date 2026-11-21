@@ -104,6 +104,9 @@ paper, in the UI and through the API, and a wrong decision must be undoable.
   2. A fresh installation starts with no sheet types (#335).
   3. `GET /api/v1/sheets` returns at most 500 rows per request and a `Link: <…>; rel="next"` header when more exist
      (#204).
+- One tolerated request change: `POST /api/v1/render/preview` ignores `data.qr_payload` when the new `item` field names
+  an integration item; the server's payload is used (#247, section 9.4). Clients that send no `item` keep today's
+  behaviour.
 - Three deliberate tightenings, each a `fix` with an upgrade note: `source_url` and integration URLs with user info are
   refused (#204 note 2, #247); free text loses invisible format characters on write (#204 note 1); `corner_radius`
   larger than half the shorter label side is refused on write (#204 note 4).
@@ -275,8 +278,8 @@ it wants. **Design call:** union, no per-zone override, because a partial overri
 
 1. Bands are computed as today (`margin_bands_hmm`, `planner.py:187-210`): hardware margin, `|offset|` per axis,
    1 mm safety.
-2. Each band is cut into free rectangles: the preprint zones (grown by `SAFETY_HMM`) and, in the top band, the feed
-   mark's run (`feed_mark_top_taken_hmm`) are subtracted. A rectangle is kept if it is at least `MIN_MARGIN_TEXT_HMM`
+2. Each band is cut into free rectangles: the preprint zones (grown by `SAFETY_HMM`) are subtracted. The feed mark is
+   placed **after** the ID, in what is left (section 5.7). A rectangle is kept if it is at least `MIN_MARGIN_TEXT_HMM`
    deep.
 3. With `id_margin_band = auto` the candidates are all free rectangles; otherwise only those of the chosen band. With an
    offset or `align = end`, the candidate is the rectangle that contains the requested start point, clipped to it.
@@ -340,7 +343,9 @@ compatible, as OC-50 did for `band`).
 - `id_pending: bool` — the sheet's ID is not printed yet and is not on this page because another job carries it (the
   margin ID in flight, an ID cell `reserved` or `unconfirmed`), not because there is no room (`id_not_printed` stays for
   that).
-- `feed_mark_pending: bool` — the same for the feed mark (`feed_mark_in_flight`).
+- `feed_mark_pending: bool` — the feed mark is due but not on this page: another job carries it
+  (`feed_mark_in_flight`, `feed_mark_reason: "in_flight"`) or no zone-free place is left after the ID
+  (`feed_mark_reason: "no_free_place"`, section 5.7). `feed_mark_reason` is `null` when the mark is printed or not due.
 
 Both are computed from `SheetView` (`planner.py:94-125`) in `decide_margin_and_mark`, which returns them in
 `MarginDecision`. The print dialog shows "The sheet code will be printed with the page that is still in the queue." for
@@ -351,10 +356,12 @@ Both are computed from `SheetView` (`planner.py:94-125`) in `decide_margin_and_m
 - A type with `id_margin_band = top` on a printer whose top band is too small: no ID on that page (`id_not_printed`),
   even if another band would fit. **Design call:** the setting is a rule, not a preference, because the maintainer sets
   it to avoid a known preprint; `auto` keeps the fallback to other bands.
-- The feed mark keeps priority in the top band (OC-57); with `align = end` the ID competes with the mark's top-right
-  position, so the mark moves to the top-left end when the requested ID rectangle needs the right end.
-  **Design call:** the operator's explicit ID position outranks the mark's default corner, the mark has no corner
-  requirement of its own.
+- **Design call (controller):** the feed mark is subject to the keep-out zones too, and the **ID is placed first, the
+  mark second** (this reverses OC-57's "mark first" order for the top band). Reason: the ID identifies the sheet; the
+  mark is a convenience. The mark takes the top band's top-right end if that is free of zones and of the ID's rectangle,
+  else the top-left end, else nothing: the mark is **not printed** on this page, `feed_mark_pending` (section 5.6) is
+  true with `feed_mark_reason: "no_free_place"`, and the preview shows "Feed mark: no free place on this sheet". The
+  mark stays due (its flag is not set), so a later page on a printer with more room still prints it.
 - A calibration offset that pushes the ID into a zone: zones are grown by `|offset|` per axis like the bands.
 - Round labels and cells: unchanged; the validation uses the cell rectangles.
 
@@ -505,8 +512,8 @@ under the sheet write lock in the same transaction as the job's submit. **Design
 - **Actual tray:** after the job ends the runner asks the printer for the job's `media-col-actual`/`media-source` (IPP
   Get-Job-Attributes, `printer_backends/ipp/client.py:320-340`); when the answer names a source and it differs from the
   requested one, the run stores it and the calibration page shows "Printed from <actual>, requested <requested>". When
-  the printer does not report it, the run says "not reported". Which attribute the reference printer returns is checked
-  on hardware ([Q5](#13-questions-for-the-maintainer)).
+  the printer does not report it, the run says "not reported". **Design call (controller):** build the check for every
+  IPP page printer and show "not reported" when the printer gives no media source; no operator input needed.
 
 ### 7.2 The calibration and check pages (#240, comments of 2026-11-14 and 2026-11-15)
 
@@ -517,7 +524,7 @@ Layout as agreed (mockups C/C2, comment of 2026-11-14 23:08Z):
   bottom margin; nothing across the grid. The existing footer (`fit_footer_text`, `page.py:99-129`) becomes a two-line
   margin block with a defined degrade order: printer name, then type key, then tray shorten first (as today); the run
   number, date, time, version and the correction values never shorten. It must fit A4 and Letter widths.
-- **Every cell** carries its cell number and an about 8 mm QR, centred, clear of the crossing scales and corner marks.
+- **Every cell** carries its cell number and an about 8 mm QR (the short cell code below), centred, clear of the crossing scales and corner marks.
   A type with `allow_qr` off, or a cell too small for the QR at 0.25 mm modules, prints the number only.
 - **Corner marks:** inner legs (next to a crossing) 0.9 mm, outer legs 1.8 mm (today 1.5 mm for all,
   `page.py:65`); the existing rule that drops a mark next to a tick stays (`page.py:304-307`).
@@ -537,20 +544,42 @@ Layout as agreed (mockups C/C2, comment of 2026-11-14 23:08Z):
   - **Design call:** passes are computed by a pure function `check_passes(cols, rows) -> list[list[Crossing]]`,
     deterministic, tested for disjointness and non-adjacency on every catalog grid.
 
-**QR payload `LYC1`** (comment of 2026-11-14 23:08Z, corrected by 2026-11-15 10:05Z): QR alphanumeric mode, error
-correction M, only `0-9 A-Z : -`:
+**QR payloads `LYC1`** (comment of 2026-11-14 23:08Z, corrected by 2026-11-15 10:05Z): QR alphanumeric mode, only
+`0-9 A-Z : -`.
+
+**Design call (controller):** the geometry and correction fields go **only into the page QR codes** (the four corner
+squares); a cell carries only the short check number. Reason: the full payload does not fit an 8 mm cell QR at a
+scannable module size once the prefix is 10 characters and every optional field is present (math below), and a cell
+code that sometimes drops fields would be a silent truncation.
 
 ```
-LYC1:<run>:<cell>:<PREFIX>:<version>:<dx_hmm>:<dy_hmm>:<sx_ppm_dev>:<sy_ppm_dev>:<rot_udeg>[:K<pass>][:PX<pitch_x_hmm>][:PY<pitch_y_hmm>][:MT<margin_top_hmm>][:ML<margin_left_hmm>]
+page:  LYC1:<run>:0:<PREFIX>:<version>:<dx_hmm>:<dy_hmm>:<sx_ppm_dev>:<sy_ppm_dev>:<rot_udeg>[:K<pass>][:PX<pitch_x_hmm>][:PY<pitch_y_hmm>][:MT<margin_top_hmm>][:ML<margin_left_hmm>]
+cell:  LYC1:<run>:<cell>[:K<pass>]
 ```
 
-- `<cell>` is `0` for a page QR. `<PREFIX>` is the type's sheet prefix (`PREFIX_PATTERN`, `sheets/naming.py:13`), not
-  the product code. **Design call:** the prefix plus a separate version field instead of `L4736REV1`, because prefixes
-  end in digits (`A7160`, `L4736`) and `A71601` would be ambiguous; it also follows the 2026-11-15 rule "the sheet type
-  version as a separate field". It adds one character; QR version 3 still holds a 46-character payload (to be asserted
-  by a test on the longest catalog prefix with all optional fields).
+- `<cell>` is `0` in a page code. `<PREFIX>` is the type's sheet prefix (`PREFIX_PATTERN` `^[A-Z][A-Z0-9]{1,9}$`,
+  `sheets/naming.py:13`), not the product code. **Design call:** the prefix plus a separate version field instead of
+  `L4736REV1`, because prefixes end in digits (`A7160`, `L4736`) and `A71601` would be ambiguous; it also follows the
+  2026-11-15 rule "the sheet type version as a separate field".
 - All correction fields are `0` on a page printed without correction. Optional geometry fields appear only when the
   type differs from its catalog revision (section 6.1.3).
+- A photo of a single cell identifies run, cell and pass; the run record (section 7.1) and the page codes supply the
+  type and the correction. This deviates from the agreed C2 design (section 14).
+
+**Capacity, worst case** (bounds from the code: offsets ±10 mm = ±1000 hmm, scales 0.95–1.05 = ±50000 ppm, rotation
+±2° = ±2000000 µdeg, `calibration/model.py:24-28`; version ≤ 1000000, `model.py:96`; lengths ≤ 1000 mm = 100000 hmm,
+`exchange.py:57`; run number up to 999999; pass up to 99):
+
+| Code | Longest payload | Length | Version / ECC | Symbol | Module at the printed size |
+|---|---|---|---|---|---|
+| page | `LYC1:999999:0:AAAAAAAAAA:1000000:-1000:-1000:-50000:-50000:-2000000:K99:PX100000:PY100000:MT100000:ML100000` | 107 | **5-M** (alphanumeric capacity 122; 5-Q holds 87, too few) | 37 modules + 4-module quiet zone each side = 45 | 15 mm / 45 = **0.333 mm** |
+| cell | `LYC1:999999:400:K99` | 19 | **1-M** (capacity 20) | 21 + 8 = 29 | 8 mm / 29 = **0.276 mm** |
+
+- **Design call (controller):** page codes are drawn at version 5-M minimum, cell codes at 1-M, both pinned by a test
+  that builds the longest payload above and asserts it encodes at that version and ECC and that the module is
+  ≥ 0.25 mm at the drawn size. A real payload that needs a higher version (a run number past 999999) makes the page code
+  grow to the next version as long as the module stays ≥ 0.25 mm; beyond that the page job is refused with
+  `calibration_qr_too_large` — **never truncated**.
 - **Guard test:** every generated payload (cell and page, every catalog type, with and without correction) is checked
   against patterns a scanner auto-detects: `@`, `://`, `mailto:`, `tel:`, `sms:`, `WIFI:`, `geo:`, `BEGIN:`, a leading
   `+` followed by digits. The test fails on any hit.
@@ -578,7 +607,7 @@ LYC1:<run>:<cell>:<PREFIX>:<version>:<dx_hmm>:<dy_hmm>:<sx_ppm_dev>:<sy_ppm_dev>
 - **Step:** the stepper follows the printed scale (`GET /api/v1/printers/calibration/scale`, `step_mm` = 0.5 today)
   with a finer **0.1 mm** keyboard and button step, because the guide tells the reader to estimate to 0.1 mm between
   ticks (`ReadingGuide.tsx` step 3). Typed values snap to 0.1 mm with a hint when they snapped. Range ±`half_mm` (2.0).
-  **Design call:** 0.1 mm instead of the issue's 0.2 mm, see [section 14](#14-deviations-from-the-issue-text).
+  **Design call (controller):** 0.1 mm instead of the issue's 0.2 mm, see [section 14](#14-deviations-from-the-issue-text).
 - **Sign is explicit:** a direction picker per axis ("right / left of the printed line", "below / above"), producing the
   signed value; a typed `-0,4` and a typed `0.4` with "left" give the same value (accepts `,` and `.`).
 - Outside the range: a warning ("The print is off by more than the scale shows: check the tray, the sheet type or the
@@ -618,8 +647,16 @@ version, `run_id` (nullable), the readings and residuals of the fit (JSON, ≤ 2
 `ReadingsHelper.tsx:22`), `reverted_from_id`, actor, created at, note (≤ 500 chars, sanitised).
 
 - `PUT …/calibration/{tray}` (`calibration.py:104-126`) writes the row in `printer_calibrations` **and** a history entry
-  in one transaction; `DELETE` writes a `reset` entry. The request gains optional `run_id`, `readings` and `note`;
-  readings are re-fitted server-side and the residuals stored are the server's, not the client's.
+  in one transaction; `DELETE` writes a `reset` entry. The request gains optional `run_id`, `readings` and `note`.
+- **Design call (controller): with readings, the stored correction is the server's fit.** The server re-fits the
+  readings on the measured-on type version (`calibration/fit.py:72`) and stores that result and its residuals. When a
+  value in the request differs from the server fit by more than 0.05 mm (offsets directly; scale and rotation as the
+  displacement they cause at the page corner farthest from the centre), the response carries the server values and a
+  note `client_values_ignored` naming the fields; within the tolerance the server values are stored without a note.
+  Without readings (hand-typed values) the values are stored as given and the history entry has `source: "manual"`;
+  with readings `source: "fit"`. Reason: the history must show values its stored readings actually produce.
+- Tests: readings plus matching values → stored, no note; readings plus values off by 0.06 mm → server values stored
+  with `client_values_ignored`; values without readings → stored as sent, `source: manual`.
 - `GET …/calibration/{tray}/history` (read, printer access) — newest first, paginated, each entry with the difference to
   the previous one and the count of jobs printed with it.
 - `POST …/calibration/{tray}/history/{id}/restore` (admin) — writes a new `revert` entry with that entry's values; never
@@ -696,20 +733,30 @@ hand, saved for <type name> v<n>".
 
 - `POST /api/v1/jobs/{id}/release-cells` (admin), with a confirmation in the UI (job detail and sheet detail, on a sheet
   whose cells are `reserved` by a job that is not running).
-- Allowed when the job is over: the queue holds it in a terminal state (`failed`, `cancelled`, `failed_restart`) **or**
-  the queue no longer holds it and its row is terminal, **or** the queue no longer holds it and its row still says
-  `queued`/`printing` after a failed end write (the case the sweep cannot decide, `sweep.py:13-20`). Refused with 409
-  `job_running` while the queue holds it as queued or printing.
-- What it does: the same rule as the outcome handler (`outcome.py:233-243`) — cells of a job that may have printed
-  (started or interrupted) become `unconfirmed`, the rest are freed. **Design call:** never free a possibly printed
-  cell, because a second label on top is the worst outcome; the admin resolves `unconfirmed` cells with the existing
-  resolve flow (#282).
+- **Design call (controller): the release follows a fixed state matrix**, applied to every `reserved` cell of the job
+  (the state is the queue's in-memory job when it holds one, else the `jobs` row). Reason: never free a cell that may
+  have printed; free only what certainly did not.
+
+  | Job state | `result.started` | Cells become | Release allowed |
+  |---|---|---|---|
+  | queued (row), not runnable in the queue | not set | **free** (rows deleted) | yes |
+  | queued, runnable in the queue | — | — | **no**, 409 `job_running` |
+  | printing (row or memory) | any | **unconfirmed** | only when the queue does not hold it as printing; else 409 `job_running` |
+  | failed / cancelled / failed_restart | set, or `error` starts with `interrupted:` | **unconfirmed** | yes |
+  | failed / cancelled | not set, not interrupted | **free** | yes |
+  | any other state with `started` set | set | **unconfirmed** | yes |
+  | done | — | **used** (`id_printed` / `feed_mark_printed` set as `outcome.py:111-136` does) | yes |
+  | no row and not in the queue (unknown) | — | **unconfirmed** | yes |
+
+  The possibly-printed test is the existing `_possibly_printed` (`outcome.py:228-230`). The admin resolves
+  `unconfirmed` cells with the existing resolve flow (#282).
 - One write transaction under the sheet write lock, touching only `reserved` rows of that job, so a race with the startup
   recovery or the periodic sweep changes nothing twice; publishes `sheet.updated` after commit.
 - Recorded on the job: `jobs.result.cells_released = {by, at, freed: [...], unconfirmed: [...]}` and shown in the job
   detail. **Design call:** the job row is the job history; there is no separate job audit table.
-- Tests: happy path, refusal for a running job, refusal for a non-admin key, a concurrent release racing
-  `sweep_reservations` (exactly one of them settles each cell).
+- Tests, one per matrix row (each counter-tested against a version that frees instead), plus: a non-admin key → 403; a
+  release racing `sweep_reservations` and a release racing the startup recovery → each cell settled exactly once and one
+  `sheet.updated` per change; a second release of the same job changes nothing.
 
 ### 8.3 Bound the archive (#204)
 
@@ -782,6 +829,19 @@ already covers it). Drop the `Cart ({inCart})` message from both locales; refres
   today. **Design call:** printed codes follow the public address once the operator sets it, because a code scanned with
   a phone needs it; without the setting nothing printed changes ([Q4](#13-questions-for-the-maintainer) confirms).
   This separates the lookup `url` from `qr_payload`, which are one value today.
+- **Design call (controller): the server computes the QR payload of an integration item, for the preview and for the
+  print, from app and item id with one shared function** (`integrations.qr_payload_for(app, item_id, label)`, used by
+  the lookup, `POST /api/v1/render/preview`, the tape print, the batch, the sheet print and the webhooks). Reason: today
+  the client looks the item up, receives `url` (= the internal `qr_payload`, `lookup.py:119`) and sends it back in
+  `data.qr_payload` to `/render/preview` (`api/routes/print.py:155-200`); once `url` no longer carries the internal
+  address the client cannot send the right payload, and a client-chosen payload could differ from what prints.
+  - `_PreviewRequest` gains an optional `item: {app, id}`. With `item`, the server looks the item up (the existing
+    lookup path, same rate-limit accounting) and computes the payload; a `data.qr_payload` sent with it is **ignored,
+    not an error** (tolerated, section 3.2). Without `item` (a manual label) `data.qr_payload` is used as today.
+  - The frontend stops sending `qr_payload` for integration items and sends `item` (`usePreviewImage`,
+    `frontend/src/features/lookup/api.ts`).
+  - Test: per integration, with and without `web_url`, the decoded QR of the preview PNG equals the payload stored in
+    the print job; a read key's lookup, preview and settings responses contain no internal base URL.
 - Non-admin responses never contain the internal base URL: a test checks the JSON of lookup, settings and integration
   responses for a read key.
 
@@ -897,10 +957,6 @@ Only questions that change what is built; each with a recommended answer.
    cut text.
 4. **Printed QR codes and `web_url` (#247).** Should printed QR codes use the public web URL once it is set?
    *Recommended:* yes; without the setting nothing printed changes.
-5. **Actual tray (#336).** Can you run one calibration page on the HP colour laser and note whether its job attributes
-   name the media source used? *Recommended:* build the check, show "not reported" when the printer does not say.
-6. **Stepper step (#240).** The printed scale changed to 0.5 mm ticks (#348). Is a 0.1 mm stepper step (the guide's
-   "estimate to 0.1 mm") right, or do you want 0.25 mm? *Recommended:* 0.1 mm.
 
 ## 14. Deviations from the issue text
 
@@ -910,12 +966,13 @@ Only questions that change what is built; each with a recommended answer.
 | #240 A | step-by-step guide | already shipped (#337) | `ReadingGuide.tsx`; 1.8.0 adds only the geometry rule and the run number to it. |
 | #240 comment | `L4736REV1` style type field | `<PREFIX>:<version>` | Prefixes end in digits, concatenation is ambiguous; the 2026-11-15 comment asks for a separate field. |
 | #240 comment | geometry suggestion after fitting offset, scale, rotation on the calibration page | from check-print readings with a correction measured on another type | A linear pitch or margin error is absorbed by the affine fit; it is only visible against a correction from another type (section 7.4). |
+| #240 comment (C2, 2026-11-14) | every cell QR carries run, cell, type, version and the correction | cells carry `LYC1:<run>:<cell>[:K<pass>]`; type, version, correction and geometry only in the page codes | Controller ruling: the full payload needs a module below 0.25 mm in an 8 mm cell with a 10-character prefix and all fields (section 7.2). |
 | #240 comment | corner marks per cell | already drawn; only the leg lengths change | `page.py:293-357`. |
 | #326 | a feature of its own | folded into #246, closed with it | The per-type placement shipped with #350; the remaining side/offset and per-printer view is the zone-placement problem of #246 (section 5). |
 | #335 | 36 types | 39 | `sheet_types.json` today. |
 | #335 | `DELETE /api/v1/sheet-types/{key}` "custom types" | also seeded and imported | The issue's own proposal (point 4). |
 | #219 | fix with the pagination of #204 | #204 paginates `GET /api/v1/sheets`, not sheet types | The sheet-type list gets its own opt-in pagination and facets (section 6.3). |
-| #298 | release the cells | possibly printed cells become `unconfirmed` | Freeing a printed cell risks a second label on top (anti-goal). |
+| #298 | release the cells | per the state matrix of section 8.2; possibly printed cells become `unconfirmed` | Freeing a printed cell risks a second label on top (anti-goal). |
 | #351 | design only after #333 | designed now, prompt left to #333 | Moved into 1.8.0 by the maintainer (2026-11-21). |
 | #395 | 554 lines | 603 lines | The file today. |
 | #256 | dependency switch | done in 1.7.x; only the device check | `pyproject.toml:38`; issue comment of 2026-11-20. |
@@ -939,6 +996,7 @@ Extracted from the issue bodies and comments before the design was written; the 
 | #246 | Probe print shows the zones | 7.3 |
 | #246 | Pre-filled #230 issue includes zones | 5.4 |
 | #246 | Tests red on current code: zone over logo → corner or other band; all blocked → degrade/fallback; preview and job read the same decision | 5.2, 16 |
+| #246 controller | Feed mark obeys zones, ID first, mark second, `feed_mark_pending` when no place | 5.6, 5.7 |
 | #246 | AZ preset applied to verified seeded AZ types only | 5.5 |
 | #246 | de/en strings, light/dark screenshots | 3.5 |
 | #246 comment | Default position top right before the size text; gap measured on real sheets | 5.5, Q1 |
@@ -1002,7 +1060,7 @@ write, HTTP POST) cover the happy path, the backend error path and the network e
 |---|---|---|---|---|
 | A | Placement: zone over the logo moves the ID to the free corner or another band; all bands blocked degrade to code only, then fall back; a forced band without room gives `id_not_printed`; the mark moves when the ID needs its corner; property test: the chosen rectangle never overlaps a zone, a cell or the unprintable area | Preview and job store the same decision; the per-printer validation endpoint for fits / does not fit / overlaps a cell; export and import round-trip of the new keys, a 1.7.x document still imports; `id_pending`/`feed_mark_pending` with a margin ID in flight | Zone editor and position controls (Vitest) | Zone added → preview hatched; short viewport |
 | B | Catalog index consistency (CI); edited detection; usage state rules; `check_passes`-style pure functions for inset boxes | Install, update offered / not offered, delete without/with sheets (204/409), delete-unused all-or-nothing, the counter survives delete and re-add, upgrade migration from a 1.7.1 database copy keeps 39 types and marks an edited description as edited, facets independent of the vendor filter, usage numbers equal to the sheets table on 2000 sheets in a time bound; inset and unprintable cells on synthetic hardware margins, explicit unprintable cell → 422 | Catalog tab, usage sort and filters, navigation links | Fresh install → add from catalog → create a sheet; type ↔ sheets links |
-| C | Payload grammar and the auto-detect guard over every catalog type; QR version 3 for the longest payload; pass sets disjoint and non-adjacent on every catalog grid; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered |
+| C | Payload grammar and the auto-detect guard over every catalog type; page code 5-M and cell code 1-M hold the longest payloads at ≥ 0.25 mm modules; pass sets disjoint and non-adjacent on every catalog grid; footer fits A4 and Letter; stepper snap, limits, sign, `,`/`.`; geometry suggestion recovers a synthetic pitch error within 0.05 mm and suggests nothing for a compensated printer error; fit residuals | Run counter per tray increments under concurrent submits; retry keeps the number; save → history; restore → new entry with the old values; jobs filtered by history id; probe page PDF cell rectangles with and without calibration (coordinates from the rendered PDF); DB unchanged by a probe; probe refusals; type log written by check readings and verified; log not in export | Reading form, run picker, kept-fit line, history list | Print calibration page → enter readings with the stepper → fit → check print → run number +1; check sheet pass 2 offered |
 | D | Label size cap; sanitise rules (each character class); URL rules | Label stored at reservation and shown when used; old cells "not recorded"; release: happy, running → 409, non-admin → 403, race with the sweep; cap → 409; purge dry run and real, codes not reissued; pagination `Link` header and SQL filters | Cell panel; no QR render on load | Print onto a sheet → open the cell → rendered label; no `preview.png` request on load |
 | E | `owner_of` per session; probe reads at most 64 KiB; batch deadline | Data migration scrubs old errors; `wiring` on the printer response for a failed attach; `web_url` link and QR, no internal URL for a read key; ptouch tests unchanged | Cart link gone, live label | Screenshots refreshed |
 
